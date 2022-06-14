@@ -1,0 +1,2 @@
+# gazoduc-nf
+Nextflow Pipelines
