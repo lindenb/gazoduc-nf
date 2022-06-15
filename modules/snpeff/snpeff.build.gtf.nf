@@ -1,8 +1,9 @@
 /**
  * build a SNPEFF database from a GTF file
  */
-process snpeff_build_gtf {
+process SNPEFF_BUILD_GTF {
 tag "${file(gtf).name} ${file(fasta).name}"
+memory "5g"
 input:
     val(meta)
     val(fasta)

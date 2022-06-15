@@ -28,3 +28,4 @@ jeter.*
 .nextflow
 .nexflow.log*
 work
+*.save
