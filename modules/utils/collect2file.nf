@@ -1,4 +1,4 @@
-process collect2file {
+process COLLECT_TO_FILE {
 executor "local"
 tag "N=${L.size()}"
 input:

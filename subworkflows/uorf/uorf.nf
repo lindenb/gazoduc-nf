@@ -1,5 +1,6 @@
 include {getKeyValue;getModules} from '../../modules/utils/functions.nf'
 include {DOWNLOAD_GTF_01} from '../../modules/gtf/download.gtf.01.nf'
+include {COLLECT_TO_FILE} from '../../modules/util/xx.nf'
 
 workflow UORF {
 	take:
@@ -18,8 +19,9 @@ workflow UORF {
 
 
 		uorf_ch = uorf_gtf(meta, reference, gtf_ch)
-		
-		
+		VEP_ANNOT_GTF_01(meta,reference,	
+	
+		COLLECT_TO_FILE()
 
 		annotate_contig = 
 	emit:
