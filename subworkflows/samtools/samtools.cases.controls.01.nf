@@ -47,7 +47,7 @@ workflow SAMTOOLS_CASES_CONTROLS_01 {
 			merge_ch = MERGE_SN([:],cases_ch.out,ctrls_ch.out)
 			}
 	emit:
-		out = merge_ch.out
+		output = merge_ch.out
 		version = version_ch
 	}
 
