@@ -23,34 +23,21 @@ SOFTWARE.
 
 */
 
-process SQRT_FILE {
+process COLLECT_TO_FILE_01 {
 executor "local"
-tag "${file(files).name}"
+tag "N=${L.size()}"
 input:
-      	val(meta)
-        val(files)
+	val(meta)
+	val(L)
 output:
-        path("clusters.list"),emit:clusters
-	path("version.xml"),emit:version
+	path("concat.list"),emit:output
 script:
-       	def min_file_split = getKeyValue(meta,"min_file_split","-1")
-        """
-        SQRT=`awk 'END{X=NR;if(${min_file_split} > 0 && X <= ${min_file_split}){print(X);} else {z=sqrt(X); print (z==int(z)?z:int(z)+1);}}' "${files}"`
+"""
+hostaname 1>&2
+set -o pipefail
 
-        split -a 9 --additional-suffix=.list --lines=\${SQRT} "${files}" chunck.
-
-      	find \${PWD} -type f -name "chunck.*.list" > clusters.list
-
-	cat <<- EOF > version.xml
-	<properties id="${task.process}">
-		<entry key="Name">${task.process}</entry>
-		<entry key="Description">Split file into parts</entry>
-		<entry key="Input">${files}</entry>
-		<entry key="N">\${SQRT}</entry>
-		<entry key="N-FILES">\$(wc -l < clusters.list)</entry>
-		<entry key="Output">clusters.list</entry>
-	</properties>
-	EOF
-        """
-	}
-
+cat << EOF | awk -F '/' '{printf("%s\t%s\\n",\$NF,\$0);}' | sort -t '\t' -T. -k1,1 -k2,2 | cut -f 2 | uniq > concat.list
+${L.join("\n")}
+EOF
+"""
+}

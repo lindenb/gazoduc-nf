@@ -1,3 +1,5 @@
+include { getKeyValue; getModules} from '../../modules/utils/functions.nf'
+
 process SAMTOOLS_SAMPLES01 {
 tag "${file(bams).name}"
 afterScript "rm -f jeter.txt jeter.tsv"
@@ -42,6 +44,7 @@ cat << EOF > version.xml
 	<entry key="name">${task.process}</entry>
 	<entry key="description">extract sample names from BAM metadata</entry>
 	<entry key="input">${bams}</entry>
+        <entry key="samtools">\$(samtools  --version | head -n 1| cut -d ' ' -f2)</entry>
 </properties>
 EOF
 """

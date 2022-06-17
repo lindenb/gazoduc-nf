@@ -2,6 +2,7 @@ include {getKeyValue;getModules} from '../../modules/utils/functions.nf'
 
 process GTF_TO_UORF_01 {
 tag "${file(gtf).name}"
+afterScript "rm -rf TMP"
 memory "5g"
 input:
 	val(meta)
@@ -18,12 +19,14 @@ hostname 1>&2
 set -o pipefail
 module load ${getModules("jvarkit htslib")}
 
-(gunzip -c "${gtf}" || cat "${gtf}" ) |\
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=. -jar \${JVARKIT_DIST}/gtfupstreamorf.jar -R "${reference}" --strength "${strength}" |\
-	LC_ALL=C sort -T . -t '\t' -k1,1 -k4,4 |\
-	bgzip > uorg.gtf.gz
+mkdir TMP
 
-tabix -p gff uorg.gtf.gz
+(gunzip -c "${gtf}" || cat "${gtf}" ) |\
+	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/gtfupstreamorf.jar -R "${reference}" --strength "${strength}" |\
+	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k4,4n |\
+	bgzip > uorf.gtf.gz
+
+tabix -p gff uorf.gtf.gz
 
 #################################
 cat << EOF > version.xml
@@ -33,6 +36,9 @@ cat << EOF > version.xml
 	<entry key="input">${gtf}<entry>
 	<entry key="strength">${strength}<entry>
 	<entry key="reference">${reference}<entry>
+        <entry key="gtfupstreamorf">\$(java  -jar \${JVARKIT_DIST}/gtfupstreamorf.jar --version)</entry>
+        <entry key="bgzip">\$(bgzip --version | head -n 1)</entry>
+        <entry key="tabix">\$(tabix --version | head -n 1)</entry>
 </properties>
 EOF
 """

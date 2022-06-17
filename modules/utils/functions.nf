@@ -1,4 +1,30 @@
-java.util.Set<String> __warnings = new java.util.HashSet<>();
+/*
+
+Copyright (c) 2022 Pierre Lindenbaum
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+The MIT License (MIT)
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
+
+
+//static java.util.Set<String> __warnings = new java.util.HashSet<>();
 
 
 /** return boolean from hasmap */
@@ -22,15 +48,15 @@ def getBoolean(meta,key) {
 	if(s.equalsIgnoreCase("n")) return false;
 	if(s.equalsIgnoreCase("0")) return false;
 
-	if(__warnings.add(key)) {
+	//if(__warnings.add(key)) {
 		log.warn("meta doesn't contains boolean key \""+key+"\". Using default:\"false\".");
-		}
+		//}
 	return false;
 	}
 
 
 def getKeyValue(meta,key,defValue) {
-	if(!meta.containsKey(key) && __warnings.add(key)) {
+	if(!meta.containsKey(key)) {
 		log.warn("meta doesn't contains key \""+key+"\". Using default:\""+defValue+"\".");
 		}
 	return meta.getOrDefault(key,defValue);
@@ -57,5 +83,19 @@ String getModules(String s) {
 		ret+=" "+s1;
 		}
 	return ret;
+	}
+
+boolean isHg19(String reference) {
+	String fname = file(reference).getSimpleName();
+	if(fname.contains("hs37d5")) return true;
+	if(fname.contains("human_g1k_v37")) return true;
+	if(fname.contains("hg19")) return true;
+	return false;
+	}
+
+boolean isHg38(String reference) {
+	String fname = file(reference).getSimpleName();
+	if(fname.contains("hs38me")) return true;
+	return false;
 	}
 
