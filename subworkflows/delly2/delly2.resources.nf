@@ -46,8 +46,12 @@ workflow DELLY2_RESOURCES {
 		delly2_ch = DOWNLOAD_DELLY2([:])
 		version_ch = version_ch.mix(delly2_ch.version)
 
+		xmerge_ch = MERGE_EXCLUDE([:],reference,gaps_ch.bed,exclude_ch.bed)
+		version_ch = version_ch.mix(xmerge_ch.version)
+
 	emit:
 		executable = delly2_ch.executable
+		exclude = exclude_ch.bed
 		mappability = map_ch.mappability
 		version = version_ch
 	}
@@ -55,6 +59,7 @@ workflow DELLY2_RESOURCES {
 
 process GET_MAPPABILITY {
 tag "${file(reference).name}"
+label "process_tiny"
 input:
 	val(meta)
 	val(reference)
@@ -94,7 +99,7 @@ script:
 process GET_EXCLUDE {
 tag "${file(reference).name}"
 afterScript "rm -f jeter.bed jeter2.bed jeter.interval_list"
-
+label "process_tiny"
 input:
 	val(meta)
 	val(reference)
@@ -102,10 +107,61 @@ output:
 	path("exclude.bed"),emit:bed
 	path("version.xml"),emit:version
 script:
-	def url1=(isHg19(reference)?"https://raw.githubusercontent.com/hall-lab/speedseq/master/annotations/ceph18.b37.lumpy.exclude.2014-01-15.bed":(isHg38(referen,ce)?"https://raw.githubusercontent.com/hall-lab/speedseq/master/annotations/exclude.cnvnator_100bp.GRCh38.20170403.bed":""))
+	def url1 = (isHg19(reference)?"https://raw.githubusercontent.com/hall-lab/speedseq/master/annotations/ceph18.b37.lumpy.exclude.2014-01-15.bed":(isHg38(referen,ce)?"https://raw.githubusercontent.com/hall-lab/speedseq/master/annotations/exclude.cnvnator_100bp.GRCh38.20170403.bed":""))
 """
 hostname 1>&2
-module load ${getModules("jvarkit bedtools picard")}
+module load ${getModules("jvarkit")}
+set -o pipefail
+
+if [ ! -z "${url1}" ] ; then
+	wget -O - "${url1}" |\
+		cut -f 1,2,3|\
+		java -jar \${JVARKIT_DIST}/bedrenamechr.jar -R "${params.reference}" --column 1 --convert SKIP > exclude.bed 
+else
+		touch exclude.bed
+fi
+
+	##########################################################################################
+	cat <<- EOF > version.xml
+	<properties id="${task.process}">
+		<entry key="name">${task.process}</entry>
+		<entry key="description">Download Exclude File</entry>
+		<entry key="url">${url1}</entry>
+	</properties>
+	EOF
+"""
+}
+
+process MERGE_EXCLUDE {
+label "process_tiny"
+input:
+	val(meta)
+	val(reference)
+	path(xclude)
+	path(gaps)
+output:
+	path("exclude.bed"),emit:bed
+	path("version.xml"),emit:version
+script:
+"""
+hostname 1>&2
+module load ${getModules("bedtools")}
+
+awk -F '\t' '(!(\$1 ~ /^(chr)?[0-9XY]+\$/)) {printf("%s\t0\t%s\\n",\$1,\$2);}'  "${reference}.fai" > jeter2.bed
+
+cut -f1-3 ${xclude} ${gaps} jeter2.bed | \
+	LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n |\
+	bedtools merge > exclude.bed
+
+rm jeter2.bed
+
+	##########################################################################################
+	cat <<- EOF > version.xml
+	<properties id="${task.process}">
+		<entry key="name">${task.process}</entry>
+		<entry key="description">merge ${xclude} , ${gaps} and non standard contigs from reference</entry>
+	</properties>
+	EOF
 
 """
 }
@@ -113,6 +169,7 @@ module load ${getModules("jvarkit bedtools picard")}
 
 
 process DOWNLOAD_DELLY2 {
+	label "process_tiny"
 	errorStrategy "retry"
 	maxRetries 3
 	input:
@@ -137,5 +194,3 @@ process DOWNLOAD_DELLY2 {
 	EOF
 	"""
 	}
-
-

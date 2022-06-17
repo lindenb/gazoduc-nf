@@ -38,7 +38,7 @@ params.publishDir = ""
 params.prefix = ""
 
 include {DELLY2_RESOURCES} from '../../subworkflows/delly2/delly2.resources.nf' 
-
+include {SAMTOOLS_CASES_CONTROLS_01} from '../../subworkflows/samtools/samtools.cases.controls.01.nf'
 
 def helpMessage() {
   log.info"""
@@ -85,6 +85,7 @@ if( params.help ) {
 
 workflow {
 	rsrcr_ch = DELLY2_RESOURCES(params,params.reference)
+	SAMTOOLS_CASES_CONTROLS_01(params,params.reference,params.cases,params.controls)
 	//PUBLISH(indexcov_ch.zip)
 	}
 
