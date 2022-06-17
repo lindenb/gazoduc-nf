@@ -26,27 +26,25 @@ nextflow.enable.dsl=2
 
 /** path to indexed fasta reference */
 params.reference = ""
-/** mapq min mapping quality . If it's <=0, just use the bam index as is. Otherwise, rebuild the bai */
-params.mapq = -1
-/** one file containing the paths to the BAM/CRAM */
-params.bams = ""
+/** one file containing the paths to the BAM/CRAM for controls */
+params.controls = ""
+/** one file containing the paths to the BAM/CRAM for cases */
+params.cases = ""
 /** display help */
 params.help = false
 /** publish Directory */
 params.publishDir = ""
 /** files prefix */
 params.prefix = ""
-/** goleft version */
-params.goleft_version = "v0.2.4"
 
-include {INDEXCOV} from '../../subworkflows/indexcov/indexcov.nf'
+include {DELLY2_RESOURCES} from '../../subworkflows/delly2/delly2.resources.nf' 
 
 
 def helpMessage() {
   log.info"""
 ## About
 
-Detects CNV using go-left indexcov
+Detects CNV/SV using delly2
 
 ## Author
 
@@ -74,8 +72,6 @@ nextflow -C ../../confs/cluster.cfg  run -resume indexcov.nf \\
   
 ## See also
 
- * indexcov: https://github.com/brentp/goleft/tree/master/indexcov
- * https://twitter.com/yokofakun/status/1527419449669734426
 
 """
 }
@@ -88,8 +84,8 @@ if( params.help ) {
 
 
 workflow {
-	indexcov_ch = INDEXCOV(params,params.reference,Channel.fromPath(params.bams))
-	PUBLISH(indexcov_ch.zip)
+	rsrcr_ch = DELLY2_RESOURCES(params,params.reference)
+	//PUBLISH(indexcov_ch.zip)
 	}
 
 process PUBLISH {
