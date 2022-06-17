@@ -43,7 +43,7 @@ Pierre Lindenbaum PhD. Institut du Thorax. 44000 Nantes. France.
 nextflow -C ../../confs/cluster.cfg  run -resume indexcov.nf \\
 	--publishDir output \\
 	--prefix "analysis." \\
-	--reference /LAB-DATA/BiRD/resources/species/human/cng.fr/hs37d5/hs37d5_all_chr.fasta \\
+	--reference /path/to/reference.fasta \\
 	--bams /path/to/bams.list \\
 	--mapq 30
 ```
