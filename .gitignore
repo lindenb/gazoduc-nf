@@ -26,6 +26,9 @@ hs_err_pid*
 tmp*
 jeter.*
 .nextflow
-.nexflow.log*
+.nextflow.log*
 work
 *.save
+timeline.html*
+trace.txt*
+jeter*
