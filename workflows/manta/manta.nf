@@ -26,33 +26,23 @@ nextflow.enable.dsl=2
 
 /** path to indexed fasta reference */
 params.reference = ""
-/** one file containing the paths to the BAM/CRAM for controls */
-params.controls = ""
-/** one file containing the paths to the BAM/CRAM for cases */
-params.cases = ""
+/** one file containing the paths to the BAM/CRAM  */
+params.bams = ""
 /** display help */
 params.help = false
 /** publish Directory */
 params.publishDir = ""
 /** files prefix */
 params.prefix = ""
-/** delly version *:
-params.delly2_version = "v1.0.3"
-/** keep INFO/TYPE=BND */
-params.bnd=true
-/** search CNVs */
-params.cnv=true
 
-include {DELLY2_RESOURCES} from '../../subworkflows/delly2/delly2.resources.nf' 
-include {DELLY2_SV} from '../../subworkflows/delly2/delly2.sv.nf' 
-include {SAMTOOLS_CASES_CONTROLS_01} from '../../subworkflows/samtools/samtools.cases.controls.01.nf'
+include {MANTA_SINGLE_SV01} from '../../subworkflows/manta/manta.single.01.nf' 
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 
 def helpMessage() {
   log.info"""
 ## About
 
-Detects CNV/SV using delly2
+Detects CNV/SV using manta.
 
 ## Author
 
@@ -61,23 +51,18 @@ Pierre Lindenbaum PhD. Institut du Thorax. 44000 Nantes. France.
 ## Options
 
   * --reference (fasta) indexed fasta reference [REQUIRED]
-  * --cases (file) one file containing the paths to the BAM/CRAM for cases [REQUIRED]
-  * --controls (file) one file containing the paths to the BAM/CRAM for controls [REQUIRED]
+  * --bams (file) one file containing the paths to the BAM/CRAM for cases [REQUIRED]
   * --publishDir (dir) Save output in this directory
   * --prefix (string) files prefix. default: ""
-  * --delly2_version (string) default: "${params.delly2_version}"
-  * --cnv (boolean) Shall we call CNV ? default: "${params.cnv}"
-  * --bnd (boolean) Shall we output BND ? default: "${params.bnd}"
 
 ## Usage
 
 ```
-nextflow -C ../../confs/cluster.cfg  run -resume delly.nf \\
+nextflow -C ../../confs/cluster.cfg  run -resume manta.nf \\
 	--publishDir output \\
 	--prefix "analysis." \\
 	--reference /path/to/reference.fasta \\
-	--cases /path/to/bams.cases.list \\
-	--controls /path/to/bams.controls.list
+	--bams /path/to/bams.list
 ```
   
 ## See also
@@ -95,17 +80,14 @@ if( params.help ) {
 
 
 workflow {
-	delly_ch = DELLY2_SV(params, params.reference, params.cases, params.controls)
+	manta_ch = MANTA_SINGLE_SV01(params, params.reference, params.bams)
 
 
-	html = VERSION_TO_HTML(params,delly_ch.version)	
+	html = VERSION_TO_HTML(params,manta_ch.version)	
 
 	to_publish = Channel.empty()
-	to_publish = to_publish.mix(delly_ch.sv_vcf).
-			mix(delly_ch.sv_vcf_index).
-			mix(delly_ch.cnv_vcf).
-			mix(delly_ch.sv_cnv_index).
-			mix(delly_ch.version).
+	to_publish = to_publish.
+			mix(manta_ch.version).
 			mix(html.html)
 
 

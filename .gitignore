@@ -29,6 +29,7 @@ jeter.*
 .nextflow.log*
 work
 *.save
+*.save.1
 timeline.html*
 trace.txt*
 jeter*

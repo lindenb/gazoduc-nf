@@ -37,13 +37,13 @@ workflow DELLY2_RESOURCES {
 		version_ch = version_ch.mix(map_ch.version)
 
 
-		gaps_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"N"],reference)
+		gaps_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"N","MAX_TO_MERGE":"1"],reference)
 		version_ch = version_ch.mix(gaps_ch.version)
 
 		exclude_ch = GET_EXCLUDE(meta,reference)
 		version_ch = version_ch.mix(exclude_ch.version)
 
-		delly2_ch = DOWNLOAD_DELLY2([:])
+		delly2_ch = DOWNLOAD_DELLY2(meta.subMap(["delly2_version"]))
 		version_ch = version_ch.mix(delly2_ch.version)
 
 		xmerge_ch = MERGE_EXCLUDE([:],reference,gaps_ch.bed,exclude_ch.bed)
