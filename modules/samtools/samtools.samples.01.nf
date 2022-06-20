@@ -44,7 +44,9 @@ cat << EOF > version.xml
 	<entry key="name">${task.process}</entry>
 	<entry key="description">extract sample names from BAM metadata</entry>
 	<entry key="input">${bams}</entry>
-        <entry key="samtools">\$(samtools  --version | head -n 1| cut -d ' ' -f2)</entry>
+        <entry key="samtools.version">\$(samtools  --version | head -n 1| cut -d ' ' -f2)</entry>
+        <entry key="n-samples">\$(wc -l < sample2bam.tsv )</entry>
+        <entry key="samples">\$(cut -f 1 sample2bam.tsv |paste -s -d ' ')</entry>
 </properties>
 EOF
 """

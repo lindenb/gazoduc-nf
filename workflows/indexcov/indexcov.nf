@@ -71,6 +71,10 @@ nextflow -C ../../confs/cluster.cfg  run -resume indexcov.nf \\
 	--bams /path/to/bams.list \\
 	--mapq 30
 ```
+
+## Workflow
+
+![workflow](./workflow.svg)
   
 ## See also
 

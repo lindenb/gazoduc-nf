@@ -1,5 +1,3 @@
-N E X T F L O W  ~  version 22.04.0
-Launching `indexcov.nf` [zen_church] DSL2 - revision: c4f8ace2ab
 
 ## About
 
@@ -24,10 +22,14 @@ Pierre Lindenbaum PhD. Institut du Thorax. 44000 Nantes. France.
 nextflow -C ../../confs/cluster.cfg  run -resume indexcov.nf \
 	--publishDir output \
 	--prefix "analysis." \
-	--reference /LAB-DATA/BiRD/resources/species/human/cng.fr/hs37d5/hs37d5_all_chr.fasta \
+	--reference /path/to/reference.fasta \
 	--bams /path/to/bams.list \
 	--mapq 30
 ```
+
+## Workflow
+
+![workflow](./workflow.svg)
   
 ## See also
 
