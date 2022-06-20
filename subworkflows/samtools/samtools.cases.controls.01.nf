@@ -35,7 +35,7 @@ workflow SAMTOOLS_CASES_CONTROLS_01 {
 		version_ch = Channel.empty()
 		
 		cases_ch = CASES_BAMS([:], reference, cases_bams)
-		version_ch = version_ch.mix(cases_ch)
+		version_ch = version_ch.mix(cases_ch.version)
 
 		if(ctrls_bams.isEmpty()) {
 			merge_ch = MERGE_SN([:],cases_ch.out,"")
@@ -43,7 +43,7 @@ workflow SAMTOOLS_CASES_CONTROLS_01 {
 		else
 			{
 			ctrls_ch = CTRLS_BAMS([:], reference, ctrls_bams)
-			version_ch = version_ch.mix(ctrls_ch)
+			version_ch = version_ch.mix(ctrls_ch.version)
 			merge_ch = MERGE_SN([:],cases_ch.out,ctrls_ch.out)
 			}
 	emit:

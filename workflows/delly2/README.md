@@ -1,3 +1,4 @@
+WARN: Access to undefined parameter `delly2_version` -- Initialise it to a default value eg. `params.delly2_version = some_value`
 
 ## About
 
@@ -10,24 +11,31 @@ Pierre Lindenbaum PhD. Institut du Thorax. 44000 Nantes. France.
 ## Options
 
   * --reference (fasta) indexed fasta reference [REQUIRED]
-  * --bams (file) one file containing the paths to the BAM/CRAM [REQUIRED]
-  * --mapq (int)  min mapping quality . If it's lower than 0 (this is the default) just use the bam index as is. Otherwise, rebuild the bai
+  * --cases (file) one file containing the paths to the BAM/CRAM for cases [REQUIRED]
+  * --controls (file) one file containing the paths to the BAM/CRAM for controls [REQUIRED]
   * --publishDir (dir) Save output in this directory
   * --prefix (string) files prefix. default: ""
-  * --goleft_version (string) default: "v0.2.4"
+  * --delly2_version (string) default: "null"
+  * --cnv (boolean) Shall we call CNV ? default: "true"
+  * --bnd (boolean) Shall we output BND ? default: "true"
 
 ## Usage
 
 ```
-nextflow -C ../../confs/cluster.cfg  run -resume indexcov.nf \
+nextflow -C ../../confs/cluster.cfg  run -resume delly.nf \
 	--publishDir output \
 	--prefix "analysis." \
 	--reference /path/to/reference.fasta \
-	--bams /path/to/bams.list \
-	--mapq 30
+	--cases /path/to/bams.cases.list \
+	--controls /path/to/bams.controls.list
 ```
+
+## Workflow
+
+![workflow](./workflow.svg)
   
 ## See also
 
+  * https://github.com/dellytools/delly
 
 

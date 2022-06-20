@@ -125,7 +125,7 @@ process CALL_DELLY {
 	mv "TMP/${name}.bcf" ./
 
 	#######################################################################
-	cat << EOF > version.xml
+	cat <<- EOF > version.xml
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
 		<entry key="description">call delly</entry>
@@ -177,7 +177,7 @@ EOF
 
 
 	#######################################################################
-	cat << EOF > version.xml
+	cat <<- EOF > version.xml
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
 		<entry key="description">merge delly</entry>
@@ -221,7 +221,7 @@ process GENOTYPE_DELLY {
     mv -v TMP/jeter.bcf.csi "genotyped.${name}.bcf.csi"
 
 	#######################################################################
-	cat << EOF > version.xml
+	cat <<- EOF > version.xml
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
 		<entry key="description">genotype delly</entry>
@@ -262,7 +262,7 @@ EOF
 
 
 	#######################################################################
-	cat << EOF > version.xml
+	cat <<- EOF > version.xml
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
 		<entry key="description">merge genotype delly</entry>
@@ -399,7 +399,7 @@ EOF
 rm jeter.tsv
 
 	#######################################################################
-	cat << EOF > version.xml
+	cat <<- EOF > version.xml
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
 		<entry key="description">merge CNV</entry>
@@ -486,7 +486,7 @@ EOF
     bcftools index --csi merged.gt.bcf 
 
 	#######################################################################
-	cat << EOF > version.xml
+	cat <<- EOF > version.xml
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
 		<entry key="description">merge CNVs</entry>

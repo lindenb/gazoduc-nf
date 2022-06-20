@@ -7,6 +7,7 @@ all: work/input.cases work/input.controls ../../confs/login-01.compute.bird2.pri
 		--prefix hello. \
 		--cases ${PWD}/work/input.cases \
 		--controls ${PWD}/work/input.controls
+	-dot -T svg -o workflow.svg work/hello.workflow.dot
 
 work/input.cases: ../../../2021/20210526.resources/Resources.hs37d5.wgs.bams.list
 	mkdir -p $(dir $@)

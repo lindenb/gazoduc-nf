@@ -7,7 +7,7 @@ input:
 	val(description)
 	val(L)
 output:
-	path("version.xml"),emit:version
+	path("${prefix}version.xml"),emit:version
 script:
 	prefix = meta.getOrDefault("prefix","")
 """

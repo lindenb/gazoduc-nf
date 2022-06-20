@@ -79,6 +79,10 @@ nextflow -C ../../confs/cluster.cfg  run -resume delly.nf \\
 	--cases /path/to/bams.cases.list \\
 	--controls /path/to/bams.controls.list
 ```
+
+## Workflow
+
+![workflow](./workflow.svg)
   
 ## See also
 
@@ -101,13 +105,13 @@ workflow {
 	html = VERSION_TO_HTML(params,delly_ch.version)	
 
 	to_publish = Channel.empty()
-	to_publish = to_publish.mix(delly_ch.sv_vcf).
+	to_publish = to_publish.
+			mix(delly_ch.sv_vcf).
 			mix(delly_ch.sv_vcf_index).
 			mix(delly_ch.cnv_vcf).
-			mix(delly_ch.sv_cnv_index).
+			mix(delly_ch.cnv_vcf_index).
 			mix(delly_ch.version).
 			mix(html.html)
-
 
 	PUBLISH(to_publish.collect())
 	}
@@ -131,27 +135,6 @@ for F in ${files.join(" ")}
 do
 	ln -s "\${F}" ./
 done
-
-
-	###########################################################################"
-	cat <<- EOF > jeter.xml
-	<properties id="${task.process}">
-		<entry key="name">${task.process}</entry>
-		<entry key="description">publish delly2</entry>
-		<entry key="steps">
-	EOF
-
-	for X in ${versions.join(" ")}
-	do
-		xmllint --format "\${X}" | tail -n+2 >> jeter.xml
-	done
-
-	cat <<- EOF >> jeter.xml
-		</entry>
-	</properties>
-	EOF
-	xmllint --format jeter.xml > "${prefix}version.xml"
-	rm jeter.xml
 """
 }
 

@@ -27,6 +27,7 @@ include {SAMTOOLS_SAMPLES01} from '../../modules/samtools/samtools.samples.01.nf
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {MANTA_SINGLE_01} from  '../../modules/manta/manta.single.01.nf'
 include {SURVIVOR_INSTALL}  from '../../modules/survivor/survivor.install.nf'
+include {SURVIVOR_MERGE}  from '../../modules/survivor/survivor.merge.nf'
 
 workflow MANTA_SINGLE_SV01 {
 	take:
@@ -46,9 +47,33 @@ workflow MANTA_SINGLE_SV01 {
 		version_ch= version_ch.mix(manta_ch.version.first())
 	
 
-		survivor_ch = SURVIVOR_INSTALL(meta)
-		version_ch= version_ch.mix(survivor_ch.version)
 
+		if(getKeyValue(meta,"survivor_merge_params","").trim().isEmpty()) {
+			survivor_vcf = Channel.empty()
+			survivor_vcf_index = Channel.empty()
+			}
+		else
+			{
+
+			
+
+
+			survivor_ch = SURVIVOR_INSTALL(meta)
+			version_ch= version_ch.mix(survivor_ch.version)
+			
+			diploid_ch = manta_ch.output.
+				map{T->file(T[2])}.
+				splitCsv(header:false,sep:'\t').
+				map{T->T[0]}.
+				filter{T->T.endsWith("diploidSV.vcf.gz")}.
+				collect()
+
+			survivor_merge_ch = SURVIVOR_MERGE(meta,survivor_ch.executable,diploid_ch)
+			version_ch= version_ch.mix(survivor_merge_ch.version)
+
+			survivor_vcf = survivor_merge_ch.vcf
+			survivor_vcf_index = survivor_merge_ch.index
+			}
 
 		version_merge = MERGE_VERSION(meta,"manta","manta",version_ch.collect())
 	emit:

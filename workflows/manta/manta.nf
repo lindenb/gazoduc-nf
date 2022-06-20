@@ -34,6 +34,7 @@ params.help = false
 params.publishDir = ""
 /** files prefix */
 params.prefix = ""
+params.survivor_merge_params="1000 2 1 1 0 30"
 
 include {MANTA_SINGLE_SV01} from '../../subworkflows/manta/manta.single.01.nf' 
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
@@ -54,6 +55,7 @@ Pierre Lindenbaum PhD. Institut du Thorax. 44000 Nantes. France.
   * --bams (file) one file containing the paths to the BAM/CRAM for cases [REQUIRED]
   * --publishDir (dir) Save output in this directory
   * --prefix (string) files prefix. default: ""
+  * --survivor_merge_params (string) or empty to disable survivor
 
 ## Usage
 

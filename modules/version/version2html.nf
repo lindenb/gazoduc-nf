@@ -62,7 +62,7 @@ Pierre Lindenbaum PhD. Institut du Thorax. 44400 Nantes. France.
 
 <xsl:template match="entry">
 <dt><xsl:value-of select="@key"/></dt>
-<dd><xsl:apply-templates></dd>
+<dd><xsl:apply-templates/></dd>
 </xsl:template>
 
 
