@@ -38,22 +38,22 @@ output:
 	path("${prefix}survivor.merge.bcf.csi"),emit:index
 	path("version.xml"),emit:version
 script:
-	def survivor_params = getKeyValue("survivor_merge_params","1000 2 1 1 0 30")
-	prefix = getKeyValue("prefix","")
+	def survivor_params = getKeyValue(meta,"survivor_merge_params","1000 2 1 1 0 30")
+	prefix = getKeyValue(meta,"prefix","")
 """
 hostname 1>&2
 module load ${getModules("bcftools")}
 mkdir TMP
 
 cat << EOF > TMP/jeter.list
-${vcfs.join("\n")}
+${L.join("\n")}
 EOF
 
 i=1
 cat TMP/jeter.list | while read F
 do
-	bcftools view -O v -o  "TMP/tmp.\$(i).vcf" "\${F}"
-	echo "TMP/tmp.\$(i).vcf" >> TMP/sample_files.list
+	bcftools view -O v -o  "TMP/tmp.\${i}.vcf" "\${F}"
+	echo "TMP/tmp.\${i}.vcf" >> TMP/sample_files.list
 	i=\$((i+1))
 done
 
@@ -73,7 +73,13 @@ cat << EOF > version.xml
         <entry key="description">merge VCF file(s) with survivor</entry>
         <entry key="vcfs.count">${L.size()}</entry>
         <entry key="survivor.version">\$(${survivor}  2>&1 /dev/null | grep '^Version' | cut -d ':' -f 2- )</entry>
-        <entry key="survivor.params">${survivor_params}</entry>
+        <entry key="survivor.params">${survivor_params} . With:
+		* max distance between breakpoints (0-1 percent of length, 1- number of bp) 
+		* Minimum number of supporting caller
+		* Take the type into account (1==yes, else no)
+		* Take the strands of SVs into account (1==yes, else no)
+		* Disabled.
+		* Minimum size of SVs to be taken into account.</entry>
 	<entry key="bcftools.version">\$( bcftools --version-only)</entry>
 </properties>
 EOF

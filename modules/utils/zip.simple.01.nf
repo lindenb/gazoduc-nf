@@ -23,29 +23,27 @@ SOFTWARE.
 
 */
 
-process SURVIVOR_INSTALL {
+process SIMPLE_ZIP_01 {
+tag "N=${L.size()}"
 input:
 	val(meta)
+	val(L)
 output:
-	path("SURVIVOR/Debug/SURVIVOR"),emit:executable
-	path("version.xml"),emit:version
+	path("${prefix}archive.zip"),emit:zip
 script:
-	def url="https://github.com/fritzsedlazeck/SURVIVOR.git"
+	prefix = meta.prefix?:""
+	def compression_level = meta.level?:"5"
 """
 hostname 1>&2
-git clone "${url}"
-(cd SURVIVOR/Debug && make)
+set -o pipefail
 
+mkdir "${prefix}archive"
 
-##################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">download and install survivor</entry>
-        <entry key="url">${url}</entry>
-        <entry key="survivor.version">\$(./SURVIVOR/Debug/SURVIVOR  2>&1 /dev/null | grep '^Version' | cut -d ':' -f 2- )</entry>
-</properties>
+cat << EOF | while read F ; do ln -s "\${F}" "./${prefix}archive/" ; done
+${L.join("\n")}
 EOF
+
+zip -r -${compression_level} "${prefix}archive.zip" "${prefix}archive"
 
 """
 }

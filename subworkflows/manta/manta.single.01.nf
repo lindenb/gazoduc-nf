@@ -28,6 +28,8 @@ include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {MANTA_SINGLE_01} from  '../../modules/manta/manta.single.01.nf'
 include {SURVIVOR_INSTALL}  from '../../modules/survivor/survivor.install.nf'
 include {SURVIVOR_MERGE}  from '../../modules/survivor/survivor.merge.nf'
+include {SIMPLE_ZIP_01} from '../../modules/utils/zip.simple.01.nf'
+include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 
 workflow MANTA_SINGLE_SV01 {
 	take:
@@ -47,6 +49,15 @@ workflow MANTA_SINGLE_SV01 {
 		version_ch= version_ch.mix(manta_ch.version.first())
 	
 
+		all_manta_files_ch = manta_ch.output.
+                      map{T->T[2]}.
+                      splitCsv(header:false,sep:'\t').
+                      map{T->T[2]}
+		
+		to_zip = all_manta_files_ch 
+
+		file_list_ch = COLLECT_TO_FILE_01([:],all_manta_files_ch.collect())
+
 
 		if(getKeyValue(meta,"survivor_merge_params","").trim().isEmpty()) {
 			survivor_vcf = Channel.empty()
@@ -54,17 +65,10 @@ workflow MANTA_SINGLE_SV01 {
 			}
 		else
 			{
-
-			
-
-
 			survivor_ch = SURVIVOR_INSTALL(meta)
 			version_ch= version_ch.mix(survivor_ch.version)
 			
-			diploid_ch = manta_ch.output.
-				map{T->file(T[2])}.
-				splitCsv(header:false,sep:'\t').
-				map{T->T[0]}.
+			diploid_ch = all_manta_files_ch.
 				filter{T->T.endsWith("diploidSV.vcf.gz")}.
 				collect()
 
@@ -73,10 +77,23 @@ workflow MANTA_SINGLE_SV01 {
 
 			survivor_vcf = survivor_merge_ch.vcf
 			survivor_vcf_index = survivor_merge_ch.index
+
+			to_zip = to_zip.mix(survivor_vcf).
+					mix(survivor_vcf_index)
 			}
 
+
+		
 		version_merge = MERGE_VERSION(meta,"manta","manta",version_ch.collect())
+		to_zip = to_zip.mix(version_merge.version)
+		
+		zip_ch = SIMPLE_ZIP_01(meta.plus(["level":"0"]),to_zip.collect())
+		
 	emit:
 		version = version_merge.version
+		zip = zip_ch.zip
+		survivor_vcf = survivor_vcf
+		survivor_vcf_index = survivor_vcf_index
+		manta_files = file_list_ch.output
 	}
 

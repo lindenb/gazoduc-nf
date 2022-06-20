@@ -52,10 +52,10 @@ Pierre Lindenbaum PhD. Institut du Thorax. 44000 Nantes. France.
 ## Options
 
   * --reference (fasta) indexed fasta reference [REQUIRED]
-  * --bams (file) one file containing the paths to the BAM/CRAM for cases [REQUIRED]
+  * --bams (file) one file containing the paths to the BAM/CRAM. [REQUIRED]
   * --publishDir (dir) Save output in this directory
   * --prefix (string) files prefix. default: ""
-  * --survivor_merge_params (string) or empty to disable survivor
+  * --survivor_merge_params (string) or empty to disable survivor. [${params.survivor_merge_params}]
 
 ## Usage
 
@@ -66,10 +66,14 @@ nextflow -C ../../confs/cluster.cfg  run -resume manta.nf \\
 	--reference /path/to/reference.fasta \\
 	--bams /path/to/bams.list
 ```
+
+## Workflow
+
+![workflow](./workflow.svg)
   
 ## See also
 
-  * https://github.com/dellytools/delly
+  * https://github.com/Illumina/manta
 
 """
 }
@@ -90,6 +94,10 @@ workflow {
 	to_publish = Channel.empty()
 	to_publish = to_publish.
 			mix(manta_ch.version).
+			mix(manta_ch.zip).
+			mix(manta_ch.survivor_vcf).
+			mix(manta_ch.survivor_vcf_index).
+			mix(manta_ch.manta_files).
 			mix(html.html)
 
 
@@ -106,36 +114,17 @@ output:
 	path("*.bcf.csi")
 	path("*.xml")
 	path("*.html")
+	path("*.zip")
+	path("*.list")
 when:
 	!params.getOrDefault("publishDir","").trim().isEmpty()
 script:
-	prefix = params.getOrDefault("prefix","")
+	prefix = params.prefix?:""
 """
 for F in ${files.join(" ")}
 do
 	ln -s "\${F}" ./
 done
-
-
-	###########################################################################"
-	cat <<- EOF > jeter.xml
-	<properties id="${task.process}">
-		<entry key="name">${task.process}</entry>
-		<entry key="description">publish delly2</entry>
-		<entry key="steps">
-	EOF
-
-	for X in ${versions.join(" ")}
-	do
-		xmllint --format "\${X}" | tail -n+2 >> jeter.xml
-	done
-
-	cat <<- EOF >> jeter.xml
-		</entry>
-	</properties>
-	EOF
-	xmllint --format jeter.xml > "${prefix}version.xml"
-	rm jeter.xml
 """
 }
 
