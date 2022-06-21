@@ -22,64 +22,32 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-import {LINUX_SPLIT} from '../../modules/utils/split.nf'
-import {BCFTOOLS_CONCAT_01} from '../bcftools/bcftools.concat.01.nf'
 
-workflow GATK_HAPCALLER_DIRECT_01 {
-	take:
-		meta
-		reference
-		references
-		bams
-		beds
-		dbsnp
-		pedigree
-	main:
-		version_ch = Channel.empty()
-		split_bams_ch = LINUX_SPLIT(["method":"--lines=${meta.nbams?:"10"}","suffix":".list"],bams)
-		version_ch = version_ch.mix(split_bams_ch.version)
-		
-		each_bam_list = split_bams_ch.output.splitCsv(header: false,sep:'\t',strip:true).map{T->T[0]}
-		capture_bed_ch = beds.splitCsv(header: false,sep:',',strip:true)
-		bed_sample_bam_ch = capture_bed_ch.combine(capture_bed_ch)
 
-		callbed_ch = CALL_BED(meta,reference,pedigree,bed_sample_bam_ch)
-		version_ch = version_ch.mix(callbed_ch.version.first())
-
-		ped2vcf_ch  = callbed_ch.bedvcf.groupTuple()
-		mergedbed_ch = MERGE_BED(meta, reference, ped2vcf_ch)
-		version_ch = version_ch.mix(mergedbed_ch.version)
-
-		COLLECT_TO_FILE(meta,mergedbed_ch.collect())
-
-		BCFTOOLS_CONCAT_01(meta,,"")
-
-	emit:
-		output = merge_ch.out
-		version = version_ch
-	}
-
-process CALL_BED {
-tag "${file(bed).name} ${file(bams_reference).name} ${file(bams).name}"
+process GATK4_HAPCALLER_DIRECT {
+tag "${file(row.bed).name} ${file(row.bams_reference).name} ${file(row.bams).name}"
 cache 'lenient'
-memory {task.attempt==1?'10G':'10G'}
+memory {task.attempt==1?'10G':'20G'}
 errorStrategy 'retry'
 maxRetries 5
 cpus 1
 afterScript 'rm -rf TMP'
 input:
 	val(meta)
-	val(reference)
-	val(pedigree)
-	val(dbsnp)
-	tuple val(bed),val(bams_reference),val(bams)
+	val(row)
 output:
-        tuple bed,path("genotyped.bcf"),emit:bedvcf
+        tuple val(row),path("genotyped.bcf"),emit:bedvcf
         path("genotyped.bcf.csi"),emit:index
         path("version.xml"),emit:version
 script:
-	def extraHC = meta.extraHC?:""
-	def mapq = meta.mapq?:"-1"
+	def extraHC = row.extraHC?:""
+	def mapq = row.mapq?:"-1"
+	def pedigree = row.pedigree?:""
+	def bams = row.bams?:""
+	def reference = row.reference?:""
+	def bams_reference = row.bams_reference?:reference
+	def bed = row.bed?:""
+	def dbsnp = row.dbsnp?:""
 """
 hostname 1>&2
 module load getModule("gatk4 bcftools jvarkit")
@@ -133,6 +101,8 @@ cat << EOF > version.xml
 	<entry key="bed-count">\$(wc -l < "${bed}")</entry>
 	<entry key="dbsnp">${dbsnp}</entry>
 	<entry key="pedigree">${pedigree}</entry>
+	<entry key="mapq">${mapq}</entry>
+	<entry key="extraHC">${extraHC}</entry>
 </properties>
 EOF
 """
