@@ -11,6 +11,7 @@ My Nextflow Pipelines
   * [Indexcov](workflows/indexcov/README.md) Finds CNVs using [indexcov](https://github.com/brentp/goleft/tree/master/indexcov#indexcov).
   * [Delly2](workflows/delly2/README.md) Finds CNVs/SV using [delly](https://github.com/dellytools/delly).
   * [Manta](workflows/manta/README.md) Finds CNVs/SV using using [Manta](https://github.com/Illumina/manta).
+  * [Smoove](workflows/smoove/README.md) Finds CNVs/SV using [Smoove](https://github.com/brentp/smoove)
 
 # Works on my machine
 
