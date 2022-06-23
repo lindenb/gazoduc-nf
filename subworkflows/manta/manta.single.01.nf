@@ -42,7 +42,7 @@ workflow MANTA_SINGLE_SV01 {
 		all_samples_ch = SAMTOOLS_SAMPLES01([:],reference,bams)
 		version_ch= version_ch.mix(all_samples_ch.version)
 
-		each_sample_bam_ch = all_samples_ch.out.splitCsv(header:false,sep:'\t')
+		each_sample_bam_ch = all_samples_ch.output.splitCsv(header:false,sep:'\t')
 	
 		
 		manta_ch = MANTA_SINGLE_01(meta.subMap(["prefix"]),reference,each_sample_bam_ch)

@@ -33,7 +33,7 @@ input:
 	val(reference)
 	val(bams)
 output:
-	path("sample2bam.tsv"),emit:out
+	path("sample2bam.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
 """

@@ -7,12 +7,12 @@ workflow SEX_GUESS_01 {
 		reference
 		bams
 	main:
-		xy_ch = sexualContigs(meta,reference).out.splitCsv(header:false,sep:'\t')
+		xy_ch = sexualContigs(meta,reference).output.splitCsv(header:false,sep:'\t')
 		sn_bam_ch = SAMTOOLS_SAMPLES01(meta, reference, bams).splitCsv(header:false,sep:'\t')
 		sex_count_ch = sexualChromosomeCount(meta, reference, sn_bam_ch.combine(xy_ch))
 		sn_sex_ch  = sampleSex(meta, sex_count_ch.collect())
 	emit:
-		out = sn_sex_ch.out
+		out = sn_sex_ch.output
 		version = sn_sex_ch.version
 	}
 
@@ -22,7 +22,7 @@ input:
 	val(meta)
 	val(reference)
 output:
-	path("XY.bed"),emit:out
+	path("XY.bed"),emit:output
 script:
 """
 test -s "${reference}.fai"
@@ -67,7 +67,7 @@ input:
 	val(meta)
 	tuple val(KEY),val(L)
 output:
-	path("samples.sex.tsv"),emit:out
+	path("samples.sex.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
 	def treshold = getKeyValue(meta,"treshold","10")

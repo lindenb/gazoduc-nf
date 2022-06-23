@@ -1,6 +1,6 @@
 include { SAMTOOLS_SAMPLES01} from '../../modules/samtools/samtools.samples.01.nf'
 include { COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
-include { getKeyValue; getModules} from '../../modules/utils/functions.nf'
+include { getKeyValue; getModules; assertFileExists} from '../../modules/utils/functions.nf'
 
 workflow INDEXCOV {
      take:
@@ -8,6 +8,8 @@ workflow INDEXCOV {
         reference /* indexed fasta reference */
         bams /* file containing the path to the bam/cram files . One per line */
      main:
+	assertFileExists(reference,"reference must be defined")
+	assertFileExists(bams,"path to bams must be defined")
         mapq = ((meta.mapq?:"0") as int)
         ch_version = Channel.empty()
 
@@ -17,7 +19,7 @@ workflow INDEXCOV {
 		bams_ch = SAMTOOLS_SAMPLES01([:], reference, bams)
 		ch_version = ch_version.mix( bams_ch.version)
 
-        	sample_bam_fasta_ch = bams_ch.out.splitCsv(header: false,sep:'\t',strip:true)
+        	sample_bam_fasta_ch = bams_ch.output.splitCsv(header: false,sep:'\t',strip:true)
         
 		rebuild_bai_ch = REBUILD_BAI(meta.subMap(["mapq"]), reference, sample_bam_fasta_ch)
 		ch_version = ch_version.mix( rebuild_bai_ch.version.first() ) 

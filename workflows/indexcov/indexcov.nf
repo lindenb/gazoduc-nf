@@ -40,7 +40,7 @@ params.prefix = ""
 params.goleft_version = "v0.2.4"
 
 include {INDEXCOV} from '../../subworkflows/indexcov/indexcov.nf'
-
+include {assertFileExists} from '../../modules/utils/functions.nf'
 
 def helpMessage() {
   log.info"""
@@ -92,6 +92,8 @@ if( params.help ) {
 
 
 workflow {
+	assertFileExists(params.reference,"--reference must be defined")
+	assertFileExists(params.bams,"--bams must be defined")
 	indexcov_ch = INDEXCOV(params,params.reference,Channel.fromPath(params.bams))
 	PUBLISH(indexcov_ch.zip)
 	}

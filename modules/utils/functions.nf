@@ -142,4 +142,9 @@ void assertNotEmpty(String s,String msg) {
 	if(s==null || s.trim().isEmpty()) throw new IllegalStateException(msg==null?"a param is null":msg);
 	}
 
-
+void assertFileExists(def f,String msg) {
+	String fstr = f==null?null:f.toString();
+	if(fstr==null || fstr.trim().isEmpty()) throw new IllegalStateException(msg==null?"a param is null":msg);
+	java.io.File file = new java.io.File(fstr);
+	if(!file.exists()) throw new IllegalStateException(msg==null?"file is missing.":msg);
+	}

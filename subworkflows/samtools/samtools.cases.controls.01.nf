@@ -24,6 +24,7 @@ SOFTWARE.
 */
 
 include { SAMTOOLS_SAMPLES01 as CASES_BAMS; SAMTOOLS_SAMPLES01 as CTRLS_BAMS} from '../../modules/samtools/samtools.samples.01.nf'
+include {assertFileExists} from '../../modules/utils/functions.nf'
 
 workflow SAMTOOLS_CASES_CONTROLS_01 {
 	take:
@@ -32,19 +33,21 @@ workflow SAMTOOLS_CASES_CONTROLS_01 {
 		cases_bams
 		ctrls_bams
 	main:
+		assertFileExists(reference,"reference must be defined")
+		assertFileExists(cases_bams,"path to cases list of BAMS must be defined")
 		version_ch = Channel.empty()
 		
 		cases_ch = CASES_BAMS([:], reference, cases_bams)
 		version_ch = version_ch.mix(cases_ch.version)
 
 		if(ctrls_bams.isEmpty()) {
-			merge_ch = MERGE_SN([:],cases_ch.out,"")
+			merge_ch = MERGE_SN([:],cases_ch.output,"")
 			}
 		else
 			{
 			ctrls_ch = CTRLS_BAMS([:], reference, ctrls_bams)
 			version_ch = version_ch.mix(ctrls_ch.version)
-			merge_ch = MERGE_SN([:],cases_ch.out,ctrls_ch.out)
+			merge_ch = MERGE_SN([:],cases_ch.output,ctrls_ch.out)
 			}
 	emit:
 		output = merge_ch.out
@@ -58,7 +61,7 @@ input:
 	val(cases_list)
 	val(ctrls_list)
 output:
-	path("cases_controls_bams.tsv"),emit:out
+	path("cases_controls_bams.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
 """

@@ -51,7 +51,7 @@ workflow UORF {
 
 		vep_ch = ANNOTATE_VEP(meta,reference,bed, uorf_ch.gtf,vcf2bed_ch.bed.splitCsv(header: false,sep:'\t',strip:true))
 
-		//SQRT_FILE(meta,COLLECT_TO_FILE(meta,vep_ch.vcf.collect()).out)
+		//SQRT_FILE(meta,COLLECT_TO_FILE(meta,vep_ch.vcf.collect()).output)
 
 		/*
 		snpeffdb_ch = SNPEFF_BUILD_GTF(meta, reference, uorf_ch.gtf)
