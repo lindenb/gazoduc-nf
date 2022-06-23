@@ -25,7 +25,7 @@ SOFTWARE.
 /** use linux split to split a file into parts */
 process LINUX_SPLIT {
 executor "local"
-tag "${file(file).name}"
+tag "${file(filein).name}"
 input:
       	val(meta)
         val(filein)
@@ -35,7 +35,7 @@ output:
 script:
        	def prefix = meta.prefix?:"chunck."
        	def suffix = meta.suffix?:".txt"
-       	def method = meta.method?"--lines=10"
+       	def method = meta.method?:"--lines=10"
         """
 
 	mkdir TMP
@@ -55,4 +55,3 @@ script:
 	EOF
         """
 	}
-

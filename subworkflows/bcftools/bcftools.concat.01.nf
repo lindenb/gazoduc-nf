@@ -23,6 +23,9 @@ SOFTWARE.
 
 */
 include {getKeyValue;getModules} from '../../modules/utils/functions.nf'
+include {SQRT_FILE} from '../../modules/utils/sqrt.nf'
+
+
 
 workflow BCFTOOLS_CONCAT_01 {
 	take:
@@ -31,11 +34,12 @@ workflow BCFTOOLS_CONCAT_01 {
 		bed  /* path/to/bed file or empty string */
 	main:
 		vers_ch = concat_version(meta, vcfs, bed)
-		each_list_ch = sqrt_files(meta,vcfs).splitCsv()
-		concat0_ch = concat0(meta,each_list_ch,bed)
+		each_list_ch = SQRT_FILE(meta,vcfs)
+		concat0_ch = concat0(meta,each_list_ch.clusters.splitText(),bed)
 		concat1_ch = concat1(meta,concat0_ch.vcf.collect())
 	emit:
 		vcf = concat1_ch.vcf
+		index = concat1_ch.index
 		version = vers_ch.version
 	}
 
@@ -66,19 +70,22 @@ script:
 process concat_version {
 	executor "local"
 	input:
-		meta
-		vcfs
-		bed
+		val(meta)
+		val(vcfs)
+		val(bed)
 	output:
 		path("version.xml"),emit:version
 	script:
 	"""
+	module load ${getModules("bcftools")}
+
 	cat << EOF > version.xml
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
 		<entry key="description">concat vcf(s) using bcftools</entry>
 		<entry key="vcfs">${vcfs}</entry>
 		<entry key="bed">${bed}</entry>
+		<entry key="bcftools">\$( bcftools --version-only)</entry>
 	</properties>
 	EOF
 	"""
@@ -91,6 +98,7 @@ input:
 	val(L)
 output:
 	path("${prefix}concat${suffix}"),emit:vcf	
+	path("${prefix}concat${suffix}${suffix.contains("b")?".csi":".tbi"}"),emit:index
 script:
 	prefix = getKeyValue(meta,"prefix","")
 	sufffix = getKeyValue(meta,"suffix",".bcf")

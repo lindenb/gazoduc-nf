@@ -29,7 +29,6 @@ include {getKeyValue;getModules} from '../utils/functions.nf'
 process SCATTER_INTERVALS_BY_NS {
 tag "${file(reference).name}"
 label "process_low"
-
 input:
 	val(meta)
 	val(reference)

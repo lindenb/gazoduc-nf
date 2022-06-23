@@ -43,7 +43,7 @@ script:
 	cat "${vcf}" | while read V
 	do
 		bcftools index -s "\${V}" | awk -F '\t' -vV=\${V} '{printf("%s\t0\t%s\t%s\\n",\$1,\$2,V);}'
-	done | sort -T . -t '\t' -k1,1 -k2,2n | uniq > vcf2bed.bed
+	done | LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n | uniq > vcf2bed.bed
 
 
 	
@@ -64,7 +64,7 @@ script:
 
 	bcftools index -s "${vcf}" |\
 		awk -F '\t' '{printf("%s\t0\t%s\t${vcf}\\n",\$1,\$2);}' |\
-		sort -T . -t '\t' -k1,1 -k2,2n |\
+		LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n |\
 		uniq > vcf2bed.bed
 
 

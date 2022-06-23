@@ -38,12 +38,14 @@ def getBoolean(meta,key) {
 	final String s= String.valueOf(o).trim();
 	if(s.equalsIgnoreCase("true")) return true;
 	if(s.equalsIgnoreCase("yes")) return true;
+	if(s.equalsIgnoreCase("on")) return true;
 	if(s.equalsIgnoreCase("T")) return true;
 	if(s.equalsIgnoreCase("y")) return true;
 	if(s.equalsIgnoreCase("1")) return true;
 
 	if(s.equalsIgnoreCase("false")) return false;
 	if(s.equalsIgnoreCase("no")) return false;
+	if(s.equalsIgnoreCase("off")) return false;
 	if(s.equalsIgnoreCase("F")) return false;
 	if(s.equalsIgnoreCase("n")) return false;
 	if(s.equalsIgnoreCase("0")) return false;
@@ -57,7 +59,7 @@ def getBoolean(meta,key) {
 
 def getKeyValue(meta,key,defValue) {
 	if(!meta.containsKey(key)) {
-		log.warn("meta doesn't contains key \""+key+"\". Using default:\""+defValue+"\".");
+		log.warn1("meta doesn't contains key \""+key+"\". Using default:\""+defValue+"\".",firstOnly: true);
 		}
 	return meta.getOrDefault(key,defValue);
 	}
@@ -89,6 +91,11 @@ String getModules(String s) {
 	return ret;
 	}
 
+String moduleLoad(String s) {
+	if(isBlank(s)) return "";
+	return "module load " + getModules(s);
+	}
+
 boolean isHg19(String reference) {
 	String fname = file(reference).getSimpleName().toLowerCase();
 	if(fname.contains("hs37d5")) return true;
@@ -106,6 +113,9 @@ boolean isHg38(String reference) {
 	return false;
 	}
 
+boolean isBlank(def s) {
+	return s==null || s.toString().trim().isEmpty();
+	}
 
 boolean isUrl(String s) {
 	if(s.startsWith("https://") || s.startsWith("http://") || s.startsWith("ftp://")) return true;
@@ -139,12 +149,12 @@ void assertFalse(boolean b,String msg) {
 	}
 
 void assertNotEmpty(String s,String msg) {
-	if(s==null || s.trim().isEmpty()) throw new IllegalStateException(msg==null?"a param is null":msg);
+	if(s==null || s.trim().isEmpty()) throw new IllegalStateException("Null or empty parameter:"+(msg==null?"a param is null":msg));
 	}
 
 void assertFileExists(def f,String msg) {
 	String fstr = f==null?null:f.toString();
-	if(fstr==null || fstr.trim().isEmpty()) throw new IllegalStateException(msg==null?"a param is null":msg);
+	if(fstr==null || fstr.trim().isEmpty()) throw new IllegalStateException("Missing file:"+msg==null?"a param is null":msg);
 	java.io.File file = new java.io.File(fstr);
-	if(!file.exists()) throw new IllegalStateException(msg==null?"file is missing.":msg);
+	if(!file.exists()) throw new IllegalStateException("Missing File:"+(msg==null?"file is missing.":msg));
 	}
