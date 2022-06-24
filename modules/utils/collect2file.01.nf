@@ -40,4 +40,8 @@ cat << EOF | awk -F '/' '{printf("%s\t%s\\n",\$NF,\$0);}' | sort -t '\t' -T. -k1
 ${L.join("\n")}
 EOF
 """
+stub:
+"""
+touch concat.list
+"""
 }

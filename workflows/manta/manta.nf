@@ -47,11 +47,11 @@ Detects CNV/SV using manta.
 
 ## Author
 
-Pierre Lindenbaum PhD. Institut du Thorax. 44000 Nantes. France.
+${params.rsrc.author}
 
 ## Options
 
-  * --reference (fasta) indexed fasta reference [REQUIRED]
+  * --reference (fasta) ${params.rsrc.reference} [REQUIRED]
   * --bams (file) one file containing the paths to the BAM/CRAM. [REQUIRED]
   * --publishDir (dir) Save output in this directory
   * --prefix (string) files prefix. default: ""
@@ -60,7 +60,7 @@ Pierre Lindenbaum PhD. Institut du Thorax. 44000 Nantes. France.
 ## Usage
 
 ```
-nextflow -C ../../confs/cluster.cfg  run -resume manta.nf \\
+nextflow -C ../../confs/cluster.cfg  run -resume ${workflow.scriptFile} \\
 	--publishDir output \\
 	--prefix "analysis." \\
 	--reference /path/to/reference.fasta \\

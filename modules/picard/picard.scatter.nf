@@ -61,5 +61,10 @@ script:
 	</properties>
 	EOF
 	"""
+	stub:
+	"""
+	touch "${file(reference).getSimpleName()}.${type}.${maxToMerge}.interval_list"
+       	echo "<properties/>" > version.xml
+	"""
 	}
 

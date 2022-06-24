@@ -75,5 +75,10 @@ cat << EOF > version.xml
 </properties>
 EOF
 """
+stub:
+"""
+touch sample2bam.tsv
+echo "<properties/>" > version.xml
+"""
 }
 

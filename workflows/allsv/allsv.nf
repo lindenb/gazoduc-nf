@@ -36,16 +36,23 @@ params.help = false
 params.publishDir = ""
 /** files prefix */
 params.prefix = ""
-params.smoove_image = ""
+/** delly version *:
+params.delly2_version = "v1.0.3"
+/** keep INFO/TYPE=BND */
+params.bnd=true
+/** search CNVs */
+params.cnv=true
 
-include {SMOOVE_SV_POPULATION_01} from '../../subworkflows/smoove/smoove.population.01.nf' 
+include {DELLY2_SV} from '../../subworkflows/delly2/delly2.sv.nf' 
+include {INDEXCOV} from '../../subworkflows/indexcov/indexcov.nf'
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
+
 
 def helpMessage() {
   log.info"""
 ## About
 
-Detects CNV/SV using smoove
+Detects SV using Delly2, manta, smoove, indexcov.
 
 ## Author
 
@@ -55,10 +62,9 @@ ${params.rsrc.author}
 
   * --reference (fasta) ${params.rsrc.reference} [REQUIRED]
   * --cases (file) one file containing the paths to the BAM/CRAM for cases [REQUIRED]
-  * --controls (file) one file containing the paths to the BAM/CRAM for controls
-  * --publishDir (dir) Save output in this directory. default: "${params.publishDir}"
-  * --prefix (string) files prefix. default: "${params.prefix}"
-  * --smoove_image (string) path to precompiled singularuty image default: "${params.smoove_image}"
+  * --controls (file) one file containing the paths to the BAM/CRAM for controls [REQUIRED]
+  * --publishDir (dir) Save output in this directory
+  * --prefix (string) files prefix. default: ""
 
 ## Usage
 
@@ -77,7 +83,7 @@ nextflow -C ../../confs/cluster.cfg  run -resume ${workflow.scriptFile} \\
   
 ## See also
 
-  * https://github.com/brentp/smoove
+  * https://github.com/dellytools/delly
 
 """
 }
@@ -90,16 +96,44 @@ if( params.help ) {
 
 
 workflow {
-	smoove_ch = SMOOVE_SV_POPULATION_01(params, params.reference, params.cases, params.controls)
+	version = Channel.emtpy()
+	
+	delly_ch = DELLY2_SV(params, params.reference, params.cases, params.controls)
+	version_ch = version_ch.mix(delly_ch.version)
 
+	smoove_ch = SMOOVE_SV_POPULATION_01(params, params.reference, params.cases, params.controls)
+	version_ch = version_ch.mix(smoove_ch.version)
+
+	
 
 	html = VERSION_TO_HTML(params,smoove_ch.version)	
 
+
+	concat_ch =Channel.empty()
+	concat_ch = concat_ch.mix(params.cases)
+	if(!isBlank(params.controls)) {
+		concat_ch = concat_ch.mix(params.controls)
+		}
+	
+
+	cat_files_ch = COLLECT_TO_FILE_01(params,concat_ch.collect())
+	indexcov_ch = INDEXCOV(params,params.reference,cat_files_ch.output)
+	version_ch = version_ch.mix(indexcov_ch.version)
+
+	manta_ch = MANTA_SINGLE_SV01(params, params.reference, files_ch.output)
+	version_ch = version_ch.mix(manta_ch.version)
+
+	version_ch = MERGE_VERSION("allsv","several structural variation tools...",version_ch.collect())
+
+	html = VERSION_TO_HTML(params,version_ch)	
+
 	to_publish = Channel.empty()
 	to_publish = to_publish.
-			mix(smoove_ch.vcf).
-			mix(smoove_ch.index).
-			mix(smoove_ch.version).
+			mix(delly_ch.sv_vcf).
+			mix(delly_ch.sv_vcf_index).
+			mix(delly_ch.cnv_vcf).
+			mix(delly_ch.cnv_vcf_index).
+			mix(version_ch).
 			mix(html.html)
 
 	PUBLISH(to_publish.collect())

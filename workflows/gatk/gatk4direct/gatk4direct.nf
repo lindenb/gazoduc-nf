@@ -47,11 +47,11 @@ def helpMessage() {
 
 ## Author
 
-Pierre Lindenbaum PhD. Institut du Thorax. 44000 Nantes. France.
+${params.rsrc.author}
 
 ## Options
 
-  * --reference (fasta) indexed fasta reference [REQUIRED]
+  * --reference (fasta) ${params.rsrc.reference} [REQUIRED]
   * --bams (file) one file containing the paths to the BAM/CRAM [REQUIRED]
   * --mapq (int)  min mapping quality . If it's lower than 0 (this is the default) just use the bam index as is. Otherwise, rebuild the bai
   * --publishDir (dir) Save output in this directory
@@ -61,7 +61,7 @@ Pierre Lindenbaum PhD. Institut du Thorax. 44000 Nantes. France.
 ## Usage
 
 ```
-nextflow -C ../../confs/cluster.cfg  run -resume indexcov.nf \\
+nextflow -C ../../confs/cluster.cfg  run -resume ${workflow.scriptFile} \\
 	--publishDir output \\
 	--prefix "analysis." \\
 	--reference /path/to/reference.fasta \\

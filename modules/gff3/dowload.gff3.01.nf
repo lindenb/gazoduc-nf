@@ -87,4 +87,11 @@ script:
 	</properties>
 	EOF
 	"""
+	
+	stub:
+	"""
+	touch "${file(reference).getSimpleName()}.gff3${getBoolean(meta.with_tabix)?".gz":""}"
+        touch "${file(reference).getSimpleName()}.gff3.gz.tbi"
+	echo "<properties/>" > version.xml
+	"""
 	}

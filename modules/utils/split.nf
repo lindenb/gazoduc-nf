@@ -54,4 +54,10 @@ script:
 	</properties>
 	EOF
         """
+	stub:
+	"""
+	echo empty.txt
+	echo "\${PWD}/empty.txt" > clusters.list
+	echo "<properties/>" > version.xml
+	"""
 	}

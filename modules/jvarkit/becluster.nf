@@ -38,4 +38,9 @@ process bedcluster {
 	</properties>
 	EOF
 	"""
+	stub:
+	"""
+	touch "clusters.list"
+	echo "<properties/>" > version.xml
+	"""
 	}

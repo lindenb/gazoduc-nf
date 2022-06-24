@@ -48,4 +48,10 @@ cat << EOF > version.xml
 EOF
 
 """
+stub:
+"""
+mkdir -p SURVIVOR/Debug
+touch SURVIVOR/Debug/SURVIVOR
+echo "<properties/>" > version.xml
+"""
 }

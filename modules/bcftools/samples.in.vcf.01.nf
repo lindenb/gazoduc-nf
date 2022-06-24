@@ -67,5 +67,11 @@ cat << EOF > version.xml
 EOF
 
 """
+
+stub:
+"""
+touch samples.txt
+echo "<properties/>" > version.xml
+"""
 }
 

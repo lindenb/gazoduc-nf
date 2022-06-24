@@ -49,4 +49,9 @@ cat << EOF > version.xml
 </properties>
 EOF
 """
+stub:
+"""
+touch somalier
+echo "<properties/>" > version.xml
+"""
 }

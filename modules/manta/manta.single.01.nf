@@ -73,7 +73,10 @@ cat << EOF > version.xml
 	<entry key="manta.version">\$(configManta.py --version)</entry>
 </properties>
 EOF
-
-
+	"""
+stub:
+	"""
+	touch "${name}.txt"
+	echo "<properties/>" > version.xml
 	"""
 	}

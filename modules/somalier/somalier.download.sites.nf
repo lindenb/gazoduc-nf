@@ -61,4 +61,9 @@ cat << EOF > version.xml
 </properties>
 EOF
 """
+stub:
+"""
+touch sites.vcf.gz sites.vcf.gz.tbi
+echo "<properties/>" > version.xml
+"""
 }

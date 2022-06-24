@@ -60,4 +60,9 @@ script:
 	</properties>
 	EOF
 """
+stub:
+"""
+touch "${file(interval_list).getSimpleName()}.bed"
+echo "<properties/>" > version.xml
+"""
 }

@@ -52,4 +52,10 @@ script:
 	</properties>
 	EOF
 """
+
+stub:
+"""
+touch "${meta.dbName?:file(gtf).getSimpleName()}" "snpEff.config"
+echo "<properties/>" > version.xml
+"""
 }

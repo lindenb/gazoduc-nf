@@ -42,4 +42,10 @@ cat << EOF > version.xml
 </properties>
 EOF
 """
+
+stub:
+"""
+touch snpeff.bcf snpeff.bcf.csi
+echo "<properties/>" > version.xml
+"""
 }

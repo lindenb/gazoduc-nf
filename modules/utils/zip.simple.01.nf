@@ -30,6 +30,7 @@ input:
 	val(L)
 output:
 	path("${prefix}archive.zip"),emit:zip
+	path("version.xml"),emit:version
 script:
 	prefix = meta.prefix?:""
 	def compression_level = meta.level?:"5"
@@ -45,5 +46,16 @@ EOF
 
 zip -r -${compression_level} "${prefix}archive.zip" "${prefix}archive"
 
+cat << EOF > version.xml
+<properties id="${task.process}">
+	<entry key="id">${task.process}</entry>
+	<entry key="num-entries">${L.size()}</entry>
+	<entry key="output">${prefix}archive.zip</entry>
+</properties>
+"""
+stub:
+"""
+touch "${prefix}archive.zip"
+echo "<properties/>" > version.xml
 """
 }

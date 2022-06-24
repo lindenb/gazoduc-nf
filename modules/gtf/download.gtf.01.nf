@@ -89,4 +89,10 @@ script:
 	</properties>
 	EOF
 	"""
+stub:
+	"""
+	touch "${file(reference).getSimpleName()}.gtf${getBoolean(meta.with_tabix)?".gz")"
+	touch "${file(reference).getSimpleName()}.gtf${getBoolean(meta.with_tabix)?".gz.tbi")"
+	echo "<properties/>" > version.xml
+	"""
 	}

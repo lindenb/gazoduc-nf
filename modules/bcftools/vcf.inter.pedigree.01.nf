@@ -106,5 +106,13 @@ cat << EOF > version.xml
 EOF
 
 """
+stub:
+"""
+touch "${prefix}samples.common.txt"
+touch "${prefix}pedigree.common.ped"
+touch "${prefix}invcf.notinped.txt"
+touch "${prefix}inped.notinvcf.txt"
+echo "<properties/>" > version.xml
+"""
 }
 

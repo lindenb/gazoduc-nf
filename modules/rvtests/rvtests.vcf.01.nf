@@ -61,5 +61,10 @@ cat << EOF > version.xml
 </dl>
 EOF
 """
+stub:
+"""
+touch assoc.list
+echo "<properties/>" > version.xml
+"""
 }
 

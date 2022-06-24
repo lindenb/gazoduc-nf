@@ -56,11 +56,11 @@ Detects CNV/SV using delly2
 
 ## Author
 
-Pierre Lindenbaum PhD. Institut du Thorax. 44000 Nantes. France.
+${params.rsrc.author}
 
 ## Options
 
-  * --reference (fasta) indexed fasta reference [REQUIRED]
+  * --reference (fasta) ${params.rsrc.reference} [REQUIRED]
   * --cases (file) one file containing the paths to the BAM/CRAM for cases [REQUIRED]
   * --controls (file) one file containing the paths to the BAM/CRAM for controls [REQUIRED]
   * --publishDir (dir) Save output in this directory
@@ -72,7 +72,7 @@ Pierre Lindenbaum PhD. Institut du Thorax. 44000 Nantes. France.
 ## Usage
 
 ```
-nextflow -C ../../confs/cluster.cfg  run -resume delly.nf \\
+nextflow -C ../../confs/cluster.cfg  run -resume ${workflow.scriptFile} \\
 	--publishDir output \\
 	--prefix "analysis." \\
 	--reference /path/to/reference.fasta \\

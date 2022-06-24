@@ -77,4 +77,9 @@ script:
 	</properties>
 	EOF
 	"""
+	stub:
+	"""
+	touch "vcf2bed.bed"
+	echo "<properties/>" > version.xml
+	"""
 	}

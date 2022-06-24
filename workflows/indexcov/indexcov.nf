@@ -50,16 +50,16 @@ Detects CNV using go-left indexcov
 
 ## Author
 
-Pierre Lindenbaum PhD. Institut du Thorax. 44000 Nantes. France.
+${params.rsrc.author}
 
 ## Options
 
-  * --reference (fasta) indexed fasta reference [REQUIRED]
+  * --reference (fasta) ${params.rsrc.reference} [REQUIRED]
   * --bams (file) one file containing the paths to the BAM/CRAM [REQUIRED]
   * --mapq (int)  min mapping quality . If it's lower than 0 (this is the default) just use the bam index as is. Otherwise, rebuild the bai
   * --publishDir (dir) Save output in this directory
   * --prefix (string) files prefix. default: ""
-  * --goleft_version (string) default: "v0.2.4"
+  * --goleft_version (string) default: "${params.goleft_version}"
 
 ## Usage
 

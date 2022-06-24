@@ -274,4 +274,9 @@ cat <<EOF > version.xml
 </properties>
 EOF
 """
+stub:
+"""
+touch "gtf2bed.jar"
+echo "<properties/>" > version.xml
+"""
 }

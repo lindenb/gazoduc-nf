@@ -83,6 +83,10 @@ cat << EOF > version.xml
 	<entry key="bcftools.version">\$( bcftools --version-only)</entry>
 </properties>
 EOF
-
+"""
+stub:
+"""
+touch "${prefix}survivor.merge.bcf" ""${prefix}survivor.merge.bcf.csi"
+echo "<properties/>" > version.xml
 """
 }

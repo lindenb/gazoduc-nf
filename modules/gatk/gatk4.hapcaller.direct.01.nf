@@ -106,5 +106,10 @@ cat << EOF > version.xml
 </properties>
 EOF
 """
+subt:
+"""
+touch genotyped.bcf genotyped.bcf.csi
+echo "<properties/>" > version.xml
+"""
 }
 

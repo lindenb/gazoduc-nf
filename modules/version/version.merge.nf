@@ -16,6 +16,9 @@ cat << EOF > jeter.xml
 	<entry key="name">${name}</entry>
 	<entry key="description">${description}</entry>
 	<entry key="date">\$(date)</entry>
+	<entry key="nextflow.version">${nextflow.version}</entry>
+	<entry key="nextflow.build">${nextflow.build}</entry>
+	<entry key="nextflow.timestamp">${nextflow.timestamp}</entry>
 	<entry key="steps">
 EOF
 
@@ -30,5 +33,9 @@ cat << EOF >> jeter.xml
 EOF
 	xmllint --format jeter.xml > "${prefix}version.xml"
 rm jeter.xml
+"""
+stub:
+"""
+echo "<properties/>" > "${prefix}version.xml"
 """
 }

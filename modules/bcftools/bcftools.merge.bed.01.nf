@@ -99,4 +99,9 @@ bcftools index --threads ${task.cpus} "genotyped.bcf"
 
 
 """
+stub:
+"""
+touch genotyped.bcf genotyped.bcf
+echo "<properties/>" > version.xml
+"""
 }
