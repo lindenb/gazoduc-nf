@@ -27,6 +27,7 @@ tmp*
 jeter.*
 .nextflow
 .nextflow.log*
+workflow.dot*
 work
 *.save
 *.save.1

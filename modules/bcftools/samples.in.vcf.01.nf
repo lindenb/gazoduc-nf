@@ -22,43 +22,50 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {moduleLoad;assertKnownReference;getKeyValue} from '../utils/functions.nf'
 
-process SOMALIER_DOWNLOAD_SITES {
-tag "${file(reference).name}"
+include {moduleLoad;getKeyValue;assertFileExists;assertNotEmpty} from '../utils/functions.nf'
+
+process SAMPLES_IN_VCF_01 {
+executor "local"
+tag "${file(vcf).name}"
+
 input:
 	val(meta)
-	val(reference)
+	val(vcf)
 output:
-	path("sites.vcf.gz"), emit: vcf
-	path("sites.vcf.gz.tbi")
-	path("version.xml"), emit:version
+	path("samples.txt"),emit:samples
+	path("version.xml"),emit:version
 script:
-	def fasta = assertKnownReference(reference)
-	def url=(isHg19(fasta)?"https://github.com/brentp/somalier/files/3412453/sites.hg19.vcf.gz":
-		(isHg38(fasta)?"https://github.com/brentp/somalier/files/3412456/sites.hg38.vcf.gz":
-		""))
 """
 hostname 1>&2
-${moduleLoad("jvarkit bcftools")}
-set -o pipefail
+${moduleLoad("bcftools")}
 set -x
+set -o pipefail
 
-wget -O - "${url}" |\
-	gunzip -c |\
-	java -jar \${JVARKIT_DIST}/vcfsetdict.jar -R "${reference}"  --onNotFound SKIP |\
-	bcftools sort -T . -o sites.vcf.gz -O z
+if [ ! -z "${vcf.endsWith(".list")?"Y":""}" ] ; then
 
-bcftools index -t sites.vcf.gz
+	bcftools concat  --allow-overlaps -O u  --file-list "${vcf}" |\
+	bcftools query -l | sort | uniq > jeter.a
+
+else
+
+	bcftools query -l "${vcf}" | sort | uniq > jeter.a
+
+fi
+
+mv -v jeter.a "samples.txt"
 
 ##################
 cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
-        <entry key="description">download VCF sites for somalier</entry>
-        <entry key="url">${url}</entry>
+        <entry key="description">samples in vcf</entry>
+        <entry key="vcf">${vcf}</entry>
+        <entry key="samples.count">\$(wc -l < samples.txt )</entry>
 	<entry key="bcftools.version">\$( bcftools --version-only)</entry>
 </properties>
 EOF
+
 """
 }
+

@@ -22,42 +22,30 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {moduleLoad;assertKnownReference;getKeyValue} from '../utils/functions.nf'
 
-process SOMALIER_DOWNLOAD_SITES {
-tag "${file(reference).name}"
+include {getKeyValue} from '../utils/functions.nf'
+
+process DOWNLOAD_SOMALIER {
 input:
 	val(meta)
-	val(reference)
 output:
-	path("sites.vcf.gz"), emit: vcf
-	path("sites.vcf.gz.tbi")
-	path("version.xml"), emit:version
+	path("somalier"),emit:executable
+	path("version.xml"),emit:version
 script:
-	def fasta = assertKnownReference(reference)
-	def url=(isHg19(fasta)?"https://github.com/brentp/somalier/files/3412453/sites.hg19.vcf.gz":
-		(isHg38(fasta)?"https://github.com/brentp/somalier/files/3412456/sites.hg38.vcf.gz":
-		""))
+	def somalier_version = getKeyValue(meta,"somalier_version","0.2.15")
+	def url = "https://github.com/brentp/somalier/releases/download/v${somalier_version}/somalier"
 """
 hostname 1>&2
-${moduleLoad("jvarkit bcftools")}
-set -o pipefail
-set -x
-
-wget -O - "${url}" |\
-	gunzip -c |\
-	java -jar \${JVARKIT_DIST}/vcfsetdict.jar -R "${reference}"  --onNotFound SKIP |\
-	bcftools sort -T . -o sites.vcf.gz -O z
-
-bcftools index -t sites.vcf.gz
+wget -O somalier "${url}"
+chmod +x somalier
 
 ##################
 cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
-        <entry key="description">download VCF sites for somalier</entry>
+        <entry key="description">download and somalier</entry>
+        <entry key="somalier.version">${somalier_version}</entry>
         <entry key="url">${url}</entry>
-	<entry key="bcftools.version">\$( bcftools --version-only)</entry>
 </properties>
 EOF
 """

@@ -122,6 +122,12 @@ boolean isUrl(String s) {
 	return false;
 	}
 
+String assertKnownReference(String reference) {
+	if(isHg19(reference)) return reference;
+	if(isHg38(reference)) return reference;
+	throw new IllegalArgumentException("reference '${reference}' is unknown (or I cannot guess it from it's name). Currently supported references are defined in 'modules/utils/functions.nf'");
+	}
+
 String getUcscBuildName(String reference) {
 	if(isHg19(reference)) return "hg19";
 	if(isHg38(reference)) return "hg38";
@@ -148,13 +154,15 @@ void assertFalse(boolean b,String msg) {
 	assertTrue(!b,msg);
 	}
 
-void assertNotEmpty(String s,String msg) {
+String assertNotEmpty(String s,String msg) {
 	if(s==null || s.trim().isEmpty()) throw new IllegalStateException("Null or empty parameter:"+(msg==null?"a param is null":msg));
+	return s;
 	}
 
-void assertFileExists(def f,String msg) {
+def assertFileExists(def f,String msg) {
 	String fstr = f==null?null:f.toString();
 	if(fstr==null || fstr.trim().isEmpty()) throw new IllegalStateException("Missing file:"+msg==null?"a param is null":msg);
 	java.io.File file = new java.io.File(fstr);
 	if(!file.exists()) throw new IllegalStateException("Missing File:"+(msg==null?"file is missing.":msg));
+	return f;
 	}
