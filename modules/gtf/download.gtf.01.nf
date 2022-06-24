@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 
-include {getBoolean;getKeyValue;getModules;getGencodeGtfUrl} from '../utils/functions.nf'
+include {isUrl;moduleLoad;getBoolean;parseBoolean;getKeyValue;getModules;getGencodeGtfUrl} from '../utils/functions.nf'
 
 process DOWNLOAD_GTF_01 {
 tag "${file(reference).name}"
@@ -33,23 +33,28 @@ input:
 	val(meta)
 	val(reference)
 output:
-	path("${file(reference).getSimpleName()}.gtf${getBoolean(meta.with_tabix)?".gz":""),emit:gtf
+	path("${file(reference).getSimpleName()}.gtf${parseBoolean(meta.with_tabix)?".gz":""),emit:gtf
 	path("${file(reference).getSimpleName()}.gtf.gz.tbi"),emit:tbi,optional:true
 	path("version.xml"),emit:version
 script:
 
 	def url0 = getKeyValue(meta,"gtfurl","")
 	def url = url0.isEmpty()?getGencodeGtfUrl(reference):url0
-	def with_tabix = getBoolean(getKeyValue(meta,"with_tabix",true))
+	def with_tabix = parseBoolean(getKeyValue(meta,"with_tabix",true))
 	"""
 	hostname 1>&2
-	module load ${getModules("htslib jvarkit")}
+	${moduleLoad("htslib jvarkit")}
 	set -o pipefail
 	mkdir TMP
 
 	test ! -z "${url}"
-
-	wget -O TMP/jeter0.gtf "${url}"
+	
+	if [[ ! -z "${isUrl(url)?"Y":""}" ]] ;  then
+		wget -O TMP/jeter0.gtf "${url}"
+	else
+		test -s "${url}"
+		cp -v "${url}" TMP/jeter0.gtf
+	fi
 
 	if [[ `file TMP/jeter0.gtf | grep gzip` ]] ; then
 		mv TMP/jeter0.gtf TMP/jeter0.gtf.gz
@@ -91,8 +96,8 @@ script:
 	"""
 stub:
 	"""
-	touch "${file(reference).getSimpleName()}.gtf${getBoolean(meta.with_tabix)?".gz")"
-	touch "${file(reference).getSimpleName()}.gtf${getBoolean(meta.with_tabix)?".gz.tbi")"
+	touch "${file(reference).getSimpleName()}.gtf${parseBoolean(meta.with_tabix)?".gz")"
+	touch "${file(reference).getSimpleName()}.gtf${parseBoolean(meta.with_tabix)?".gz.tbi")"
 	echo "<properties/>" > version.xml
 	"""
 	}

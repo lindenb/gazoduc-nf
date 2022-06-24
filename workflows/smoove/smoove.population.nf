@@ -37,6 +37,7 @@ params.publishDir = ""
 /** files prefix */
 params.prefix = ""
 params.smoove_image = ""
+params.gff3 = ""
 
 include {SMOOVE_SV_POPULATION_01} from '../../subworkflows/smoove/smoove.population.01.nf' 
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
@@ -59,11 +60,12 @@ ${params.rsrc.author}
   * --publishDir (dir) Save output in this directory. default: "${params.publishDir}"
   * --prefix (string) files prefix. default: "${params.prefix}"
   * --smoove_image (string) path to precompiled singularuty image default: "${params.smoove_image}"
+  * --gff3 (path/url) path to gff3 file for annotation. If blank, the default file is downloaded from the web.
 
 ## Usage
 
 ```
-nextflow -C ../../confs/cluster.cfg  run -resume ${workflow.scriptFile} \\
+nextflow -C ../../confs/cluster.cfg  run -resume ${file(workflow.scriptFile)} \\
 	--publishDir output \\
 	--prefix "analysis." \\
 	--reference /path/to/reference.fasta \\

@@ -22,10 +22,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include { getKeyValue } from './functions.nf'
 
 process SQRT_FILE {
 executor "local"
-tag "${file(files).name}"
+tag "${file(filein).name}"
 input:
       	val(meta)
         val(filein)

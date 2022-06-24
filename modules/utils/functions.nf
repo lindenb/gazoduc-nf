@@ -30,7 +30,11 @@ SOFTWARE.
 /** return boolean from hasmap */
 def getBoolean(meta,key) {
 	if(!meta.containsKey(key)) return false;
-	def o = meta.get(key);
+	return parseBoolean(meta.get(key));
+	}
+
+
+def parseBoolean(def o) {
 	if(o == null) return false;
 	if((o instanceof Boolean)) {
 		return (Boolean)o;
@@ -50,9 +54,7 @@ def getBoolean(meta,key) {
 	if(s.equalsIgnoreCase("n")) return false;
 	if(s.equalsIgnoreCase("0")) return false;
 
-	//if(__warnings.add(key)) {
-		log.warn("meta doesn't contains boolean key \""+key+"\". Using default:\"false\".");
-		//}
+	log.warn("Doesn't look like a boolean : ["+ s + "]");
 	return false;
 	}
 
@@ -117,7 +119,10 @@ boolean isBlank(def s) {
 	return s==null || s.toString().trim().isEmpty();
 	}
 
-boolean isUrl(String s) {
+boolean isUrl(Object o) {
+	if(o==null) return false;
+	if(o instanceof java.net.URL) return true;
+	final String s = String.valueOf(o);
 	if(s.startsWith("https://") || s.startsWith("http://") || s.startsWith("ftp://")) return true;
 	return false;
 	}
@@ -143,7 +148,7 @@ String getGencodeGtfUrl(String reference) {
 String getGencodeGff3Url(String reference) {
 	if(isHg19(reference)) return "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_40/GRCh37_mapping/gencode.v40lift37.annotation.gff3.gz";
 	if(isHg38(reference)) return "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_40/gencode.v40.annotation.gff3.gz";
-	return "undefined";	
+	return "undefined";
 	}
 
 void assertTrue(boolean b,String msg) {

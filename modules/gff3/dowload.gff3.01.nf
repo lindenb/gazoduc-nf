@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 
-include {moduleLoad;isBlank;getKeyValue;getModules;getBoolean;getGencodeGff3Url} from '../utils/functions.nf'
+include {moduleLoad;isUrl;isBlank;getKeyValue;getModules;getBoolean;getGencodeGff3Url} from '../utils/functions.nf'
 
 process DOWNLOAD_GFF3_01 {
 tag "${file(reference).name}"
@@ -37,7 +37,7 @@ output:
 	path("${file(reference).getSimpleName()}.gff3.gz.tbi"),emit:tbi,optional:true
 	path("version.xml"),emit:version
 script:
-	def url0 = getKeyValue(meta,"gff3furl","")
+	def url0 = getKeyValue(meta,"gff3url","")
 	def url = (isBlank(url0)?getGencodeGff3Url(reference):url0)
 	def with_tabix = getBoolean(meta,"with_tabix")
 	"""
@@ -48,7 +48,11 @@ script:
 
 	test ! -z "${url}"
 
-	wget -O TMP/jeter0.gff3 "${url}"
+	if [ ! -z "${isUrl(url)?"Y":""}" ] ; then
+		wget -O TMP/jeter0.gff3 "${url}"
+	else
+		cp -v "${url}" TMP/jeter0.gff3
+	fi
 
 	if [[ `file TMP/jeter0.gff3 | grep gzip` ]] ; then
 		mv TMP/jeter0.gff3 TMP/jeter0.gff3.gz
@@ -61,7 +65,7 @@ script:
 
 
 	
-	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -k1,1 -k4,4n TMP/jeter0.gtf > TMP/jeter.gff3
+	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -k1,1 -k4,4n TMP/jeter0.gff3 > TMP/jeter.gff3
 	rm TMP/jeter0.gff3
 
 	if [ ! -z "${with_tabix?"Y":""}" ] ; then

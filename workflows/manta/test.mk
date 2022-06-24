@@ -14,7 +14,7 @@ work/bams.list : ../../../2021/20210526.resources/Resources.hs37d5.wgs.bams.list
 	grep -E '(B00ICUM|B00HOR6)' $< > $@
 
 README.md: manta.nf
-	module load nextflow && nextflow run $< --help | tail -n+3 > $@
+	module load nextflow && nextflow -C ../../confs/login-01.compute.bird2.prive.cfg run $< --help | tail -n+3 > $@
 
 clean:
 	rm -rvf work .nextflow .nextflow.lo*

@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include { getKeyValue; getModules; getBoolean; assertNotEmpty} from '../../modules/utils/functions.nf'
+include { moduleLoad; getKeyValue; getModules; getBoolean; assertNotEmpty} from '../../modules/utils/functions.nf'
 include {SAMTOOLS_CASES_CONTROLS_01} from '../samtools/samtools.cases.controls.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include { SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.nf'
@@ -42,8 +42,10 @@ workflow SMOOVE_SV_POPULATION_01 {
 
 		version_ch = Channel.empty()
 
-
-		gff_ch = DOWNLOAD_GFF3_01(meta.plus(["with_tabix":true]), reference)
+		gff_ch = DOWNLOAD_GFF3_01(meta.plus([
+			"with_tabix":true,
+			"gff3url":getKeyValue(meta,"gff3","")
+			]), reference)
 		version_ch= version_ch.mix(gff_ch.version)
 	
 		cases_controls_ch = SAMTOOLS_CASES_CONTROLS_01([:],reference,cases,controls)
@@ -71,7 +73,7 @@ workflow SMOOVE_SV_POPULATION_01 {
 		version_ch= version_ch.mix(gt_ch.version.first())
 		
 		to_file_ch = COLLECT_TO_FILE_01(meta, gt_ch.vcf.collect())
-		sqrt_ch = SQRT_FILE(meta, to_file_ch.output)
+		sqrt_ch = SQRT_FILE(meta.plus(["min_file_split":100]), to_file_ch.output)
 		version_ch= version_ch.mix(sqrt_ch.version)
 
 		each_cluster = sqrt_ch.clusters.splitCsv(header: false,sep:',',strip:true).map{T->T[0]}
@@ -145,7 +147,7 @@ process INSTALL_SMOOVE_IMAGE {
  *
  */
 process CALL_SMOOVE {
-tag "${sample}/${bam.name}"
+tag "${sample}/${file(bam).name}"
 cache "lenient"
 memory "5g"
 errorStrategy "finish"
@@ -156,7 +158,7 @@ input:
 	val(reference)
 	path(img)
 	val(exclude)
-	tuple val(sample),path(bam)
+	tuple val(sample),val(bam)
 output:
 	path("${sample}-smoove.genotyped.vcf.gz"),emit:vcf
 	path("${sample}-smoove.genotyped.vcf.gz.tbi"),emit:tbi
@@ -164,9 +166,11 @@ output:
 script:
 	def xbed = file(exclude)
 	def ref = file(reference)
+	def xbam = file(bam)
+	if(xbam.getParent()==null) throw new IllegalArgumentException("no parent for ${bam}");
 """
 	hostname 1>&2
-	module load ${getModules("bcftools")}
+	${moduleLoad("bcftools")}
 
 	mkdir -p TMP
 	# smoove will write to the system TMPDIR. For large cohorts, make sure to set this to something with a lot of space
@@ -176,7 +180,7 @@ script:
 	singularity exec\
 		--home \${PWD} \
 		--bind ${xbed.getParent()}:/xdir \
-		--bind ${bam.getParent()}:/bamdir \
+		--bind ${xbam.getParent()}:/bamdir \
 		--bind ${ref.getParent()}:/ref \
 		--bind \${PWD}/TMP:/outdir \
 		${img} \
@@ -187,7 +191,7 @@ script:
 			--fasta /ref/${ref.name} \
 			-p ${task.cpus} \
 			--genotype \
-			/bamdir/${bam.name}
+			/bamdir/${xbam.name}
 
 	mv TMP/${sample}-smoove.genotyped.vcf.gz ./
 	bcftools index -t ${sample}-smoove.genotyped.vcf.gz
@@ -267,7 +271,7 @@ script:
 
 
 process GENOTYPE_BAM {
-tag "${sample}/${bam.name}/${merged.name}"
+tag "${sample}/${file(bam).name}/${file(merged).name}"
 cache "lenient"
 errorStrategy "retry"
 maxRetries 5
@@ -279,7 +283,7 @@ input:
 	val(reference)
 	val(img)
 	val(merged)
-	tuple val(sample),path(bam)
+	tuple val(sample),val(bam)
 output:
 	path("${sample}-smoove.regenotyped.vcf.gz"),emit:vcf
 	path("${sample}-smoove.regenotyped.vcf.gz.tbi"),emit:tbi
@@ -287,6 +291,7 @@ output:
 script:
 	def ref = file(reference)
 	def vcf0 = file(merged)
+	def xbam = file(bam)
 """
 	hostname 1>&2
 	#module load singularity/2.4.5
@@ -298,7 +303,7 @@ script:
 
 	singularity exec\
 		--home \${PWD} \
-		--bind ${bam.getParent()}:/bamdir \
+		--bind ${xbam.getParent()}:/bamdir \
 		--bind ${vcf0.getParent()}:/mergeddir \
 		--bind ${ref.getParent()}:/ref \
 		--bind \${PWD}/TMP:/outdir \
@@ -309,7 +314,7 @@ script:
 			--name ${sample} \
 			--fasta /ref/${ref.name} \
 			-p ${task.cpus} \
-			/bamdir/${bam.name}
+			/bamdir/${xbam.name}
 
 	bcftools sort  --max-mem ${task.memory.giga}G  -T TMP -o ${sample}-smoove.regenotyped.vcf.gz -O z TMP/${sample}-smoove.genotyped.vcf.gz
 	bcftools index -t -f ${sample}-smoove.regenotyped.vcf.gz
@@ -394,10 +399,10 @@ output:
 	path("${prefix}smoove.bcf.csi"),emit:index
 	path("version.xml"),emit:version
 script:
-	prefix = getKetValue(meta,"prefix","")
+	prefix = getKeyValue(meta,"prefix","")
 """
 	hostname 1>&2
-	module load ${getModules("bcftools picard")}
+	${moduleLoad("bcftools picard")}
 
 	mkdir -p TMP TMP2
 	# smoove will write to the system TMPDIR. For large cohorts, make sure to set this to something with a lot of space
