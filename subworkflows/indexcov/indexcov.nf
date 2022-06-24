@@ -28,7 +28,7 @@ workflow INDEXCOV {
         	}
     	else
 		{
-		bams2_ch = bams
+		bams2_ch = Channel.fromPath(bams)
 		}
 
 	executable_ch = DOWNLOAD_GOLEFT(meta.subMap(["goleft_version"]))

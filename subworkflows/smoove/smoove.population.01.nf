@@ -43,14 +43,13 @@ workflow SMOOVE_SV_POPULATION_01 {
 		version_ch = Channel.empty()
 
 
-		gff_ch = DOWNLOAD_GFF3_01(meta, reference)
+		gff_ch = DOWNLOAD_GFF3_01(meta.plus(["with_tabix":true]), reference)
 		version_ch= version_ch.mix(gff_ch.version)
 	
 		cases_controls_ch = SAMTOOLS_CASES_CONTROLS_01([:],reference,cases,controls)
 		version_ch= version_ch.mix(cases_controls_ch.version)
 
-		each_case_control_ch = cases_controls_ch.output.
-				splitCsv(header:false,sep:'\t')
+		each_case_control_ch = cases_controls_ch.output.splitCsv(header:false,sep:'\t')
 	
 		each_cases = each_case_control_ch.filter{T->T[2].equals("case")}.map{T->[T[0],T[1]]}
 		
@@ -59,7 +58,7 @@ workflow SMOOVE_SV_POPULATION_01 {
 		gaps_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"N","MAX_TO_MERGE":"1"],reference)
 		version_ch= version_ch.mix(gaps_ch.version)
 
-		img_ch = INSTALL_SMOOVE_IMAGE(meta);
+		img_ch = INSTALL_SMOOVE_IMAGE(meta)
 		version_ch= version_ch.mix(img_ch.version)
 
 		call_ch = CALL_SMOOVE(meta, reference, img_ch.smoove_img, gaps_ch.bed, each_cases)
@@ -80,7 +79,7 @@ workflow SMOOVE_SV_POPULATION_01 {
 		paste01_ch = PASTE01(meta, reference, img_ch.smoove_img, each_cluster)
 		version_ch= version_ch.mix(paste01_ch.version)
 
-		pasteall_ch = PASTE_ALL(meta, reference, img_ch.smoove_img, gff_ch.gff , paste01_ch.vcf.collect())
+		pasteall_ch = PASTE_ALL(meta, reference, img_ch.smoove_img, gff_ch.gff3 , paste01_ch.vcf.collect())
 		version_ch= version_ch.mix(pasteall_ch.version)
 
 		version_ch = MERGE_VERSION(meta, "smoove", "smoove", version_ch.collect())

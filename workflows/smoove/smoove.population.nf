@@ -90,8 +90,12 @@ if( params.help ) {
 
 
 workflow {
-	smoove_ch = SMOOVE_SV_POPULATION_01(params, params.reference, params.cases, params.controls)
-
+	smoove_ch = SMOOVE_SV_POPULATION_01(
+		params,
+		params.reference,
+		params.cases,
+		params.controls
+		)
 
 	html = VERSION_TO_HTML(params,smoove_ch.version)	
 

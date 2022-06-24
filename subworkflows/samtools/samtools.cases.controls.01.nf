@@ -24,7 +24,8 @@ SOFTWARE.
 */
 
 include { SAMTOOLS_SAMPLES01 as CASES_BAMS; SAMTOOLS_SAMPLES01 as CTRLS_BAMS} from '../../modules/samtools/samtools.samples.01.nf'
-include {assertFileExists} from '../../modules/utils/functions.nf'
+include {assertFileExists;isBlank} from '../../modules/utils/functions.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 
 workflow SAMTOOLS_CASES_CONTROLS_01 {
 	take:
@@ -39,18 +40,22 @@ workflow SAMTOOLS_CASES_CONTROLS_01 {
 		
 		cases_ch = CASES_BAMS([:], reference, cases_bams)
 		version_ch = version_ch.mix(cases_ch.version)
-
-		if(ctrls_bams.isEmpty()) {
+		
+		if(isBlank(ctrls_bams)) {
 			merge_ch = MERGE_SN([:],cases_ch.output,"")
+			version_ch = version_ch.mix(merge_ch.version)
 			}
 		else
 			{
 			ctrls_ch = CTRLS_BAMS([:], reference, ctrls_bams)
 			version_ch = version_ch.mix(ctrls_ch.version)
-			merge_ch = MERGE_SN([:],cases_ch.output,ctrls_ch.out)
+			
+			merge_ch = MERGE_SN([:],cases_ch.output,ctrls_ch.output)
+			version_ch = version_ch.mix(merge_ch.version)
 			}
+		 version_ch = MERGE_VERSION(meta, "cases.controls", "get sample names for cases/controls", version_ch.collect())
 	emit:
-		output = merge_ch.out
+		output = merge_ch.output
 		version = version_ch
 	}
 

@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 
-include {getKeyValue;getModules;getBoolean;getGencodeGff3Url} from '../utils/functions.nf'
+include {moduleLoad;isBlank;getKeyValue;getModules;getBoolean;getGencodeGff3Url} from '../utils/functions.nf'
 
 process DOWNLOAD_GFF3_01 {
 tag "${file(reference).name}"
@@ -33,17 +33,16 @@ input:
 	val(meta)
 	val(reference)
 output:
-	path("${file(reference).getSimpleName()}.gff3${getBoolean(meta.with_tabix)?".gz":""}"),emit:gff3
+	path("${file(reference).getSimpleName()}.gff3${getBoolean(meta,"with_tabix")?".gz":""}"),emit:gff3
 	path("${file(reference).getSimpleName()}.gff3.gz.tbi"),emit:tbi,optional:true
 	path("version.xml"),emit:version
 script:
-
 	def url0 = getKeyValue(meta,"gff3furl","")
-	def url = url0.isEmpty()?getGencodeGff3Url(reference):url0
-	def with_tabix = getBoolean(getKeyValue(meta,"with_tabix",true))
+	def url = (isBlank(url0)?getGencodeGff3Url(reference):url0)
+	def with_tabix = getBoolean(meta,"with_tabix")
 	"""
 	hostname 1>&2
-	module load ${getModules("htslib jvarkit")}
+	${moduleLoad("htslib jvarkit")}
 	set -o pipefail
 	mkdir TMP
 
@@ -90,7 +89,7 @@ script:
 	
 	stub:
 	"""
-	touch "${file(reference).getSimpleName()}.gff3${getBoolean(meta.with_tabix)?".gz":""}"
+	touch "${file(reference).getSimpleName()}.gff3${getBoolean(meta,"with_tabix")?".gz":""}"
         touch "${file(reference).getSimpleName()}.gff3.gz.tbi"
 	echo "<properties/>" > version.xml
 	"""

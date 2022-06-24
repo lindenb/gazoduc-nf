@@ -64,7 +64,7 @@ ${params.rsrc.author}
 ## Usage
 
 ```
-nextflow -C ../../confs/cluster.cfg  run -resume indexcov.nf \\
+nextflow -C ../../confs/cluster.cfg  run -resume ${nextflow.scriptFile} \\
 	--publishDir output \\
 	--prefix "analysis." \\
 	--reference /path/to/reference.fasta \\
@@ -94,7 +94,7 @@ if( params.help ) {
 workflow {
 	assertFileExists(params.reference,"--reference must be defined")
 	assertFileExists(params.bams,"--bams must be defined")
-	indexcov_ch = INDEXCOV(params,params.reference,Channel.fromPath(params.bams))
+	indexcov_ch = INDEXCOV(params,params.reference,params.bams)
 	PUBLISH(indexcov_ch.zip)
 	}
 
