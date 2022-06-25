@@ -59,7 +59,6 @@ workflow GATK4_HAPCALLER_DIRECT_01 {
 			}
 		else
 			{
-			log.warn("using beds defined in ${beds.name}")
 			capture_bed_ch = beds.splitCsv(header: false,sep:',',strip:true).map{T->T[0]}
 			}
 

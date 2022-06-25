@@ -126,7 +126,7 @@ script:
 	set -o pipefail
 
 cat << EOF > jeter.list
-${L.join(" ")}
+${L.join("\n")}
 EOF
 
 	bcftools concat --threads ${task.cpus} \
