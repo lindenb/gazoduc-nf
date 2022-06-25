@@ -22,10 +22,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-
+include {moduleLoad} from './../utils/functions.nf'
 
 process GATK4_HAPCALLER_DIRECT {
-tag "${file(row.bed).name} ${file(row.bams_reference).name} ${file(row.bams).name}"
+tag "bed:${file(row.bed).name} ref:${file(row.reference).name} bams:${file(row.bams).name}"
 cache 'lenient'
 memory {task.attempt==1?'10G':'20G'}
 errorStrategy 'retry'
@@ -50,8 +50,9 @@ script:
 	def dbsnp = row.dbsnp?:""
 """
 hostname 1>&2
-module load getModule("gatk4 bcftools jvarkit")
+${moduleLoad("gatk4 bcftools jvarkit")}
 
+mkdir TMP
 
 # allele specific annotation are not supported in non-gvcf mode
 gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" HaplotypeCaller \
@@ -103,10 +104,12 @@ cat << EOF > version.xml
 	<entry key="pedigree">${pedigree}</entry>
 	<entry key="mapq">${mapq}</entry>
 	<entry key="extraHC">${extraHC}</entry>
+	<entry key="gatk.version">\$( gatk --version 2> /dev/null  | paste -s -d ' ' )</entry>
 </properties>
 EOF
 """
-subt:
+
+stub:
 """
 touch genotyped.bcf genotyped.bcf.csi
 echo "<properties/>" > version.xml

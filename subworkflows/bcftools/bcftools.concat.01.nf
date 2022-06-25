@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {getKeyValue;getModules} from '../../modules/utils/functions.nf'
+include {moduleLoad;getKeyValue;getModules} from '../../modules/utils/functions.nf'
 include {SQRT_FILE} from '../../modules/utils/sqrt.nf'
 
 
@@ -31,7 +31,7 @@ workflow BCFTOOLS_CONCAT_01 {
 	take:
 		meta /* params */
 		vcfs /* a FILE containing the path to the indexed VCF */
-		bed  /* path/to/bed file or empty string */
+		bed  /* path/to/bed file or NO_FILE */
 	main:
 		vers_ch = concat_version(meta, vcfs, bed)
 		each_list_ch = SQRT_FILE(meta,vcfs)
@@ -45,21 +45,21 @@ workflow BCFTOOLS_CONCAT_01 {
 
 
 process concat0 {
-tag "${file(vcfs).name}"
+tag "${vcfs.name}"
 input:
 	val(meta)
-	val(vcfs)
-	val(bed)
+	path(vcfs)
+	path(bed)
 output:
 	path("concat.0.bcf"),emit:vcf	
 	path("concat.0.bcf.csi"),emit:csi
 script:
 	"""
 	hostname 1>&2
-	module load ${getModules("bcftools")}
+	${moduleLoad("bcftools")}
 
 	bcftools concat --threads ${task.cpus} \
-		${bed.isEmpty()?"":"--regions-file \"${bed}\""} |\
+		${bed.name.equals("NO_FILE")?"":"--regions-file \"${bed.toRealPath()}\""} \
 		--no-version --allow-overlaps --remove-duplicates \
 		-O b -o "concat.0.bcf" --file-list "${vcfs}"
 
@@ -71,13 +71,14 @@ process concat_version {
 	executor "local"
 	input:
 		val(meta)
-		val(vcfs)
-		val(bed)
+		path(vcfs)
+		path(bed)
 	output:
 		path("version.xml"),emit:version
 	script:
 	"""
-	module load ${getModules("bcftools")}
+	hostname 1>&2
+	${moduleLoad("bcftools")}
 
 	cat << EOF > version.xml
 	<properties id="${task.process}">
@@ -101,27 +102,27 @@ output:
 	path("${prefix}concat${suffix}${suffix.contains("b")?".csi":".tbi"}"),emit:index
 script:
 	prefix = getKeyValue(meta,"prefix","")
-	sufffix = getKeyValue(meta,"suffix",".bcf")
+	suffix = getKeyValue(meta,"suffix",".bcf")
 
 	if(L.size()==1)
 	"""
 	hostname 1>&2
-	module load ${getModules("bcftools")}
+	${moduleLoad("bcftools")}
 	
 	bcftools sort -T . \
-		-O "${suffix.contains("b")?"b":"z"} \
+		-O "${suffix.contains("b")?"b":"z"}" \
 		-o "${prefix}concat${suffix.contains("b")?".bcf":".vcf.gz"}" \
 		"${L[0]}"
 
 	bcftools index --threads ${task.cpus} \
-		${prefix}concat${suffix.contains("b")?"":"--tbi"} \
+		${suffix.contains("b")?"":"--tbi"} \
 		"${prefix}concat${suffix.contains("b")?".bcf":".vcf.gz"}"
 
 	"""
 	else
 	"""
 	hostname 1>&2
-	module load ${getModules("bcftools")}
+	${moduleLoad("bcftools")}
 	set -o pipefail
 
 cat << EOF > jeter.list
@@ -132,11 +133,11 @@ EOF
 		--no-version --allow-overlaps --remove-duplicates \
 		-O u --file-list jeter.list |\
 		bcftools sort -T . \
-			-O "${suffix.contains("b")?"b":"z"} \
+			-O "${suffix.contains("b")?"b":"z"}" \
 			-o "${prefix}concat${suffix.contains("b")?".bcf":".vcf.gz"}" 
 
 	bcftools index --threads ${task.cpus} \
-		${prefix}concat${suffix.contains("b")?"":"--tbi"} \
+		 ${suffix.contains("b")?"":"--tbi"} \
 		"${prefix}concat${suffix.contains("b")?".bcf":".vcf.gz"}"
 
 	rm jeter.list

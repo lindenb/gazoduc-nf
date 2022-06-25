@@ -29,6 +29,7 @@ include {getKeyValue; getModules; assertFileExists} from '../../modules/utils/fu
 include {SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.nf'
 include {BCFTOOLS_MERGE_BED_01} from '../../modules/bcftools/bcftools.merge.bed.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 
 
 workflow GATK4_HAPCALLER_DIRECT_01 {
@@ -42,11 +43,10 @@ workflow GATK4_HAPCALLER_DIRECT_01 {
 		pedigree
 	main:
 		assertFileExists(reference,"reference must be defined")
-		assertFileExists(bams,"bams must be defined")
 
 		version_ch = Channel.empty()
 
-		if(beds==null || beds.isEmpty())
+		if(beds.name.equals("NO_FILE"))
 			{
 			log.warn("no beds defined. splitting the genome into parts using picard scatterreference")
 			acgt_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"ACGT","MAX_TO_MERGE":"100"],reference)
@@ -59,7 +59,8 @@ workflow GATK4_HAPCALLER_DIRECT_01 {
 			}
 		else
 			{
-			capture_bed_ch = Channel.fromPath(beds).splitCsv(header: false,sep:',',strip:true).map{T->T[0]}
+			log.warn("using beds defined in ${beds.name}")
+			capture_bed_ch = beds.splitCsv(header: false,sep:',',strip:true).map{T->T[0]}
 			}
 
 		version_ch = Channel.empty()
@@ -67,11 +68,11 @@ workflow GATK4_HAPCALLER_DIRECT_01 {
 		version_ch = version_ch.mix(split_bams_ch.version)
 		
 		each_bam_list = split_bams_ch.output.splitCsv(header: false,sep:'\t',strip:true).map{T->T[0]}
-		row_ch = capture_bed_ch.combine(capture_bed_ch).
+		row_ch = capture_bed_ch.combine(each_bam_list).
 				map{T->[
 					"bed":T[0],
-					"reference":T[1],
-					"bam":T[2],
+					"bams":T[1],
+					"reference":reference,
 					"dbsnp":dbsnp,
 					"pedigree":pedigree,
 					"mapq":(meta.mapq?:-1),
@@ -81,11 +82,15 @@ workflow GATK4_HAPCALLER_DIRECT_01 {
 		callbed_ch = GATK4_HAPCALLER_DIRECT(meta,row_ch)
 		version_ch = version_ch.mix(callbed_ch.version.first())
 
-		ped2vcf_ch  = callbed_ch.bedvcf.groupTuple()
-		mergedbed_ch = BCFTOOLS_MERGE_BED_01(meta, ped2vcf_ch)
-		version_ch = version_ch.mix(mergedbed_ch.version)
+		bed2vcf_ch  = callbed_ch.bedvcf.map{T->[T[0].bed,T[1]]}.groupTuple()
 
-		concat_ch = BCFTOOLS_CONCAT_01(meta,mergedbed_ch.bed.collect(),"")
+		bedvcf_ch = BCFTOOLS_MERGE_BED_01(meta, bed2vcf_ch)
+		version_ch = version_ch.mix(bedvcf_ch.version)
+
+		to_file_ch = COLLECT_TO_FILE_01([:], bedvcf_ch.bedvcf.map{T->T[1]}.collect())
+		//version_ch = version_ch.mix(to_file_ch.version)
+
+		concat_ch = BCFTOOLS_CONCAT_01(meta,to_file_ch.output,file("NO_FILE"))
 		version_ch = version_ch.mix(concat_ch.version)
 
 		version_ch = MERGE_VERSION(meta, "gatk4 direct", "call bams using gatk4 directly hapcaller, without GVCFs", version_ch.collect())

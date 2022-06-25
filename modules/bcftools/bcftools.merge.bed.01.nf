@@ -32,7 +32,7 @@ input:
 	val(meta)
 	tuple val(bed),val(L)
 output:
-       	path("genotyped.bcf"),emit:bed
+       	tuple val(bed),path("genotyped.bcf"),emit:bedvcf
         path("genotyped.bcf.csi"),emit:index
 	path("version.xml"),emit:version
 script:

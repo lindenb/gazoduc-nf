@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {getBoolean;getKeyValue;getModules;getGencodeGtfUrl;isUrl} from '../utils/functions.nf'
+include {parseBoolean;getKeyValue;getModules;getGencodeGtfUrl;isUrl} from '../utils/functions.nf'
 
 process GTF_TO_GENES_BED_01 {
 tag "${file(reference).name}"
@@ -33,7 +33,7 @@ input:
 	val(reference)
 	val(jar)
 output:
-	path("${file(reference).getSimpleName()}.genes.bed${getBoolean(getKeyValue(meta,"with_tabix","false"))?".gz":""}"),emit:bed
+	path("${file(reference).getSimpleName()}.genes.bed${parseBoolean(getKeyValue(meta,"with_tabix","false"))?".gz":""}"),emit:bed
 	path("${file(reference).getSimpleName()}.genes.bed.gz.tbi"),emit:tbi,optional:true
 	path("version.xml"),emit:version
 script:
@@ -42,8 +42,8 @@ script:
 	def gene_id_regex = getKeyValue(meta,"gene_id_regex",".")
 	def gene_name_regex = getKeyValue(meta,"gene_name_regex",".")
 	def slop_arg = getKeyValue(meta,"slop_arg","")
-	def with_header = getBoolean(getKeyValue(meta,"with_header","false"))
-	def with_tabix = getBoolean(getKeyValue(meta,"with_tabix","false"))
+	def with_header = parseBoolean(getKeyValue(meta,"with_header","false"))
+	def with_tabix = parseBoolean(getKeyValue(meta,"with_tabix","false"))
 	"""
 	hostname 1>&2
 	module load ${getModules("htslib java jvarkit bedtools")}
@@ -59,7 +59,7 @@ script:
 			LC_ALL=C sort -T TMP -k1,1 -k2,2n  |\
 			awk 'BEGIN{if(${with_header?1:0}){printf("#chrom\tstart\tend\tgene_type\tgene_id\tgene_name\\n");}} {print}' > TMP/jeter.bed
 
-	if [ ! -z "${with_tabix?"Y":""}" ] ;
+	if [ ! -z "${with_tabix?"Y":""}" ] ; then
 		bgzip TMP/jeter.bed
 		tabix --comment '#' -p bed TMP/jeter.bed.gz
 		mv TMP/jeter.bed.gz "${file(reference).getSimpleName()}.genes.bed.gz"

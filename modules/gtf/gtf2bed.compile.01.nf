@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 
-include {getModules} from '../utils/functions.nf'
+include {moduleLoad} from '../utils/functions.nf'
 
 process COMPILE_GTF_TO_BED {
 executor "local"
@@ -36,12 +36,13 @@ output:
 
 script:
 """
-module load ${getModules("java")}
+${moduleLoad("jvarkit")}
 
 mkdir TMP
 
-cat << __EOF__ > TMP/GTFToBed.java
+cat << "__EOF__" > TMP/GTFToBed.java
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.PushbackInputStream;
 import java.io.PrintStream;
@@ -50,13 +51,12 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeSet;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 
 public class GTFToBed {
-private	final Set<String> columns = new TreeSet<>();
+private	final Set<String> columns = new LinkedHashSet<>();
 private final Pattern tab = Pattern.compile("[\\t]");
 private enum Type{ undefined,gtf,gff3}
 private Type gtype = Type.undefined;
@@ -121,24 +121,28 @@ private Map<String,String> attributes(final String s) {
 		if(this.gtype.equals(Type.undefined)) throw new IllegalArgumentException("undefined gtf type with " + s);
 		/* skip ws */
 		while(i< s.length() && Character.isWhitespace(s.charAt(i))) i++;
-		if(i>=s.length()) throw new IllegalArgumentException("expected '\\"' or '=' after "+s.substring(0,i));
+		if(i>=s.length()) throw new IllegalArgumentException("END of string after "+s.substring(0,i));
 		
-		if(this.gtype.equals(Type.gtf)) {
-			if(s.charAt(i)!='\\"')  throw new IllegalArgumentException("expected quote after "+s.substring(0,i));
+
+		boolean got_quote=false;
+		if(this.gtype.equals(Type.gtf) && s.charAt(i)=='\\"') {
+			got_quote=true;
 			i++;
 			}
 		
 		
 		final StringBuilder value=new StringBuilder();
 		while(i< s.length() ) {
-			if(this.gtype.equals(Type.gtf) && s.charAt(i)=='\\"') break;
+			if(got_quote && this.gtype.equals(Type.gtf) && s.charAt(i)=='\\"') break;
+			else if(!got_quote && this.gtype.equals(Type.gtf) && s.charAt(i)==';') break;
+			else if(!got_quote && this.gtype.equals(Type.gtf) && Character.isWhitespace(s.charAt(i))) break;
 			else if(this.gtype.equals(Type.gff3) && s.charAt(i)==';') break;
 			
 			if(s.charAt(i)=='\\\\') {
 				if(i+1>=s.length()) throw new IllegalArgumentException("unknown escape sequence after "+s.substring(0,i));
 				i++;
 				switch(s.charAt(i)) {
-					case '"': value.append("\\\\"");break;
+					case '"': value.append("\\"");break;
 					case '\\'': value.append("\\'");break;
 					case '\\\\': value.append("\\\\");break;
 					case 't': value.append("\\t");break;
@@ -152,7 +156,7 @@ private Map<String,String> attributes(final String s) {
 				}
 			i++;
 			}
-		if(this.gtype.equals(Type.gtf)) {
+		if(got_quote && this.gtype.equals(Type.gtf)) {
 			if(i>=s.length()) throw new IllegalArgumentException("expected quote after "+s.substring(0,i));
 			if(this.gtype.equals(Type.gtf) &&  s.charAt(i)!='\\"')  throw new IllegalArgumentException("expected quote after "+s.substring(0,i));
 			i++;
@@ -256,7 +260,7 @@ public static void main(final String[] args) {
 __EOF__
 
 
-cat < EOF > TMP/tmp.mf
+cat << EOF > TMP/tmp.mf
 Manifest-Version: 1.0
 Main-Class: GTFToBed
 EOF
@@ -266,7 +270,7 @@ javac -d TMP -sourcepath TMP TMP/GTFToBed.java
 jar cfm gtf2bed.jar TMP/tmp.mf -C TMP .
 
 ###############################################################################
-cat <<EOF > version.xml
+cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
 	<entry key="description">compile gtf2bed</entry>
