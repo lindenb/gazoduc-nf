@@ -72,7 +72,7 @@ ${params.rsrc.author}
 ## Usage
 
 ```
-nextflow -C ../../confs/cluster.cfg  run -resume ${workflow.scriptFile} \\
+nextflow -C ../../confs/cluster.cfg  run -resume delly2.nf \\
 	--publishDir output \\
 	--prefix "analysis." \\
 	--reference /path/to/reference.fasta \\

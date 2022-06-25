@@ -1,5 +1,5 @@
 BUILD=hs37d5
-PREFIX=20220624.smoove.
+PREFIX=20220624.delly.
 include ../../../data/reference/references.mk
 all: work/input.cases work/input.controls ../../confs/login-01.compute.bird2.prive.cfg
 	module load nextflow && nextflow -C ../../confs/login-01.compute.bird2.prive.cfg  run -resume delly2.nf \
@@ -8,7 +8,7 @@ all: work/input.cases work/input.controls ../../confs/login-01.compute.bird2.pri
 		--prefix "$(PREFIX)" \
 		--cases ${PWD}/work/input.cases \
 		--controls ${PWD}/work/input.controls
-	-dot -T svg -o workflow.svg work/$(PREFX)workflow.dot
+	-dot -T svg -o workflow.svg work/$(PREFIX)workflow.dot
 
 work/input.cases: ../../../2021/20210526.resources/Resources.hs37d5.wgs.bams.list
 	mkdir -p $(dir $@)
@@ -19,7 +19,7 @@ work/input.controls: ../../../2021/20210526.resources/Resources.hs37d5.wgs.bams.
 	grep PREGO -m2 $< > $@
 
 README.md: delly2.nf
-	module load nextflow && nextflow run $< --help | tail -n+3 > $@
+	module load nextflow && nextflow run  -C ../../confs/login-01.compute.bird2.prive.cfg $< --help | tail -n+3 > $@
 
 clean:
 	rm -rvf work .nextflow .nextflow.l*
