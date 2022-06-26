@@ -64,7 +64,7 @@ ${params.rsrc.author}
 ## Usage
 
 ```
-nextflow -C ../../confs/cluster.cfg  run -resume ${file(workflow.scriptFile)} \\
+nextflow -C ../../confs/cluster.cfg  run -resume indexcov.nf \\
 	--publishDir output \\
 	--prefix "analysis." \\
 	--reference /path/to/reference.fasta \\

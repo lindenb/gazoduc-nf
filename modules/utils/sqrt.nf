@@ -43,6 +43,10 @@ script:
 
       	find \${PWD}/OUT -type f -name "chunck.*${suffix}" > clusters.list
 
+	# if too fast, prevent problems with timestamp ?
+	sleep 10
+	touch -c clusters.list
+
 	cat <<- EOF > version.xml
 	<properties id="${task.process}">
 		<entry key="Name">${task.process}</entry>
