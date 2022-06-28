@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 
-include { getKeyValue; moduleLoad} from '../../modules/utils/functions.nf'
+include { getKeyValue; moduleLoad; parseBoolean} from '../../modules/utils/functions.nf'
 
 process SAMTOOLS_SAMPLES02 {
 tag "${bams.name}"
@@ -31,23 +31,23 @@ afterScript "rm -f jeter.txt jeter.tsv"
 input:
 	val(meta)
 	path(reference)
-	path(references)
 	path(bams)
 output:
 	path("sample2bam.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
+	def references = meta.references?:""
+	def with_header = parseBoolean(meta.with_header?:"true")
 """
 hostname 2>&1
 ${moduleLoad("samtools")}
 set -o pipefail
 
-
 samtools samples \
-	${reference.name.equals("NO_FILE")?"":-f "+reference.toRealPath()} \
-	${references.name.equals("NO_FILE")?"":-F "+references.toRealPath()} < ${bams} |\
+	-f "${reference.toRealPath()}" \
+	${references.isEmpty()?"":" -F '${references}' "} < "${bams}" |\
 	sort -T . -t '\t' -k1,1 | uniq |\
-	awk -F '\t' 'function uniq(S) {P=S;i=1; while(P in U) {i++;P=sprintf("%s.%d",S,i);} U[P]++; return P;} BEGIN{printf("src_sample\tsample\tbam\treference\\n");} {printf("%s\t%s\t%s\t%s\\n",\$1,uniq(\$1),\$2,\$3);}' > jeter.tsv
+	awk -F '\t' 'function uniq(S) {P=S;i=1; while(P in U) {i++;P=sprintf("%s.%d",S,i);} U[P]++; return P;} {printf("%s\t%s\t%s\t%s\\n",\$1,uniq(\$1),\$2,\$3);}' > jeter.tsv
 
 # no empty samples
 awk -F '\t' '(\$1==".")' jeter.tsv > jeter.txt 
@@ -58,16 +58,22 @@ awk -F '\t' '(\$4==".")' jeter.tsv > jeter.txt
 test ! -s jeter.txt
 
 # no dup samples
-tail -n +2 jeter.tsv | cut -f 2 | sort -T . | uniq -d > jeter.txt
+cut -f 2 jeter.tsv | sort -T . | uniq -d > jeter.txt
 test ! -s jeter.txt
 
 # no dup bam
 cut -f 3 jeter.tsv | sort -T . | uniq -d > jeter.txt
 test ! -s jeter.txt
 
-tail -n +2 jeter.tsv | awk -F '\t'  '(\$1!=\$2)' > duplicate.names.txt
+awk -F '\t'  '(\$1!=\$2)' jeter.tsv > duplicate.names.txt
 
-mv jeter.txt  sample2bam.tsv
+
+if [ ! -z "${with_header?"Y":""}" ] ; then
+	echo "sample\tnew_sample\tbam\treference" > sample2bam.tsv
+fi
+
+cat jeter.tsv >>  sample2bam.tsv
+
 
 ##################
 cat << EOF > version.xml
@@ -78,15 +84,14 @@ cat << EOF > version.xml
         <entry key="samtools.version">\$(samtools  --version | head -n 1| cut -d ' ' -f2)</entry>
         <entry key="n-samples">\$(wc -l < sample2bam.tsv )</entry>
         <entry key="samples">\$(cut -f 1 sample2bam.tsv |paste -s -d ' ')</entry>
-        <entry key="duplicate names">\$(cut -f1,3 duplicate.names.txt)</entry>
-        <entry key="distinct references">\$(cut -f4 sample2bam.tsv | sort | uniq)</entry>
+        <entry key="duplicate names"><pre>\$(cut -f1,3 duplicate.names.txt)</pre></entry>
+        <entry key="distinct references"><pre>\$(cut -f4 sample2bam.tsv | sort | uniq)</pre></entry>
 </properties>
 EOF
 """
 stub:
 """
-echo -e "src_sample\tsample\tbam\treference" >  sample2bam.tsv
+echo -e "sample\tnew_sample\tbam\treference" >  sample2bam.tsv
 echo "<properties/>" > version.xml
 """
 }
-

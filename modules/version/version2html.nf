@@ -93,6 +93,24 @@ ${params.rsrc.author}
 </xsl:template>
 
 
+<xsl:template match="pre">
+<pre><xsl:apply-templates select="*"/></pre>
+</xsl:template>
+
+<xsl:template match="b">
+<b><xsl:apply-templates select="*"/></b>
+</xsl:template>
+
+<xsl:template match="i">
+<i><xsl:apply-templates select="*"/></i>
+</xsl:template>
+
+<xsl:template match="code">
+<code><xsl:apply-templates select="*"/></code>
+</xsl:template>
+
+
+
 </xsl:stylesheet>
 __EOF__
 

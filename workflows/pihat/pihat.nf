@@ -81,7 +81,11 @@ if( params.help ) {
 
 workflow {
 
-	pihat_ch = PIHAT01(params,params.reference,params.vcf,params.cases,params.controls,params.blacklisted)
+	pihat_ch = PIHAT01(
+		params,
+		params.reference,
+		file(params.vcf)
+		)
 	//PUBLISH(indexcov_ch.zip)
 	}
 

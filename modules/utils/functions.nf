@@ -171,3 +171,20 @@ def assertFileExists(def f,String msg) {
 	if(!file.exists()) throw new IllegalStateException("Missing File ("+fstr+"):"+(msg==null?"file is missing.":msg));
 	return f;
 	}
+
+def getGnomadExomePath(def params,def reference) {
+	if(params.containsKey("gnomad_exome_path")) {
+		return params.get("gnomad_exome_path");
+		}
+	if(isHg19(reference)) return params.gnomad_exome_hg19;
+	return "";
+	}
+
+def getGnomadGenomePath(def params,def reference) {
+	if(params.containsKey("gnomad_genome_path")) {
+		return params.get("gnomad_genome_path");
+		}
+	if(isHg19(reference)) return params.gnomad_genome_hg19;
+	if(isHg38(reference)) return params.gnomad_genome_hg38;
+	return "";
+	}
