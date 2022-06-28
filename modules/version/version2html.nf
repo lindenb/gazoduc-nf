@@ -109,6 +109,32 @@ ${params.rsrc.author}
 <code><xsl:apply-templates select="*"/></code>
 </xsl:template>
 
+<xsl:template match="a">
+<xsl:element name="a">
+<xsl:attribute name="href">
+<xsl:choose>
+	<xsl:when test="@href"><xsl:value-of select="@href"/></xsl:when>
+	<xsl:otherwise><xsl:value-of select="."/></xsl:otherwise>
+</xsl:choose>
+</xsl:attribute>
+<xsl:apply-templates select="*"/>
+</xsl:element>
+</xsl:template>
+
+<xsl:template match="img">
+<xsl:element name="img">
+<xsl:attribute name="title">
+	<xsl:value-of select="."/>
+</xsl:attribute>
+<xsl:attribute name="src">
+<xsl:choose>
+	<xsl:when test="@src"><xsl:value-of select="@src"/></xsl:when>
+	<xsl:otherwise><xsl:value-of select="."/></xsl:otherwise>
+</xsl:choose>
+</xsl:attribute>
+</xsl:element>
+</xsl:template>
+
 
 
 </xsl:stylesheet>

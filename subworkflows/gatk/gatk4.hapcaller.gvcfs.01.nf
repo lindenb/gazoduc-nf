@@ -34,6 +34,7 @@ workflow GATK4_HAPCALLER_GVCFS_01 {
         main:
                 version_ch = Channel.empty()
 
+
 		samples_bams_ch = SAMTOOLS_SAMPLES02(meta.plus(["with_header":true]), reference, bams)
 		version_ch = version_ch.mix(samples_bams_ch.version)
 
@@ -56,11 +57,22 @@ workflow GATK4_HAPCALLER_GVCFS_01 {
 			"bam_reference": T[1].reference
 			]}
 		hapcaller_ch = HAPCALLER_GVCF(meta, hc_input_ch)
-		version_ch = version_ch.mix(hapcaller_ch.version)
+		version_ch = version_ch.mix(hapcaller_ch.version.first())
+
+		by_bed_ch = hapcaller_ch.bedvcf.map{T->[T[0].bed,T[1]]}.groupTuple()
+
+		split_gvcfs_ch = SPLIT_GVCF_BLOCKS(meta,by_bed_ch)
+
+		find_gvcfs_ch = FIND_GVCF_BLOCKS(meta,split_gvcfs_ch.output.splitCsv(header:true,sep:'\t',strip:true))
+
+		genotyped_ch = GENOTYPE_GVCFS(meta,reference,find_gvcfs_ch.output.splitCsv(header:true,sep:'\t',strip:true))
 
 	emit:
 		version = version_ch
+		region_vcf = genotyped_ch.region_vcf
 }
+
+
 
 process HAPCALLER_GVCF {
 tag "bed:${file(row.bed).name} ref:${file(row.bam_reference).name} bam:${file(row.bam).name}"
@@ -74,8 +86,8 @@ input:
 	val(meta)
 	val(row)
 output:
-        tuple val(row),path("hapcaller.vcf.gz"),emit:bedvcf
-        path("hapcaller.vcf.gz.tbi"),emit:index
+        tuple val(row),path("hapcaller.g.vcf.gz"),emit:bedvcf
+        path("hapcaller.g.vcf.gz.tbi"),emit:index
         path("version.xml"),emit:version
 script:
 	def bam = row.bam?:""
@@ -149,18 +161,18 @@ ${moduleLoad("gatk4 bcftools jvarkit")}
    if [ "${sample}" != "${new_sample}" ] ; then
 
 	gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"  RenameSampleInVcf \
-		INPUT=TMP/jeter.g.vcf.gz \
-		OUTPUT=TMP/jeter2.g.vcf.gz \
-		NEW_SAMPLE=${new_sample}
-
+		-INPUT TMP/jeter.g.vcf.gz \
+		-OUTPUT TMP/jeter2.g.vcf.gz \
+		-NEW_SAMPLE_NAME ${new_sample}
+	bcftools index --tbi TMP/jeter2.g.vcf.gz
 	mv TMP/jeter2.g.vcf.gz TMP/jeter.g.vcf.gz
 	mv TMP/jeter2.g.vcf.gz.tbi TMP/jeter.g.vcf.gz.tbi
    fi
 
 
 
-   mv TMP/jeter.g.vcf.gz  hapcaller.vcf.gz
-   mv TMP/jeter.g.vcf.gz.tbi  hapcaller.vcf.gz.tbi
+   mv TMP/jeter.g.vcf.gz  hapcaller.g.vcf.gz
+   mv TMP/jeter.g.vcf.gz.tbi  hapcaller.g.vcf.gz.tbi
 
 
 ##################
@@ -174,9 +186,166 @@ cat << EOF > version.xml
         <entry key="reference">${reference}</entry>
         <entry key="bam_reference">${bam_reference}</entry>
         <entry key="dbsnp">${dbsnp}</entry>
+        <entry key="pedigree">${pedigree}</entry>
 </properties>
 EOF
-
 """
 }
 
+
+process SPLIT_GVCF_BLOCKS {
+executor "local"
+tag "${file(bed).name} N=${L.size()}"
+memory {task.attempt==1?"5g":(task.attempt==2?"15g":"30g")}
+errorStrategy "retry"
+maxRetries 3
+afterScript "rm -r jeter.list"
+input:
+	val(meta)
+	tuple val(bed),val(L)
+output:
+	path("contig.gvcfs.bed.tsv"),emit:output
+script:
+	def sqrt = (L.size() < 100 ? L.size() : Math.max(1,(int)Math.sqrt(L.size())))
+	def blocksize = meta.gvcfs_blocksize?:"1mb"
+"""
+hostname 1>&2
+set -o pipefail
+
+mkdir GVCFS
+
+cat << EOF > gvcfs.list
+${L.join("\n")}
+EOF
+
+split -a 9 --additional-suffix=.list --lines=${sqrt} gvcfs.list  GVCFS/cluster0.
+
+
+find \${PWD}/GVCFS -type f -name "cluster0.*.list" > split.gvcfs.txt
+test -s split.gvcfs.txt
+
+cut -f 1 "${bed}" | sort -T . | uniq |\
+	awk -v P=\${PWD} 'BEGIN{printf("contig\tgvcf_list\tgvcf_split\tbed\\n");} {printf("%s\t%s/gvcfs.list\t%s/split.gvcfs.txt\t${bed}\\n",\$1,P,P);}' > contig.gvcfs.bed.tsv
+
+# prevent timestamp problem
+sleep 10
+"""
+
+}
+
+
+
+process FIND_GVCF_BLOCKS {
+tag "${row.contig}"
+memory "10g"
+afterScript "rm -rf TMP"
+input:
+	val(meta)
+	val(row)
+output:
+	path("bed_samplemap.tsv"),emit:output
+script:
+	def contig = row.contig
+	def blocksize= meta.blocksize?:"1mb"
+	def mergesize = meta.mergesize?:"100"
+"""
+hostname 1>&2
+${moduleLoad("jvarkit")}
+
+mkdir -p TMP
+
+java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/findgvcfsblocks.jar \
+	-T TMP \
+	--bed "${row.bed}" \
+	--contig "${contig}" \
+	--block-size "${blocksize}" \
+	--merge-size "${mergesize}" \
+	-o "TMP/jeter.interval_list" \
+	"${row.gvcf_list}"
+
+awk -F '\t' 'BEGIN{printf("interval\tgvcf_split\tbed\\n");} /^@/ {next;} {printf("%s:%d-%s\t${row.gvcf_split}\t${row.bed}\\n",\$1,\$2,\$3);}' TMP/jeter.interval_list > bed_samplemap.tsv
+"""
+}
+
+
+
+process GENOTYPE_GVCFS {
+tag "${row.interval}"
+memory {task.attempt <2 ? "15g":"60g"}
+memory "10g"
+cpus "3"
+errorStrategy  'retry'
+maxRetries 3
+afterScript 'rm -rf  TMP BEDS jeter* database tmp_read_resource_*.config'
+input:
+	val(meta)
+	val(reference)
+	val(row)
+output:
+        tuple val("${row.interval}"),path("genotyped.bcf"),emit:region_vcf
+        path("genotyped.bcf.csi"),emit:index
+script:
+     def region = row.interval
+     def pedigree = meta.pedigree?:""
+     def optPed = (pedigree.isEmpty()?"":" -A PossibleDeNovo --pedigree "+pedigree)
+     def optDbsnp =  (meta.dbsnp.isEmpty()?"":"--dbsnp "+meta.dbsnp)
+     def maxAlternateAlleles = meta.maxAlternateAlleles?:6
+"""
+hostname 1>&2
+${moduleLoad("gatk4 bcftools")}
+
+touch vcfs.list
+mkdir BEDS TMP
+
+j=1
+cat "${row.gvcf_split}" | while read V
+do
+
+	gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" CombineGVCFs \
+		-R "${reference}" \
+                ${optDbsnp} \
+		-L "${region}" \
+		-V "\${V}"  \
+		-O "TMP/combine0.\${j}.g.vcf.gz"
+
+	echo "TMP/combine0.\${j}.g.vcf.gz" >> TMP/combine0.list
+	j=\$((j+1))
+	
+done
+
+test -s TMP/combine0.list
+
+if [ "\${j}" == "2" ] ; then
+
+	mv TMP/combine0.1.g.vcf.gz TMP/combine1.g.vcf.gz
+	mv TMP/combine0.1.g.vcf.gz.tbi TMP/combine1.g.vcf.gz.tbi
+
+else
+
+gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" CombineGVCFs \
+	-R "${reference}" \
+        ${optDbsnp} \
+        -L "${region}" \
+	-V "TMP/combine0.list"  \
+	-O "TMP/combine1.g.vcf.gz"
+fi
+
+rm -f TMP/combine0.list
+
+
+gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" GenotypeGVCFs  \
+      -R "${reference}" \
+      -L "${region}" \
+      -V TMP/combine1.g.vcf.gz \
+        ${optPed} \
+        ${optDbsnp} \
+      --max-alternate-alleles ${maxAlternateAlleles} \
+      --seconds-between-progress-updates 60 \
+      -G StandardAnnotation -G StandardHCAnnotation \
+      -O "TMP/jeter.vcf.gz"
+
+
+bcftools view -O b -o genotyped.bcf TMP/jeter.vcf.gz
+bcftools index genotyped.bcf
+"""
+}
