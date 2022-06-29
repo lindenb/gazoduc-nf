@@ -188,3 +188,18 @@ def getGnomadGenomePath(def params,def reference) {
 	if(isHg38(reference)) return params.gnomad_genome_hg38;
 	return "";
 	}
+
+boolean hasFeature(Map meta,String v) {
+        def disableFeatures = getKeyValue(meta,"disableFeatures","");
+        if((disableFeatures instanceof java.lang.Boolean)) return true;
+        final String[] tokens = disableFeatures.split("[, ;]+");
+        for(String t: tokens) {
+                t= t.trim();
+                if(t.equalsIgnoreCase(v)) {
+                        log.warn(v+" is disabled.");
+                        return false;
+                        }
+                }
+        return true;
+        }
+

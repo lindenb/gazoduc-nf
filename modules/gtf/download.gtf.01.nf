@@ -33,7 +33,7 @@ input:
 	val(meta)
 	val(reference)
 output:
-	path("${file(reference).getSimpleName()}.gtf${parseBoolean(meta.with_tabix)?".gz":""),emit:gtf
+	path("${file(reference).getSimpleName()}.gtf${parseBoolean(getKeyValue(meta,"with_tabix",true))?".gz":""}"),emit:gtf
 	path("${file(reference).getSimpleName()}.gtf.gz.tbi"),emit:tbi,optional:true
 	path("version.xml"),emit:version
 script:
@@ -96,8 +96,8 @@ script:
 	"""
 stub:
 	"""
-	touch "${file(reference).getSimpleName()}.gtf${parseBoolean(meta.with_tabix)?".gz")"
-	touch "${file(reference).getSimpleName()}.gtf${parseBoolean(meta.with_tabix)?".gz.tbi")"
+	touch "${file(reference).getSimpleName()}.gtf${parseBoolean(getKeyValue(meta,"with_tabix",true))?".gz":""})"
+	touch "${file(reference).getSimpleName()}.gtf.gz.tbi")"
 	echo "<properties/>" > version.xml
 	"""
 	}
