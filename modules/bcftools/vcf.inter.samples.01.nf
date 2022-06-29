@@ -27,14 +27,13 @@ include {moduleLoad;getKeyValue;assertFileExists;assertNotEmpty} from '../utils/
 
 process VCF_INTER_SAMPLES_01 {
 executor "local"
-tag "${vcf} ${samples}"
-
+tag "${file(vcf).name} ${file(samples).name}"
 afterScript "rm -rf TMP"
 
 input:
 	val(meta)
-	path(vcf)
-	path(samples)
+	val(vcf)
+	val(samples)
 output:
 	path("common.samples.txt"),emit:common
 	path("vcf_only.txt"),emit:vcf_only
@@ -47,20 +46,20 @@ ${moduleLoad("bcftools")}
 
 mkdir TMP
 
-if [ ! -z "${vcf.name.endsWith(".list")?"Y":""}" ] ; then
+if [ ! -z "${vcf.endsWith(".list")?"Y":""}" ] ; then
 
 	bcftools concat  --allow-overlaps -O u  --file-list "${vcf}" |\
 	bcftools query -l | sort -T TMP | uniq > TMP/jeter.a
 
 else
 
-	bcftools query -l "${vcf}" | sort  -T TMP | uniq > jeter.a
+	bcftools query -l "${vcf}" | sort  -T TMP | uniq > TMP/jeter.a
 
 fi
 
 sort -T TMP "${samples}" | uniq > TMP/jeter.b
 
-comm -12 TMP/jeter.a TMP/jeter.b > "common.samples.txt"
+comm -12 TMP/jeter.a TMP/jeter.b > common.samples.txt
 comm -23 TMP/jeter.a TMP/jeter.b > vcf_only.txt
 comm -13 TMP/jeter.a TMP/jeter.b > samples_only.txt
 
@@ -68,13 +67,13 @@ comm -13 TMP/jeter.a TMP/jeter.b > samples_only.txt
 cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
-        <entry key="description">get intersection between a VCF and a pedigree</entry>
-        <entry key="pedigree.type">${ped_type}</entry>
+        <entry key="description">get intersection between a VCF and a list of cases/controls</entry>
         <entry key="vcf">${vcf}</entry>
         <entry key="samples">${samples}</entry>
-	<entry key="count(vcf.only)">\$( wc -l < vcf_only.txt)</entry>
-	<entry key="count(samples.only)">\$( wc -l < samples_only.txt)</entry>
-	<entry key="bcftools.version">\$( bcftools --version-only)</entry>
+	<entry key="count(vcf.only)">\$( wc -l < vcf_only.txt )</entry>
+	<entry key="count(samples.only)">\$( wc -l < samples_only.txt )</entry>
+	<entry key="count(common.samples)">\$( wc -l < common.samples.txt )</entry>
+	<entry key="bcftools.version">\$( bcftools --version-only )</entry>
 </properties>
 EOF
 

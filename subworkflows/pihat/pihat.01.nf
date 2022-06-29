@@ -35,6 +35,7 @@ workflow PIHAT01 {
 		meta
 		reference
 		vcf
+		samples
 	main:
 		version_ch = Channel.empty();
 		to_zip = Channel.empty();
@@ -42,7 +43,7 @@ workflow PIHAT01 {
 		version_ch = version_ch.mix(vcf2contig_ch.version)
 
 		ctgvcf_ch = vcf2contig_ch.bed.splitCsv(header: false,sep:'\t',strip:true).
-				map{T->[T[0],file(T[3])]}
+                               map{T->[T[0],file(T[3])]}.combine(samples)
 
 
 		perCtg = PLINK_PER_CONTIG(meta,reference, ctgvcf_ch)
@@ -70,15 +71,15 @@ memory "3g"
 input:
 	val(meta)
 	val(reference)
-        tuple val(contig),path(vcf)
+        tuple val(contig),path(vcf),path(samples)
 output:
 	tuple val(contig),path("${contig}.bcf"),emit:vcf
 	path("version.xml"),emit:version
 when:
 	contig.matches("(chr)?[0-9XY]+")
 script:
+
 	def blacklisted = meta.blacklisted?:""	
-	def samples = meta.samples?:""
 	def pihatmaf = getKeyValue(meta,"pihat_MAF","0.1")
 	def pihatMinGQ = getKeyValue(meta,"pihat_min_GQ","20")
 	def f_missing= getKeyValue(meta,"pihat_f_missing","0.05")
@@ -122,7 +123,7 @@ if [ ! -s TMP/jeter.x.bed ] ; then
 fi
 
 bcftools view -m2 -M2 --apply-filters '.,PASS' --types snps -O u \
-		${samples.isEmpty()?"":"--samples-file '${samples}'"} \
+		${samples.name.equals("NO_FILE")?"":"--samples-file '${samples.toRealPath()}'"} \
 		"${vcf.toRealPath()}" "${contig}" |\
 	bcftools view --targets-file ^TMP/jeter.x.bed  --targets-overlap 2 --exclude-uncalled  --min-af "${pihatmaf}" --max-af "${1.0 - (pihatmaf as Double)}"  -i 'AC>0 ${contig.matches("(chr)?Y")?"":"&& F_MISSING < ${f_missing}"}'  -O v |\
 	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/vcffilterjdk.jar --nocode -e 'final double dp= variant.getGenotypes().stream().filter(G->G.isCalled() && G.hasDP()).mapToInt(G->G.getDP()).average().orElse(${minDP}); if( dp<${minDP} || dp>${maxDP}) return false; if (variant.getGenotypes().stream().filter(G->G.isCalled() && G.hasGQ()).anyMatch(G->G.getGQ()< ${pihatMinGQ} )) return false; return true;' |\
@@ -207,6 +208,7 @@ cat << EOF > version.xml
 	<entry key="name">${task.process}</entry>
 	<entry key="description">prepare pihat data per autosome</entry>
 	<entry key="vcf">${vcf}</entry>
+	<entry key="samples">${samples.toRealPath()}</entry>
 	<entry key="contig">${contig}</entry>
 	<entry key="maf">${pihatmaf}</entry>
 	<entry key="min.GQ">${pihatMinGQ}</entry>
@@ -238,7 +240,7 @@ fi
 
 
 bcftools view -m2 -M2 --apply-filters '.,PASS' --types snps -O u \
-		${samples.isEmpty()?"":"--samples-file '${samples}'"} \
+		${samples.name.equals("NO_FILE")?"":"--samples-file '${samples.toRealPath()}'"} \
 		"${vcf.toRealPath()}" "${contig}" |\
 	bcftools view --targets-file ^TMP/jeter.x.bed  --targets-overlap 1 --exclude-uncalled  -i 'AC>0' -O u |\
 	bcftools annotate -x 'INFO,ID,FILTER,QUAL,^FORMAT/GT' -O b -o TMP/jeter.bcf
@@ -253,6 +255,7 @@ cat << EOF > version.xml
 	<entry key="name">${task.process}</entry>
 	<entry key="description">prepare pihat data per sexual contig</entry>
 	<entry key="vcf">${vcf}</entry>
+	<entry key="samples">${samples}</entry>
 	<entry key="contig">${contig}</entry>
 </properties>
 EOF

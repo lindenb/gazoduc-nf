@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {PIHAT01} from '../../subworkflows/pihat/pihat.01.nf'
+include {PIHAT_CASES_CONTROLS_01} from '../../../subworkflows/pihat/pihat.cases.controls.01.nf'
 nextflow.enable.dsl=2
 
 params.reference = ""
@@ -67,8 +67,6 @@ nextflow -C ../../confs/cluster.cfg  run -resume pihat.nf \\
   
 ## See also
 
-
-
 """
 }
 
@@ -81,10 +79,12 @@ if( params.help ) {
 
 workflow {
 
-	pihat_ch = PIHAT01(
+	pihat_ch = PIHAT_CASES_CONTROLS_01(
 		params,
 		params.reference,
-		file(params.vcf)
+		file(params.vcf),
+		file(params.cases),
+		file(params.controls)
 		)
 	//PUBLISH(indexcov_ch.zip)
 	}
