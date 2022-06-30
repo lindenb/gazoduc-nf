@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {isBlank;moduleLoad;getKeyValue;getModules} from '../../modules/utils/functions.nf'
+include {isBlank;moduleLoad;getKeyValue;getModules;getClassTaxonomy} from '../../modules/utils/functions.nf'
 include {SQRT_FILE} from '../../modules/utils/sqrt.nf'
 
 
@@ -35,15 +35,15 @@ String regionsArgs(def row) {
 
 workflow BCFTOOLS_CONCAT_01 {
 	take:
-		meta /* params */
+		meta
+
 		/* row.vcfs a FILE containing the path to the indexed VCF */
 		/* row.contig or empty string */
 		/* row.interval or empty string */
-		/* row.bed path/to/bed file or empty string */
+		/* row.bed path/to/bed file or empty string */	
 		row
 	main:
-		if(!row.vcfs) thow new IllegalArgumentException("undefined row.vcfs in "+row);
-		vers_ch = concat_version(meta, row)
+		if(!row.containsKey("vcfs")) thow new IllegalArgumentException("undefined row.vcfs in "+row);
 		each_list_ch = SQRT_FILE(meta, row.vcfs)
 		concat0_ch = CONCAT0(meta, each_list_ch.clusters.splitText().map{it.trim()}, row)
 		concat1_ch = CONCAT1(meta,concat0_ch.vcf.collect())
@@ -51,6 +51,7 @@ workflow BCFTOOLS_CONCAT_01 {
 		vcf = concat1_ch.vcf
 		index = concat1_ch.index
 		version = vers_ch.version
+
 	}
 
 

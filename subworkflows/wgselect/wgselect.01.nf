@@ -25,7 +25,8 @@ SOFTWARE.
 include {getBoolean;getKeyValue;getModules;getGnomadExomePath;getGnomadGenomePath;isHg19;isHg38;hasFeature;moduleLoad} from '../../modules/utils/functions.nf'
 include {WGSELECT_EXCLUDE_BED_01 } from './wgselect.exclude.bed.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
-:include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
+include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
+include {BCFTOOLS_CONCAT_PER_CONTIG_01} from '../bcftools/bcftools.concat.contigs.01.nf'
 
 workflow WGSELECT_01 {
 	take:
@@ -48,16 +49,22 @@ workflow WGSELECT_01 {
 		annotate_ch = ANNOTATE(meta,reference,vcf,each_bed,exclude_ch.bed,cases,controls,pedjvarkit_ch.pedigree)
 		version_ch = version_ch.mix(annotate_ch.version.first())
 		
-		cat_files_ch = COLLECT_TO_FILE_01(meta, annotate_ch.map{T->T[1]}.collect())
+		cat_files_ch = COLLECT_TO_FILE_01(meta, annotate_ch.bed_vcf.map{T->T[1]}.collect())
 
-		concat_ch = BCFTOOLS_CONCAT_01(meta,cat_files_ch.output ,file("NO_FILE"))
-		version_ch = version_ch.mix(concat_ch.version.first())
+		c2_ch = cat_files_ch.output.map{T->["vcfs":T]}
+		concat_ch = BCFTOOLS_CONCAT_PER_CONTIG_01(meta, c2_ch)
+		version_ch = version_ch.mix(concat_ch.first())
+
+		digest_ch = DIGEST_VARIANT_LIST(meta, annotate_ch.variants_list.collect())
+		version_ch = version_ch.mix(digest_ch.first())
+
 
 		version_ch = MERGE_VERSION(meta, "wgselect", "wgselect", version_ch.collect())
 	emit:
-		version = version_ch
-		vcf = concat_ch.vcf
-		vcfs = cat_files_ch.output
+		version = version_ch /** version */
+		variants_list = digest_ch.output /** file containing count of variants at each step */
+		contig_vcfs = concat_ch.vcfs /** path to all vcf concatenated per contigs */
+		vcfs = cat_files_ch.output /** path to all chunks of vcf */
 	}
 
 
@@ -808,25 +815,26 @@ EOF
 """
 }
 
-process digest_variant_list {
+process DIGEST_VARIANT_LIST {
 	tag "N=${L.size()}"
 	
 	input:
 		val(meta)
         	val(L)
         output:
-                path("${prefix}wgselect.count.tsv"),emit:variants_list
+                path("${prefix}wgselect.count.tsv"),emit:output
                 path("version.xml"),emit:version
         script:
         	prefix = getKeyValue(meta,"prefix","")
         """
         hostname 1>&2
-        module load ${getModules("datamash")}
+        ${moduleLoad("datamash")}
 
         echo "#FILTER\tIN\tOUT\tDIFF" > "${prefix}filters.count.tsv"
         cat ${L.join(" ")} | gunzip -c | cut -f 1-4 | sort -T . -t '\t' -k1,1 |\
         	datamash  -g 1  sum 2 sum 3 sum 4 >> "${prefix}wgselect.count.tsv"
         	
+	#######################################################################################"
         cat <<- EOF > version.xml
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>

@@ -24,77 +24,122 @@ SOFTWARE.
 */
 include {moduleLoad;getKeyValue;getModules} from '../../modules/utils/functions.nf'
 include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 
-BCFTOOLS_CONCAT_01
 
 workflow BCFTOOLS_CONCAT_PER_CONTIG_01 {
 	take:
-		meta /* params */
-		vcfs /* a FILE containing the path to the indexed VCF */
+		/* params */
+		meta
+		/* row.vcfs a FILE containing the path to the indexed VCF */
+		row
 	main:
 		version_ch = Channel.empty()
 
-		vcf2bed_ch = VCF_TO_BED(meta,vcfs)
-		version_ch = vcf2bed_ch.mix(version_ch.version)
+		c1_ch = VCF_PER_CONTIG(meta,row.vcfs)
+		version_ch = version_ch.mix(c1_ch.version)
 
-		c1_ch = BED2VCF_PER_CONTIG(meta,vcf2bed_ch.bed)
-
-		c2_ch = c1_ch.output.splitCsv(header:false,sep:"\t")
-					
-		c3_ch = CONCAT_ONE_CONTIG(meta,c2_ch)
-
-		file_list_ch = COLLECT_TO_FILE_01([:],c3_ch.vcf.collect())
-	emit:
-		version = vers_ch.version
 		
+		c2_ch = c1_ch.output.splitCsv(header:false,sep:"\t").map{T->["contig":T[0],"vcfs":T[1]]}
+
+		c3_ch = CONCAT_ONE_CONTIG(meta,c2_ch)
+		version_ch = version_ch.mix(c3_ch.version)
+
+		file_list_ch = COLLECT_TO_FILE_01([:],c3_ch.vcf.map{T->T.toRealPath()}.collect())
+
+                version_ch = MERGE_VERSION(meta, "concat / contig", "concat vcf per contig", version_ch.collect())
+
+	emit:
+		version = version_ch
+		vcfs = file_list_ch.output		
 	}
 
-process BED2VCF_PER_CONTIG {
-executor "local"
+
+
+
+process VCF_PER_CONTIG {
 input:
 	val(meta)
-	path(bed)
+	path(vcfs)
 output:
-	path("vcf2beds.tsv"),emit:output	
+	path("ctg2vcfs.tsv"),emit:output	
+	path("version.xml"),emit:version
 script:
 """
 hostname 1>&2
-${moduleLoad("bedtools")}
+${moduleLoad("bcftools")}
+set -o pipefail
 
-cut -f1 "${bed}" | sort | uniq | while read C
+cat "${vcfs}" | while read V
 do
-	awk -vC=\$C -F '\t' '(\$1==C)' "${bed}" | cut -f1,2,3 |\
-		sort -T . -t '\t' -k1,1 -k2,2n |\
-		bedtools merge > "contig.\${C}.bed"
-	awk -vC=\$C -F '\t' '(\$1==C)' "${bed}" | cut -f4 |\
-		sort -T . | uniq > "contig.\${C}.vcf.list"
-
-	echo "\$C\t\${PWD}/contig.\${C}.vcf.list\tcontig.\${C}.bed" >> vcf2beds.tsv
+	bcftools index -s "\${V}" | awk -F '\t' -vV=\${V} '{printf("%s\t%s\\n",\$1,V);}' >> ctg_vcf.txt
 done
 
-touch -s vcf2beds.tsv
-""
-}
+cut -f 1 ctg_vcf.txt | sort | uniq | while read C
+do
+	awk -vC=\$C -F '\t' '(\$1==C)' ctg_vcf.txt | cut -f2 |\
+		sort -T . | uniq >> "contig.\${C}.vcf.list"
 
+	echo "\$C\t\${PWD}/contig.\${C}.vcf.list" >> ctg2vcfs.tsv
+done
+
+rm ctg_vcf.txt
+touch -c ctg2vcfs.tsv
+
+###############################################
+
+cat << EOF > version.xml
+<properties id="${task.process}">
+	<entry key="name">${task.process}</entry>
+        <entry key="description">build list of VCFs per contig</entry>
+        <entry key="count(vcfs.in)">\$(wc -l < "${vcfs}")</entry>
+        <entry key="count(contigs.out)">\$(wc -l < ctg2vcfs.tsv)</entry>
+        <entry key="contigs">\$(cut -f 1 ctg2vcfs.tsv | paste -s -d,)</entry>
+</properties>
+EOF
+
+"""
+}
 
 process CONCAT_ONE_CONTIG {
+tag "${row.contig}:${file(row.vcfs).name}"
+cpus 3
 input:
-	val(meta)
-	tuple val(contig),val(vcfs),val(bed)
+        val(meta)
+        val(row)
 output:
-	path("${meta.prefix?:""}${contig}.merged.bcf"),emit:vcf
-	path("${meta.prefix?:""}${contig}.merged.bcf.csi"),emit:index
+        path("${prefix}${row.contig}.concat${suffix}"),emit:vcf
+        path("${prefix}${row.contig}.concat${suffix}${suffix.contains("b")?".csi":".tbi"}"),emit:index
+	path("version.xml"),emit:version
 script:
-	def prefix="${meta.prefix?:""}${contig}."
-"""
-hostname 1>&2
-${moduleLoad("bedtools")}
-		
-	bcftools concat --threads ${task.cpus} \
-		--regions-file "${bed}" \
-		--no-version --allow-overlaps --remove-duplicates \
-		-O b -o "${prefix}merged.bcf" --file-list "${vcfs}"
+	prefix = meta.prefix?:""
+	suffix = meta.suffix?:".bcf"
+	def contig = row.contig
+	def vcfs = row.vcfs
+	if(!(suffix.equals(".vcf.gz") || suffix.equals(".bcf"))) throw new IllegalArgumentException("bad VCF suffix ${suffix}");
+        """
+        hostname 1>&2
+        ${moduleLoad("bcftools")}
 
-	bcftools index --threads ${task.cpus}  "${prefix}merged.bcf"
-"""
-}
+	test -s "${vcfs}"
+
+        bcftools concat --threads "${task.cpus}" --regions "${contig}" \
+                --no-version --allow-overlaps --remove-duplicates \
+                -O "${suffix.contains("b")?"b":"z"}" -o "${prefix}${contig}.concat${suffix}" --file-list "${vcfs}"
+
+        bcftools index --threads "${task.cpus}" ${!suffix.contains("b")?"--tbi":""} "${prefix}${contig}.concat${suffix}"
+
+###############################################
+
+cat << EOF > version.xml
+<properties id="${task.process}">
+	<entry key="name">${task.process}</entry>
+        <entry key="description">concatenate VCF for one contig</entry>
+        <entry key="count(vcfs.in)">\$(wc -l < "${vcfs}")</entry>
+        <entry key="count(contigs)">${contig}</entry>
+</properties>
+EOF
+
+        """  
+        }

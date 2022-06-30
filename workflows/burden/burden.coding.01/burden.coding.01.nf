@@ -45,8 +45,7 @@ workflow BURDEN_CODING {
 
                 file_list_ch = COLLECT_TO_FILE_01([:],exons_ch.bed.splitText().map{it.trim()}.collect())
 	
-		wgselect_ch = WGSELECT_01(meta,reference,vcf,vcf_inter_ch.cases,vcf_inter_ch.controls,
-exons_ch.bed.splitText().map{it.trim()}.map{T->file(T)})
+		wgselect_ch = WGSELECT_01(meta,reference,vcf,vcf_inter_ch.cases,vcf_inter_ch.controls,exons_ch.bed.splitText().map{it.trim()}.map{T->file(T)})
 
 		/*
 		RVTESTS_PER_TRANSCRIPT()
