@@ -22,21 +22,31 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {moduleLoad;getKeyValue;getModules} from '../../modules/utils/functions.nf'
+include {isBlank;moduleLoad;getKeyValue;getModules} from '../../modules/utils/functions.nf'
 include {SQRT_FILE} from '../../modules/utils/sqrt.nf'
 
 
+String regionsArgs(def row) {
+	if(!isBlank(row.bed)) return "--regions-file \"${row.bed}\" ";
+	if(!isBlank(row.contig)) return "--regions \"${row.contig}\" ";
+	if(!isBlank(row.interval)) return "--regions \"${row.interval}\" ";
+	return "";
+	}
 
 workflow BCFTOOLS_CONCAT_01 {
 	take:
 		meta /* params */
-		vcfs /* a FILE containing the path to the indexed VCF */
-		bed  /* path/to/bed file or NO_FILE */
+		/* row.vcfs a FILE containing the path to the indexed VCF */
+		/* row.contig or empty string */
+		/* row.interval or empty string */
+		/* row.bed path/to/bed file or empty string */
+		row
 	main:
-		vers_ch = concat_version(meta, vcfs, bed)
-		each_list_ch = SQRT_FILE(meta,vcfs)
-		concat0_ch = concat0(meta,each_list_ch.clusters.splitText(),bed)
-		concat1_ch = concat1(meta,concat0_ch.vcf.collect())
+		if(!row.vcfs) thow new IllegalArgumentException("undefined row.vcfs in "+row);
+		vers_ch = concat_version(meta, row)
+		each_list_ch = SQRT_FILE(meta, row.vcfs)
+		concat0_ch = CONCAT0(meta, each_list_ch.clusters.splitText().map{it.trim()}, row)
+		concat1_ch = CONCAT1(meta,concat0_ch.vcf.collect())
 	emit:
 		vcf = concat1_ch.vcf
 		index = concat1_ch.index
@@ -44,22 +54,22 @@ workflow BCFTOOLS_CONCAT_01 {
 	}
 
 
-process concat0 {
-tag "${vcfs.name}"
+process CONCAT0 {
+tag "${vcfs}"
 input:
 	val(meta)
-	path(vcfs)
-	path(bed)
+	val(vcfs)
+	val(row)
 output:
 	path("concat.0.bcf"),emit:vcf	
 	path("concat.0.bcf.csi"),emit:csi
 script:
+	def optR = regionsArgs(row)
 	"""
 	hostname 1>&2
 	${moduleLoad("bcftools")}
 
-	bcftools concat --threads ${task.cpus} \
-		${bed.name.equals("NO_FILE")?"":"--regions-file \"${bed.toRealPath()}\""} \
+	bcftools concat --threads ${task.cpus} ${optR} \
 		--no-version --allow-overlaps --remove-duplicates \
 		-O b -o "concat.0.bcf" --file-list "${vcfs}"
 
@@ -71,8 +81,7 @@ process concat_version {
 	executor "local"
 	input:
 		val(meta)
-		path(vcfs)
-		path(bed)
+		val(row)
 	output:
 		path("version.xml"),emit:version
 	script:
@@ -80,19 +89,22 @@ process concat_version {
 	hostname 1>&2
 	${moduleLoad("bcftools")}
 
-	cat << EOF > version.xml
+	cat <<- EOF > version.xml
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
 		<entry key="description">concat vcf(s) using bcftools</entry>
-		<entry key="vcfs">${vcfs}</entry>
-		<entry key="bed">${bed}</entry>
+		<entry key="vcfs">${row.vcfs}</entry>
+		<entry key="count(vcfs)">\$(wc -l < ${row.vcfs})</entry>
+		<entry key="bed">${row.bed?:""}</entry>
+		<entry key="contig">${row.contig?:""}</entry>
+		<entry key="interval">${row.interval?:""}</entry>
 		<entry key="bcftools">\$( bcftools --version-only)</entry>
 	</properties>
 	EOF
 	"""
 	}
 
-process concat1 {
+process CONCAT1 {
 tag "N=${L.size()}"
 input:
 	val(meta)
