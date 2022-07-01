@@ -1,3 +1,5 @@
+include {moduleLoad} from '../utils/functions.nf'
+
 process RVTESTS01_VCF_01 {
 tag "${file(vcf).name}"
 afterScript "rm -rf TMP"
@@ -8,12 +10,12 @@ input:
 	val(vcf)
 	val(pedigree)
 output:
-	path("assoc.list"),emit:list
+	path("assoc.list"),emit:output
 	path("version.xml"),emit:version
 script:
 """
 hostname 1>&2
-module load ${getModules("rvtests bcftools jvarkit")}
+${moduleLoad("rvtests bcftools jvarkit")}
 
 mkdir TMP ASSOC
 
@@ -67,4 +69,3 @@ touch assoc.list
 echo "<properties/>" > version.xml
 """
 }
-

@@ -1,10 +1,63 @@
-include {moduleLoad;getKeyValue} from '../../../modules/utils/functions.nf'
+include {moduleLoad;getKeyValue;hasFeature} from '../../../modules/utils/functions.nf'
 include {VCF_INTER_CASES_CONTROLS_01} from '../../../subworkflows/bcftools/vcf.inter.cases.controls.01.nf'
 include {DOWNLOAD_GTF_01} from '../../../modules/gtf/download.gtf.01.nf'
 include {BED_CLUSTER_01} from '../../../modules/jvarkit/jvarkit.bedcluster.01.nf'
 include {SQRT_FILE} from '../../../modules/utils/sqrt.nf'
 include {COLLECT_TO_FILE_01} from '../../../modules/utils/collect2file.01.nf'
 include {WGSELECT_01} from '../../../subworkflows/wgselect/wgselect.01.nf'
+include {PEDIGREE_FOR_RVTESTS} from '../../../modules/rvtests/rvtests.cases.controls.ped.01.nf'
+include {RVTESTS01_VCF_01} from '../../../modules/rvtests/rvtests.vcf.01.nf'
+include {RVTESTS_POST_PROCESS} from '../../../subworkflows/rvtests/rvtests.post.process.01.nf'
+include {CONCAT_FILES_01} from '../../../modules/utils/concat.files.nf'
+include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
+include {MERGE_VERSION} from '../../../modules/version/version.merge.nf'
+include {PIHAT_CASES_CONTROLS_01} from '../../../subworkflows/pihat/pihat.cases.controls.01.nf'
+
+params.reference=""
+params.cases=""
+params.controls=""
+params.vcf=""
+params.disableFeatures="";
+params.help=false
+
+if(params.help) {
+  log.info"""
+## About
+
+Burden for coding regions.
+
+## Author
+
+${params.rsrc.author}
+
+## Options
+
+  * --reference (fasta) ${params.rsrc.reference} [REQUIRED]
+  * --vcf <file> path to a indexed VCF or BCF file. If file ends with '.list' is a list of path to one VCF per contig [REQUIRED]
+  * --cases <file> file containing the cases' names. One per line.
+  * --controls <file> file containing the controls' names. One per line.
+  * --publishDir (dir) Save output in this directory
+  * --prefix (string) files prefix. default: ""
+
+## Usage
+
+```
+nextflow -C ../../confs/cluster.cfg  run -resume burden.coding.01.nf \\
+        --publishDir output \\
+        --prefix "analysis." \\
+        --reference /path/to/reference.fasta \\
+        --vcf /path/to/my.vcf.gz \\
+        --cases /path/to/cases.file \\
+        --controls /path/to/controls.file
+```
+
+## Workflow
+
+![workflow](./workflow.svg)
+
+"""
+exit 0
+}
 
 workflow {
 		BURDEN_CODING(params, params.reference, params.vcf, params.cases, params.controls)
@@ -15,12 +68,29 @@ workflow BURDEN_CODING {
 		meta
 		reference
 		vcf
-		cases
-		controls
+		cases_f
+		controls_f
 	main:
+		to_zip = Channel.empty()
 		version_ch = Channel.empty()
-		vcf_inter_ch = VCF_INTER_CASES_CONTROLS_01(meta.plus(["with_tabix":true]),vcf,cases,controls)
+		vcf_inter_ch = VCF_INTER_CASES_CONTROLS_01(meta.plus(["with_tabix":true]),vcf,cases_f,controls_f)
 		version_ch = version_ch.mix(vcf_inter_ch.version)
+
+		if(hasFeature(meta,"pihat")) {
+			pihat = PIHAT_CASES_CONTROLS_01(meta,reference,file(vcf),cases_f,controls_f)
+			version_ch = version_ch.mix(pihat.version)
+			to_zip = to_zip.mix(pihat.pihat_png)
+			to_zip = to_zip.mix(pihat.pihat_pdf)
+			to_zip = to_zip.mix(pihat.removed_samples)
+			to_zip = to_zip.mix(pihat.plink_genome)
+			cases = pihat.cases
+			controls = pihat.controls
+			}
+		else
+			{
+			cases = case_sf
+			controls = controls_f
+			}
 
 		gtf_ch = DOWNLOAD_GTF_01(meta,reference)
 		version_ch = version_ch.mix(gtf_ch.version)
@@ -46,11 +116,32 @@ workflow BURDEN_CODING {
                 file_list_ch = COLLECT_TO_FILE_01([:],exons_ch.bed.splitText().map{it.trim()}.collect())
 	
 		wgselect_ch = WGSELECT_01(meta,reference,vcf,vcf_inter_ch.cases,vcf_inter_ch.controls,exons_ch.bed.splitText().map{it.trim()}.map{T->file(T)})
+		to_zip = to_zip.mix(wgselect_ch.variants_list)
 
-		/*
-		RVTESTS_PER_TRANSCRIPT()
-		RVTESTS_GROUP()
-		PUBLISH()*/
+
+		rvtests_ped_ch = PEDIGREE_FOR_RVTESTS(meta,vcf_inter_ch.cases,vcf_inter_ch.controls)
+		version_ch = version_ch.mix(rvtests_ped_ch.version)
+		
+
+
+		assoc_ch = RVTESTS01_VCF_01(meta, reference,wgselect_ch.vcfs.splitText().map{it.trim()}, rvtests_ped_ch.pedigree )
+		version_ch = version_ch.mix(assoc_ch.version)
+
+		concat_ch = CONCAT_FILES_01(meta,assoc_ch.output.collect())
+		version_ch = version_ch.mix(concat_ch.version)
+
+		digest_ch = RVTESTS_POST_PROCESS(meta, reference,file(vcf).name,concat_ch.output)
+                version_ch = version_ch.mix(digest_ch.version)
+		to_zip = to_zip.mix(digest_ch.zip)
+
+		version_ch = MERGE_VERSION(meta, "burden coding", "Burden coding ${vcf}", version_ch.collect())
+		to_zip = to_zip.mix(version_ch.version)
+
+		html = VERSION_TO_HTML(params,version_ch.version)
+		to_zip = to_zip.mix(html.html)
+		
+
+		PUBLISH(to_zip.collect())
 	}
 
 process EXTRACT_GENES {
@@ -141,5 +232,48 @@ cat << EOF > version.xml
 </properties>
 EOF
 """
+}
+
+process PUBLISH {
+tag "N=${files.size()}"
+publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
+input:
+        val(files)
+output:
+        path("${params.prefix?:""}archive.zip")
+when:
+        !params.getOrDefault("publishDir","").trim().isEmpty()
+script:
+        prefix = params.getOrDefault("prefix","")
+"""
+
+mkdir "${prefix}archive"
+
+cat << EOF | while read F ; do ln -s "\${F}" "./${prefix}archive/" ; done
+${files.join("\n")}
+EOF
+
+zip -r "${prefix}archive.zip" "${prefix}archive"
+"""
+}
+
+
+
+
+workflow.onComplete {
+
+    println ( workflow.success ? """
+        Pipeline execution summary
+        ---------------------------
+        Completed at: ${workflow.complete}
+        Duration    : ${workflow.duration}
+        Success     : ${workflow.success}
+        workDir     : ${workflow.workDir}
+        exit status : ${workflow.exitStatus}
+        """ : """
+        Failed: ${workflow.errorReport}
+        exit status : ${workflow.exitStatus}
+        """
+    )
 }
 

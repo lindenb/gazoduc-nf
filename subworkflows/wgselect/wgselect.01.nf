@@ -200,18 +200,16 @@ touch TMP/variant_list.txt
 
 	# extract variants ######################################################################################
 	if [ ! -z "${vcf.endsWith(".list")?"Y":""}" ] ; then
-		bcftools concat --file-list "${vcf}" --regions-file "${bed}" -O u  --allow-overlaps --remove-duplicates |\
-			bcftools view -m2 -M ${max_alleles_count} --targets-overlap 2 --targets-file ^TMP/jeter.blacklisted.bed -O u -o TMP/jeter1.bcf
+		bcftools concat --file-list "${vcf}" --regions-file "${bed}" -O u  --allow-overlaps --remove-duplicates -o TMP/jeter1.bcf
 	else
-		bcftools view -m2 -M ${max_alleles_count} --regions-file "${bed}" -O u "${vcf}" |\
-			bcftools view --targets-overlap 2 --targets-file ^TMP/jeter.blacklisted.bed -O u -o TMP/jeter1.bcf
+		bcftools view  --regions-file "${bed}" -O u -o TMP/jeter1.bcf "${vcf}"
 	fi	
 
 	cat <<- EOF >> version.xml
 	<properties>
-		<entry key="description">extract variants from ${vcf} in region ${bed}. Ignore variants overlapping ${blacklisted}</entry>
-		<entry key="min-alleles">2</entry>
-		<entry key="max-alleles">${max_alleles_count} (use <code>--max_alleles_count 'x'</code> to change this)</entry>
+		<entry key="description">extract variants from main vcf</entry>
+		<entry key="vcf">${vcf}</entry>
+		<entry key="bed">${bed}</entry>
 	</properties>
 	EOF
 
@@ -219,6 +217,32 @@ touch TMP/variant_list.txt
 	if [ ! -z "${hasFeature(meta,"count")?"Y":""}" ] ; then
 		bcftools query -f '.\\n' TMP/jeter1.bcf | awk 'END{printf("initial\t%s\t0\t0\t\\n",NR);}' >> TMP/variant_list.txt
 	fi
+
+	# min max alleles  ############################################################################
+	bcftools view  -m2 -M ${max_alleles_count} -O u -o TMP/jeter2.bcf  TMP/jeter1.bcf
+	countIt "too_many_alts" TMP/jeter1.bcf TMP/jeter2.bcf
+	mv TMP/jeter2.bcf TMP/jeter1.bcf
+
+	cat <<- EOF >> version.xml
+	<properties>
+		<entry key="description">min/max alleles</entry>
+		<entry key="min-alleles">2 (including REF)</entry>
+		<entry key="max-alleles">${max_alleles_count} (use <code>--max_alleles_count 'x'</code> to change this)</entry>
+	</properties>
+	EOF
+
+
+	# remove in blaclisted regions ############################################################################
+	bcftools view  --targets-overlap 2 --targets-file ^TMP/jeter.blacklisted.bed -O u -o TMP/jeter2.bcf TMP/jeter1.bcf
+	countIt "blackListedRegions" TMP/jeter1.bcf TMP/jeter2.bcf
+	mv TMP/jeter2.bcf TMP/jeter1.bcf
+	
+	cat <<- EOF >> version.xml
+	<properties>
+		<entry key="description">Ignore variants overlapping blacklisted region</entry>
+		<entry key="exclude bed">${blacklisted}</entry>
+	</properties>
+	EOF
 
 
 	# remove all annotations ################################################################################

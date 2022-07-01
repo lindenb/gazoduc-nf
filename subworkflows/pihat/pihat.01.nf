@@ -50,7 +50,7 @@ workflow PIHAT01 {
 		version_ch = version_ch.mix(perCtg.version.collect())
 
 
-		pihat_ch = MERGE_PIHAT_VCF(meta.plus(["title":vcf.name]),perCtg.vcf.map{T->T.join("\t")}.collect())
+		pihat_ch = MERGE_PIHAT_VCF(meta.plus(["title":"${vcf.name}"]), perCtg.vcf.map{T->T.join("\t")}.collect())
 		version_ch = version_ch.mix(pihat_ch.version)
 
 		version_ch = MERGE_VERSION(meta, "pihat", "pihat on ${vcf}", version_ch.collect())
@@ -58,7 +58,7 @@ workflow PIHAT01 {
 	emit:
 		version = version_ch
 		pihat_png = pihat_ch.pihat_png
-		removed_samples = pihat_ch.pihat_removed_samples
+		pihat_removed_samples = pihat_ch.pihat_removed_samples
 		plink_genome = pihat_ch.plink_genome
 		pihat_pdf  = pihat_ch.pihat_pdf
 	}

@@ -47,23 +47,61 @@ workflow PIHAT_CASES_CONTROLS_01 {
 		pihat_ch = PIHAT01(meta,reference,vcf,inter_ch.all_samples)
 		version_ch = version_ch.mix(pihat_ch.version)
 
+
+		remove_ch= REMOVE_SAMPLES(meta,pihat_ch.pihat_removed_samples ,cases,controls)
+		version_ch = version_ch.mix(remove_ch.version)
+
 		version_ch = MERGE_VERSION(meta, "pihat", "pihat on ${vcf} with cases and controls.", version_ch.collect())
 
 	emit:
 		version = version_ch
-		/* pihat_png = pihat_ch.pihat_png
+		cases = remove_ch.cases
+		controls = remove_ch.controls
+		pihat_png = pihat_ch.pihat_png
 		removed_samples = pihat_ch.pihat_removed_samples
 		plink_genome = pihat_ch.plink_genome
-		pihat_pdf  = pihat_ch.pihat_pdf */
+		pihat_pdf  = pihat_ch.pihat_pdf
 	}
 
-/*
+process REMOVE_SAMPLES {
+executor "local"
+input:
+	val(meta)
+	val(removed_samples)
+	val(cases)
+	val(controls)
+output:
+	path("filtered.cases.txt"),emit:cases
+	path("filtered.controls.txt"),emit:controls
+	path("version.xml"),emit:version
+script:
+"""
+
+sort -T . "${removed_samples}" > a
+sort -T . "${cases}" > b
+sort -T . "${controls}" > c
+
+
+comm -13 a b > filtered.cases.txt
+comm -13 a c > filtered.controls.txt
+
+test -s filtered.cases.txt
+test -s filtered.controls.txt
+
+
+#############################################################
 cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
-	<entry key="description">prepare pihat data per sexual contig</entry>
-	<entry key="vcf">${vcf}</entry>
-	<entry key="contig">${contig}</entry>
+	<entry key="description">remove sample with high pihat</entry>
+	<entry key="removed samples">\$(cat a | paste -s -d ' ')</entry>
+	<entry key="count(cases)">\$(wc -l < filtered.cases.txt)</entry>
+	<entry key="count(controls)">\$(wc -l < filtered.controls.txt)</entry>
 </properties>
 EOF
-*/
+
+
+rm a b c
+sleep 10
+"""
+}
