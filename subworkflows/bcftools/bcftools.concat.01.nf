@@ -34,6 +34,79 @@ String regionsArgs(def row) {
 	}
 
 workflow BCFTOOLS_CONCAT_01 {
+take:
+	meta
+	row
+main:
+	def optR = regionsArgs(row)
+	d1_ch = SQRT_FILE(meta, row.vcfs)
+
+	d2_ch = d1_ch.clusters.splitText().map{it.trim()}
+	d3_ch = BCFTOOL_CONCAT_01(meta, optR, d2_ch )
+	d4_ch = BCFTOOL_CONCAT_02(meta, optR, d3_ch.vcf.collect() )
+emit:
+	vcf = d4_ch.vcf
+}
+
+
+process BCFTOOL_CONCAT_01 {
+tag "${file(vcfs).name}"
+cpus 1
+input:
+        val(meta)
+	val(optR)
+        val(vcfs)
+output:
+        path("concat.0.bcf"),emit:vcf
+	path("version.xml"),emit:version
+script:
+"""
+
+	hostname 1>&2
+	${moduleLoad("bcftools")}
+
+	bcftools concat --threads ${task.cpus} ${optR} \
+		--no-version --allow-overlaps --remove-duplicates \
+		-O b -o "concat.0.bcf" --file-list "${vcfs}"
+
+	bcftools index --threads ${task.cpus}  "concat.0.bcf"
+
+	touch version.xml
+"""
+}
+
+process BCFTOOL_CONCAT_02 {
+input:
+        val(meta)
+	val(optR)
+        val(vcfs)
+output:
+        path("concat.1.bcf"),emit:vcf
+	path("version.xml"),emit:version
+script:
+"""
+
+	hostname 1>&2
+	${moduleLoad("bcftools")}
+
+cat << EOF > jeter.list
+${vcfs.join("\n")}
+EOF
+
+	bcftools concat --threads ${task.cpus} ${optR} \
+		--no-version --allow-overlaps --remove-duplicates \
+		-O b -o "concat.1.bcf" --file-list jeter.list
+
+	bcftools index --threads ${task.cpus}  "concat.1.bcf"
+
+	touch version.xml
+
+"""
+}
+
+
+
+workflow __BCFTOOLS_CONCAT_01 {
 	take:
 		meta
 
@@ -43,14 +116,16 @@ workflow BCFTOOLS_CONCAT_01 {
 		/* row.bed path/to/bed file or empty string */	
 		row
 	main:
-		if(!row.containsKey("vcfs")) thow new IllegalArgumentException("undefined row.vcfs in "+row);
+		//if(!row.containsKey("vcfs")) throw new IllegalArgumentException("undefined row.vcfs in "+row);
+		version_ch = CONCAT_VERSION(meta,row)
+
 		each_list_ch = SQRT_FILE(meta, row.vcfs)
 		concat0_ch = CONCAT0(meta, each_list_ch.clusters.splitText().map{it.trim()}, row)
 		concat1_ch = CONCAT1(meta,concat0_ch.vcf.collect())
 	emit:
 		vcf = concat1_ch.vcf
 		index = concat1_ch.index
-		version = vers_ch.version
+		version = version_ch.version
 
 	}
 
@@ -78,7 +153,7 @@ script:
 	"""
 	}
 
-process concat_version {
+process CONCAT_VERSION {
 	executor "local"
 	input:
 		val(meta)

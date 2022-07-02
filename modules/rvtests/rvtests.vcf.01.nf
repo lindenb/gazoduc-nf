@@ -56,11 +56,11 @@ i=1
 find \${PWD}/ASSOC -type f -name "part.*assoc" > assoc.list
 
 cat << EOF > version.xml
-<dl id="${task.process}">
-  <dt>Name</dt><dd>${task.process}</dd>
-  <dt>Desciption</dt><dd>VCF is split by transcript / gene, and then rvtest is applied.</dd>
-  <dt>Pedigree</dt><dd>${pedigree}</dd>
-</dl>
+<properties id="${task.process}">
+  <entry key="name">${task.process}</entry>
+  <entry key="description">VCF is split by transcript / gene, and then rvtest is applied.</entry>
+  <entry key="name"Pedigree">${pedigree}</entry>
+</properties>
 EOF
 """
 stub:

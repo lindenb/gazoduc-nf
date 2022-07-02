@@ -35,7 +35,11 @@ params.help = false
 /** publish Directory */
 params.publishDir = ""
 /** files prefix */
+params.references=""
 params.prefix = ""
+params.dbsnp=""
+params.pedigree=""
+params.beds=""
 
 include {GATK4_HAPCALLER_DIRECT_01} from '../../../subworkflows/gatk/gatk4.hapcaller.direct.01.nf'
 
@@ -56,7 +60,6 @@ ${params.rsrc.author}
   * --mapq (int)  min mapping quality . If it's lower than 0 (this is the default) just use the bam index as is. Otherwise, rebuild the bai
   * --publishDir (dir) Save output in this directory
   * --prefix (string) files prefix. default: ""
-  * --goleft_version (string) default: "v0.2.4"
 
 ## Usage
 
@@ -89,9 +92,15 @@ if( params.help ) {
 workflow {
 	publish_ch = Channel.empty()
 
-	gatk_ch= GATK4_HAPCALLER_DIRECT_01(params,params.reference,params.references,params.bams,params.beds,params.dbsnp,params.pedigree)
+	gatk_ch= GATK4_HAPCALLER_DIRECT_01(
+			params,
+			params.reference,
+			params.bams,
+			file(params.beds)
+			)
 	}
 
+/*
 process PUBLISH {
 tag "${zip.name}"
 publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
@@ -105,7 +114,7 @@ script:
 """
 echo "publishing ${zip}"
 """
-}
+}*/
 
 workflow.onComplete {
 

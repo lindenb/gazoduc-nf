@@ -36,11 +36,8 @@ workflow GATK4_HAPCALLER_DIRECT_01 {
 	take:
 		meta
 		reference
-		references
 		bams
 		beds
-		dbsnp
-		pedigree
 	main:
 		assertFileExists(reference,"reference must be defined")
 
@@ -55,11 +52,11 @@ workflow GATK4_HAPCALLER_DIRECT_01 {
 			acgt_split_ch = LINUX_SPLIT1(["method":"--lines=1","suffix":".bed"],acgt_ch.bed)
 			version_ch = version_ch.mix(acgt_split_ch.version)
 
-			capture_bed_ch = acgt_split_ch.output.splitCsv(header: false,sep:',',strip:true).map{T->T[0]}
+			capture_bed_ch = acgt_split_ch.output.splitText().map{it.trim()}
 			}
 		else
 			{
-			capture_bed_ch = beds.splitCsv(header: false,sep:',',strip:true).map{T->T[0]}
+			capture_bed_ch = Channel.fromPath(beds).splitText().map{it.trim()}
 			}
 
 		version_ch = Channel.empty()
@@ -67,13 +64,13 @@ workflow GATK4_HAPCALLER_DIRECT_01 {
 		version_ch = version_ch.mix(split_bams_ch.version)
 		
 		each_bam_list = split_bams_ch.output.splitCsv(header: false,sep:'\t',strip:true).map{T->T[0]}
-		row_ch = capture_bed_ch.combine(each_bam_list).
-				map{T->[
+
+		row_ch = capture_bed_ch.combine(each_bam_list).map{T->[
 					"bed":T[0],
 					"bams":T[1],
 					"reference":reference,
-					"dbsnp":dbsnp,
-					"pedigree":pedigree,
+					"dbsnp": meta.dbsnp?:"",
+					"pedigree":meta.pedigree?:"",
 					"mapq":(meta.mapq?:-1),
 					"extraHC":(meta.extraHC?:"")
 					]}
@@ -86,10 +83,14 @@ workflow GATK4_HAPCALLER_DIRECT_01 {
 		bedvcf_ch = BCFTOOLS_MERGE_BED_01(meta, bed2vcf_ch)
 		version_ch = version_ch.mix(bedvcf_ch.version)
 
+
 		to_file_ch = COLLECT_TO_FILE_01([:], bedvcf_ch.bedvcf.map{T->T[1]}.collect())
 		//version_ch = version_ch.mix(to_file_ch.version)
 
-		concat_ch = BCFTOOLS_CONCAT_01(meta,to_file_ch.output,file("NO_FILE"))
+		in_ch = to_file_ch.output.map{T->["vfs":T]}
+		in_ch.view{"### hap direct 01:## $it #####"}
+
+		concat_ch = BCFTOOLS_CONCAT_01(meta,in_ch)
 		version_ch = version_ch.mix(concat_ch.version)
 
 		version_ch = MERGE_VERSION(meta, "gatk4 direct", "call bams using gatk4 directly hapcaller, without GVCFs", version_ch.collect())

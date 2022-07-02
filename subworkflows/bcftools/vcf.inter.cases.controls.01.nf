@@ -37,7 +37,6 @@ workflow VCF_INTER_CASES_CONTROLS_01 {
 		cases_ch = INTER_CASES(meta,vcf,cases_file)
 		version_ch = version_ch.mix(cases_ch.version)
 
-		version_ch = Channel.empty()
 		ctrls_ch = INTER_CONTROLS(meta,vcf,controls_file)
 		version_ch = version_ch.mix(ctrls_ch.version)
 		
@@ -51,7 +50,7 @@ workflow VCF_INTER_CASES_CONTROLS_01 {
 
 		version_ch = MERGE_VERSION(meta, "vcf inter cases/ctrls", "intersection samples in VCF cases and controls", version_ch.collect())
 	emit:
-		version = version_ch.version
+		version = version_ch
 		cases = uniq_ch.cases
 		controls = uniq_ch.controls
 		vcf_only = uniq_ch.vcf_only

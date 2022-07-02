@@ -132,11 +132,12 @@ __EOF__
 
 R --vanilla < jeter.R || true
 
+############################################################################
 cat << EOF > version.xml
-<dl id="${task.process}">
-  <dt>name</dt><dd>${task.process}</dd>
-  <dt>Analysis</dt><dd>${assoc}</dd>
-</dl>
+<properties id="${task.process}">
+  <entry key="name">${task.process}</entry>
+  <entry key="Analysis"><dd>${assoc}</entry>
+</properties>
 EOF
 
 

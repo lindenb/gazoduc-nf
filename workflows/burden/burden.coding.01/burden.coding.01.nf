@@ -116,6 +116,7 @@ workflow BURDEN_CODING {
                 file_list_ch = COLLECT_TO_FILE_01([:],exons_ch.bed.splitText().map{it.trim()}.collect())
 	
 		wgselect_ch = WGSELECT_01(meta,reference,vcf,vcf_inter_ch.cases,vcf_inter_ch.controls,exons_ch.bed.splitText().map{it.trim()}.map{T->file(T)})
+		version_ch = version_ch.mix(wgselect_ch.version.first())
 		to_zip = to_zip.mix(wgselect_ch.variants_list)
 
 
@@ -125,7 +126,7 @@ workflow BURDEN_CODING {
 
 
 		assoc_ch = RVTESTS01_VCF_01(meta, reference,wgselect_ch.vcfs.splitText().map{it.trim()}, rvtests_ped_ch.pedigree )
-		version_ch = version_ch.mix(assoc_ch.version)
+		version_ch = version_ch.mix(assoc_ch.version.first())
 
 		concat_ch = CONCAT_FILES_01(meta,assoc_ch.output.collect())
 		version_ch = version_ch.mix(concat_ch.version)
