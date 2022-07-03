@@ -24,6 +24,7 @@ SOFTWARE.
 */
 include {moduleLoad} from './../../modules/utils/functions.nf'
 include {SAMTOOLS_SAMPLES02} from './../../modules/samtools/samtools.samples.02.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 
 workflow GATK4_HAPCALLER_GVCFS_01 {
         take:
@@ -62,11 +63,17 @@ workflow GATK4_HAPCALLER_GVCFS_01 {
 		by_bed_ch = hapcaller_ch.bedvcf.map{T->[T[0].bed,T[1]]}.groupTuple()
 
 		split_gvcfs_ch = SPLIT_GVCF_BLOCKS(meta,by_bed_ch)
+		version_ch = version_ch.mix(split_gvcfs_ch.first())
+
 
 		find_gvcfs_ch = FIND_GVCF_BLOCKS(meta,split_gvcfs_ch.output.splitCsv(header:true,sep:'\t',strip:true))
+		version_ch = version_ch.mix(find_gvcfs_ch.first())
+
 
 		genotyped_ch = GENOTYPE_GVCFS(meta,reference,find_gvcfs_ch.output.splitCsv(header:true,sep:'\t',strip:true))
+		version_ch = version_ch.mix(find_gvcfs_ch.first())
 
+		version_ch = MERGE_VERSION(meta, "gatk4", "call bams using gvcfs", version_ch.collect())
 	emit:
 		version = version_ch
 		region_vcf = genotyped_ch.region_vcf
@@ -163,8 +170,9 @@ ${moduleLoad("gatk4 bcftools jvarkit")}
 	gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"  RenameSampleInVcf \
 		-INPUT TMP/jeter.g.vcf.gz \
 		-OUTPUT TMP/jeter2.g.vcf.gz \
-		-NEW_SAMPLE_NAME ${new_sample}
-	bcftools index --tbi TMP/jeter2.g.vcf.gz
+		-NEW_SAMPLE_NAME "${new_sample}"
+
+	bcftools index --force --tbi TMP/jeter2.g.vcf.gz
 	mv TMP/jeter2.g.vcf.gz TMP/jeter.g.vcf.gz
 	mv TMP/jeter2.g.vcf.gz.tbi TMP/jeter.g.vcf.gz.tbi
    fi
@@ -187,6 +195,7 @@ cat << EOF > version.xml
         <entry key="bam_reference">${bam_reference}</entry>
         <entry key="dbsnp">${dbsnp}</entry>
         <entry key="pedigree">${pedigree}</entry>
+	<entry key="gatk.version">\$( gatk HaplotypCaller --version 2> /dev/null  | paste -s -d ' ')</entry>
 </properties>
 EOF
 """
@@ -205,6 +214,7 @@ input:
 	tuple val(bed),val(L)
 output:
 	path("contig.gvcfs.bed.tsv"),emit:output
+	path("version.xml"),emit:version
 script:
 	def sqrt = (L.size() < 100 ? L.size() : Math.max(1,(int)Math.sqrt(L.size())))
 	def blocksize = meta.gvcfs_blocksize?:"1mb"
@@ -229,6 +239,17 @@ cut -f 1 "${bed}" | sort -T . | uniq |\
 
 # prevent timestamp problem
 sleep 10
+
+##################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">make a list of all GVCFS for a bed</entry>
+        <entry key="bed">${bed}</entry>
+        <entry key="sqrt">${sqrt}</entry>
+        <entry key="N(gvcfs)">${L.size()}</entry>
+</properties>
+EOF
 """
 
 }
@@ -244,6 +265,7 @@ input:
 	val(row)
 output:
 	path("bed_samplemap.tsv"),emit:output
+	path("version.xml"),emit:version
 script:
 	def contig = row.contig
 	def blocksize= meta.blocksize?:"1mb"
@@ -264,6 +286,17 @@ java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/findgvc
 	"${row.gvcf_list}"
 
 awk -F '\t' 'BEGIN{printf("interval\tgvcf_split\tbed\\n");} /^@/ {next;} {printf("%s:%d-%s\t${row.gvcf_split}\t${row.bed}\\n",\$1,\$2,\$3);}' TMP/jeter.interval_list > bed_samplemap.tsv
+
+##################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">find gvcfs blocks using findgvcfsblocks</entry>
+        <entry key="contig">${contig}</entry>
+        <entry key="block.size">${blocksize}</entry>
+        <entry key="N(output)">\$(wc -l < bed_samplemap.tsv)</entry>
+</properties>
+EOF
 """
 }
 
@@ -347,5 +380,16 @@ gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" GenotypeGVCF
 
 bcftools view -O b -o genotyped.bcf TMP/jeter.vcf.gz
 bcftools index genotyped.bcf
+
+##################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">combine and call gvcfs</entry>
+        <entry key="region">${region}</entry>
+	<entry key="gatk.version">\$( gatk HaplotypCaller --version 2> /dev/null  | paste -s -d ' ')</entry>
+</properties>
+EOF
+
 """
 }

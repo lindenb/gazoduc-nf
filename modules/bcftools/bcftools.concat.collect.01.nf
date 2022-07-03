@@ -22,49 +22,52 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include { getKeyValue; toAbsolutePath } from './functions.nf'
+include {moduleLoad} from '../../modules/utils/functions.nf'
 
-process SQRT_FILE {
-executor "local"
-tag "${file(toAbsolutePath(filein)).name}"
+process BCFTOOL_CONCAT_COLLECT_01 {
+tag "N=${L.size()}"
+cpus 1
 input:
-      	val(meta)
-        val(filein)
+        val(meta)
+        val(L)
 output:
-        path("clusters${meta.suffix?:".list"}"),emit:clusters
+        path("concatenated.bcf"),emit:vcf
+        path("concatenated.bcf.csi"),emit:index
 	path("version.xml"),emit:version
 script:
-	def suffix = getKeyValue(meta,"suffix",".list") 
-       	def min_file_split = getKeyValue(meta,"min_file_split","-1")
-        """
-        SQRT=`awk 'END{X=NR;if(${min_file_split} > 0 && X <= ${min_file_split}){print(X);} else {z=sqrt(X); print (z==int(z)?z:int(z)+1);}}' "${filein}"`
-	mkdir OUT
-        split -a 9 --additional-suffix=${suffix} --lines=\${SQRT} "${filein}" OUT/chunck.
+	def bed = meta.concat_bed?:""
+	def contig = meta.concat_contig?:""
+	def interval = meta.concat_interval?:contig
+	
+	optR= (bed.isEmpty()?(interval.isEmpty()?"":" --regions \""+interval+"\""):" --regions-file \""+bed+"\"")
 
-      	find \${PWD}/OUT -type f -name "chunck.*${suffix}" > clusters.list
+"""
 
-	# if too fast, prevent problems with timestamp ?
-	sleep 10
-	touch -c clusters.list
+	hostname 1>&2
+	${moduleLoad("bcftools")}
 
+cat << EOF > jeter.list
+${L.join("\n")}
+EOF
+
+	bcftools concat --threads ${task.cpus} ${optR} \
+		--no-version --allow-overlaps --remove-duplicates \
+		-O b -o "concatenated.bcf" --file-list jeter.list
+
+	bcftools index --threads ${task.cpus}  "concatenated.bcf"
+
+rm jeter.list
+
+	##################################################################################
 	cat <<- EOF > version.xml
 	<properties id="${task.process}">
-		<entry key="Name">${task.process}</entry>
-		<entry key="Description">Split file into parts</entry>
-		<entry key="Input">${filein}</entry>
-		<entry key="N">\${SQRT}</entry>
-		<entry key="N-FILES">\$(wc -l < clusters.list)</entry>
-		<entry key="Output">clusters.list</entry>
+		<entry key="name">${task.process}</entry>
+		<entry key="description">concat vcf(s) using bcftools</entry>
+		<entry key="count(vcfs)">${L.size()}</entry>
+		<entry key="bed">${bed}</entry>
+		<entry key="interval">${contig}</entry>
+		<entry key="bcftools">\$( bcftools --version-only)</entry>
 	</properties>
 	EOF
-        """
-
-	stub:
-	"""
-	touch chunck.list
-	echo "\${PWD}/chunck.list" > clusters.list
-
-	echo "<properties>" > version.xml
-	"""
-	}
-
+"""
+}
