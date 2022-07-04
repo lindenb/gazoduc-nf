@@ -217,11 +217,36 @@ String getClassTaxonomy(def f) {
 
 String toAbsolutePath(def f) {
 	if(f==null) throw new IllegalArgumentException("null path");
+	if((f instanceof org.codehaus.groovy.runtime.GStringImpl)) {
+		f = f.toString()
+		}
 	if((f instanceof String)) {
 		if(!f.startsWith(java.io.File.separator)) throw new IllegalArgumentException("Not an absolute path:\""+f+"\"");
 		return f;
 		}
 	if((f instanceof java.io.File)) return java.io.File.class.cast(f).getAbsolutePath();
 	if((f instanceof java.nio.file.Path)) return java.nio.file.Path.class.cast(f).toAbsolutePath().toString();
+	
 	throw new IllegalArgumentException("Cannot convert "+f+" to path. ("+getClassTaxonomy(f)+")");
 	}
+
+java.util.Map<String,Object> readContigFile(def f) {
+	final java.util.Map<String,Object> hash = new HashMap<>();
+	java.io.File fin = new java.io.File(toAbsolutePath(f));
+	try(FileReader fr =new FileReader(fin)) {
+		java.util.Properties props = new java.util.Properties();
+		props.load(fr);
+		hash.putAll(props);
+		}
+	catch(Throwable err) {
+		log.warn(err.getMessage());
+		err.printStackTrace();
+		throw err;
+		}
+	return hash;
+	}
+
+String jvarkit(s) {
+        return "\${JVARKIT_DIST}/"+s+".jar";
+        }
+

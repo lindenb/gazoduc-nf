@@ -26,7 +26,7 @@ include { moduleLoad; getKeyValue; getModules; getBoolean; assertNotEmpty} from 
 include {SAMTOOLS_CASES_CONTROLS_01} from '../samtools/samtools.cases.controls.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include { SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.nf'
-include { DOWNLOAD_GFF3_01 } from '../../modules/gff3/dowload.gff3.01.nf'
+include { DOWNLOAD_GFF3_01 } from '../../modules/gff3/download.gff3.01.nf'
 include {SQRT_FILE} from '../../modules/utils/sqrt.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 

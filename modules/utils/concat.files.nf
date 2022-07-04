@@ -32,8 +32,9 @@ output:
         path("concat.list"),emit:output
 	path("version.xml"),emit:version
 script:
+	def concat_n_files = meta.concat_n_files?:"50"
 """
-cat << EOF | xargs -L 1 cat > concat.list
+cat << EOF | xargs -L ${concat_n_files} cat > concat.list
 ${L.join("\n")}
 EOF
 
