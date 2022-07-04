@@ -1337,9 +1337,10 @@ workflow ANNOTATE {
 		version_ch = version_ch.mix(annot_vcf_ch.version.first())
 
 		to_file_ch = COLLECT_TO_FILE_01([:],annot_vcf_ch.bedvcf.map{T->T[0]+"\t"+T[1].toRealPath()}.collect())
+		version_ch = version_ch.mix(to_file_ch.version)
 
 		version_ch = MERGE_VERSION(meta, "annotation", "VCF annotation", version_ch.collect())
 	emit:
 		version= version_ch
-		bedvcf = to_file_ch
+		bedvcf = to_file_ch.output
 	}

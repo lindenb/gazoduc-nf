@@ -31,21 +31,24 @@ input:
 	val(L)
 output:
 	path("concat.list"),emit:output
+	path("version.xml"),emit:version
 script:
 """
 hostname 1>&2
 set -o pipefail
 
-cat << EOF | awk -F '/' '{printf("%s\t%s\\n",\$NF,\$0);}' | sort -t '\t' -T. -k1,1 -k2,2 | cut -f 2 | uniq > concat.list
+cat << EOF | awk -F '/' '{printf("%s\t%s\\n",\$NF,\$0);}' | sort -t '\t' -T. -k1,1 -k2,2 | cut -f 2- | uniq > concat.list
 ${L.join("\n")}
 EOF
 
 ## if it's too fast, prevent clock problems
 sleep 10
 touch -c concat.list
+echo "<properties/>" > version.xml
 """
 stub:
 """
 touch concat.list
+echo "<properties/>" > version.xml
 """
 }

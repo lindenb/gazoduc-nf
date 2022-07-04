@@ -47,6 +47,9 @@ include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
 include {moduleLoad;readContigFile} from '../../../modules/utils/functions.nf'
 include {VCF_TO_BED_01} from '../../../modules/jvarkit/jvarkit.vcf2bed.01.nf'
 include {ANNOTATE} from '../../../subworkflows/annotation/annotation.vcf.01.nf'
+include {COLLECT_TO_FILE_01} from '../../../modules/utils/collect2file.01.nf'
+include {BCFTOOLS_CONCAT_01} from '../../../subworkflows/bcftools/bcftools.concat.01.nf'
+include {MERGE_VERSION} from '../../../modules/version/version.merge.nf'
 
 def helpMessage() {
   log.info"""
@@ -106,11 +109,21 @@ workflow {
 	annotate_ch = ANNOTATE(cfg2 , params.reference, c1_ch.output.splitCsv(header:true,sep:'\t'))
 	version_ch = version_ch.mix(annotate_ch.version)
 
-	//html_ch = VERSION_TO_HTML(params,version_ch.version.collect())
-	//publish_ch = publish_ch.mix(html_ch.html)
-		
+	
+	file_list_ch = COLLECT_TO_FILE_01([:],annotate_ch.bedvcf.
+			splitCsv(header:false,sep:'\t').
+			map{T->T[1]}.collect())
+	
+	concat_ch = BCFTOOLS_CONCAT_01([:],file_list_ch.output)
+	version_ch = version_ch.mix(concat_ch.version)
 
-	//PUBLISH(publish_ch.collect())
+	
+	version_ch = MERGE_VERSION(params, "annot vcf", "annotation of VCF", version_ch.collect())
+	html = VERSION_TO_HTML(params,version_ch.version)
+	
+	publish_ch = Channel.empty().mix(html.html).mix(version_ch).mix(concat_ch.vcf).mix(concat_ch.index)
+	
+	PUBLISH(publish_ch.collect())
 	}
 
 

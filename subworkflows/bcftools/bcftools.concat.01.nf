@@ -48,6 +48,7 @@ main:
 	 version_ch = MERGE_VERSION(meta, "concat", "concat vcfs", version_ch.collect())
 emit:
 	vcf = d4_ch.vcf
+	index = d4_ch.index
 	version = version_ch
 }
 
