@@ -845,7 +845,7 @@ echo "<properties/>" > version.xml
 
 
 process APPLY_ANNOTATION {
-tag "vcf:${row.vcf} bed:${row.bed}"
+tag "vcf:${row.vcf} bed/rgn:${row.bed?:(row.interval?:"")}"
 cache 'lenient'
 afterScript "rm -rf TMP jeter.123.bed jeter1.vcf jeter2.vcf jeter1.bcf jeter1.bcf.csi jeter.tab jeter.tab.gz jeter.tab.gz.tbi hdr.txt"
 memory '5 g'
@@ -863,7 +863,6 @@ output:
 	path("contig.bcf.csi"),emit:index
 	path("version.xml"),emit:version
 script:
-	def bed=row.bed
 	def vcf=row.vcf
 	def cases_file = row.cases?:""
 	def controls_file = row.controls?:""
@@ -881,15 +880,23 @@ script:
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
 		<entry key="description">Annotation of a VCF file</entry>
-		<entry key="bed">${bed}</entry>
+		<entry key="bed">${row.bed?:""}</entry>
+		<entry key="interval">${row.interval?:""}</entry>
 		<entry key="vcf">${vcf}</entry>
 		<entry key="bcftools.version">\$(bcftools --version | head -n 2 | paste -sd ' ')</entry>
 		<entry key="steps">
 	EOF
 
+	# save bed or interval
+	if [ ! -z "${isBlank(row.bed)?"":"Y"}" ] ; then
+		ln -s "${row.bed}" TMP/tmp.bed
+	else
+		echo "${row.interval}" | awk -F '[:-]' '{printf("%s\t%d\t%s\\n",\$1,int(\$2)-1,\$3);}' > TMP/tmp.bed
+	fi
+	
 
 	# normalize bed, bcftools doesn't like more than 3 columns...
-	cut -f1,2,3 "${bed}" | bedtools sort -faidx "${reference}.fai" > TMP/jeter.123.bed
+	cut -f1,2,3 "TMP/tmp.bed" | bedtools sort -faidx "${reference}.fai" > TMP/jeter.123.bed
 
 	bcftools view ${extraBcfTools} --regions-file "TMP/jeter.123.bed" -O v "${vcf}" |\
 		java -jar ${jvarkit("vcfpar")} > TMP/jeter1.vcf

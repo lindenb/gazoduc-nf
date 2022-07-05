@@ -22,9 +22,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include {parseBoolean;isBlank} from './functions.nf'
 
 process COLLECT_TO_FILE_01 {
 executor "local"
+afterScript "rm jeter.list"
 tag "N=${L.size()}"
 input:
 	val(meta)
@@ -37,14 +39,38 @@ script:
 hostname 1>&2
 set -o pipefail
 
-cat << EOF | awk -F '/' '{printf("%s\t%s\\n",\$NF,\$0);}' | sort -t '\t' -T. -k1,1 -k2,2 | cut -f 2- | uniq > concat.list
+if [ ! -z "${isBlank(meta.header)?"":"Y"}" ] ; then
+	echo '${meta.header?:""}' > concat.list
+fi
+
+cat << EOF > jeter.list
 ${L.join("\n")}
 EOF
 
+if [ ! -z "${parseBoolean(meta.sort)?"Y":""}" ] ; then
+
+	awk -F '/' '{printf("%s\t%s\\n",\$NF,\$0);}' jeter.list |\
+		sort -t '\t' -T. -k1,1 -k2,2 | cut -f 2- | uniq >> concat.list
+
+else
+
+	cat jeter.list >> concat.list
+
+fi
+
+
 ## if it's too fast, prevent clock problems
+
 sleep 10
 touch -c concat.list
-echo "<properties/>" > version.xml
+
+cat << EOF > version.xml
+<properties id='${task.process}'>
+  <entry key="name">${task.process}</entry>
+  <entry key="description">collecte strings and write it into a file</entry>
+  <entry key="count">${L.size()}</entry>
+  <entry key="header">${meta.header?:"(no-header)"}</entry>
+</properties>
 """
 stub:
 """

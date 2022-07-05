@@ -63,15 +63,15 @@ workflow GATK4_HAPCALLER_GVCFS_01 {
 		by_bed_ch = hapcaller_ch.bedvcf.map{T->[T[0].bed,T[1]]}.groupTuple()
 
 		split_gvcfs_ch = SPLIT_GVCF_BLOCKS(meta,by_bed_ch)
-		version_ch = version_ch.mix(split_gvcfs_ch.first())
+		version_ch = version_ch.mix(split_gvcfs_ch.version.first())
 
 
 		find_gvcfs_ch = FIND_GVCF_BLOCKS(meta,split_gvcfs_ch.output.splitCsv(header:true,sep:'\t',strip:true))
-		version_ch = version_ch.mix(find_gvcfs_ch.first())
+		version_ch = version_ch.mix(find_gvcfs_ch.version.first())
 
 
 		genotyped_ch = GENOTYPE_GVCFS(meta,reference,find_gvcfs_ch.output.splitCsv(header:true,sep:'\t',strip:true))
-		version_ch = version_ch.mix(find_gvcfs_ch.first())
+		//TODO version_ch = version_ch.mix(genotyped_ch.version.first())
 
 		version_ch = MERGE_VERSION(meta, "gatk4", "call bams using gvcfs", version_ch.collect())
 	emit:
