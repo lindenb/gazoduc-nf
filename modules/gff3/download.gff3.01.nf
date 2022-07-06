@@ -83,7 +83,7 @@ script:
 		<entry key="description">Download GFF for Reference</entry>
 		<entry key="reference">${reference}</entry>
 		<entry key="with_tabix">${with_tabix}</entry>
-		<entry key="url">${url}</entry>
+		<entry key="url"><a>${url}</a></entry>
 		<entry key="bedrenamechr">\$(java  -jar \${JVARKIT_DIST}/bedrenamechr.jar --version)</entry>
 		<entry key="bgzip">\$(bgzip --version | head -n 1)</entry>
 		<entry key="tabix">\$(tabix --version | head -n 1)</entry>

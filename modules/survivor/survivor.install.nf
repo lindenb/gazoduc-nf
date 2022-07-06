@@ -42,7 +42,7 @@ cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
         <entry key="description">download and install survivor</entry>
-        <entry key="url">${url}</entry>
+        <entry key="url"><a>${url}</a></entry>
         <entry key="survivor.version">\$(./SURVIVOR/Debug/SURVIVOR  2>&1 /dev/null | grep '^Version' | cut -d ':' -f 2- )</entry>
 </properties>
 EOF

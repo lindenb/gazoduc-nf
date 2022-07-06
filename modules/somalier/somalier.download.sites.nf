@@ -56,7 +56,7 @@ cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
         <entry key="description">download VCF sites for somalier</entry>
-        <entry key="url">${url}</entry>
+        <entry key="url"><a>${url}</a></entry>
 	<entry key="bcftools.version">\$( bcftools --version-only)</entry>
 </properties>
 EOF

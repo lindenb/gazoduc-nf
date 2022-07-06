@@ -62,7 +62,7 @@ process DOWNLOAD_GOLEFT {
 		<entry key="name">${task.process}</entry>
 		<entry key="description">Download goleft</entry>
 		<entry key="version">${version}</entry>
-		<entry key="url">${url}</entry>
+		<entry key="url"><a>${url}</a></entry>
 	</properties>
 	EOF
 	"""

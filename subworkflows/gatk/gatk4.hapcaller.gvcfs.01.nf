@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {moduleLoad} from './../../modules/utils/functions.nf'
+include {isBlank;moduleLoad} from './../../modules/utils/functions.nf'
 include {SAMTOOLS_SAMPLES02} from './../../modules/samtools/samtools.samples.02.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 
@@ -71,7 +71,7 @@ workflow GATK4_HAPCALLER_GVCFS_01 {
 
 
 		genotyped_ch = GENOTYPE_GVCFS(meta,reference,find_gvcfs_ch.output.splitCsv(header:true,sep:'\t',strip:true))
-		//TODO version_ch = version_ch.mix(genotyped_ch.version.first())
+		version_ch = version_ch.mix(genotyped_ch.version.first())
 
 		version_ch = MERGE_VERSION(meta, "gatk4", "call bams using gvcfs", version_ch.collect())
 	emit:
@@ -130,11 +130,11 @@ ${moduleLoad("gatk4 bcftools jvarkit")}
      -I "${bam}" \
      -ERC GVCF \
      --seconds-between-progress-updates 600 \
-     ${!dbsnp.isEmpty() &&  reference.equals(bam_reference)?"--dbsnp ${dbsnp}":""}   \
+     ${!isBlank(dbsnp) &&  reference.equals(bam_reference)?"--dbsnp ${dbsnp}":""}   \
      -L TMP/fixed.bed \
      -R "${bam_reference}" \
      --sample-ploidy `awk -F '\t' 'BEGIN{P=1;} {if(!(\$1=="chrY" || \$1=="Y")) P=2;} END{print P;}' TMP/fixed.bed` \
-     ${pedigree.isEmpty()?"":" --pedigree '${pedigree}'"} \
+     ${isBlank(pedigree)?"":" --pedigree '${pedigree}'"} \
      ${(mapq as Integer)<1?"":" --minimum-mapping-quality '${mapq}'"} \
      -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \
      ${extraHC} \
@@ -196,6 +196,7 @@ cat << EOF > version.xml
         <entry key="dbsnp">${dbsnp}</entry>
         <entry key="pedigree">${pedigree}</entry>
 	<entry key="gatk.version">\$( gatk HaplotypCaller --version 2> /dev/null  | paste -s -d ' ')</entry>
+	<entry key="gatk.cmd"><code>\$(bcftools view --header-only hapcaller.g.vcf.gz | grep "^##GATKCommandLine=<ID=HaplotypeCaller" -m1 | tr "<>&" "_" | cat)</code></entry>
 </properties>
 EOF
 """
@@ -317,11 +318,12 @@ input:
 output:
         tuple val("${row.interval}"),path("genotyped.bcf"),emit:region_vcf
         path("genotyped.bcf.csi"),emit:index
+	path("version.xml"),emit:version
 script:
      def region = row.interval
      def pedigree = meta.pedigree?:""
-     def optPed = (pedigree.isEmpty()?"":" -A PossibleDeNovo --pedigree "+pedigree)
-     def optDbsnp =  (meta.dbsnp.isEmpty()?"":"--dbsnp "+meta.dbsnp)
+     def optPed = (isBlank(pedigree)?"":" -A PossibleDeNovo --pedigree "+pedigree)
+     def optDbsnp =  (isBlank(meta.dbsnp)?"":"--dbsnp "+meta.dbsnp)
      def maxAlternateAlleles = meta.maxAlternateAlleles?:6
 """
 hostname 1>&2

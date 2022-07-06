@@ -45,7 +45,7 @@ cat << EOF > version.xml
         <entry key="name">${task.process}</entry>
         <entry key="description">download and somalier</entry>
         <entry key="somalier.version">${somalier_version}</entry>
-        <entry key="url">${url}</entry>
+        <entry key="url"><a>${url}</a></entry>
 </properties>
 EOF
 """

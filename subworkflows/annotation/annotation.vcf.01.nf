@@ -226,7 +226,7 @@ cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="Name">${task.process}</entry>
         <entry key="description">${whatis}</entry>
-        <entry key="url">${url}</entry>
+        <entry key="url"><a>${url}</a></entry>
 </properties>
 EOF
 """
@@ -272,7 +272,7 @@ cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="Name">${task.process}</entry>
         <entry key="description">${whatis}</entry>
-        <entry key="url">${url}</entry>
+        <entry key="url"><a>${url}</a></entry>
 </properties>
 EOF
 
@@ -323,7 +323,7 @@ cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="Name">${task.process}</entry>
         <entry key="description">${whatis}</entry>
-        <entry key="url">${url}</entry>
+        <entry key="url"><a>${url}</a></entry>
 </properties>
 EOF
 
@@ -376,7 +376,7 @@ cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="Name">${task.process}</entry>
 	<entry key="description">${whatis}</entry>
-        <entry key="url">${url}</entry>
+        <entry key="url"><a>${url}</a></entry>
 </properties>
 EOF
 """
@@ -429,7 +429,7 @@ cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="Name">${task.process}</entry>
         <entry key="description">${whatis}</entry>
-        <entry key="url">${url}</entry>
+        <entry key="url"><a>${url}</a></entry>
 </properties>
 EOF
 
@@ -500,8 +500,8 @@ cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="Name">${task.process}</entry>
         <entry key="description">${whatis}</entry>
-        <entry key="obo.url">${url0}</entry>
-        <entry key="annot.url">${url1}</entry>
+        <entry key="obo.url"><a>${url0}</a></entry>
+        <entry key="annot.url"><a>${url1}</a></entry>
 </properties>
 EOF
 
@@ -587,7 +587,7 @@ cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="Name">${task.process}</entry>
         <entry key="description">${whatis}</entry>
-        <entry key="url">${url}</entry>
+        <entry key="url"><a>${url}</a></entry>
 </properties>
 EOF
 
@@ -636,7 +636,7 @@ cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="Name">${task.process}</entry>
         <entry key="description">${whatis}</entry>
-        <entry key="url">${url}</entry>
+        <entry key="url"><a>${url}</a></entry>
 </properties>
 EOF
 
@@ -689,7 +689,7 @@ cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="Name">${task.process}</entry>
         <entry key="description">${whatis}</entry>
-        <entry key="url">${url}</entry>
+        <entry key="url"><a>${url}</a></entry>
 </properties>
 EOF
 
@@ -737,7 +737,7 @@ cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="Name">${task.process}</entry>
         <entry key="description">${whatis}</entry>
-        <entry key="url">${url}</entry>
+        <entry key="url"><a>${url}</a></entry>
 </properties>
 EOF
 
@@ -784,7 +784,7 @@ cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="Name">${task.process}</entry>
         <entry key="description">${whatis}</entry>
-        <entry key="url">${url}</entry>
+        <entry key="url"><a>${url}</a></entry>
 </properties>
 EOF
 
@@ -831,7 +831,7 @@ cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="Name">${task.process}</entry>
         <entry key="description">${whatis}</entry>
-        <entry key="url">${url}</entry>
+        <entry key="url"><a>${url}</a></entry>
 </properties>
 EOF
 """
@@ -859,7 +859,7 @@ input:
 	path(gff3)
 	val(row)
 output:
-	tuple val("${row.bed}"),path("contig.bcf"),emit:bedvcf
+	tuple val("${row.bed?:(row.interval?:".")}"),path("contig.bcf"),emit:bedvcf
 	path("contig.bcf.csi"),emit:index
 	path("version.xml"),emit:version
 script:

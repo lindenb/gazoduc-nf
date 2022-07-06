@@ -86,7 +86,7 @@ script:
 		<entry key="name">${task.process}</entry>
 		<entry key="description">Download GTF for Reference</entry>
 		<entry key="reference">${reference}</entry>
-		<entry key="url">${url}</entry>
+		<entry key="url"><a>${url}</a></entry>
 		<entry key="bedrenamechr">\$(java  -jar \${JVARKIT_DIST}/bedrenamechr.jar --version)</entry>
 		<entry key="with_tabix">${with_tabix}</entry>
 		<entry key="bgzip">\$(bgzip --version | head -n 1)</entry>

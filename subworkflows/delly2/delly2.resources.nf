@@ -84,7 +84,7 @@ script:
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
 		<entry key="description">Download mappability files</entry>
-		<entry key="url">${url}</entry>
+		<entry key="url"><a>${url}</a></entry>
 	</properties>
 	EOF
 	"""
@@ -126,7 +126,7 @@ fi
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
 		<entry key="description">Download Exclude File</entry>
-		<entry key="url">${url1}</entry>
+		<entry key="url"><a>${url1}</a></entry>
 	</properties>
 	EOF
 """
@@ -189,7 +189,7 @@ process DOWNLOAD_DELLY2 {
 		<entry key="name">${task.process}</entry>
 		<entry key="description">Download delly</entry>
 		<entry key="version">${version}</entry>
-		<entry key="url">${url}</entry>
+		<entry key="url"><a>${url}</a></entry>
 	</properties>
 	EOF
 	"""

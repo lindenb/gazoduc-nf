@@ -94,15 +94,15 @@ ${params.rsrc.author}
 
 
 <xsl:template match="pre">
-<pre><xsl:apply-templates select="*"/></pre>
+<pre><xsl:apply-templates/></pre>
 </xsl:template>
 
 <xsl:template match="b">
-<b><xsl:apply-templates select="*"/></b>
+<b><xsl:apply-templates/></b>
 </xsl:template>
 
 <xsl:template match="i">
-<i><xsl:apply-templates select="*"/></i>
+<i><xsl:apply-templates/></i>
 </xsl:template>
 
 <xsl:template match="code">
@@ -117,7 +117,7 @@ ${params.rsrc.author}
 	<xsl:otherwise><xsl:value-of select="."/></xsl:otherwise>
 </xsl:choose>
 </xsl:attribute>
-<xsl:apply-templates select="*"/>
+<xsl:apply-templates/>
 </xsl:element>
 </xsl:template>
 
@@ -135,7 +135,9 @@ ${params.rsrc.author}
 </xsl:element>
 </xsl:template>
 
-
+<xsl:template match="text()">
+<xsl:value-of select="."/>
+</xsl:template>
 
 </xsl:stylesheet>
 __EOF__

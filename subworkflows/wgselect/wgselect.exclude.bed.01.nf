@@ -107,7 +107,7 @@ cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
 	<entry key="description">load bed from UCSC : repeat masked regions. To disable add 'rmsk' to 'disableFeatures'</entry>
-	<entry key="url">${url}</entry>
+	<entry key="url"><a>${url}</a></entry>
 </properties>
 EOF
 """
@@ -147,7 +147,7 @@ cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
 	<entry key="description">load excludedRegions from encode. To disable add 'encodeExclude' to 'disableFeatures'</entry>
-	<entry key="url">${url}</entry>
+	<entry key="url"><a>${url}</a></entry>
 </properties>
 EOF
 """
@@ -186,7 +186,7 @@ cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
 	<entry key="description">download lowComplexity Regions. To disable add 'lcr' to 'disableFeatures'</entry>
-	<entry key="url">${url}</entry>
+	<entry key="url"><a>${url}</a></entry>
 </properties>
 EOF
 """
@@ -225,7 +225,7 @@ cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
 	<entry key="description">download simple repeats. To disable add 'simpleRepeats' to 'disableFeatures'</entry>
-	<entry key="url">${url}</entry>
+	<entry key="url"><a>${url}</a></entry>
 </properties>
 EOF
 """
