@@ -1047,6 +1047,15 @@ script:
 			-config  "\${SNPEFF_CONFIG}" \
 			-nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf "${isHg19(reference)?"GRCh37.75":"TODO"}" TMP/jeter1.vcf > TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
+
+
+		cat <<- EOF >> version.xml
+		<properties>
+			<entry key="description">annotation with SnpEFF</entry>
+		</properties>
+		EOF
+
+
 	fi
 
 
@@ -1055,6 +1064,16 @@ script:
 		vep --cache  --format vcf --force_overwrite --output_file STDOUT --no_stats --offline  --dir_cache /LAB-DATA/BiRD/resources/apps/vep  --species homo_sapiens --cache_version 104 --assembly GRCh37 --merged --fasta "${reference}" --use_given_ref --vcf < TMP/jeter1.vcf > TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
 		module unload ensembl-vep/104.3
+
+
+		cat <<- EOF >> version.xml
+		<properties>
+			<entry key="description">annotation with VEP</entry>
+			<entry key="vep.version">104.3</entry>
+		</properties>
+		EOF
+
+
 	fi
 
         if [ ! -z "${(hasFeature(meta,"snpeff") || hasFeature(meta, "vep")) && !isBlank(meta.soacn) ?"Y":""}" ] ; then
@@ -1062,6 +1081,17 @@ script:
 			${isSoftFilter(meta,"BAD_SO")?"--filterout  BAD_SO":""} \
 			--acn "${meta.soacn}" TMP/jeter1.vcf > TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
+
+		cat <<- EOF >> version.xml
+		<properties>
+			<entry key="description">filtration consequences</entry>
+			<entry key="so.acn">${meta.soacn}</entry>
+			<entry key="soft.filter">${isSoftFilter(meta,"BAD_SO")}</entry>
+			<entry key="vcffilterso.version">\$(java -jar ${jvarkit("vcffilterso") --version)</entry>
+		</properties>
+		EOF
+
+
 	fi
 
 	## cadd
@@ -1069,6 +1099,17 @@ script:
         	java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar ${jvarkit("vcfcadd")} \
 			--tabix "/LAB-DATA/BiRD/resources/species/human/krishna.gs.washington.edu/download/CADD/v1.6/whole_genome_SNVs.tsv.gz" TMP/jeter1.vcf > TMP/jeter2.vcf
 	      	mv TMP/jeter2.vcf TMP/jeter1.vcf
+
+
+		cat <<- EOF >> version.xml
+		<properties>
+			<entry key="description">annotation CADD</entry>
+			<entry key="cadd.file">/LAB-DATA/BiRD/resources/species/human/krishna.gs.washington.edu/download/CADD/v1.6/whole_genome_SNVs.tsv.gz</entry>
+			<entry key="vcfcadd.version">\$(java -jar ${jvarkit("vcfcadd") --version)</entry>
+		</properties>
+		EOF
+
+
 	fi
 
 	if [ ! -z "${hasFeature(meta,"gnomadGenome")?"Y":""}" ] ; then
@@ -1078,6 +1119,17 @@ script:
 			--prefix "${isSoftFilter(meta,"GNOMAD")?"GNOMAD":""}" \
 			--gnomad "${getGnomadGenomePath(meta,reference)}" --fields "${meta.gnomadPop}" TMP/jeter1.vcf > TMP/jeter2.vcf
                 mv TMP/jeter2.vcf TMP/jeter1.vcf
+
+		cat <<- EOF >> version.xml
+		<properties>
+			<entry key="description">annotation gnomad genome</entry>
+			<entry key="max-AF">${meta.gnomadAF}</entry>
+			<entry key="population">${meta.gnomadPop}</entry>
+			<entry key="soft.filter">${isSoftFilter(meta,"GNOMAD")}</entry>
+			<entry key="gnomad.path">${getGnomadGenomePath(meta,reference)}</entry>
+		</properties>
+		EOF
+
 	fi
 
 	if [ ! -z "${hasFeature(meta, "gnomadExome")?"Y":""}" ] ; then
@@ -1087,9 +1139,20 @@ script:
 			--prefix "${isSoftFilter(meta,"GNOMAD")?"GNOMAD":""}" \
 			--gnomad "${getGnomadExomePath(meta,reference)}" --fields "${meta.gnomadPop}" TMP/jeter1.vcf > TMP/jeter2.vcf
                 mv TMP/jeter2.vcf TMP/jeter1.vcf
-	fi
-	
 
+
+		cat <<- EOF >> version.xml
+		<properties>
+			<entry key="description">annotation gnomad exome</entry>
+			<entry key="max-AF">${meta.gnomadAF}</entry>
+			<entry key="population">${meta.gnomadPop}</entry>
+			<entry key="soft.filter">${isSoftFilter(meta,"GNOMAD")}</entry>
+			<entry key="gnomad.path">${getGnomadExomePath(meta,reference)}</entry>
+		</properties>
+		EOF
+
+
+	fi
 
 
 	bcftools sort --max-mem "${task.memory.giga}g" -T TMP -O b -o TMP/contig.bcf TMP/jeter1.vcf
