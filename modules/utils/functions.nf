@@ -230,6 +230,30 @@ String toAbsolutePath(def f) {
 	throw new IllegalArgumentException("Cannot convert "+f+" to path. ("+getClassTaxonomy(f)+")");
 	}
 
+
+String removeCommonSuffixes(String s) {
+	List<String> L = [
+		".gz",".txt",".csv",".idx",".tbi",".list",".tmp",".bgz",".zip",".tar",
+		".bed",".interval_list",
+		".vcf",".bcf",
+		".fa",".fasta",
+		".bam",".cram",".bai",".csi",
+		".gtf",".gff",".gff3"
+		]
+	boolean done = false;
+	while(!done) {
+		done = true;
+		for(String x:L) {
+			if(s.length()< x.length() && s.toLowerCase().endsWith(x)) {
+				done=false;
+				s=s.substring(0,s.length()-x.length());
+				}
+			}
+		}
+	return s;
+	}
+
+
 java.util.Map<String,Object> readContigFile(def f) {
 	final java.util.Map<String,Object> hash = new HashMap<>();
 	java.io.File fin = new java.io.File(toAbsolutePath(f));
