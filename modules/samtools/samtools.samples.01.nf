@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 
-include { getKeyValue; getModules} from '../../modules/utils/functions.nf'
+include { getKeyValue;moduleLoad;parseBoolean} from '../../modules/utils/functions.nf'
 
 process SAMTOOLS_SAMPLES01 {
 tag "${file(bams).name}"
@@ -36,9 +36,10 @@ output:
 	path("sample2bam.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
+	def with_header = parseBoolean(meta.with_header?:"false")
 """
-hostname 2>&1
-module load ${getModules("samtools")}
+hostname 1>&2
+${moduleLoad("samtools")}
 set -o pipefail
 
 
@@ -60,8 +61,11 @@ test ! -s jeter.txt
 cut -f 2 jeter.tsv | sort -T . | uniq -d > jeter.txt
 test ! -s jeter.txt
 
+if [ ! -z "${with_header?"Y":""}" ] ; then
+	echo "sample\tbam" > sample2bam.tsv
+fi
 
-cut -f1,2 jeter.tsv | sort -T . -t '\t' -k1,1  > sample2bam.tsv
+cut -f1,2 jeter.tsv | sort -T . -t '\t' -k1,1  >> sample2bam.tsv
 
 ##################
 cat << EOF > version.xml
@@ -70,8 +74,9 @@ cat << EOF > version.xml
 	<entry key="description">extract sample names from BAM metadata</entry>
 	<entry key="input">${bams}</entry>
         <entry key="samtools.version">\$(samtools  --version | head -n 1| cut -d ' ' -f2)</entry>
-        <entry key="n-samples">\$(wc -l < sample2bam.tsv )</entry>
-        <entry key="samples">\$(cut -f 1 sample2bam.tsv |paste -s -d ' ')</entry>
+        <entry key="n-samples">\$(grep -v 'sample\tbam'  sample2bam.tsv | wc -l )</entry>
+        <entry key="samples">\$(grep -v 'sample\tbam' sample2bam.tsv | cut -f1 | paste -s -d ' ')</entry>
+        <entry key="with-eadr">${with_header}</entry>
 </properties>
 EOF
 """

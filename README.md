@@ -19,6 +19,10 @@ My Nextflow Pipelines
 
   * [GATK direct](workflows/gatk/gatk4direct/) Calling bams without gvcfs
 
+### Relatedness
+
+  * [Somalier BAMS](workflows/somalier/somalier.bams/) Somalier on bams.
+
 ### Misc
 
   * [VCF stats](workflows/vcfstats/vcfstats01/README.md). Apply `bcftools stats` on a set of vcf files

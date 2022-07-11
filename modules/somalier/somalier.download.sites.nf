@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {moduleLoad;assertKnownReference;getKeyValue} from '../utils/functions.nf'
+include {moduleLoad;assertKnownReference;getKeyValue;isHg19;isHg38} from '../utils/functions.nf'
 
 process SOMALIER_DOWNLOAD_SITES {
 tag "${file(reference).name}"
@@ -31,7 +31,7 @@ input:
 	val(reference)
 output:
 	path("sites.vcf.gz"), emit: vcf
-	path("sites.vcf.gz.tbi")
+	path("sites.vcf.gz.tbi"), emit:index
 	path("version.xml"), emit:version
 script:
 	def fasta = assertKnownReference(reference)
