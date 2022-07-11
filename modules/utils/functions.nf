@@ -274,3 +274,21 @@ String jvarkit(s) {
         return "\${JVARKIT_DIST}/"+s+".jar";
         }
 
+
+void runOnComplete(def wf) {
+wf.onComplete {
+    println ( workflow.success ? """
+        Pipeline execution summary
+        ---------------------------
+        Completed at: ${wf.complete}
+        Duration    : ${wf.duration}
+        Success     : ${wf.success}
+        workDir     : ${wf.workDir}
+        exit status : ${wf.exitStatus}
+        """ : """
+        Failed: ${wf.errorReport}
+        exit status : ${wf.exitStatus}
+        """
+    )
+}
+}

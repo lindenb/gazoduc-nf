@@ -40,9 +40,11 @@ params.prefix = ""
 params.dbsnp=""
 params.pedigree=""
 params.beds=""
+params.nbams=20
 
 include {GATK4_HAPCALLER_DIRECT_01} from '../../../subworkflows/gatk/gatk4.hapcaller.direct.01.nf'
-
+include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
+include {runOnComplete;moduleLoad} from '../../../modules/utils/functions.nf'
 
 def helpMessage() {
   log.info"""
@@ -57,6 +59,7 @@ ${params.rsrc.author}
 
   * --reference (fasta) ${params.rsrc.reference} [REQUIRED]
   * --bams (file) one file containing the paths to the BAM/CRAM [REQUIRED]
+  * --beds (file) call in the following bed files. One path to bed per line.
   * --mapq (int)  min mapping quality . If it's lower than 0 (this is the default) just use the bam index as is. Otherwise, rebuild the bai
   * --publishDir (dir) Save output in this directory
   * --prefix (string) files prefix. default: ""
@@ -64,11 +67,12 @@ ${params.rsrc.author}
 ## Usage
 
 ```
-nextflow -C ../../confs/cluster.cfg  run -resume ${workflow.scriptFile} \\
+nextflow -C ../../confs/cluster.cfg  run -resume gatk4direct.nf \\
 	--publishDir output \\
 	--prefix "analysis." \\
 	--reference /path/to/reference.fasta \\
 	--bams /path/to/bams.list \\
+	--beds /path/to/beds.list \\
 	--mapq 30
 ```
 
@@ -98,38 +102,39 @@ workflow {
 			params.bams,
 			file(params.beds)
 			)
+	html_ch = VERSION_TO_HTML(params,gatk_ch.version)
+
+	publish_ch = publish_ch.mix(gatk_ch.version)
+	publish_ch = publish_ch.mix(html_ch.html)
+
+	PUBLISH(gatk_ch.vcf, gatk_ch.index, publish_ch.collect())
 	}
 
-/*
+
 process PUBLISH {
-tag "${zip.name}"
+tag "${L.size()}"
 publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
 input:
-	path(zip)
+	path(vcf)
+	path(index)
+	val(L)
 output:
-	path(zip)
+	path("*.bcf"),optional:true
+	path("*.csi"),optional:true
+	path("*.xml"),optional:true
+	path("*.html"),optional:true
 when:
 	!params.getOrDefault("publishDir","").trim().isEmpty()
 script:
 """
-echo "publishing ${zip}"
+cp "${vcf}" "${params.prefix?:""}genotyped.bcf"
+cp "${index}" "${params.prefix?:""}genotyped.bcf.csi"
+
+for F in ${L.join(" ")}
+do
+        ln -s "\${F}" ./
+done
 """
-}*/
-
-workflow.onComplete {
-
-    println ( workflow.success ? """
-        Pipeline execution summary
-        ---------------------------
-        Completed at: ${workflow.complete}
-        Duration    : ${workflow.duration}
-        Success     : ${workflow.success}
-        workDir     : ${workflow.workDir}
-        exit status : ${workflow.exitStatus}
-        """ : """
-        Failed: ${workflow.errorReport}
-        exit status : ${workflow.exitStatus}
-        """
-    )
 }
 
+runOnComplete(workflow)

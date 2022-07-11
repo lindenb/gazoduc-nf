@@ -22,42 +22,41 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include {assertNotEmpty;parseBoolean} from './functions.nf'
 
-process MERGE_VERSION {
-tag "N=${L.size()}"
+process SIMPLE_COMMAND_01 {
+tag "${meta.command}"
 executor "local"
 input:
-	val(meta)
-	val(name)
-	val(description)
-	val(L)
+        val(meta)
+        val(input)
 output:
-	path("${prefix}version.xml"),emit:version
+        path("${meta.prefix?:""}concat${meta.suffix?:".txt"}"),emit:output
+	path("version.xml"),emit:version
 script:
-	prefix = meta.getOrDefault("prefix","")
+	def command = assertNotEmpty(meta.command,"command must be defined")
+	def downstream = meta.downstream?:""
+	def lt = parseBoolean(meta.lt)?"<":""
 """
-cat << EOF > jeter.xml
-<properties id="${name}">
-	<entry key="name">${name}</entry>
-	<entry key="description">${description}</entry>
-	<entry key="date">\$(date)</entry>
-	<entry key="steps">
-EOF
+hostname 1>&2
 
-for X in ${L.join(" ")}
-do
-	xmllint --nocdata --format "\${X}" | tail -n+2 >> jeter.xml
-done
+${command} ${lt} ${input} ${downstream} > '${meta.prefix?:""}concat${meta.suffix?:".txt"}'
 
-cat << EOF >> jeter.xml
-	</entry>
+
+#############################################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+	<entry key="Name">${task.process}</entry>
+	<entry key="description">apply simple linux command</entry>
+        <entry key="command">${command}</entry>
+        <entry key="downstream">${downstream}</entry>
 </properties>
 EOF
-	xmllint --format jeter.xml > "${prefix}version.xml"
-rm jeter.xml
-"""
-stub:
-"""
-echo "<properties/>" > "${prefix}version.xml"
+
+
+# avoid timestamp problem
+sleep 5
+
 """
 }
+

@@ -15,6 +15,10 @@ My Nextflow Pipelines
   * [Manta](workflows/manta/) Finds CNVs/SV using using [Manta](https://github.com/Illumina/manta).
   * [Smoove](workflows/smoove/) Finds CNVs/SV using [Smoove](https://github.com/brentp/smoove)
 
+### Calling
+
+  * [GATK direct](workflows/gatk/gatk4direct/) Calling bams without gvcfs
+
 ### Misc
 
   * [VCF stats](workflows/vcfstats/vcfstats01/README.md). Apply `bcftools stats` on a set of vcf files

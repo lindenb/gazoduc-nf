@@ -44,6 +44,7 @@ cat << __EOF__ > jeter.xsl
 <head>
 <title>${prefix}</title>
 <meta charset="utf-8" />
+<link rel="icon" type="image/png" sizes="16x16" href="data:image/png;iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAACg0lEQVR4nEyST0sbXRSHz713ZhKTzGRGX/yDIiiiL1TIJq3YhSIFQQt2p+AHKNpFP4JbqUt3hRYXtpZWFLOpSJMKxtJuJBgkCxNKC5Y6JoYmTiaTTO49ZZpq/a0u3HO45zn3kTCdhmYohVAIhABZxmKRSBJoGrguEAKWBYjNKgkAEIBQWrXt5OGhT1EsQj7E41oodH90tEUIzvlYNCpJUrOHel2ISGm5Xn8Zi00tLu7s7Z1fXv4wzVfb21MLC+8SiboQ+KcKAMjfkRCBMdD1TwcHn4+OfpXLiqK0KMrk+HgkGoViEa5D/jEgcs6ZqpZt+97MTHdn5/v1dZ8Q3LaZJN00eCfOOaWUEEIodR2nbFl3BgbadN2yLMKYzBgACPTCKPUYWDhMGGu4LlIqh8Nvt7aSqdR2PP4xkVAMgyM2XJcqClNVb3LMZJ4vLZ3v76Np1tLpByMjhqa1hsNtum5o2vz0NOZyaJqZnZ3Xy8uYzRI8OembnIwMDbV2dakAqxsbcCs+RXk6P1+o17/lcrbjfInFANPp0UjE0DQAiAwOhlWVkCaOR9Xd3v5/Xx8A/GcYjyYmMJv1oN1GQwsGq7WaFgpxzvH6UxGxwbmhaX6fL+D3NzgHQjxoibGSZTm1WrlSaa7hJpTSy1LJqdUq1arEGCBKQOnPfP7h2FhPfz+tVJ6trTUtIIQgYunq6snsrCPL6VTqvFAA7yqTebOyUkgmMZ+3U6mejo7bL9wdHva2dHHxdXc3trqKp6cEj49BVcG2XceRg8HvZ2cvNjfPTJMQMtDb+3hurlXXebUqBwLg84FleWo0OGeUEkqRc+L3QyDgSd4U3rI8wykVQqAQjLHfAQAA///ibT6I5zbGeAAAAABJRU5ErkJggg=="/>
 <style type="text/css">
   dl {
     display: flex;
@@ -70,6 +71,8 @@ cat << __EOF__ > jeter.xsl
 </head>
 <body>
 <div>
+<h1><xsl:value-of select="properties/entry[@key='name'][1]/text()"/></h1>
+<p><xsl:value-of select="properties/entry[@key='description'][1]/text()"/></p>
 <xsl:apply-templates select="*"/>
 </div>
 <hr/>
@@ -106,8 +109,29 @@ ${params.rsrc.author}
 </xsl:template>
 
 <xsl:template match="code">
-<code><xsl:apply-templates select="*"/></code>
+<code><xsl:apply-templates/></code>
 </xsl:template>
+
+<xsl:template match="table">
+<table><xsl:apply-templates/></table>
+</xsl:template>
+
+<xsl:template match="caption">
+<caption><xsl:apply-templates/></caption>
+</xsl:template>
+
+<xsl:template match="tr">
+<tr><xsl:apply-templates/></tr>
+</xsl:template>
+
+<xsl:template match="td">
+<td><xsl:apply-templates/></td>
+</xsl:template>
+
+<xsl:template match="th">
+<th><xsl:apply-templates/></th>
+</xsl:template>
+
 
 <xsl:template match="a">
 <xsl:element name="a">

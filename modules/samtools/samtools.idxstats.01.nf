@@ -23,41 +23,48 @@ SOFTWARE.
 
 */
 
-process MERGE_VERSION {
-tag "N=${L.size()}"
-executor "local"
+include {assertNotEmpty;getKeyValue;moduleLoad} from '../../modules/utils/functions.nf'
+
+process SAMTOOLS_IDXSTATS_01 {
+tag "${file(bam).name}"
+afterScript "rm -rf TMP"
+cpus 1
 input:
 	val(meta)
-	val(name)
-	val(description)
-	val(L)
+	val(bam)
 output:
-	path("${prefix}version.xml"),emit:version
+	path("*idxstats.tsv"),path(""),emit:output
+	path("version.xml"),emit:version
 script:
-	prefix = meta.getOrDefault("prefix","")
+	def prefix = meta.prefix?:""
 """
-cat << EOF > jeter.xml
-<properties id="${name}">
-	<entry key="name">${name}</entry>
-	<entry key="description">${description}</entry>
-	<entry key="date">\$(date)</entry>
-	<entry key="steps">
-EOF
+hostname 1>&2
+${moduleLoad("samtools")}
+set -o pipefail
 
-for X in ${L.join(" ")}
-do
-	xmllint --nocdata --format "\${X}" | tail -n+2 >> jeter.xml
-done
+SN=`samtools samples "${bam}" | cut -f 1 | head -n 1`
 
-cat << EOF >> jeter.xml
-	</entry>
+test ! -z "${SN}"
+
+samtools idxstats --threads ${task.cpus} "${bam}"  |\
+	awk -F '\t' -vS=\${SN} 'BEGIN{OFS="\t";printf("sample\tbam\tcontig\tlength\tmapped\tunmapped\\n");}{printf("%s\t${bam}\t%s\\n",S,\$0);}' > "${prefix}\${SN}.idxstats.tsv"
+
+##################
+cat << EOF > version.xml
+<properties id="${task.process}">
+	<entry key="name">${task.process}</entry>
+	<entry key="description">samtools idxstats</entry>
+	<entry key="bam">${bam}</entry>
+	<entry key="sample">\${SN}</entry>
+	<entry key="mapped">\$(tail -n+2 "${prefix}\${SN}.idxstats.tsv" | cut -f 5  | paste -s -d '+' |bc)</entry>
+	<entry key="unmapped">\$(tail -n+2 "${prefix}\${SN}.idxstats.tsv" | cut -f 6  | paste -s -d '+' |bc)</entry>
 </properties>
 EOF
-	xmllint --format jeter.xml > "${prefix}version.xml"
-rm jeter.xml
 """
 stub:
 """
-echo "<properties/>" > "${prefix}version.xml"
+touch  idxstats.tsv
+echo "<properties/>" > version.xml
 """
 }
+

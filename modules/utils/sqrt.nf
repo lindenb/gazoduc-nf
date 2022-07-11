@@ -22,11 +22,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include { getKeyValue; toAbsolutePath } from './functions.nf'
+include { getKeyValue; getClassTaxonomy } from './functions.nf'
 
 process SQRT_FILE {
 executor "local"
-tag "${file(toAbsolutePath(filein)).name}"
+tag "${filein} is a ${getClassTaxonomy(filein)}"
 input:
       	val(meta)
         val(filein)
