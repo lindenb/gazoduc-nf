@@ -26,7 +26,9 @@ include {SAMTOOLS_SAMPLES01} from '../../modules/samtools/samtools.samples.01.nf
 include {SCATTER_TO_BED} from '../../subworkflows/picard/picard.scatter2bed.nf'
 include {SAMTOOLS_FASTQ_01} from '../../modules/samtools/samtools.collate.fastq.01.nf'
 include {BWA_MEM_01} from '../../modules/bwa/bwa.mem.01.nf'
-
+include {SAMBAMBA_MARKDUP_01} from '../../modules/sambamba/sambamba.markdup.01.nf'
+include {SAMTOOLS_MERGE_01} from '../../modules/samtools/samtools.merge.01.nf'
+include {MERGE_VERSION as MERGE_VERSIONA; MERGE_VERSION as MERGE_VERSIONB} from '../../modules/version/version.merge.nf'
 
 workflow REMAP_BWA_01 {
 	take:
@@ -53,9 +55,11 @@ workflow REMAP_BWA_01 {
 
 		remap_ch = REMAP_ONE(meta, reference_in, reference_out, each_sn_bam.combine(intervals_ch))
 		version_ch = version_ch.mix(remap_ch.version)
+		version_ch = MERGE_VERSIONA(meta, "Remap", "Extract Fastq from bam and remap", version_ch.collect())
 
 	emit:
 		version = version_ch
+		bams = remap_ch.bams
 	}
 
 workflow REMAP_ONE {
@@ -65,6 +69,8 @@ take:
 	reference_out
 	sample_bam_interval
 main:
+	version_ch = Channel.empty()
+	
 	rows_ch = sample_bam_interval.map{T->[
 		"sample": T[0],
 		"bam": T[1],
@@ -73,6 +79,7 @@ main:
 		]}
 
 	fastq_ch = SAMTOOLS_FASTQ_01(meta,rows_ch)
+	version_ch = version_ch.mix(fastq_ch.version)
 
 	map1_ch = fastq_ch.output.splitCsv(header:true,sep:'\t')
 
@@ -81,11 +88,18 @@ main:
 		[[T.sample,"R2"],T.unpairedR2]			
 		]}.groupTuple()
 	unmap2_ch = SORT_UNPAIRED_FASTQ(meta, umap1_ch)
-	
-	unmap3_R1_ch = unmap2_ch.filter{it[1].equals("R1")}.map{T->[T[0],T[2]]}
-	unmap3_R2_ch = unmap2_ch.filter{it[1].equals("R2")}.map{T->[T[0],T[2]]}
-	unmap4_ch = JOIN_UNPAIRED(meta,unmap3_R1_ch.join(unmap3_R2_ch))
+	version_ch = version_ch.mix(unmap2_ch.version)
 
+	single_ch = map1_ch.map{T->[
+		"sample" : T.sample,
+		"R1" : T.other,
+		"reference" : reference_out
+		]}
+	
+	unmap3_R1_ch = unmap2_ch.output.filter{it[1].equals("R1")}.map{T->[T[0],T[2]]}
+	unmap3_R2_ch = unmap2_ch.output.filter{it[1].equals("R2")}.map{T->[T[0],T[2]]}
+	unmap4_ch = JOIN_UNPAIRED(meta,unmap3_R1_ch.join(unmap3_R2_ch))
+	version_ch = version_ch.mix(unmap4_ch.version)
 
 	r1r2_ch= map1_ch.map{T->[
 		"sample":T.sample,
@@ -101,14 +115,28 @@ main:
                 "reference":reference_out
                 ]}
 	
-
+	single2_ch = unmap4_ch.single.map{T->[
+                "sample":T[0],
+                "R1":T[1],
+                "reference":reference_out
+                ]}
 	
-	bam1_ch = BWA_MEM_01(meta,r1r2_ch.mix(bam2_ch))
+	bam1_ch = BWA_MEM_01(meta,r1r2_ch.
+		mix(bam2_ch).
+		mix(single_ch).
+		mix(single2_ch))
+	version_ch = version_ch.mix(bam1_ch.version)
 
-	merge_ch = MERGE_BAMS(meta, bam1_ch.bam.groupTuple())
+	merge_ch = SAMTOOLS_MERGE_01(meta, reference_out, bam1_ch.bam.groupTuple())
+	version_ch = version_ch.mix(merge_ch.version)
 
+	markdup_ch = SAMBAMBA_MARKDUP_01(meta,merge_ch.bam)
+	version_ch = version_ch.mix(markdup_ch.version)
+
+	version_ch = MERGE_VERSIONB(meta, "Remap", "Remap bam on another reference", version_ch.collect())
 emit:
-	version= fastq_ch.version
+	version= version_ch.version
+	bams = markdup_ch.bam
 }
 
 
@@ -121,6 +149,7 @@ input:
 	tuple val(key),val(L)
 output:
 	tuple val("${key[0]}"),val("${key[1]}"),path("${key[0]}.${key[1]}.tsv.gz"),emit:output
+	path("version.xml"),emit:version
 script:
 """
 gunzip -c ${L.join(" ")} |\
@@ -128,6 +157,19 @@ gunzip -c ${L.join(" ")} |\
 	gzip --best > jeter.tsv.gz
 
 mv jeter.tsv.gz "${key[0]}.${key[1]}.tsv.gz"
+
+
+##################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">sort unpaired linearized fastq on name</entry>
+        <entry key="count">${L.size()}</entry>
+        <entry key="sample">${key[0]}</entry>
+        <entry key="side">${key[1]}</entry>
+        <entry key="compressed.size">\$(ls -lah "${key[0]}.${key[1]}.tsv.gz")</entry>
+</properties>
+EOF
 """
 }
 
@@ -141,6 +183,7 @@ input:
 output:
 	tuple val(sample),path("${sample}.R1R2.fq.gz"),emit:output
 	tuple val(sample),path("${sample}.R0.fq.gz"),emit:single
+	path("version.xml"),emit:version
 script:
 """
 
@@ -160,21 +203,16 @@ LC_ALL=C join -t '\t' -1 1 -2 1 -v 1 -v2 \
 
 mv jeter.fq.gz  "${sample}.R1R2.fq.gz"
 mv jeter2.fq.gz "${sample}.R0.fq.gz"
+
+##################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">merge unpaired into interleaved and single</entry>
+        <entry key="compressed.R1R2">\$(ls -lah "${sample}.R1R2.fq.gz")</entry>
+        <entry key="compressed.R0">\$(ls -lah "${sample}.R0.fq.gz")</entry>
+</properties>
+EOF
 """
 }
 
-process MERGE_BAMS {
-tag "${sample}"
-tag "N=${L.size()}"
-input:
-	val(meta)
-	tuple val(sample),val(L)
-output:
-	tuple val(sample),path("${sample}.merged.bam"),emit:bam
-script:
-"""
-module load samtools
-
-samtools merge -o "${sample}.merged.bam" ${L.join(" ")}
-"""
-}

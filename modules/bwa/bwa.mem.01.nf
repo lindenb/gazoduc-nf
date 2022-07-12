@@ -23,10 +23,10 @@ SOFTWARE.
 
 */
 
-include {parseBoolean;assertNotEmpty;getKeyValue;moduleLoad} from '../../modules/utils/functions.nf'
+include {parseBoolean;isBlank;assertNotEmpty;getKeyValue;moduleLoad} from '../../modules/utils/functions.nf'
 
 process BWA_MEM_01 {
-tag "${row.sample}"
+tag "${row.sample} ${row.R1} ${row.R2?:""}"
 afterScript "rm -rf TMP"
 memory "5g"
 cpus 5
@@ -54,7 +54,7 @@ ${moduleLoad("samtools bwa")}
 set -o pipefail
 mkdir TMP
 
-bwa mem ${is_interleaved?"-p":""} -t ${task.cpus} -R '@RG\\tID:${ID}\\tSM:${sample}\\tLB:${LB}.R0\\tCN:${CN}\\tPL:${PL}' "${reference}" "${R1}" ${R2.isEmpty()?"\"${R2}\"":""} |\
+bwa mem ${is_interleaved?"-p":""} -t ${task.cpus} -R '@RG\\tID:${ID}\\tSM:${sample}\\tLB:${LB}.R0\\tCN:${CN}\\tPL:${PL}' "${reference}" "${R1}" ${isBlank(R2)?"":"\"${R2}\""} |\
 	samtools view -O BAM -o TMP/jeter.bam
 
 
@@ -70,16 +70,22 @@ mv "TMP/jeter.bam.bai" "${sample}.sorted.bam.bai"
 cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
-	<entry key="description">convert BAM to fastq</entry>
+	<entry key="description">map fastq to reference with bwa</entry>
 	<entry key="sample">${sample}</entry>
+	<entry key="reference">${reference}</entry>
+	<entry key="interleaved">${is_interleaved}</entry>
 	<entry key="R1">${R1}</entry>
 	<entry key="R2">${R2}</entry>
+	<entry key="ID">${ID}</entry>
+	<entry key="CN">${CN}</entry>
+	<entry key="PL">${PL}</entry>
+	<entry key="bwa.version">\$(bwa 2>&1 | grep Version)</entry>
 </properties>
 EOF
 """
 stub:
 """
-touch sample2bam.tsv
+touch "${row.sample}.sorted.bam" "${row.sample}.sorted.bam.bai"
 echo "<properties/>" > version.xml
 """
 }
