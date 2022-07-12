@@ -26,14 +26,15 @@ SOFTWARE.
 include {assertNotEmpty;getKeyValue;moduleLoad} from '../../modules/utils/functions.nf'
 
 process SAMTOOLS_FASTQ_01 {
-tag "${file(row.bam).name}"
+tag "${file(row.bam).name} ${row.contig?:""} ${row.interval?:""} ${row.bed?:""}"
 afterScript "rm -rf TMP"
+memory "5g"
 cpus 5
 input:
 	val(meta)
 	val(row)
 output:
-	tuple val(row),path("sample2bam.tsv"),path(""),emit:output
+	path("output.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
 	def bam = assertNotEmpty(row.bam,"bam must be defined")
@@ -50,18 +51,23 @@ set -o pipefail
 mkdir TMP
 
 # get unmapped reads from input, convert to fastq
-${has_region?"":"samtools view --reference \"${reference}\" -M --uncompressed ${bed} \"${bam}\" ${contig} ${interval} |\\"}
-	samtools collate -f --threads 4 -O -u --no-PG --reference "${reference}" ${has_region?"\"${bam}\"":"-"} TMP/tmp.collate |\
-	samtools fastq --threads 1 -1 TMP/jeter.R1.fq.gz -2 TMP/jeter.R2.fq.gz -s TMP/jeter.Rx.fq.gz -0 TMP/jeter.R0.fq.gz -n
+${has_region?"samtools view --reference \"${reference}\" -M --uncompressed ${bed} \"${bam}\" ${contig} ${interval} |\\":""}
+	samtools collate -f --threads 4 -O -u --no-PG --reference "${reference}" ${has_region?"-":"\"${bam}\""} TMP/tmp.collate |\
+	samtools fastq -N --threads 1 -1 TMP/jeter.R1.fq.gz -2 TMP/jeter.R2.fq.gz -s TMP/jeter.Rx.fq.gz -0 TMP/jeter.R0.fq.gz -n
+
+gunzip -c  TMP/jeter.Rx.fq.gz | paste - - - - | awk -F '\t' '(\$1 ~ /\\/1\$/) {OFS="\t";gsub(/\\/1\$/,"",\$1);print}' | gzip --best > TMP/unpaired.R1.tsv.gz
+gunzip -c  TMP/jeter.Rx.fq.gz | paste - - - - | awk -F '\t' '(\$1 ~ /\\/2\$/) {OFS="\t";gsub(/\\/2\$/,"",\$1);print}' | gzip --best > TMP/unpaired.R2.tsv.gz
+
 
 
 mv TMP/jeter.R1.fq.gz "${sample}.R1.fq.gz"
 mv TMP/jeter.R2.fq.gz "${sample}.R2.fq.gz"
 mv TMP/jeter.R0.fq.gz "${sample}.R0.fq.gz"
-mv TMP/jeter.Rx.fq.gz "${sample}.Rx.fq.gz"
+mv TMP/unpaired.R1.tsv.gz "${sample}.unpaired.R1.tsv.gz"
+mv TMP/unpaired.R2.tsv.gz "${sample}.unpaired.R2.tsv.gz"
 
-echo "sample\tbam\treference\tR1\tR2\tRx\tR0" > output.tsv
-echo "${sample}\t${bam}\t${reference}\t\${PWD}/${sample}.R1.fq.gz\t\${PWD}/${sample}.R2.fq.gz\t\${PWD}/${sample}.R0.fq.gz\t\${PWD}/${sample}.Rx.fq.gz" >> output.tsv
+echo "sample\tbam\treference\tR1\tR2\tother\tunpairedR1\tunpairedR2" > output.tsv
+echo "${sample}\t${bam}\t${reference}\t\${PWD}/${sample}.R1.fq.gz\t\${PWD}/${sample}.R2.fq.gz\t\${PWD}/${sample}.Rx.fq.gz\t\${PWD}/${sample}.unpaired.R1.tsv.gz\t\${PWD}/${sample}.unpaired.R2.tsv.gz" >> output.tsv
 
 ##################
 cat << EOF > version.xml
