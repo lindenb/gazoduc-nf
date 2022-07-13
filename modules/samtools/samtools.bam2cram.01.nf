@@ -23,71 +23,43 @@ SOFTWARE.
 
 */
 
-include {parseBoolean;assertNotEmpty;getKeyValue;moduleLoad} from '../../modules/utils/functions.nf'
+include {moduleLoad} from '../../modules/utils/functions.nf'
 
-process SAMTOOLS_MERGE_01 {
-tag "${sample} N=${L.size()}"
+process SAMTOOLS_BAM_TO_CRAM_01 {
+tag "${sample}"
 afterScript "rm -rf TMP"
-memory "5g"
 cpus 5
 input:
 	val(meta)
 	val(reference)
-	tuple val(sample),val(L)
+	tuple val(sample),val(bam)
 output:
-	tuple val(sample),path("${sample}.merged.bam"),emit:bam
+	tuple val(sample),path("${meta.prefix?:""}${sample}.cram"),emit:cram
+	path("${meta.prefix?:""}${sample}.cram.crai"),emit:index
 	path("version.xml"),emit:version
 script:
-	def with_index = parseBoolean(meta.with_index)
-	def contig = (meta.contig?" -R \"${meta.contig}\" ":"")
-	def interval = (meta.interval?" -R \"${meta.interval}\" ":"")
 """
 hostname 2>&1
 ${moduleLoad("samtools")}
-set -o pipefail
-mkdir TMP
 
-if [ "${L.size()}" -eq 1 ] ; then
-	ln -s "${L[0]}" TMP/jeter.bam
-
-	if [ ! -z "${with_index?"Y":""}"  ] ; then
-		if [ test -f "${L[0]}.bai" ] ; then
-			ln -s "${L[0]}.bai"	TMP/jeter.bam.bai
-		else
-			samtools index -@ ${task.cpus} TMP/jeter.bam
-		fi
-	fi
-
-
-else
-	samtools merge --reference "${reference}" ${contig} ${interval} --threads ${task.cpus} -o TMP/jeter.bam ${L.join(" ")}
-
-	if [ ! -z "${with_index?"Y":""}"  ] ; then
-		samtools index -@ ${task.cpus} TMP/jeter.bam
-	fi
-fi
-
-
-mv TMP/jeter.bam "${sample}.merged.bam"
-
-if [ ! -z "${with_index?"Y":""}"  ] ; then
-	mv TMP/jeter.bam.bai "${sample}.merged.bam.bai" 
-fi
+samtools view -@ ${task.cpus} -O CRAM -o "${meta.prefix?:""}${sample}.cram" -T "${reference}" "${bam}"
+samtools index -@ ${task.cpus}  "${meta.prefix?:""}${sample}.cram"
 
 ##################
 cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
-	<entry key="description">convert BAM to fastq</entry>
+	<entry key="description">convert BAM to CRAM</entry>
 	<entry key="sample">${sample}</entry>
-	<entry key="count(bam)">${L.size()}</entry>
+	<entry key="bam">${bam}</entry>
         <entry key="samtools.version">\$(samtools  --version | head -n 1| cut -d ' ' -f2)</entry>
 </properties>
 EOF
 """
 stub:
 """
-touch "${sample}.merged.bam" "${sample}.merged.bam.bai"
+touch "${meta.prefix?:""}${sample}.cram"
+touch "${meta.prefix?:""}${sample}.cram.crai"
 echo "<properties/>" > version.xml
 """
 }

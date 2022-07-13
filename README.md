@@ -8,16 +8,20 @@ My Nextflow Pipelines
 
 ## Workflows
 
+### Mapping
+
+  *  [Map Fastqs](workflows/mapping/map.fastqs/) Map Fastqs on a reference genome 
+
+### Calling
+
+  * [GATK direct](workflows/gatk/gatk4direct/) Calling bams without gvcfs
+
 ### Structural variants
 
   * [Indexcov](workflows/indexcov/) Finds CNVs using [indexcov](https://github.com/brentp/goleft/tree/master/indexcov#indexcov).
   * [Delly2](workflows/delly2/) Finds CNVs/SV using [delly](https://github.com/dellytools/delly).
   * [Manta](workflows/manta/) Finds CNVs/SV using using [Manta](https://github.com/Illumina/manta).
   * [Smoove](workflows/smoove/) Finds CNVs/SV using [Smoove](https://github.com/brentp/smoove)
-
-### Calling
-
-  * [GATK direct](workflows/gatk/gatk4direct/) Calling bams without gvcfs
 
 ### Relatedness
 
