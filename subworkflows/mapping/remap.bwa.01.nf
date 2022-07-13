@@ -25,9 +25,7 @@ SOFTWARE.
 include {SAMTOOLS_SAMPLES01} from '../../modules/samtools/samtools.samples.01.nf'
 include {SCATTER_TO_BED} from '../../subworkflows/picard/picard.scatter2bed.nf'
 include {SAMTOOLS_FASTQ_01} from '../../modules/samtools/samtools.collate.fastq.01.nf'
-include {BWA_MEM_01} from '../../modules/bwa/bwa.mem.01.nf'
-include {SAMBAMBA_MARKDUP_01} from '../../modules/sambamba/sambamba.markdup.01.nf'
-include {SAMTOOLS_MERGE_01} from '../../modules/samtools/samtools.merge.01.nf'
+include {MAP_BWA_01} from '../../subworkflows/mapping/map.bwa.01.nf'
 include {MERGE_VERSION as MERGE_VERSIONA; MERGE_VERSION as MERGE_VERSIONB} from '../../modules/version/version.merge.nf'
 
 workflow REMAP_BWA_01 {
@@ -104,39 +102,30 @@ main:
 	r1r2_ch= map1_ch.map{T->[
 		"sample":T.sample,
 		"R1":T.R1,
-		"R2":T.R2,
-		"reference":reference_out
+		"R2":T.R2
 		]}
 	
 	bam2_ch = unmap4_ch.output.map{T->[
                 "sample":T[0],  
                 "R1":T[1],
-		"interleaved":true,
-                "reference":reference_out
+		"interleaved":true
                 ]}
 	
 	single2_ch = unmap4_ch.single.map{T->[
                 "sample":T[0],
-                "R1":T[1],
-                "reference":reference_out
+                "R1":T[1]
                 ]}
 	
-	bam1_ch = BWA_MEM_01(meta,r1r2_ch.
+	bam1_ch = MAP_BWA_01(meta,reference_out,r1r2_ch.
 		mix(bam2_ch).
 		mix(single_ch).
 		mix(single2_ch))
 	version_ch = version_ch.mix(bam1_ch.version)
 
-	merge_ch = SAMTOOLS_MERGE_01(meta, reference_out, bam1_ch.bam.groupTuple())
-	version_ch = version_ch.mix(merge_ch.version)
-
-	markdup_ch = SAMBAMBA_MARKDUP_01(meta,merge_ch.bam)
-	version_ch = version_ch.mix(markdup_ch.version)
-
 	version_ch = MERGE_VERSIONB(meta, "Remap", "Remap bam on another reference", version_ch.collect())
 emit:
 	version= version_ch.version
-	bams = markdup_ch.bam
+	bams = bam1_ch.bams
 }
 
 

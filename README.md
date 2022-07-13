@@ -10,11 +10,13 @@ My Nextflow Pipelines
 
 ### Mapping
 
-  *  [Map Fastqs](workflows/mapping/map.fastqs/) Map Fastqs on a reference genome 
+  * [Map Fastqs](workflows/mapping/map.fastqs/) Map Fastqs on a reference genome 
+  * [Remap bam](workflows/mapping/remap.bwa/) Remap BAM/CRAM on another reference 
 
 ### Calling
 
   * [GATK direct](workflows/gatk/gatk4direct/) Calling bams without gvcfs
+  * [GATK gvcfs](workflows/gatk/gatk4gvcfs/) calling bams with gvcfs
 
 ### Structural variants
 

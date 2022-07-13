@@ -52,14 +52,13 @@ ${params.rsrc.author}
   * --reference_in (fasta) ${params.rsrc.reference} [REQUIRED]
   * --reference_out (fasta) ${params.rsrc.reference} [REQUIRED]
   * --bams (file) one file containing the paths to the BAM/CRAM [REQUIRED]
-  * --mapq (int)  min mapping quality . If it's lower than 0 (this is the default) just use the bam index as is. Otherwise, rebuild the bai
   * --publishDir (dir) Save output in this directory
   * --prefix (string) files prefix. default: ""
 
 ## Usage
 
 ```
-nextflow -C ../../confs/cluster.cfg  run -resume indexcov.nf \\
+nextflow -C ../../confs/cluster.cfg  run -resume remap.bwa.nf \\
 	--publishDir output \\
 	--prefix "analysis." \\
 	--reference_in /path/to/referenceX.fasta \\

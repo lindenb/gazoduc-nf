@@ -1087,7 +1087,7 @@ script:
 			<entry key="description">filtration consequences</entry>
 			<entry key="so.acn">${meta.soacn}</entry>
 			<entry key="soft.filter">${isSoftFilter(meta,"BAD_SO")}</entry>
-			<entry key="vcffilterso.version">\$(java -jar ${jvarkit("vcffilterso") --version)</entry>
+			<entry key="vcffilterso.version">\$(java -jar ${jvarkit("vcffilterso")} --version)</entry>
 		</properties>
 		EOF
 
@@ -1105,7 +1105,7 @@ script:
 		<properties>
 			<entry key="description">annotation CADD</entry>
 			<entry key="cadd.file">/LAB-DATA/BiRD/resources/species/human/krishna.gs.washington.edu/download/CADD/v1.6/whole_genome_SNVs.tsv.gz</entry>
-			<entry key="vcfcadd.version">\$(java -jar ${jvarkit("vcfcadd") --version)</entry>
+			<entry key="vcfcadd.version">\$(java -jar ${jvarkit("vcfcadd")} --version)</entry>
 		</properties>
 		EOF
 
