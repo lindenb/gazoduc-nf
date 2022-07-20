@@ -30,7 +30,7 @@ include {MERGE_VERSION as MERGE_VERSION} from '../../modules/version/version.mer
 include {GATK4_BASE_RECALIBRATOR_01} from '../../modules/gatk/gatk4.base.recalibration.01.nf'
 include {GATK4_GATHER_BQSR_01} from '../../modules/gatk/gatk4.gather.bqsr.01.nf'
 include {GATK4_APPLY_BQSR_01} from '../../modules/gatk/gatk4.apply.bqsr.01.nf'
-include {moduleLoad} from '../../modules/utils/functions.nf'
+include {moduleLoad;isBlank} from '../../modules/utils/functions.nf'
 
 workflow MAP_BWA_01 {
 	take:

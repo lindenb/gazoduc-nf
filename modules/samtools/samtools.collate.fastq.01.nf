@@ -66,6 +66,7 @@ mv TMP/jeter.R0.fq.gz "${sample}.R0.fq.gz"
 mv TMP/unpaired.R1.tsv.gz "${sample}.unpaired.R1.tsv.gz"
 mv TMP/unpaired.R2.tsv.gz "${sample}.unpaired.R2.tsv.gz"
 
+
 echo "sample\tbam\treference\tR1\tR2\tother\tunpairedR1\tunpairedR2" > output.tsv
 echo "${sample}\t${bam}\t${reference}\t\${PWD}/${sample}.R1.fq.gz\t\${PWD}/${sample}.R2.fq.gz\t\${PWD}/${sample}.R0.fq.gz\t\${PWD}/${sample}.unpaired.R1.tsv.gz\t\${PWD}/${sample}.unpaired.R2.tsv.gz" >> output.tsv
 

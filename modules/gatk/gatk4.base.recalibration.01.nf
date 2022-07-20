@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {moduleLoad} from './../utils/functions.nf'
+include {moduleLoad;isBlank} from './../utils/functions.nf'
 
 process GATK4_BASE_RECALIBRATOR_01 {
 cache 'lenient'
@@ -36,9 +36,10 @@ output:
         tuple val(row),path("${row.sample}.recal.table"),emit:output
         path("version.xml"),emit:version
 script:
-	def ks = (row.recalibration_vcfs?:"").split("[, ]+").
+	def ks0 = (row.recalibration_vcfs?:"").split("[, ]+").
 			findAll{T->!T.isEmpty()}.collect{V->" --known-sites "+V}.
 			join(" ")
+	def ks = isBlank(ks0) && !isBlank(meta.dbsnp) ? "--known-sites \"${meta.dbsnp}\"":ks0
 	def bed = (row.bed?"-L \"${row.bed}\"":"")
 """
 hostname 1>&2
@@ -47,7 +48,7 @@ ${moduleLoad("gatk4 bcftools")}
 mkdir TMP
 
 # when testing, provide an empty VCF
-if [ ! -z "${ks.isEmpty()?"Y":""}" ] ; then
+if [ ! -z "${isBlank(ks)?"Y":""}" ] ; then
 
 cat << EOF | bcftools view -O z -o TMP/jeter.vcf.gz
 ##fileformat=VCFv4.2
@@ -61,7 +62,7 @@ fi
 gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" BaseRecalibrator \
 	-I "${row.bam}" \
 	 ${bed} \
-	 ${ks.isEmpty()?"--known-sites TMP/jeter.vcf.gz":ks} \
+	 ${isBlank(ks)?"--known-sites TMP/jeter.vcf.gz":ks} \
 	-O "${row.sample}.recal.table" \
 	-R "${row.reference}"
 
@@ -79,7 +80,7 @@ EOF
 
 stub:
 """
-touch genotyped.bcf genotyped.bcf.csi
+touch "${row.sample}.recal.table"
 echo "<properties/>" > version.xml
 """
 }

@@ -38,14 +38,18 @@ output:
 	path("version.xml"),emit:version
 script:
 	def with_index = parseBoolean(meta.with_index?:"true")
+	def overflow_size = meta.overflow_size?:"600000"
 """
 hostname 2>&1
 ${moduleLoad("sambamba/0.0.0 samtools")}
 set -o pipefail
 mkdir TMP
 
+# avoid too many files open. ulimit doesn't work...
+ulimit -s unlimited 
+
 # markdup
-sambamba markdup --tmpdir=TMP -t ${task.cpus} "${bam}" TMP/jeter2.bam
+sambamba markdup --overflow-list-size ${overflow_size} --tmpdir=TMP -t ${task.cpus} "${bam}" TMP/jeter2.bam
 mv TMP/jeter2.bam TMP/jeter.bam
 
 if [ ! -z "${with_index?"Y":""}" ] ; then
@@ -65,6 +69,7 @@ cat << EOF > version.xml
 	<entry key="description">mardup with sambamba</entry>
 	<entry key="sample">${sample}</entry>
 	<entry key="bam">${bam}</entry>
+	<entry key="overflow-size">${overflow_size}</entry>
         <entry key="sambamba.version">\$(sambamba --version 2>&1 | sort | uniq | paste -s -d ' ')</entry>
         <entry key="samtools.version">\$(samtools  --version | head -n 1| cut -d ' ' -f2)</entry>
 </properties>

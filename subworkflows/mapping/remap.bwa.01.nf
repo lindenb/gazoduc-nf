@@ -27,6 +27,13 @@ include {SCATTER_TO_BED} from '../../subworkflows/picard/picard.scatter2bed.nf'
 include {SAMTOOLS_FASTQ_01} from '../../modules/samtools/samtools.collate.fastq.01.nf'
 include {MAP_BWA_01} from '../../subworkflows/mapping/map.bwa.01.nf'
 include {MERGE_VERSION as MERGE_VERSIONA; MERGE_VERSION as MERGE_VERSIONB} from '../../modules/version/version.merge.nf'
+include {isBlank;moduleLoad} from '../../modules/utils/functions.nf'
+
+boolean isEmptyGz(String filename) {
+	try (java.util.zip.GZIPInputStream in = new  java.util.zip.GZIPInputStream(java.nio.file.Files.newInputStream(java.nio.file.Paths.get(filename))) ) {
+		return in.read()==-1;
+		}
+	}
 
 workflow REMAP_BWA_01 {
 	take:
@@ -46,12 +53,7 @@ workflow REMAP_BWA_01 {
 
 		each_sn_bam =  all_samples_ch.output.splitCsv(header:false,sep:'\t')
 
-		intervals_ch = acgt_ch.bed.splitCsv(header:false,sep:'\t').
-				map{T->T[0]+":"+((T[1] as int)+1)+"-"+T[2]}.
-				mix(Channel.of("*"))
-
-
-		remap_ch = REMAP_ONE(meta, reference_in, reference_out, each_sn_bam.combine(intervals_ch))
+		remap_ch = REMAP_ONE(meta, reference_in, reference_out, acgt_ch.bed, each_sn_bam)
 		version_ch = version_ch.mix(remap_ch.version)
 		version_ch = MERGE_VERSIONA(meta, "Remap", "Extract Fastq from bam and remap", version_ch.collect())
 
@@ -65,11 +67,16 @@ take:
 	meta
 	reference_in
 	reference_out
-	sample_bam_interval
+	bed
+	sample_bam
 main:
 	version_ch = Channel.empty()
-	
-	rows_ch = sample_bam_interval.map{T->[
+
+	bamr_ch = BAM_AND_REGIONS(meta, reference_in, bed, sample_bam )
+	version_ch = version_ch.mix(bamr_ch.version)
+
+
+	rows_ch = bamr_ch.output.splitCsv(header:false,sep:'\t').map{T->[
 		"sample": T[0],
 		"bam": T[1],
 		"reference": reference_in,
@@ -92,7 +99,7 @@ main:
 		"sample" : T.sample,
 		"R1" : T.other,
 		"reference" : reference_out
-		]}
+		]}.filter{T->!isEmptyGz(T.R1)}
 	
 	unmap3_R1_ch = unmap2_ch.output.filter{it[1].equals("R1")}.map{T->[T[0],T[2]]}
 	unmap3_R2_ch = unmap2_ch.output.filter{it[1].equals("R2")}.map{T->[T[0],T[2]]}
@@ -103,18 +110,18 @@ main:
 		"sample":T.sample,
 		"R1":T.R1,
 		"R2":T.R2
-		]}
+		]}.filter{T->!(isEmptyGz(T.R1) || isEmptyGz(T.R2))}
 	
 	bam2_ch = unmap4_ch.output.map{T->[
                 "sample":T[0],  
                 "R1":T[1],
 		"interleaved":true
-                ]}
+                ]}.filter{T->!isEmptyGz(T.R1)}
 	
 	single2_ch = unmap4_ch.single.map{T->[
                 "sample":T[0],
                 "R1":T[1]
-                ]}
+                ]}.filter{T->!isEmptyGz(T.R1)}
 	
 	bam1_ch = MAP_BWA_01(meta,reference_out,r1r2_ch.
 		mix(bam2_ch).
@@ -128,6 +135,49 @@ emit:
 	bams = bam1_ch.bams
 }
 
+
+process BAM_AND_REGIONS {
+tag "${sample}"
+afterScript "rm -f jeter.intervals"
+input:
+	val(meta)
+	val(reference)
+	val(bed)
+	tuple val(sample),val(bam)
+output:
+	path("output.tsv"),emit:output
+	path("version.xml"),emit:version
+script:
+"""
+hostname 1>&2
+${moduleLoad("samtools")}
+touch output.tsv
+
+# find contigs with at least one read
+
+awk '{printf("%s:%d-%s\\n",\$1,int(\$2)+1,\$3);} END{printf("*\\n");}' "${bed}"  > jeter.intervals
+
+
+cat jeter.intervals | while read R
+do
+	samtools view --reference "${reference}" "${bam}" "\${R}" | head -n1 |\
+		awk -vR=\"\${R}\" '{printf("${sample}\t${bam}\t%s\\n",R);}' >> output.tsv
+done
+
+
+##################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">find regions in BAM where there is a leat one read</entry>
+        <entry key="sample">${sample}</entry>
+        <entry key="bam">${bam}</entry>
+        <entry key="bed">${bed}</entry>
+</properties>
+EOF
+
+"""
+}
 
 process SORT_UNPAIRED_FASTQ {
 tag "${key[0]} ${key[1]} N=${L.size()}"
@@ -204,4 +254,3 @@ cat << EOF > version.xml
 EOF
 """
 }
-
