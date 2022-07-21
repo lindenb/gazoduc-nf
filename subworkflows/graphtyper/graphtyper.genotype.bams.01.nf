@@ -22,41 +22,31 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {SAMTOOLS_SAMPLES01} from '../../modules/samtools/samtools.samples.01.nf'
+include {GRAPHTYPER_DOWNLOAD_01} from '../../modules/graphtyper/graphtyper.download.01.nf'
+include {GRAPHTYPER_GENOTYPE_01} from '../../modules/graphtyper/graphtyper.genotype.01.nf'
 include {SCATTER_TO_BED} from '../../subworkflows/picard/picard.scatter2bed.nf'
 include {SAMTOOLS_FASTQ_01} from '../../modules/samtools/samtools.collate.fastq.01.nf'
 include {MAP_BWA_01} from '../../subworkflows/mapping/map.bwa.01.nf'
 include {MERGE_VERSION as MERGE_VERSIONA; MERGE_VERSION as MERGE_VERSIONB} from '../../modules/version/version.merge.nf'
 include {isBlank;moduleLoad} from '../../modules/utils/functions.nf'
 
-boolean isEmptyGz(String filename) {
-	try (java.util.zip.GZIPInputStream in = new  java.util.zip.GZIPInputStream(java.nio.file.Files.newInputStream(java.nio.file.Paths.get(filename))) ) {
-		return in.read()==-1;
-		}
-	}
 
-workflow REMAP_BWA_01 {
+workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 	take:
 		meta
-		reference_in
-		reference_out
+		reference
 		bams
+		bed
 	main:
 		version_ch = Channel.empty()
-
-		acgt_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"ACGT","MAX_TO_MERGE":"100000"],reference_in)
-		version_ch = version_ch.mix(acgt_ch.version)
-
-
-		all_samples_ch = SAMTOOLS_SAMPLES01([:],reference_in,bams)
-		version_ch = version_ch.mix(all_samples_ch.version)
-
-		each_sn_bam =  all_samples_ch.output.splitCsv(header:false,sep:'\t')
-
-		remap_ch = REMAP_ONE(meta, reference_in, reference_out, acgt_ch.bed, each_sn_bam)
-		version_ch = version_ch.mix(remap_ch.version)
-		version_ch = MERGE_VERSIONA(meta, "Remap", "Extract Fastq from bam and remap", version_ch.collect())
-
+		
+		each_interval_ch = bed.splitCsv(header:false,sep:'\t').
+			map{T->[
+			"bams":bams,
+			"reference":reference,
+			"interval":T[0]+":"+((T[1] as int)+1)+"-"+T[2]]}.
+			]}
+	
 	emit:
 		version = version_ch
 		bams = remap_ch.bams

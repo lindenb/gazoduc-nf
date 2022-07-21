@@ -1,6 +1,8 @@
+// h='!(gknzwd2*)
+
 process {
 	executor="sge"
-	clusterOptions = "-S /bin/bash -q max-24h.q"
+	clusterOptions = "-S /bin/bash -q max-24h.q "
 	cache = "lenient"
 	penv = "smp"
 }

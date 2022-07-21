@@ -32,6 +32,7 @@ My Nextflow Pipelines
 ### Misc
 
   * [VCF stats](workflows/vcfstats/vcfstats01/README.md). Apply `bcftools stats` on a set of vcf files
+  * [Mosdepth](workflows/mosdepth/). Apply `mosdepth` on a set of BAMs.
 
 
 # Works on my machine
