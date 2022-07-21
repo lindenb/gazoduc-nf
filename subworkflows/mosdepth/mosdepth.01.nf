@@ -99,7 +99,7 @@ cat TMP/jeter1.txt | while read SN BAM REF SUMMARY
 do
 	echo -n "\${SN}\t\${BAM}\t\${REF}" >> TMP/jeter2.txt
 	awk -F '\t' '(\$1=="total") {printf("\t%s",\$4);}' "\${SUMMARY}" >> TMP/jeter2.txt
-	awk -F '\t' '(\$1=="total_region") {printf("\t%s",\$4);}' "\${SUMMARY}" >> TMP/jeter2.txt
+	awk -F '\t' 'BEGIN{C="";} (\$1=="total") {if(C=="") {C=\$4;}} (\$1=="total_region") {C=\$4;} END{printf("\t%s",C);}' "\${SUMMARY}" >> TMP/jeter2.txt
 	echo >> TMP/jeter2.txt
 done
 
@@ -136,7 +136,7 @@ T1 <- read.table(file="${summary}",sep="\\t",header=TRUE)
 T2 <- as.numeric(T1\\\$coverage)
 
 pdf("${prefix}coverage.pdf")
-boxplot(T2 ,ylim=c(0,max(T2)), main="${prefix}mosdepth",xlab="Sample",ylab="coverage")
+boxplot(T2 ,ylim=c(0,max(T2)+1), main="${prefix}mosdepth",xlab="Sample",ylab="coverage")
 dev.off()
 
 
@@ -146,7 +146,7 @@ if (nrow(T1)>0) {
 T2 <- as.numeric(T1\\\$coverage_region)
 
 pdf("${prefix}coverage_region.pdf")
-boxplot(T2 ,ylim=c(0,max(T2)), main="${prefix}mosdepth in BED",xlab="Sample",ylab="coverage")
+boxplot(T2 ,ylim=c(0,max(T2)+1), main="${prefix}mosdepth in BED",xlab="Sample",ylab="coverage")
 dev.off()
 }
 

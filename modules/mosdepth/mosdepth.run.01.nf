@@ -39,7 +39,7 @@ process MOSDEPTH_RUN_01 {
 		tuple val(row),path("${row.sample}${row.suffix?:""}.regions.bed.gz"),optional:true,emit:regions
 		path("version.xml"),emit:version
 	script:
-		def bed = row.bed?:""
+		def bed = row.bed?:file("NO_FILE")
 		def median = parseBoolean(row.use_median?:"true")?"--use-median":""
 		def per_base = parseBoolean(row.per_base?:"false")?"--no-per-base":""
 		def mapq =row.mapq?:"0"
@@ -48,7 +48,7 @@ process MOSDEPTH_RUN_01 {
 	hostname 1>&2
 	
 
-        ${executable} ${isBlank(bed)?"":"--by \""+bed+"\""} ${median} ${per_base} \
+        ${executable} ${bed.name.equals("NO_FILE")?"":"--by \"${bed}\""} ${median} ${per_base} \
  		-t ${task.cpus} --fasta "${row.reference}" --mapq ${mapq} \
 		${row.sample}${suffix} ${row.bam}
 

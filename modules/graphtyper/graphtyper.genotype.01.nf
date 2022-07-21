@@ -23,11 +23,12 @@ SOFTWARE.
 
 */
 
-include {moduleLoad} from '../../modules/utils/functions.nf'
+include {isBlank;moduleLoad} from '../../modules/utils/functions.nf'
 
 process GRAPHTYPER_GENOTYPE_01 {
+tag "${row.interval}"
+cpus 1
 afterScript "rm -rf results TMP"
-label "graphtyper_genotype"
 input:
 	val(meta)
 	val(graphtyper)
@@ -38,7 +39,10 @@ output:
 script:
 	if(!row.reference) {exit 1,"reference missing"}
 	if(!row.bams) {exit 1,"bams missing"}
-	if(!row.bed) {exit 1,"bed missing"}
+	if(!row.interval) {exit 1,"interval missing"}
+
+	def avg_cov_by_readlen= row.avg_cov_by_readlen?:""
+	def arg2 = isBlank(avg_cov_by_readlen)?"":"--avg_cov_by_readlen=${avg_cov_by_readlen}"
 """
 hostname 1>&2
 ${moduleLoad("bcftools")}
@@ -46,15 +50,14 @@ mkdir TMP
 
 export TMPDIR=\${PWD}/TMP
 
-awk -F '\t' '{printf("%s:%d-%d\\n",\$1,int(\$2)+1,\$3);}' "${row.bed}" > TMP/jeter.regions
-
 ${graphtyper} genotype \
 	"${row.reference}" \
 	--force_no_copy_reference \
 	--force_use_input_ref_for_cram_reading \
 	--sams=${row.bams} \
-	--region_file=TMP/jeter.regions \
-	--threads=${task.cpus}
+	--region=${row.interval} \
+	--threads=${task.cpus} \
+	${arg2}
 
 find \${PWD}/results/ -type f -name "*.vcf.gz" | grep -v '/input_sites/' > TMP/vcf.list
 
@@ -68,8 +71,7 @@ bcftools index --threads ${task.cpus} "genotyped.bcf"
 cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
-        <entry key="description">download graphtyper</entry>
-        <entry key="version">${v}</entry>
+        <entry key="description">run graphtyper</entry>
 </properties>
 EOF
 """

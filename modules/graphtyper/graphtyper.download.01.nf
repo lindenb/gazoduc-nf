@@ -30,16 +30,16 @@ https://github.com/DecodeGenetics/graphtyper
 graphtyper is a graph-based variant caller capable of genotyping population-scale short read data sets. It represents a reference genome and known variants of a genomic region using an acyclic graph structure (a "pangenome reference"), which high-throughput sequence reads are re-aligned to for the purpose of discovering and genotyping SNPs, small indels, and structural variants.
 
 */
-process GRAPH_TYPER_DOWNLOAD_01 {
+process GRAPHTYPER_DOWNLOAD_01 {
 input:
 	val(meta)
 output:
 	path("graphtyper"),emit:executable
 	path("version.xml"),emit:version
 script:
-	v = (meta.graptyper_version?:"v2.7.5")
+	def v = (meta.graptyper_version?:"2.7.5")
 """
-wget -O graphtyper "https://github.com/DecodeGenetics/graphtyper/releases/download/${v}/graphtyper"
+wget -O graphtyper "https://github.com/DecodeGenetics/graphtyper/releases/download/v${v}/graphtyper"
 chmod a+x graphtyper
 
 ##################

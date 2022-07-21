@@ -25,15 +25,15 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 /** path to indexed fasta reference */
-params.reference_in = ""
-params.reference_out = ""
+params.reference = ""
+params.bed=""
 params.mapq = -1
 params.bams = ""
 params.help = false
 params.publishDir = ""
 params.prefix = ""
 
-include {GRAPHTYPER_GENOTYPE_BAMS_01} from '../../../subworkflows/graphtyper/graph.typer.genotype.bams.01.nf'
+include {GRAPHTYPER_GENOTYPE_BAMS_01} from '../../../subworkflows/graphtyper/graphtyper.genotype.bams.01.nf'
 include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
 include {runOnComplete} from '../../../modules/utils/functions.nf'
 
@@ -58,11 +58,10 @@ ${params.rsrc.author}
 ## Usage
 
 ```
-nextflow -C ../../confs/cluster.cfg  run -resume remap.bwa.nf \\
+nextflow -C ../../confs/cluster.cfg  run -resume graphtyper.genotype.nf \\
 	--publishDir output \\
 	--prefix "analysis." \\
-	--reference_in /path/to/referenceX.fasta \\
-	--reference_in /path/to/referenceY.fasta \\
+	--reference /path/to/reference.fasta \\
 	--bams /path/to/bams.list
 ```
 
@@ -84,7 +83,7 @@ if( params.help ) {
 
 
 workflow {
-	remap_ch = REMAP_BWA_01(params,params.reference_in,params.reference_out,params.bams)
+	c1_ch = GRAPHTYPER_GENOTYPE_BAMS_01(params,params.reference,params.bams,Channel.fromPath(params.bed))
 	//html = VERSION_TO_HTML(params,remap_ch.version)	
 	}
 
