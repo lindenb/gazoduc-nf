@@ -33,8 +33,10 @@ process MOSDEPTH_RUN_01 {
 		val(row)
 	output:
 		tuple val(row),path("${row.sample}${row.suffix?:""}.mosdepth.global.dist.txt"),emit:globaldist
+		tuple val(row),path("${row.sample}${row.suffix?:""}.mosdepth.region.dist.txt"),optional:true,emit:regiondist
 		tuple val(row),path("${row.sample}${row.suffix?:""}.mosdepth.summary.txt"),emit:summary
 		tuple val(row),path("${row.sample}${row.suffix?:""}.per-base.bed.gz"),optional:true,emit:perbase
+		tuple val(row),path("${row.sample}${row.suffix?:""}.regions.bed.gz"),optional:true,emit:regions
 		path("version.xml"),emit:version
 	script:
 		def bed = row.bed?:""

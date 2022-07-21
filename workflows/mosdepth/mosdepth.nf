@@ -28,6 +28,7 @@ nextflow.enable.dsl=2
 params.reference = ""
 params.mapq = 0
 params.bams = ""
+params.bed = ""
 params.help = false
 params.publishDir = ""
 params.prefix = ""
@@ -50,6 +51,7 @@ ${params.rsrc.author}
 
   * --reference (fasta) ${params.rsrc.reference} [REQUIRED]
   * --bams (file) one file containing the paths to the BAM/CRAM [REQUIRED]
+  * --bed (file) optional BED file. default: ""
   * --publishDir (dir) Save output in this directory
   * --prefix (string) files prefix. default: ""
 
@@ -60,7 +62,8 @@ nextflow -C ../../confs/cluster.cfg  run -resume mosdepth.nf \\
 	--publishDir output \\
 	--prefix "analysis." \\
 	--reference /path/to/reference.fasta \\
-	--bams /path/to/bams.list
+	--bams /path/to/bams.list \\
+	--bed /path/to/in.bed
 ```
 
 ## Workflow
@@ -81,9 +84,9 @@ if( params.help ) {
 
 
 workflow {
-	ch1 = MOSDEPTH_BAMS_01(params,params.reference,params.bams)
+	ch1 = MOSDEPTH_BAMS_01(params,params.reference,params.bams, params.bed)
 	html = VERSION_TO_HTML(params,ch1.version)
-	PUBLISH(ch1.version,html.html,ch1.summary.map{T->T[1]}.collect())
+	PUBLISH(ch1.version,html.html,ch1.summary,ch1.pdf.collect())
 	}
 
 process PUBLISH {
@@ -91,14 +94,15 @@ publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
 input:
 	path(version)
 	path(html)
-	val(L)
+	path(summary)
+	path(pdfs)
 output:
 	path("${params.prefix}mosdepth.zip")
 when:
 	!params.getOrDefault("publishDir","").trim().isEmpty()
 script:
 """
-zip -j "${params.prefix}mosdepth.zip" ${version} ${html} ${L.join(" ")}
+zip -j "${params.prefix}mosdepth.zip" ${version} ${html} ${summary} ${pdfs.join(" ")}
 """
 }
 
