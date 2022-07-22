@@ -41,7 +41,7 @@ process MOSDEPTH_RUN_01 {
 	script:
 		def bed = row.bed?row.bed:file("NO_FILE")
 		def median = parseBoolean(row.use_median?:"true")?"--use-median":""
-		def per_base = parseBoolean(row.per_base?:"false")?"--no-per-base":""
+		def per_base = parseBoolean(row.per_base?:"false")?"":"--no-per-base"
 		def mapq =row.mapq?:"0"
 		def suffix = row.suffix?:""
 	"""
