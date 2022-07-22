@@ -84,7 +84,7 @@ if( params.help ) {
 
 
 workflow {
-	ch1 = MOSDEPTH_BAMS_01(params,params.reference,params.bams, file(params.bed))
+	ch1 = MOSDEPTH_BAMS_01(params,params.reference,params.bams, Channel.fromPath(params.bed))
 	html = VERSION_TO_HTML(params,ch1.version)
 	PUBLISH(ch1.version,html.html,ch1.summary,ch1.pdf.collect())
 	}

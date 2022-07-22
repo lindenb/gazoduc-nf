@@ -24,7 +24,7 @@ $(OUTDIR)/jeter.bed : $(addsuffix .fai, $(REF))
 	awk '{printf("%s\t0\t%d\n",$$1,$$2);}' $< > $@
 
 README.md: $(NF)
-	module load nextflow && nextflow -C ../../../confs/${HOSTNAME}.cfg -C remap.bwa.cfg run -work-dir "$(OUTDIR)" $< --help | tail -n+3 > $@
+	module load nextflow && nextflow -C ../../../confs/${HOSTNAME}.cfg  run -work-dir "$(OUTDIR)" $< --help | tail -n+3 > $@
 
 clean:
 	rm -rvf "$(OUTDIR)" .nextflow .nextflow.*

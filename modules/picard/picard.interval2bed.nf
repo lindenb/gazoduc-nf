@@ -49,16 +49,16 @@ script:
 		--SCORE ${SCORE} \
 		--SORT ${SORT}
 		
-	cat << EOF > version.xml
-	<properties id="${task.process}">
-		<entry key="name">${task.process}</entry>
-		<entry key="description">call IntervalListToBed to convert intervals to bed</entry>
-		<entry key="interval_list">${interval_list}</entry>
-		<entry key="SCORE">${SCORE}</entry>
-		<entry key="SORT">${SORT}</entry>
-		<entry key="picard">\$(java -jar \${PICARD_JAR} IntervalListToBed --version 2>&1)</entry>
-	</properties>
-	EOF
+cat << EOF > version.xml
+<properties id="${task.process}">
+	<entry key="name">${task.process}</entry>
+	<entry key="description">call IntervalListToBed to convert intervals to bed</entry>
+	<entry key="interval_list">${interval_list}</entry>
+	<entry key="SCORE">${SCORE}</entry>
+	<entry key="SORT">${SORT}</entry>
+	<entry key="picard">\$(java -jar \${PICARD_JAR} IntervalListToBed --version 2>&1)</entry>
+</properties>
+EOF
 """
 stub:
 """

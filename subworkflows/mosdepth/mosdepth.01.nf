@@ -40,12 +40,12 @@ workflow MOSDEPTH_BAMS_01 {
 		bams_ch = SAMTOOLS_SAMPLES01(meta,reference,bams)
 		version_ch = version_ch.mix(bams_ch.version)	
 
-		ch1 = bams_ch.output.splitCsv(header:false,sep:'\t').map{T->[
+		ch1 = bams_ch.output.splitCsv(header:false,sep:'\t').combine(bed).map{T->[
 			"reference": reference,
 			"sample": T[0],
 			"bam": T[1],
 			"mapq": (meta.mapq?:1),
-			"bed": bed
+			"bed": T[2]
 			]}
 		mosdepth_ch = MOSDEPTH_DOWNLOAD_01(meta)
 		version_ch = version_ch.mix(mosdepth_ch.version)	

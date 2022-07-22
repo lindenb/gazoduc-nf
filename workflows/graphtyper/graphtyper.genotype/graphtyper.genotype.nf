@@ -84,14 +84,15 @@ if( params.help ) {
 
 workflow {
 	c1_ch = GRAPHTYPER_GENOTYPE_BAMS_01(params,params.reference,params.bams,Channel.fromPath(params.bed))
-	//html = VERSION_TO_HTML(params,remap_ch.version)	
+	html = VERSION_TO_HTML(params,c1_ch.version)	
 	}
 
 process PUBLISH {
-tag "${zip.name}"
 publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
 input:
-	path(zip)
+	val(meta)
+	path(html)
+	path(version)
 output:
 	path(zip)
 when:
