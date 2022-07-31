@@ -49,7 +49,7 @@ script:
 	def PL = row.PL?:"ILLUMINA"
 	def LB = row.LB?:sample
 """
-hostname 2>&1
+hostname 1>&2
 ${moduleLoad("samtools bwa")}
 set -o pipefail
 mkdir TMP

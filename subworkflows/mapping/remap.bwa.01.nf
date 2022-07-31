@@ -29,8 +29,16 @@ include {MAP_BWA_01} from '../../subworkflows/mapping/map.bwa.01.nf'
 include {MERGE_VERSION as MERGE_VERSIONA; MERGE_VERSION as MERGE_VERSIONB} from '../../modules/version/version.merge.nf'
 include {isBlank;moduleLoad} from '../../modules/utils/functions.nf'
 
-boolean isEmptyGz(String filename) {
-	try (java.util.zip.GZIPInputStream in = new  java.util.zip.GZIPInputStream(java.nio.file.Files.newInputStream(java.nio.file.Paths.get(filename))) ) {
+boolean isEmptyGz(Object filename) {
+	final java.nio.file.Path p;
+	if(filename instanceof java.nio.file.Path) {
+		p = (java.nio.file.Path)filename;
+		}
+	else
+		{
+		p = java.nio.file.Paths.get(filename.toString());
+		}
+	try (java.util.zip.GZIPInputStream in = new  java.util.zip.GZIPInputStream(java.nio.file.Files.newInputStream(p)) ) {
 		return in.read()==-1;
 		}
 	}
