@@ -1,7 +1,7 @@
 
 ## About
 
-map fastqs on a reference genome
+find retrocopies from a SV VCF using a GTF file
 
 ## Author
 
