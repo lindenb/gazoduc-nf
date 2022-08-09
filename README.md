@@ -24,7 +24,8 @@ My Nextflow Pipelines
   * [Delly2](workflows/delly2/) Finds CNVs/SV using [delly](https://github.com/dellytools/delly).
   * [Manta](workflows/manta/) Finds CNVs/SV using using [Manta](https://github.com/Illumina/manta).
   * [Smoove](workflows/smoove/) Finds CNVs/SV using [Smoove](https://github.com/brentp/smoove)
-  * [Retrocipies GTF/VCF](workflows/retrocopy/) Finds Retrocopies using a SV VCF and a GTF file.
+  * [Retrocopies GTF/VCF](workflows/retrocopy/) Finds Retrocopies using a SV VCF and a GTF file.
+  * [Plot CNV from VCF](workflows/cnvplotter) Plot CNV as SVG+HTML.
 
 ### Relatedness
 
