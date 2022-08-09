@@ -17,7 +17,7 @@ all: $(NF) ../../confs/${HOSTNAME}.cfg $(OUTDIR)/bams.txt $(OUTDIR)/jeter.bed
 
 $(OUTDIR)/bams.txt : 
 	mkdir -p $(dir $@)
-	find ${HOME}/src/jvarkit-git/src/test/resources/ -type f -name "S*.bam" > $@	
+	find /LAB-DATA/BiRD/users/lindenbaum-p/src/jvarkit-git/src/test/resources/ -type f -name "S*.bam" > $@	
 
 $(OUTDIR)/jeter.bed:
 	mkdir -p $(dir $@)

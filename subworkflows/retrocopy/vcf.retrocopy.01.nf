@@ -69,6 +69,7 @@ input:
 	val(gtf)
 output:
 	path("known.txt"),emit:output
+	path("names.txt"),emit:gene_names
 	path("version.xml"),emit:version
 script:
 	def agent="Mozilla/5.0 (X11; Linux i686; rv:103.0) Gecko/20100101 Firefox/103.0"
@@ -128,7 +129,7 @@ rm tmp1.txt
 join -t '\t' -1 1 -2 1 -o '2.2' names.txt jeter.gene.gene_id.txt |\
 sort | uniq > known.txt
 
-rm names.txt jeter.gene.gene_id.txt
+rm jeter.gene.gene_id.txt
 
 ##### 
 cat << EOF > version.xml
