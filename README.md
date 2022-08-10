@@ -15,8 +15,9 @@ My Nextflow Pipelines
 
 ### Calling
 
-  * [GATK direct](workflows/gatk/gatk4direct/) Calling bams without gvcfs
-  * [GATK gvcfs](workflows/gatk/gatk4gvcfs/) calling bams with gvcfs
+  * [GATK direct](workflows/gatk/gatk4direct/) Calling bams without gvcfs.
+  * [GATK gvcfs](workflows/gatk/gatk4gvcfs/) calling bams with gvcfs.
+  * [VQSR](subworkflows/vqsr/) variant recalibration.
 
 ### Structural variants
 

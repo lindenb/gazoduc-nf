@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 
-include {moduleLoad;isUrl;isBlank;getKeyValue;getModules;getBoolean;getGencodeGff3Url} from '../utils/functions.nf'
+include {moduleLoad;isUrl;isBlank;getModules;parseBoolean;getGencodeGff3Url} from '../utils/functions.nf'
 
 process DOWNLOAD_GFF3_01 {
 tag "${file(reference).name}"
@@ -33,22 +33,23 @@ input:
 	val(meta)
 	val(reference)
 output:
-	path("${file(reference).getSimpleName()}.gff3${getBoolean(meta,"with_tabix")?".gz":""}"),emit:gff3
+	path("${file(reference).getSimpleName()}.gff3${parseBoolean(meta.with_tabix?:"true")?".gz":""}"),emit:gff3
 	path("${file(reference).getSimpleName()}.gff3.gz.tbi"),emit:tbi,optional:true
 	path("version.xml"),emit:version
 script:
-	def url0 = getKeyValue(meta,"gff3url","")
+	def url0 = meta.gff3url?:""
 	def url = (isBlank(url0)?getGencodeGff3Url(reference):url0)
-	def with_tabix = getBoolean(meta,"with_tabix")
+	def with_tabix = parseBoolean(meta.with_tabix?:"true")
+
 	"""
 	hostname 1>&2
 	${moduleLoad("htslib jvarkit")}
 	set -o pipefail
 	mkdir TMP
 
-	test ! -z "${url}"
-
-	if [ ! -z "${isUrl(url)?"Y":""}" ] ; then
+	if [ ! -z "${url.equals("undefined") || isBlank(url)?"Y":""}" ] ; then
+		touch TMP/jeter0.gff3
+	elif [ ! -z "${isUrl(url)?"Y":""}" ] ; then
 		wget -O TMP/jeter0.gff3 "${url}"
 	else
 		cp -v "${url}" TMP/jeter0.gff3
@@ -93,7 +94,7 @@ script:
 	
 	stub:
 	"""
-	touch "${file(reference).getSimpleName()}.gff3${getBoolean(meta,"with_tabix")?".gz":""}"
+	touch "${file(reference).getSimpleName()}.gff3${parseBoolean(meta.with_tabix?:"true")?".gz":""}"
         touch "${file(reference).getSimpleName()}.gff3.gz.tbi"
 	echo "<properties/>" > version.xml
 	"""

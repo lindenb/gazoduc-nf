@@ -26,6 +26,8 @@ include {SAMTOOLS_SAMPLES01} from '../../modules/samtools/samtools.samples.01.nf
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {moduleLoad;isBlank;isHg38;isHg19} from '../../modules/utils/functions.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
+include {DOWNLOAD_GNOMAD_SV_01} from '../../modules/gnomad/download.gnomad.sv.01.nf'
+include {DOWNLOAD_GFF3_01} from '../../modules/gff3/download.gff3.01.nf'
 
 workflow CNV_PLOTTER_01 {
 	take:
@@ -39,6 +41,12 @@ workflow CNV_PLOTTER_01 {
 		ch1_ch = SAMTOOLS_SAMPLES01([:],reference,bams)
 		version_ch = version_ch.mix(ch1_ch.version)
 
+		known_ch = DOWNLOAD_GNOMAD_SV_01(meta,reference)
+		version_ch = version_ch.mix(known_ch.version)
+
+		gff3_ch = DOWNLOAD_GFF3_01(meta.plus(with_tabix:"true"),reference)
+		version_ch = version_ch.mix(gff3_ch.version)
+
 		compile_ch = COMPILE_VCF_PARSER(meta)
 		version_ch = version_ch.mix(compile_ch.version)
 		
@@ -50,7 +58,7 @@ workflow CNV_PLOTTER_01 {
 			map{T->T[0].plus("bams":T[1])}
 
 
-		plot_ch = PLOT_CNV(meta, reference, ch2_ch)
+		plot_ch = PLOT_CNV(meta, reference, known_ch.bed, gff3_ch.gff3 , ch2_ch)
 		version_ch = version_ch.mix(plot_ch.version)
 
 		merge_ch = MERGE_PLOTS(meta,plot_ch.output.collect())		
@@ -260,6 +268,8 @@ memory "3g"
 input:
 	val(meta)
 	val(reference)
+	val(known)
+	val(gff3)
 	val(row)
 output:
 	tuple path("${row.prefix}out.html"),emit:output
@@ -281,7 +291,11 @@ join -t '\t' -1 1 -2 1 -o "2.2" TMP/controls.txt TMP/samples.bams.tsv | shuf | h
 cat TMP/cases.bams.list TMP/controls.bams.list  | sort | uniq > TMP/all.bams.list
 
 java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP  -jar ${JVARKIT_DIST}/coverageplotter.jar \
-	-R "${reference}" --region "${row.interval}" `cat TMP/all.bams.list` > TMP/jeter.html
+	-R "${reference}" \
+	--known '${known}' --ignore-known-containing \
+	--gff3 '${gff3}' \
+	--region "${row.interval}" \
+	TMP/all.bams.list > TMP/jeter.html
 
 cat << EOF > TMP/jeter.xsl
 <?xml version="1.0" encoding="UTF-8"?>

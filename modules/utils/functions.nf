@@ -274,6 +274,22 @@ String jvarkit(s) {
         return "\${JVARKIT_DIST}/"+s+".jar";
         }
 
+String escapeXml(String s) {
+	final StringBuilder sb= new StringBuilder(s.length());
+	for(int i=0;i< s.length();i++) {
+		char c = s.charAt(i);
+		switch(c) {
+			case '<': sb.append("&lt;");break;
+			case '>': sb.append("&gt;");break;
+			case '"': sb.append("&quot;");break;
+			case '\'': sb.append("&apos;");break;
+			case '&': sb.append("&amp;");break;
+			default: sb.append(c);break;
+			}
+		}
+	return sb.toString();
+	}
+
 
 void runOnComplete(def wf) {
 wf.onComplete {
