@@ -26,17 +26,16 @@ SOFTWARE.
 include { getKeyValue; moduleLoad; parseBoolean} from '../../modules/utils/functions.nf'
 
 process SAMTOOLS_SAMPLES02 {
-tag "${bams.name}"
+tag "${row.bams.name}"
 afterScript "rm -f jeter.txt jeter.tsv"
 input:
 	val(meta)
-	path(reference)
-	path(bams)
+	val(row)
 output:
 	path("sample2bam.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
-	def references = meta.references?:""
+	def references = row.references==null || row.references.name.equals("NO_FILE")?"":" -F \"${row.references}\" "
 	def with_header = parseBoolean(meta.with_header?:"true")
 """
 hostname 2>&1
@@ -44,8 +43,8 @@ ${moduleLoad("samtools")}
 set -o pipefail
 
 samtools samples \
-	-f "${reference.toRealPath()}" \
-	${references.isEmpty()?"":" -F '${references}' "} < "${bams}" |\
+	-f "${row.reference}" \
+	${references} < "${row.bams}" |\
 	sort -T . -t '\t' -k1,1 | uniq |\
 	awk -F '\t' 'function uniq(S) {P=S;i=1; while(P in U) {i++;P=sprintf("%s.%d",S,i);} U[P]++; return P;} {printf("%s\t%s\t%s\t%s\\n",\$1,uniq(\$1),\$2,\$3);}' > jeter.tsv
 
@@ -80,7 +79,7 @@ cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
 	<entry key="description">extract sample names from BAM metadata</entry>
-	<entry key="input">${bams}</entry>
+	<entry key="input">${row.bams}</entry>
         <entry key="samtools.version">\$(samtools  --version | head -n 1| cut -d ' ' -f2)</entry>
         <entry key="n-samples">\$(wc -l < sample2bam.tsv )</entry>
         <entry key="samples">\$(cut -f 1 sample2bam.tsv |paste -s -d ' ')</entry>

@@ -10,7 +10,7 @@ params.bam=""
 params.beds=""
 params.bams=""
 params.reference=""
-params.references=""
+params.references="NO_FILE"
 params.dbsnp=""
 params.prefix=""
 params.publishDir=""
@@ -19,7 +19,7 @@ params.disableFeatures=""
 
 workflow  {
 	version_ch = Channel.empty()
-	vcfs_ch = GATK4_HAPCALLER_GVCFS_01(params,params.reference,file(params.bams),Channel.fromPath(params.beds))
+	vcfs_ch = GATK4_HAPCALLER_GVCFS_01(params,params.reference,file(params.references),file(params.bams),Channel.fromPath(params.beds))
 	version_ch = version_ch.mix(vcfs_ch.version)
 
 	if(parseBoolean(getKeyValue(params,"annotate","true"))) {

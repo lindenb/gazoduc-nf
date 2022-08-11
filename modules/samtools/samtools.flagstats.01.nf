@@ -23,48 +23,48 @@ SOFTWARE.
 
 */
 
-include {assertNotEmpty;getKeyValue;moduleLoad} from '../../modules/utils/functions.nf'
+include {assertNotEmpty;getKeyValue;moduleLoad;isBlank} from '../../modules/utils/functions.nf'
 
-process SAMTOOLS_IDXSTATS_01 {
-tag "{row.bam}"
+String getExtension(String fmt) {
+	if(fmt==null) return ".txt";
+	if(fmt.equals("tsv")) return ".tsv";
+	if(fmt.equals("json")) return ".json";
+	return ".txt";
+	}
+
+process SAMTOOLS_FLAGSTATS_01 {
+tag "${row.bam}"
 afterScript "rm -rf TMP"
 cpus 1
 input:
 	val(meta)
 	val(row)
 output:
-	tuple val(row),path("*.idxstats.tsv"),emit:output
+	tuple val(row),path("${row.prefix?:""}flagstats${getExtension(meta.format)}"),emit:output
 	path("version.xml"),emit:version
 script:
 	def prefix = row.prefix?:""
+	def bed = row.bed==null || row.bed.name.equals("NO_FILE")?"":"-M -L \"${row.bed}\" "
+	def interval = row.interval?:""
+	def ref = row.reference?"--reference \"${row.reference}\" ":""
+	def has_interval = !isBlank(bed) || !isBlank(interval)
+
 """
 hostname 1>&2
 ${moduleLoad("samtools")}
 set -o pipefail
 
-SN=`samtools samples "${row.bam}" | cut -f 1 | head -n 1`
-
-test ! -z "${SN}"
-
-samtools idxstats --threads ${task.cpus} "${row.bam}"  |\
-	awk -F '\t' -vS=\${SN} 'BEGIN{OFS="\t";printf("sample\tbam\tcontig\tlength\tmapped\tunmapped\\n");}{printf("%s\t${bam}\t%s\\n",S,\$0);}' > "${prefix}\${SN}.idxstats.tsv"
+${has_interval?"samtools view --uncompressed -O BAM ${bed} ${ref} \"${row.bam}\" ${interval} \\":""}
+samtools flagstats --threads ${task.cpus} -O "${row.format?:"default"}" ${has_interval?"-":"\"${row.bam}\""}  > "${prefix}flagstats${getExtension(meta.format)}"
 
 ##################
 cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
-	<entry key="description">samtools idxstats</entry>
-	<entry key="bam">${bam}</entry>
-	<entry key="sample">\${SN}</entry>
-	<entry key="mapped">\$(tail -n+2 "${prefix}\${SN}.idxstats.tsv" | cut -f 5  | paste -s -d '+' |bc)</entry>
-	<entry key="unmapped">\$(tail -n+2 "${prefix}\${SN}.idxstats.tsv" | cut -f 6  | paste -s -d '+' |bc)</entry>
+	<entry key="description">samtools flagtats</entry>
+	<entry key="bam">${row.bam}</entry>
+	<entry key="samtools.version">\$(samtools version | head -n1 )</entry>
 </properties>
 EOF
 """
-stub:
-"""
-touch  idxstats.tsv
-echo "<properties/>" > version.xml
-"""
 }
-

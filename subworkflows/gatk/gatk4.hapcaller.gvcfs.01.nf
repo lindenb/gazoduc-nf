@@ -30,13 +30,14 @@ workflow GATK4_HAPCALLER_GVCFS_01 {
         take:
                 meta
                 reference
+		references
                 bams
                 beds
         main:
                 version_ch = Channel.empty()
 
 
-		samples_bams_ch = SAMTOOLS_SAMPLES02(meta.plus(["with_header":true]), reference, bams)
+		samples_bams_ch = SAMTOOLS_SAMPLES02(meta.plus(["with_header":true]), ["reference":reference,"bams": bams,"references":references] )
 		version_ch = version_ch.mix(samples_bams_ch.version)
 
 
