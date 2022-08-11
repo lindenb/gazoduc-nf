@@ -8,6 +8,10 @@ My Nextflow Pipelines
 
 ## Workflows
 
+## Fastq
+
+  * [Fastqc](workflows/fastqc/) run fastqc on a set of fastq files
+
 ### Mapping
 
   * [Map Fastqs](workflows/mapping/map.fastqs/) Map Fastqs on a reference genome 
@@ -17,7 +21,7 @@ My Nextflow Pipelines
 
   * [GATK direct](workflows/gatk/gatk4direct/) Calling bams without gvcfs.
   * [GATK gvcfs](workflows/gatk/gatk4gvcfs/) calling bams with gvcfs.
-  * [VQSR](subworkflows/vqsr/) variant recalibration.
+  * [VQSR](workflows/vqsr/) variant recalibration.
 
 ### Structural variants
 

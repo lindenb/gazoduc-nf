@@ -166,6 +166,7 @@ fi
 cat <<- EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
+	<entry key="vcf">${vcf}</entry>
 </properties>
 EOF
 """
