@@ -1,4 +1,5 @@
 include {moduleLoad;getKeyValue;hasFeature} from '../../../modules/utils/functions.nf'
+include {VALIDATE_CASE_CONTROL_PED_01} from '../../../modules/pedigree/validate.case.ctrl.pedigree.01.nf'
 include {VCF_INTER_CASES_CONTROLS_01} from '../../../subworkflows/bcftools/vcf.inter.cases.controls.01.nf'
 include {DOWNLOAD_GTF_01} from '../../../modules/gtf/download.gtf.01.nf'
 include {BED_CLUSTER_01} from '../../../modules/jvarkit/jvarkit.bedcluster.01.nf'
@@ -14,8 +15,7 @@ include {MERGE_VERSION} from '../../../modules/version/version.merge.nf'
 include {PIHAT_CASES_CONTROLS_01} from '../../../subworkflows/pihat/pihat.cases.controls.01.nf'
 
 params.reference=""
-params.cases=""
-params.controls=""
+params.pedigree=""
 params.vcf=""
 params.disableFeatures="";
 params.help=false
@@ -34,8 +34,7 @@ ${params.rsrc.author}
 
   * --reference (fasta) ${params.rsrc.reference} [REQUIRED]
   * --vcf <file> path to a indexed VCF or BCF file. If file ends with '.list' is a list of path to one VCF per contig [REQUIRED]
-  * --cases <file> file containing the cases' names. One per line.
-  * --controls <file> file containing the controls' names. One per line.
+  * --pedigree <file> jvarkit formatted pedigree. phenotype MUST be case|control. Sex MUST be male|female|unknown
   * --publishDir (dir) Save output in this directory
   * --prefix (string) files prefix. default: ""
 
@@ -47,8 +46,7 @@ nextflow -C ../../confs/cluster.cfg  run -resume burden.coding.01.nf \\
         --prefix "analysis." \\
         --reference /path/to/reference.fasta \\
         --vcf /path/to/my.vcf.gz \\
-        --cases /path/to/cases.file \\
-        --controls /path/to/controls.file
+        --pedigree /path/to/input.ped \
 ```
 
 ## Workflow
@@ -60,7 +58,7 @@ exit 0
 }
 
 workflow {
-		BURDEN_CODING(params, params.reference, params.vcf, params.cases, params.controls)
+		BURDEN_CODING(params, params.reference, params.vcf, file(params.pedigree))
 		}
 
 workflow BURDEN_CODING {
@@ -68,16 +66,19 @@ workflow BURDEN_CODING {
 		meta
 		reference
 		vcf
-		cases_f
-		controls_f
+		pedigree
 	main:
 		to_zip = Channel.empty()
 		version_ch = Channel.empty()
-		vcf_inter_ch = VCF_INTER_CASES_CONTROLS_01(meta.plus(["with_tabix":true]),vcf,cases_f,controls_f)
+		
+		ped_ch = VALIDATE_CASE_CONTROL_PED_01(meta,pedigree)
+		version_ch = version_ch.mix(ped_ch.version)
+
+		vcf_inter_ch = VCF_INTER_CASES_CONTROLS_01(meta.plus(["with_tabix":true]),vcf,ped_ch.cases_list, ped_ch.controls_list )
 		version_ch = version_ch.mix(vcf_inter_ch.version)
 
 		if(hasFeature(meta,"pihat")) {
-			pihat = PIHAT_CASES_CONTROLS_01(meta,reference,file(vcf),cases_f,controls_f)
+			pihat = PIHAT_CASES_CONTROLS_01(meta,reference,file(vcf),ped_ch.cases_list,ped_ch.controls_list)
 			version_ch = version_ch.mix(pihat.version)
 			to_zip = to_zip.mix(pihat.pihat_png)
 			to_zip = to_zip.mix(pihat.pihat_pdf)

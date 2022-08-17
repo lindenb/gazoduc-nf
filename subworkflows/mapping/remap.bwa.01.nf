@@ -180,7 +180,7 @@ done
 
 mkdir BED
 awk -F '[:\\-]' '{printf("%s\t%d\t%s\\n",\$1,int(\$2)-1,int(\$3));}' "contigs.tsv" |\
-	java -jar \${JVARKIT_DIST}/bedcluster.jar --reference "${reference}" -o BED --size "${meta.collateSize?:"100mb"}" 
+	java -jar \${JVARKIT_DIST}/bedcluster.jar --reference "${reference}" -o BED --size "${meta.collateSize?:"300mb"}" 
 
 find \${PWD}/BED -type f -name "*.bed" |\
 	awk '{printf("${sample}\t${bam}\t%s\\n",\$0);}' > output.tsv

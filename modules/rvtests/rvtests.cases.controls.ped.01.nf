@@ -1,5 +1,6 @@
 
 process PEDIGREE_FOR_RVTESTS {
+tag "${cases} ${controls}"
 executor "local"
 input:
         val(meta)
@@ -29,7 +30,8 @@ cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
         <entry key="description">create pedigree for rvtests</entry>
+        <entry key="cases.count">\$(awk -F '\t' '(\$6==2)' jeter.ped | wc -l)' )</entry>
+        <entry key="controls.count">\$(awk -F '\t' '(\$6==1)' jeter.ped | wc -l)' )</entry>
 </properties>
 """
 }
-

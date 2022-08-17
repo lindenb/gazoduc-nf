@@ -22,6 +22,7 @@ My Nextflow Pipelines
   * [GATK direct](workflows/gatk/gatk4direct/) Calling bams without gvcfs.
   * [GATK gvcfs](workflows/gatk/gatk4gvcfs/) calling bams with gvcfs.
   * [VQSR](workflows/vqsr/) variant recalibration.
+  * [Graphtyper](workflows/graphtyper/graphtyper.genotype/) calling with graphtyper
 
 ### Structural variants
 
@@ -35,6 +36,10 @@ My Nextflow Pipelines
 ### Relatedness
 
   * [Somalier BAMS](workflows/somalier/somalier.bams/) Somalier on bams.
+
+### Burden
+
+  * [Burden Coding](workflows/burden/burden.coding.01/) Burden on coding regions.
 
 ### Misc
 
