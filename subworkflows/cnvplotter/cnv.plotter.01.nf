@@ -61,7 +61,7 @@ workflow CNV_PLOTTER_01 {
 		plot_ch = PLOT_CNV(meta, reference, known_ch.bed, gff3_ch.gff3 , ch2_ch)
 		version_ch = version_ch.mix(plot_ch.version)
 
-		merge_ch = MERGE_PLOTS(meta,plot_ch.output.collect())		
+		merge_ch = MERGE_PLOTS(meta,splitctx_ch.output,plot_ch.output.collect())		
 		version_ch = version_ch.mix(merge_ch.version)
 
 		version_ch = MERGE_VERSION(meta, "CNVPlot", "CNV Plotter", version_ch.collect())
@@ -167,14 +167,15 @@ private void instanceMain(final String args[]) {
 					map(G->G.getSampleName()).
 					collect(Collectors.toList());
 				final StringBuilder sb = new StringBuilder();
-				sb.append("Variant location is <b>"+ctx.getContig()+":"+ctx.getStart()+"-"+ctx.getEnd()+". ");
-				sb.append("SVType is <b>"+svType+"</b>. ");
-					
+				sb.append("Variant location is <b>"+ctx.getContig()+":"+ctx.getStart()+"-"+ctx.getEnd()+"</b>. ");
+				sb.append("SVTYPE is <b>" + svType + "</b>. ");
+				sb.append("SVLEN is <b>"+ len +"</b>. ");
+				sb.append("Some Samples carrying an ALT include:").append(affected.stream().limit(20).collect(Collectors.joining(" "))).append(".<br/>");
 
 				Collections.shuffle(unaffected);
 				if(unaffected.size()  > max_controls)  unaffected = unaffected.subList(0,max_controls);
 				variant_id++;
-				out.print(this.prefix + ctx.getContig()+"_"+ctx.getStart()+"_"+ctx.getEnd()+"_"+svType+"_id"+variant_id);
+				out.print(this.prefix + ctx.getContig()+"_"+ctx.getStart()+"_"+ctx.getEnd()+"_"+svType+"_"+len+"_id"+variant_id+".");
 				out.print("\t");
 				out.print(ctx.getContig()+":"+ctx.getStart()+"-"+ctx.getEnd());
 				out.print("\t");
@@ -236,7 +237,7 @@ input:
 	val(vcf)
 	val(minikit)
 output:
-       	path("variants.tsv"),emit:output
+       	path("${meta.prefix?:""}variants.tsv"),emit:output
         path("version.xml"),emit:version
 script:
 	def extra_filter = meta.extra_vcf_filter?:""
@@ -247,7 +248,7 @@ set -o pipefail
 
 bcftools view "${vcf}" |\
 	${isBlank(extra_filter)?"":"${extra_filter} |"} \
-	java -cp  \${JVARKIT_DIST}/coverageplotter.jar:${minikit} Minikit --vcf "${vcf}" > variants.tsv
+	java -cp  \${JVARKIT_DIST}/coverageplotter.jar:${minikit} Minikit --vcf "${vcf}" > "${meta.prefix?:""}variants.tsv"
 
 
 
@@ -264,6 +265,7 @@ EOF
 
 process PLOT_CNV {
 tag "${row.prefix} ${row.interval}"
+afterScript "rm -rf TMP"
 memory "3g"
 input:
 	val(meta)
@@ -272,12 +274,15 @@ input:
 	val(gff3)
 	val(row)
 output:
-	tuple path("${row.prefix}out.html"),emit:output
+	path("${row.prefix}out.html"),emit:output
 	path("version.xml"),emit:version
 script:
+	def num_controls = row.num_controls?:10
+	def extend = row.extend?:"5.0"
+	def mapq = row.mapq?:30
 """
 hostname 1>&2
-${moduleLoad("jvarkit")}
+${moduleLoad("jvarkit samtools")}
 set -o pipefail
 mkdir TMP
 
@@ -287,13 +292,41 @@ echo "${row.cases}" | tr "," "\\n" | sort | uniq > TMP/cases.txt
 echo "${row.controls}" | tr "," "\\n" | sort | uniq > TMP/controls.txt
 
 join -t '\t' -1 1 -2 1 -o "2.2" TMP/cases.txt TMP/samples.bams.tsv > TMP/cases.bams.list
-join -t '\t' -1 1 -2 1 -o "2.2" TMP/controls.txt TMP/samples.bams.tsv | shuf | head -n 10 > TMP/controls.bams.list
+join -t '\t' -1 1 -2 1 -o "2.1" TMP/controls.txt TMP/samples.bams.tsv | shuf | head -n ${num_controls} | sort | uniq > TMP/controls2.txt
+mv TMP/controls2.txt TMP/controls.txt
+
+join -t '\t' -1 1 -2 1 -o "2.2" TMP/controls.txt TMP/samples.bams.tsv | sort | uniq > TMP/controls.bams.list
+
+
 cat TMP/cases.bams.list TMP/controls.bams.list  | sort | uniq > TMP/all.bams.list
+
+## http://www.paletton.com/#
+
+cat << "EOF" > TMP/jeter.awk
+function fr(x,y,z){ return int(y+x*(z-y));}
+{SN[\$1]=((NR)*1.0);}
+END{for(S in SN){f=(SN[S]/NR);printf("%s\tdisplay:block;stroke:rgb(%d,%d,%d);fill:none;\\n",S,fr(f,189,151),fr(f,0,11),fr(f,57,53));}}
+EOF
+
+awk -F '\t' -v C=red  -f TMP/jeter.awk TMP/cases.txt    >  TMP/style.css
+
+## http://www.paletton.com/#
+
+cat << "EOF" > TMP/jeter.awk
+function fr(x,y,z){ return int(y+x*(z-y));}
+{SN[\$1]=((NR)*1.0);}
+END{for(S in SN){f=(SN[S]/NR);printf("%s\tdisplay:block;stroke:rgb(%d,%d,%d);fill:none;\\n",S,fr(f,46,22),fr(f,66,41),fr(f,114,85));}}
+EOF
+
+awk -F '\t' -v C=blue -f TMP/jeter.awk TMP/controls.txt >> TMP/style.css
 
 java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP  -jar ${JVARKIT_DIST}/coverageplotter.jar \
 	-R "${reference}" \
+	--mapq "${mapq}" \
 	--known '${known}' --ignore-known-containing \
 	--gff3 '${gff3}' \
+	--css TMP/style.css \
+	--extend "${extend}" \
 	--region "${row.interval}" \
 	TMP/all.bams.list > TMP/jeter.html
 
@@ -326,6 +359,9 @@ cat << EOF > version.xml
 	<entry key="name">${task.process}</entry>
 	<entry key="description">plot CNV</entry>
 	<entry key="interval">${row.interval}</entry>
+	<entry key="mapq">${mapq}</entry>
+	<entry key="extend">${extend}</entry>
+	<entry key="coverageplotter.version">\$(java -jar ${JVARKIT_DIST}/coverageplotter.jar --version)</entry>
 </properties>
 EOF
 """
@@ -335,6 +371,7 @@ process MERGE_PLOTS {
 tag "N=${L.size()}"
 input:
 	val(meta)
+	path(table)
 	val(L)
 output:
 	path("${meta.prefix?:""}plots.zip"),emit:zip
@@ -347,12 +384,15 @@ script:
 hostname 1>&2
 
 mkdir "${prefix}" 
+ln -s "${table}" "${prefix}/"
 
 ${copy}
 
 cat << EOF > ${prefix}/index.html
 <html>
 <head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta http-equiv="author" content="Pierre Lindenbaum Phd ">
 <title>${meta.prefix?:""} CNV plotter (N=${L.size()})</title>
 <script>
 var files=[
