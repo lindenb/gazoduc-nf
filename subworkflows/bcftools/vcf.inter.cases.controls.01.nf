@@ -34,11 +34,14 @@ workflow VCF_INTER_CASES_CONTROLS_01 {
 		controls_file
 	main:
 		version_ch = Channel.empty()
-		cases_ch = INTER_CASES(meta,vcf,cases_file)
+		cases_ch = INTER_CASES(meta.plus("prefix":"cases"),vcf,cases_file)
 		version_ch = version_ch.mix(cases_ch.version)
 
-		ctrls_ch = INTER_CONTROLS(meta,vcf,controls_file)
+		ctrls_ch = INTER_CONTROLS(meta.plus("prefix":"controls"),vcf,controls_file)
 		version_ch = version_ch.mix(ctrls_ch.version)
+		
+
+		
 		
 		uniq_ch = UNIQ(meta,
 				cases_ch.common,
@@ -51,8 +54,8 @@ workflow VCF_INTER_CASES_CONTROLS_01 {
 		version_ch = MERGE_VERSION(meta, "vcf inter cases/ctrls", "intersection samples in VCF cases and controls", version_ch.collect())
 	emit:
 		version = version_ch
-		cases = uniq_ch.cases
-		controls = uniq_ch.controls
+		cases = cases_ch.common
+		controls = ctrls_ch.common
 		vcf_only = uniq_ch.vcf_only
 		all_samples = uniq_ch.all_samples
 	}
@@ -65,14 +68,12 @@ afterScript "rm -f a.txt b.txt c.txt"
 input:
         val(meta)
         val(common_cases)
-        val(vcfonly_cases)
+       	val(vcfonly_cases)
         val(common_controls)
-	 val(vcfonly_controls)
+	val(vcfonly_controls)
 output:
 	path("all_samples.txt"),emit:all_samples
 	path("vcf_only.txt"),emit:vcf_only
-	val(common_cases),emit:cases
-	val(common_controls),emit:controls
 	path("version.xml"),emit:version
 script:
 """

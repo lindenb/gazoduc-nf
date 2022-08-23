@@ -27,26 +27,27 @@ include {moduleLoad;getKeyValue;assertFileExists;assertNotEmpty} from '../utils/
 
 process VCF_INTER_SAMPLES_01 {
 executor "local"
-tag "${file(vcf).name} ${file(samples).name}"
+tag "${vcf.name} ${samples.name}"
 afterScript "rm -rf TMP"
 
 input:
 	val(meta)
-	val(vcf)
-	val(samples)
+	path(vcf)
+	path(samples)
 output:
-	path("common.samples.txt"),emit:common
-	path("vcf_only.txt"),emit:vcf_only
-	path("samples_only.txt"),emit:samples_only
+	path("${meta.prefix?:""}common.samples.txt"),emit:common
+	path("${meta.prefix?:""}vcf_only.txt"),emit:vcf_only
+	path("${meta.prefix?:""}samples_only.txt"),emit:samples_only
 	path("version.xml"),emit:version
 script:
+	def prefix = meta.prefix?:""
 """
 hostname 1>&2
 ${moduleLoad("bcftools")}
 
 mkdir TMP
 
-if [ ! -z "${vcf.endsWith(".list")?"Y":""}" ] ; then
+if [ ! -z "${vcf.name.endsWith(".list")?"Y":""}" ] ; then
 
 	bcftools concat  --allow-overlaps -O u  --file-list "${vcf}" |\
 	bcftools query -l | sort -T TMP | uniq > TMP/jeter.a
@@ -59,20 +60,20 @@ fi
 
 sort -T TMP "${samples}" | uniq > TMP/jeter.b
 
-comm -12 TMP/jeter.a TMP/jeter.b > common.samples.txt
-comm -23 TMP/jeter.a TMP/jeter.b > vcf_only.txt
-comm -13 TMP/jeter.a TMP/jeter.b > samples_only.txt
+comm -12 TMP/jeter.a TMP/jeter.b > "${prefix}common.samples.txt"
+comm -23 TMP/jeter.a TMP/jeter.b > "${prefix}vcf_only.txt"
+comm -13 TMP/jeter.a TMP/jeter.b > "${prefix}samples_only.txt"
 
 ##################
 cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
         <entry key="description">get intersection between a VCF and a list of cases/controls</entry>
-        <entry key="vcf">${vcf}</entry>
-        <entry key="samples">${samples}</entry>
-	<entry key="count(vcf.only)">\$( wc -l < vcf_only.txt )</entry>
-	<entry key="count(samples.only)">\$( wc -l < samples_only.txt )</entry>
-	<entry key="count(common.samples)">\$( wc -l < common.samples.txt )</entry>
+        <entry key="vcf">${vcf.toRealPath()}</entry>
+        <entry key="samples">${samples.toRealPath()}</entry>
+	<entry key="count(vcf.only)">\$( wc -l < "${prefix}vcf_only.txt" )</entry>
+	<entry key="count(samples.only)">\$( wc -l < "${prefix}samples_only.txt" )</entry>
+	<entry key="count(common.samples)">\$( wc -l < "${prefix}common.samples.txt" )</entry>
 	<entry key="bcftools.version">\$( bcftools --version-only )</entry>
 </properties>
 EOF

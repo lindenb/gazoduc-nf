@@ -179,6 +179,7 @@ cat << EOF > version.xml
         <entry key="Name">${task.process}</entry>
 	<entry key="description">convert gtf to bed</entry>
         <entry key="gtf">${gtf}</entry>
+        <entry key="gtf2gene.version">\$(java -jar ${jvarkit("gtf2bed")} --version)</entry>
 </properties>
 
 """
@@ -864,11 +865,10 @@ output:
 	path("version.xml"),emit:version
 script:
 	def vcf=row.vcf
-	def cases_file = row.cases?:""
-	def controls_file = row.controls?:""
 	def dbName = file(reference).getSimpleName()
 	def extraBcfTools = meta.extraBcfTools?:""
 	def lowGQ = meta.lowGQ?:"70" //TODO a verifier
+	def pedigree = row.pedigree?:file("NO_FILE")
 """
 	hostname 1>&2
 	${moduleLoad("bcftools jvarkit snpEff bedtools htslib")}
@@ -903,8 +903,8 @@ script:
 
 
 	# samples in pedigree
-	if [ ! -z "${!isBlank(cases_file) && !isBlank(controls_file) && hasFeature(meta,"keepSamplesInPed")?"Y":""}" ] ; then
-		cat "${cases_file}" "${controls_file}"  | sort -T TMP | uniq > TMP/samples.a
+	if [ ! -z "${!pedigree.name.equals("NO_FILE") && hasFeature(meta,"keepSamplesInPed")?"Y":""}" ] ; then
+		cut -f 2 "${pedigree}"  | sort -T TMP | uniq > TMP/samples.a
 		bcftools query -l TMP/jeter1.vcf  |	sort -T TMP | uniq > TMP/samples.b
 		comm -12 TMP/samples.a TMP/samples.b > TMP/samples.c
 		test -s TMP/samples.c
@@ -1127,6 +1127,7 @@ script:
 			<entry key="population">${meta.gnomadPop}</entry>
 			<entry key="soft.filter">${isSoftFilter(meta,"GNOMAD")}</entry>
 			<entry key="gnomad.path">${getGnomadGenomePath(meta,reference)}</entry>
+			<entry key="vcfgnomad.version">\$(java -jar ${jvarkit("vcfgnomad")} --version)</entry>
 		</properties>
 		EOF
 
@@ -1148,11 +1149,101 @@ script:
 			<entry key="population">${meta.gnomadPop}</entry>
 			<entry key="soft.filter">${isSoftFilter(meta,"GNOMAD")}</entry>
 			<entry key="gnomad.path">${getGnomadExomePath(meta,reference)}</entry>
+			<entry key="vcfgnomad.version">\$(java -jar ${jvarkit("vcfgnomad")} --version)</entry>
 		</properties>
 		EOF
 
 
 	fi
+
+
+	# de novo
+	if [ ! -z "${pedigree.name.equals("NO_FILE")?"":"Y"}" ] ; then
+		# check parents
+		awk -F '\t' '(\$3!="0" || \$4!="0")' "${pedigree}" > TMP/parents.txt
+		
+		if [ -s TMP/parents.txt ] ; then
+			java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar -jar \${JVARKIT_DIST}/vcftrio.jar \
+				--pedigree "${pedigree}" TMP/jeter1.vcf > TMP/jeter2.vcf
+			mv TMP/jeter2.vcf TMP/jeter1.vcf
+
+			cat <<- EOF >> version.xml
+			<properties>
+				<entry key="description">annotation of trios</entry>
+				<entry key="pedigree">${pedigree}</entry>
+				<entry key="vcftrio.version">\$(java -jar \${JVARKIT_DIST}/vcftrio.jar --version)</entry>
+			</properties>
+			EOF
+
+		fi
+		rm TMP/parents.txt
+
+		if [ ! -z "${hasFeature(meta, "contrast")?"Y":""}" ] ; then
+			# check cases and controls
+			awk -F '\t' '(\$6=="case" || \$6=="affected" || \$6=="1")' "${pedigree}" | cut -f 2 > TMP/cases.list
+			awk -F '\t' '(\$6=="control" || \$6=="unaffected" || \$6=="0")' "${pedigree}" | cut -f 2 > TMP/ctrl.list
+
+			if [ ! -s TMP/cases.list ] && [ ! -s TMP/ctrl.list ] ; then
+
+    				bcftools +contrast -0 TMP/ctrl.list -1 TMP/cases.list \
+      					-a PASSOC,FASSOC,NASSOC,NOVELAL,NOVELGT -O b -o TMP/jeter2.vcf TMP/jeter1.vcf
+				mv TMP/jeter2.vcf TMP/jeter1.vcf
+
+
+				cat <<- EOF >> version.xml
+				<properties>
+					<entry key="description">bcftools contrast</entry>
+					<entry key="pedigree">${pedigree}</entry>
+					<entry key="bcftools.version">\$(bcftools version | head -n2 | paste -d ' ' -s)</entry>
+				</properties>
+				EOF
+
+			fi
+			rm cases.list ctrl.list
+		fi
+	fi
+
+
+	# add external info AF,AC,AN e.g. amalgamion
+	if [ ! -z "${hasFeature(meta,"joinvcf")?"Y":""}" ] ; then
+		# get interval for this vcf
+		bcftools query -f '%CHROM\t%POS0\t%END\\n' TMP/jeter1.vcf |\
+			sort -T TMP -t '\t' -k1,1 -k2,2n |\
+			bedtools merge > TMP/jeter.bed
+
+		# if bed is empty
+		if ! [ -s  TMP/jeter.bed ] ; then
+			head -n1 "TMP/jeter.123.bed" | awk -F '\t' '{printf("%s\t0\t1\\n",\$1);}'  > TMP/jeter.bed
+		fi
+
+		bcftools norm --regions-file TMP/jeter.bed -O u -m- "${getAmalgamionVcf(reference)}" |\
+			bcftools  +fill-tags -O u  -- -t AN,AC,AF |\
+			bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%INFO/AC\t%INFO/AN\t%INFO/AF\\n' > TMP/jeter.tab
+		rm TMP/jeter.bed
+		bgzip TMP/jeter.tab
+		tabix -s1 -b2 -e2 TMP/jeter.tab.gz
+
+		echo -e '##INFO=<ID=AC${getAmalgamionSuffix(meta)},Number=A,Type=Integer,Description="AC from ${getAmalgamionVcf()}">' > TMP/hdr.txt
+		echo -e '##INFO=<ID=AF${getAmalgamionSuffix(meta)},Number=A,Type=Float,Description="AF from ${getAmalgamionVcf()}">' >> TMP/hdr.txt
+		echo -e '##INFO=<ID=AN${getAmalgamionSuffix(meta)},Number=1,Type=Integer,Description="AF from ${getAmalgamionVcf()}">' >> TMP/hdr.txt
+		
+		bcftools annotate  --mark-sites +IN${getAmalgamionSuffix(meta)} -a TMP/jeter.tab.gz -h TMP/hdr.txt -c 'CHROM,POS,REF,ALT,AC${getAmalgamionSuffix(meta)},AN${getAmalgamionSuffix(meta)},AF${getAmalgamionSuffix(meta)}' TMP/jeter1.vcf > TMP/jeter2.vcf
+		mv TMP/jeter2.vcf TMP/jeter1.vcf
+
+		rm TMP/hdr.txt TMP/jeter.tab.gz TMP/jeter.tab.gz.tbi
+
+
+		cat <<- EOF >> version.xml
+		<properties>
+			<entry key="description">annotation AC,AF,AN with external VCF</entry>
+			<entry key="vcf">${getAmalgamionVcf(reference)}</entry>
+			<entry key="bcftools.version">\$(bcftools version | head -n2 | paste -d ' ' -s)</entry>
+		</properties>
+		EOF
+
+
+	fi
+
 
 
 	bcftools sort --max-mem "${task.memory.giga}g" -T TMP -O b -o TMP/contig.bcf TMP/jeter1.vcf
@@ -1184,34 +1275,6 @@ stub:
 	fi
 
 
-	# add external info AF,AC,AN e.g. amalgamion
-	if [ ! -z "${hasFeature(meta,"joinvcf")?"Y":""}" ] ; then
-		# get interval for this vcf
-		bcftools query -f '%CHROM\t%POS0\t%END\\n' jeter1.vcf |\
-			sort -T . -t '\t' -k1,1 -k2,2n |\
-			bedtools merge > jeter.bed
-
-		# if bed is empty
-		if ! [ -s  jeter.123.bed ] ; then
-			head -n1 "jeter.123.bed" | awk -F '\t' '{printf("%s\t0\t1\\n",\$1);}'  > jeter.bed
-		fi
-
-		bcftools norm --regions-file jeter.bed -O u -m- "${getAmalgamionVcf(reference)}" |\
-			bcftools  +fill-tags -O u  -- -t AN,AC,AF |\
-			bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%INFO/AC\t%INFO/AN\t%INFO/AF\\n' > jeter.tab
-		rm jeter.bed
-		bgzip jeter.tab
-		tabix -s1 -b2 -e2 jeter.tab.gz
-
-		echo -e '##INFO=<ID=AC${getAmalgamionSuffix(meta)},Number=A,Type=Integer,Description="AC from ${getAmalgamionVcf()}">' > hdr.txt
-		echo -e '##INFO=<ID=AF${getAmalgamionSuffix(meta)},Number=A,Type=Float,Description="AF from ${getAmalgamionVcf()}">' >> hdr.txt
-		echo -e '##INFO=<ID=AN${getAmalgamionSuffix(meta)},Number=1,Type=Integer,Description="AF from ${getAmalgamionVcf()}">' >> hdr.txt
-		
-		bcftools annotate  --mark-sites +IN${getAmalgamionSuffix(meta)} -a jeter.tab.gz -h hdr.txt -c 'CHROM,POS,REF,ALT,AC${getAmalgamionSuffix(meta)},AN${getAmalgamionSuffix(meta)},AF${getAmalgamionSuffix(meta)}' jeter1.vcf > jeter2.vcf
-		mv jeter2.vcf jeter1.vcf
-
-		rm hdr.txt jeter.tab.gz jeter.tab.gz.tbi
-	fi
 
 	# merge external vcf e.g. amalgamion
 	if [ ! -z "${isBlank(mergevcf)?"":"Y"}" ] && [ ! -z "${hasFeature(meta,"amalgamion")?"Y":""}" ] ; then
@@ -1264,33 +1327,6 @@ stub:
 		rm jeter4.bcf jeter4.bcf.csi jeter1.vcf.gz jeter1.vcf.gz.csi
 		
 
-	fi
-
-	# de novo
-	if [ ! -z "${meta.pedigree}" ] ; then
-		# check parents
-		awk -F '\t' '(\$3!="0" || \$4!="0")' "${meta.pedigree}" > parents.txt
-		
-		if [ -s parents.txt ] ; then
-			java -Xmx${task.memory.giga}g -Djava.io.tmpdir=. -jar ${jvarkit("vcftrio")} \
-				--pedigree "${meta.pedigree}" jeter1.vcf > jeter2.vcf
-			mv jeter2.vcf jeter1.vcf
-		fi
-		rm parents.txt
-
-		if [ ! -z "${hasFeature(meta, "contrast")?"Y":""}" ] ; then
-			# check cases and controls
-			awk -F '\t' '(\$6=="case" || \$6=="1")' "${meta.pedigree}" | cut -f 2 > cases.list
-			awk -F '\t' '(\$6=="control" || \$6=="0")' "${meta.pedigree}" | cut -f 2 > ctrl.list
-
-			if [ ! -s TMP/cases.list ] && [ ! -s TMP/ctrl.list ] ; then
-
-    				bcftools +contrast -0 ctrl.list -1 cases.list \
-      					-a PASSOC,FASSOC,NASSOC,NOVELAL,NOVELGT -O b -o jeter2.vcf jeter1.vcf
-				mv jeter2.vcf jeter1.vcf
-			fi
-			rm cases.list ctrl.list
-		fi
 	fi
 
 

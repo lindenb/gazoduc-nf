@@ -76,8 +76,9 @@ output:
 	path("version.xml"),emit:version
 script:
 """
+hostname 1>&2
 
-sort -T . "${removed_samples}" > a
+cut -f 1 "${removed_samples}" | sort -T . > a
 sort -T . "${cases}" > b
 sort -T . "${controls}" > c
 

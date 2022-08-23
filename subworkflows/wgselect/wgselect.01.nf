@@ -33,8 +33,7 @@ workflow WGSELECT_01 {
 		meta
 		reference
 		vcf
-		cases
-		controls
+		pedigree
 		each_bed
 	main:
 		version_ch = Channel.empty()
@@ -43,10 +42,10 @@ workflow WGSELECT_01 {
 		exclude_ch = WGSELECT_EXCLUDE_BED_01(meta,reference)
 		version_ch = version_ch.mix(exclude_ch.version)
 
-		pedjvarkit_ch = PED4JVARKIT(meta,cases,controls)
-		version_ch = version_ch.mix(pedjvarkit_ch.version)
+		//pedjvarkit_ch = PED4JVARKIT(meta,cases,controls)
+		//version_ch = version_ch.mix(pedjvarkit_ch.version)
 
-		annotate_ch = ANNOTATE(meta,reference,vcf,each_bed,exclude_ch.bed,cases,controls,pedjvarkit_ch.pedigree)
+		annotate_ch = ANNOTATE(meta,reference,vcf,each_bed,exclude_ch.bed,pedigree)
 		version_ch = version_ch.mix(annotate_ch.version.first())
 		
 		cat_files_ch = COLLECT_TO_FILE_01(meta, annotate_ch.bed_vcf.map{T->T[1]}.collect())
@@ -67,7 +66,7 @@ workflow WGSELECT_01 {
 		vcfs = cat_files_ch.output /** path to all chunks of vcf */
 	}
 
-
+/** DEPRECATED **************************************
 process PED4JVARKIT {
 executor "local"
 input:
@@ -99,12 +98,14 @@ EOF
 
 """
 }
-
+************************************/
 
 process ANNOTATE {
 tag "${file(vcf).name} ${file(bed).name}"
 cache "lenient"
-cpus 5
+cpus {task.attempt}
+errorStrategy 'retry'
+maxRetries 5
 memory "5g"
 afterScript "rm -rf TMP"
 input:
@@ -113,9 +114,7 @@ input:
 	val(vcf)
 	val(bed)
 	val(blacklisted)
-	val(cases)
-	val(controls)
-	val(jvarkitped)
+	path(jvarkitped)
 output:
 	tuple val(bed),path("contig.bcf"), emit: bed_vcf
 	path("variant_list.txt.gz"), emit:variants_list
@@ -179,8 +178,21 @@ touch TMP/variant_list.txt
 		<entry key="description">wgselect for one bed</entry>
 		<entry key="bed">${bed}</entry>
 		<entry key="vcf">${vcf}</entry>
+		<entry key="ped">${jvarkitped.toRealPath()}</entry>
 		<entry key="steps">
 	EOF
+
+	# extract list of samples cases and controls
+	awk -F '\t' '(\$6=="case" ||  \$6=="affected") {print \$2;}' "${jvarkitped}"| sort | uniq > TMP/cases.txt
+	awk -F '\t' '(\$6=="control" ||  \$6=="unaffected") {print \$2;}' "${jvarkitped}" | sort | uniq > TMP/controls.txt
+	cat <<-EOF >> version.xml
+	<properties>
+		<entry key="description">extract case/controls from ped</entry>
+		<entry key="cases.count">\$(wc -l < TMP/cases.txt)</entry>
+		<entry key="controls.count">\$(wc -l < TMP/controls.txt)</entry>
+	</properties>
+	EOF
+
 
 	# blacklisted region overlapping #####################################################################"
 	bedtools intersect -a "${bed}" -b "${blacklisted}" > TMP/jeter.blacklisted.bed
@@ -207,7 +219,7 @@ touch TMP/variant_list.txt
 
 	cat <<- EOF >> version.xml
 	<properties>
-		<entry key="description">extract variants from main vcf</entry>
+		<entry key="description">extract variants from main vcf in bed region</entry>
 		<entry key="vcf">${vcf}</entry>
 		<entry key="bed">${bed}</entry>
 	</properties>
@@ -225,7 +237,7 @@ touch TMP/variant_list.txt
 
 	cat <<- EOF >> version.xml
 	<properties>
-		<entry key="description">min/max alleles</entry>
+		<entry key="description">select variants on min/max number of alleles (diallelic is 2)</entry>
 		<entry key="min-alleles">2 (including REF)</entry>
 		<entry key="max-alleles">${max_alleles_count} (use <code>--max_alleles_count 'x'</code> to change this)</entry>
 	</properties>
@@ -260,7 +272,7 @@ touch TMP/variant_list.txt
 
 
 	# could happen that some variant are discarded here: saw some gatk4 variants where *NO* genotype was called. #############################
-	cat "${cases}" "${controls}" | sort -T TMP | uniq > TMP/jeter.samples
+	cat TMP/cases.txt TMP/controls.txt | sort -T TMP | uniq > TMP/jeter.samples
 	bcftools view --trim-alt-alleles --samples-file 'TMP/jeter.samples' -O u -o TMP/jeter2.bcf TMP/jeter1.bcf
 	rm TMP/jeter.samples
 	countIt "samples" TMP/jeter1.bcf TMP/jeter2.bcf
@@ -473,7 +485,7 @@ touch TMP/variant_list.txt
 	cat <<- EOF >> version.xml 
 	<properties>
 		<entry key="name">internal maf</entry>
-		<entry key="description">remove variant if internal MAF is too high</entry>
+		<entry key="description">remove variant if internal MAF is too high. Nextflow parameter is <code>--maxmaf (value [0.0 -  1.0] )</code> </entry>
 		<entry key="max MAF">${maxmaf}</entry>
 	EOF
 	
@@ -790,8 +802,8 @@ touch TMP/variant_list.txt
 
 	if [ ! -z "${hasFeature(meta,"contrast")?"Y":""}" ] ; then
 		bcftools +contrast \
-			-0 "${controls}" \
-			-1 "${cases}" \
+			-0 "TMP/controls.txt" \
+			-1 "TMP/cases.txt" \
 			-a PASSOC,FASSOC,NASSOC,NOVELAL,NOVELGT -O v -o TMP/jeter2.vcf TMP/jeter1.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
 

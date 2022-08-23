@@ -47,7 +47,7 @@ i=1
 		        --out "ASSOC/part.\${i}" \
         		--burden cmc,zeggini,mb,fp,exactCMC,cmcWald,rarecover,cmat \
 	        	--vt price,analytic \
-		        --kernel 'skat[nPerm=1000],kbac,skato'
+		        --kernel 'skat[nPerm=1000],kbac,skato' 2> TMP/last.rvtest.log
 
 		i=\$((i+1))
 	done
@@ -60,6 +60,8 @@ cat << EOF > version.xml
   <entry key="name">${task.process}</entry>
   <entry key="description">VCF is split by transcript / gene, and then rvtest is applied.</entry>
   <entry key="name"Pedigree">${pedigree}</entry>
+  <entry key="rvtest.path">\$(which rvtest)</entry>
+  <entry key="rvtest.version">\$(rvtest  --version 2> /dev/null  | head -n1)</entry>
 </properties>
 EOF
 """

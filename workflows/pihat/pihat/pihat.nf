@@ -30,9 +30,7 @@ params.vcf = ""
 params.help = false
 params.publishDir = ""
 params.prefix = ""
-params.cases=""
-params.controls=""
-params.blacklisted=""
+params.samples="NO_FILE"
 
 def helpMessage() {
   log.info"""
@@ -85,7 +83,7 @@ workflow {
 		params,
 		params.reference,
 		file(params.vcf),
-		file("NO_FILE")
+		Channel.fromPath(params.samples)
 		)
 	//PUBLISH(indexcov_ch.zip)
 	}

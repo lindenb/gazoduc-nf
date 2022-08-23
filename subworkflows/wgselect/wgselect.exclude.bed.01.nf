@@ -106,8 +106,9 @@ test -s rmsk.bed
 cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
-	<entry key="description">load bed from UCSC : repeat masked regions. To disable add 'rmsk' to 'disableFeatures'</entry>
+	<entry key="description">load bed from UCSC : repeat masked regions. To disable add 'rmsk' to '<code>--disableFeatures</code>'</entry>
 	<entry key="url"><a>${url}</a></entry>
+	<entry key="jvarkit.bedrename.version">\$( java -jar \${JVARKIT_DIST}/bedrenamechr.jar --version)</entry>
 </properties>
 EOF
 """
@@ -146,8 +147,9 @@ test -s excude.encode.bed
 cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
-	<entry key="description">load excludedRegions from encode. To disable add 'encodeExclude' to 'disableFeatures'</entry>
+	<entry key="description">load excludedRegions from encode. To disable add 'encodeExclude' to '<code>--disableFeatures</code>'</entry>
 	<entry key="url"><a>${url}</a></entry>
+	<entry key="jvarkit.bedrename.version">\$( java -jar \${JVARKIT_DIST}/bedrenamechr.jar --version)</entry>
 </properties>
 EOF
 """
@@ -185,8 +187,9 @@ test -s lcr.bed
 cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
-	<entry key="description">download lowComplexity Regions. To disable add 'lcr' to 'disableFeatures'</entry>
+	<entry key="description">download lowComplexity Regions. To disable add 'lcr' to '<code>--disableFeatures</code>'</entry>
 	<entry key="url"><a>${url}</a></entry>
+	<entry key="jvarkit.bedrename.version">\$( java -jar \${JVARKIT_DIST}/bedrenamechr.jar --version)</entry>
 </properties>
 EOF
 """
@@ -224,8 +227,9 @@ test -s simple_repeats.bed
 cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
-	<entry key="description">download simple repeats. To disable add 'simpleRepeats' to 'disableFeatures'</entry>
+	<entry key="description">download simple repeats. To disable add 'simpleRepeats' to '<code>--disableFeatures</code>'</entry>
 	<entry key="url"><a>${url}</a></entry>
+	<entry key="jvarkit.bedrename.version">\$( java -jar \${JVARKIT_DIST}/bedrenamechr.jar --version)</entry>
 </properties>
 EOF
 """
@@ -255,6 +259,7 @@ cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
 	<entry key="description">merge all ${L.size()} blacklisted bed(s)</entry>
+	<entry key="bedtools.version">\$(bedtools --version)</entry>
 </properties>
 EOF
 """

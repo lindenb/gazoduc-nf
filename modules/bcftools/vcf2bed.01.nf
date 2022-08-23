@@ -25,16 +25,16 @@ SOFTWARE.
 include {getModules} from '../../modules/utils/functions.nf'
 
 process VCF_TO_BED {
-tag "${file(vcf).name}"
+tag "${vcf.name}"
 input:
 	val(meta)
-	val(vcf)
+	path(vcf)
 output:
 	path("vcf2bed.bed"),emit:bed
 	path("version.xml"),emit:version
 script:
 
-	if(vcf.endsWith(".list"))
+	if(vcf.name.endsWith(".list"))
 	"""
 	hostname 1>&2
 	set -o pipefail
@@ -62,8 +62,8 @@ script:
 	set -o pipefail
 	module load ${getModules("bcftools")}
 
-	bcftools index -s "${vcf}" |\
-		awk -F '\t' '{printf("%s\t0\t%s\t${vcf}\\n",\$1,\$2);}' |\
+	bcftools index -s "${vcf.toRealPath()}" |\
+		awk -F '\t' '{printf("%s\t0\t%s\t${vcf.toRealPath()}\\n",\$1,\$2);}' |\
 		LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n |\
 		uniq > vcf2bed.bed
 
