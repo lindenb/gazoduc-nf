@@ -40,6 +40,7 @@ My Nextflow Pipelines
 ### Burden
 
   * [Burden Coding](workflows/burden/burden.coding.01/) Burden on coding regions.
+  * [WGSelect](workflows/wgselect/basic) Basic "wgselect".
 
 ### Misc
 

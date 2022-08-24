@@ -23,10 +23,10 @@ SOFTWARE.
 
 */
 
-include {moduleLoad;getBoolean;assertNotEmpty;getKeyValue} from '../utils/functions.nf'
+include {moduleLoad;getBoolean;assertNotEmpty;getKeyValue;toAbsolutePath} from '../utils/functions.nf'
 
 process VCF_TO_BED_01 {
-	tag "${file(vcf).name}"
+	tag "${file(toAbsolutePath(vcf)).name}"
 	memory "2g"
 	input:
 		val(meta)

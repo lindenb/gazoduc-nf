@@ -23,31 +23,34 @@ SOFTWARE.
 
 */
 
-include {escapeXml} from './functions.nf'
-
-process CONCAT_FILES_01 {
+process TO_LIST_01 {
 executor "local"
 input:
         val(meta)
-        val(L)
+        val(filein)
 output:
-        path("concat.list"),emit:output
+        path("files.list"),emit:output
 	path("version.xml"),emit:version
 script:
-	def concat_n_files = meta.concat_n_files?:"50"
-	def downstream_cmd = meta.downstream_cmd?:""
+
 """
-hostname 1>&2
-cat << EOF | xargs -L ${concat_n_files} cat ${downstream_cmd} > concat.list
-${L.join("\n")}
-EOF
+
+if [ ! -z "${filein.endsWith(".list")?"Y":""}" ] ; then
+
+	cp "${filein.toRealPath()}" files.list
+
+else
+
+	echo "${filein.toRealPath()}" > files.list
+
+fi
 
 #############################################################
 cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="Name">${task.process}</entry>
-        <entry key="Description">Concatenate the content of N='${L.size()}' file(s)</entry>
-        <entry key="downstream.command"><pre>${escapeXml(downstream_cmd)}</pre></entry>
+        <entry key="Description">Create a file containing the paths to file(s)</entry>
+        <entry key="input">${filein}</entry>
 </properties>
 EOF
 """

@@ -153,10 +153,15 @@ script:
 	def annot_method = getKeyValue(meta,"annot_method","vep")
 """
 hostname 1>&2
-${moduleLoad("jvarkit bcftools bedtools")}
+${moduleLoad("jvarkit bcftools bedtools java-jdk/8.0.112")}
 set -x
 mkdir TMP
 touch TMP/variant_list.txt
+which java 1>&2
+which javac 1>&2
+javac -version 1>&2
+echo "\${JAVA_HOME}"
+
 
 	function countIt {
 		if [ ! -z "${hasFeature(meta,"count")?"Y":""}" ] ; then
@@ -178,21 +183,32 @@ touch TMP/variant_list.txt
 		<entry key="description">wgselect for one bed</entry>
 		<entry key="bed">${bed}</entry>
 		<entry key="vcf">${vcf}</entry>
-		<entry key="ped">${jvarkitped.toRealPath()}</entry>
+		<entry key="ped">${jvarkitped}</entry>
 		<entry key="steps">
 	EOF
 
-	# extract list of samples cases and controls
-	awk -F '\t' '(\$6=="case" ||  \$6=="affected") {print \$2;}' "${jvarkitped}"| sort | uniq > TMP/cases.txt
-	awk -F '\t' '(\$6=="control" ||  \$6=="unaffected") {print \$2;}' "${jvarkitped}" | sort | uniq > TMP/controls.txt
-	cat <<-EOF >> version.xml
-	<properties>
-		<entry key="description">extract case/controls from ped</entry>
-		<entry key="cases.count">\$(wc -l < TMP/cases.txt)</entry>
-		<entry key="controls.count">\$(wc -l < TMP/controls.txt)</entry>
-	</properties>
-	EOF
+	## Extract case/controls from pedigree
+	if [ "${jvarkitped.name}" == "NO_FILE" ] ; then
+		touch TMP/cases.txt TMP/controls.txt
 
+		cat <<-EOF >> version.xml
+		<properties>
+			<entry key="description">extract case/controls from pedigree. No pedigree was provided, so there is none.</entry>
+		</properties>
+		EOF
+		
+	else
+		# extract list of samples cases and controls
+		awk -F '\t' '(\$6=="case" ||  \$6=="affected") {print \$2;}' "${jvarkitped}"| sort | uniq > TMP/cases.txt
+		awk -F '\t' '(\$6=="control" ||  \$6=="unaffected") {print \$2;}' "${jvarkitped}" | sort | uniq > TMP/controls.txt
+		cat <<-EOF >> version.xml
+		<properties>
+			<entry key="description">extract case/controls from pedigree</entry>
+			<entry key="cases.count">\$(wc -l < TMP/cases.txt)</entry>
+			<entry key="controls.count">\$(wc -l < TMP/controls.txt)</entry>
+		</properties>
+		EOF
+	fi
 
 	# blacklisted region overlapping #####################################################################"
 	bedtools intersect -a "${bed}" -b "${blacklisted}" > TMP/jeter.blacklisted.bed
@@ -272,17 +288,19 @@ touch TMP/variant_list.txt
 
 
 	# could happen that some variant are discarded here: saw some gatk4 variants where *NO* genotype was called. #############################
-	cat TMP/cases.txt TMP/controls.txt | sort -T TMP | uniq > TMP/jeter.samples
-	bcftools view --trim-alt-alleles --samples-file 'TMP/jeter.samples' -O u -o TMP/jeter2.bcf TMP/jeter1.bcf
-	rm TMP/jeter.samples
-	countIt "samples" TMP/jeter1.bcf TMP/jeter2.bcf
-	mv TMP/jeter2.bcf TMP/jeter1.bcf
+	if test -s TMP/cases.txt || test -s TMP/controls.txt ; then
+		cat TMP/cases.txt TMP/controls.txt | sort -T TMP | uniq > TMP/jeter.samples
+		bcftools view --trim-alt-alleles --samples-file 'TMP/jeter.samples' -O u -o TMP/jeter2.bcf TMP/jeter1.bcf
+		rm TMP/jeter.samples
+		countIt "samples" TMP/jeter1.bcf TMP/jeter2.bcf
+		mv TMP/jeter2.bcf TMP/jeter1.bcf
 
-	cat <<- EOF >> version.xml
-	<properties>
-		<entry key="description">remove unused samples. Remove unused alleles. Saw some gatk4 variants where *NO* genotype was called</entry>
-	</properties>
-	EOF
+		cat <<- EOF >> version.xml
+		<properties>
+			<entry key="description">remove unused samples. Remove unused alleles. Saw some gatk4 variants where *NO* genotype was called</entry>
+		</properties>
+		EOF
+	fi
 
 
 	# force recalculation of AF/AC/AN #########################################################
@@ -489,7 +507,7 @@ touch TMP/variant_list.txt
 		<entry key="max MAF">${maxmaf}</entry>
 	EOF
 	
-	if [ ! -z "${hasFeature(meta,"maxmaf") && (maxmaf as Double) >= 0.0 ?"Y":""}" ] ; then
+	if [ ! -z "${hasFeature(meta,"maxmaf") && (maxmaf as Double) >= 0.0 ?"Y":""}" ] && test -s TMP/cases.txt && test -s TMP/controls.txt ; then
 		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcfburdenmaf.jar \
 			--pedigree "${jvarkitped}" --prefix "" --min-maf 0  --max-maf "${maxmaf}"  TMP/jeter1.vcf   > TMP/jeter2.vcf
 		countIt "MAF" TMP/jeter1.vcf TMP/jeter2.vcf
@@ -498,7 +516,7 @@ touch TMP/variant_list.txt
 		echo '<entry key="enabled">true</entry></properties>' >> version.xml
 	else
 	
-		echo '<entry key="enabled">false</entry></properties>' >> version.xml
+		echo '<entry key="enabled">false (or no case/controls)</entry></properties>' >> version.xml
 
 	fi
 
@@ -512,7 +530,7 @@ touch TMP/variant_list.txt
 		<entry key="hasFeature(fisherh)">${hasFeature(meta,"fisherh")}</entry>
 	EOF
 	
-	if [ ! -z "${hasFeature(meta,"fisherh") && (fisherh as Double) >= 0 ?"Y":""}" ] ; then
+	if [ ! -z "${hasFeature(meta,"fisherh") && (fisherh as Double) >= 0 ?"Y":""}" ] && test -s TMP/cases.txt && test -s TMP/controls.txt ; then
 		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcfburdenfisherh.jar --filter '' --pedigree "${jvarkitped}" --min-fisher "${fisherh}"  TMP/jeter1.vcf   > TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
 		countIt "fisherH" TMP/jeter1.vcf TMP/jeter2.vcf
@@ -523,7 +541,7 @@ touch TMP/variant_list.txt
 
 	else
 
-		echo '<entry key="enabled">false</entry></properties>' >> version.xml
+		echo '<entry key="enabled">false (or not case/control)</entry></properties>' >> version.xml
 
 	fi
 
@@ -800,7 +818,7 @@ touch TMP/variant_list.txt
 	
 
 
-	if [ ! -z "${hasFeature(meta,"contrast")?"Y":""}" ] ; then
+	if [ ! -z "${hasFeature(meta,"contrast")?"Y":""}" ]  && test -s TMP/cases.txt && test -s TMP/controls.txt ; then
 		bcftools +contrast \
 			-0 "TMP/controls.txt" \
 			-1 "TMP/cases.txt" \
