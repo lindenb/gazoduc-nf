@@ -27,7 +27,7 @@ nextflow.enable.dsl=2
 /** path to indexed fasta reference */
 params.reference = ""
 params.vcf=""
-params.pedigee=""
+params.pedigree="NO_FILE"
 params.help = false
 /** publish Directory */
 params.publishDir = ""
@@ -84,7 +84,7 @@ if( params.help ) {
 workflow {
 	publish_ch = Channel.empty()
 
-	somalier_ch = SOMALIER_VCF_01(params,params.reference,params.vcf,params.pedigree)
+	somalier_ch = SOMALIER_VCF_01(params,params.reference,file(params.vcf), file(params.pedigree))
 	}
 
 process PUBLISH {

@@ -36,6 +36,7 @@ My Nextflow Pipelines
 ### Relatedness
 
   * [Somalier BAMS](workflows/somalier/somalier.bams/) Somalier on bams.
+  * [Somalier VCFs](workflows/somalier/somalier.vcfs/) Somalier on VCFs.
 
 ### Burden
 
