@@ -380,7 +380,7 @@ set -o pipefail
 gunzip -c ${L.join(" ")} |\
 	grep -v "^#" |\
 	cut -f 1-4 |\
-	sort -t '\t' -T . -k1,1 -k2,2n |\
+	sort -t '\t' -T . -k1,1 -k2,2n -k3,3n --unique |\
 	uniq > merged.bed
 
 bgzip merged.bed
