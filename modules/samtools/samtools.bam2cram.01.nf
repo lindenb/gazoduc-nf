@@ -39,7 +39,7 @@ output:
 	path("version.xml"),emit:version
 script:
 """
-hostname 2>&1
+hostname 1>&2
 ${moduleLoad("samtools")}
 
 samtools view -@ ${task.cpus} -O CRAM -o "${meta.prefix?:""}${sample}.cram" -T "${reference}" "${bam}"
@@ -52,6 +52,8 @@ cat << EOF > version.xml
 	<entry key="description">convert BAM to CRAM</entry>
 	<entry key="sample">${sample}</entry>
 	<entry key="bam">${bam}</entry>
+	<entry key="size.in">\$(ls -la "${bam}")</entry>
+	<entry key="size.out">\$(ls -la *.cram)</entry>
         <entry key="samtools.version">\$(samtools  --version | head -n 1| cut -d ' ' -f2)</entry>
 </properties>
 EOF

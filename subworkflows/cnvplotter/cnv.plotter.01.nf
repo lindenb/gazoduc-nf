@@ -27,6 +27,7 @@ include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {moduleLoad;isBlank;isHg38;isHg19} from '../../modules/utils/functions.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include {DOWNLOAD_GNOMAD_SV_01} from '../../modules/gnomad/download.gnomad.sv.01.nf'
+include {DOWNLOAD_DGV_01} from '../../modules/dgv/download.dgv.01.nf'
 include {DOWNLOAD_GFF3_01} from '../../modules/gff3/download.gff3.01.nf'
 
 workflow CNV_PLOTTER_01 {
@@ -41,13 +42,23 @@ workflow CNV_PLOTTER_01 {
 		ch1_ch = SAMTOOLS_SAMPLES01([:],reference,bams)
 		version_ch = version_ch.mix(ch1_ch.version)
 
-		known_ch = DOWNLOAD_GNOMAD_SV_01(meta,reference)
+
+		merge_ch = Channel.empty()
+		gnomad_ch = DOWNLOAD_GNOMAD_SV_01(meta,reference)
+		version_ch = version_ch.mix(gnomad_ch.version)
+		merge_ch = merge_ch.mix(gnomad_ch.bed)
+
+		dgv_ch = DOWNLOAD_DGV_01(meta,reference)
+		version_ch = version_ch.mix(dgv_ch.version)
+		merge_ch = merge_ch.mix(dgv_ch.bed)
+
+		known_ch = MERGE_KNOWN(meta,merge_ch.collect())
 		version_ch = version_ch.mix(known_ch.version)
 
 		gff3_ch = DOWNLOAD_GFF3_01(meta.plus(with_tabix:"true"),reference)
 		version_ch = version_ch.mix(gff3_ch.version)
 
-		compile_ch = COMPILE_VCF_PARSER(meta)
+		compile_ch = COMPILE_VCF_PARSER(meta,reference)
 		version_ch = version_ch.mix(compile_ch.version)
 		
 		splitctx_ch = SPLIT_VARIANTS(meta,vcf,compile_ch.jar)		
@@ -61,8 +72,13 @@ workflow CNV_PLOTTER_01 {
 		plot_ch = PLOT_CNV(meta, reference, known_ch.bed, gff3_ch.gff3 , ch2_ch)
 		version_ch = version_ch.mix(plot_ch.version)
 
-		merge_ch = MERGE_PLOTS(meta,splitctx_ch.output,plot_ch.output.collect())		
+		all_html = plot_ch.output.collect()
+
+		merge_ch = MERGE_PLOTS(meta,splitctx_ch.output,all_html)		
 		version_ch = version_ch.mix(merge_ch.version)
+
+		gifch = MAKEGIF(meta,all_html)
+		version_ch = version_ch.mix(gifch.version)
 
 		version_ch = MERGE_VERSION(meta, "CNVPlot", "CNV Plotter", version_ch.collect())
 	emit:
@@ -76,6 +92,7 @@ executor "local"
 afterScript "rm -rf TMP"
 input:
 	val(meta)
+	val(reference)
 output:
 	path("minikit.jar"),emit:jar
 	path("version.xml"),emit:version
@@ -98,18 +115,132 @@ import htsjdk.samtools.util.*;
 import htsjdk.variant.variantcontext.*;
 import htsjdk.variant.variantcontext.writer.*;
 import htsjdk.variant.vcf.*;
+import java.math.*;
+import java.security.MessageDigest;
+import javax.xml.*;
+import javax.xml.stream.*;
 
 
 
 public class Minikit {
+private static final String RDF="http://www.w3.org/1999/02/22-rdf-syntax-ns#";
+private static final String U1087="https://umr1087.univ-nantes.fr/";
 
-private final int minLenOnReference = ${meta.minCnvLength?:"1_000"};
-private final int maxLenOnReference = ${meta.maxCnvLength?:"10_000_000"};
+private final int minLenOnReference = ${meta.minCnvLength?:"1"};
+private final int maxLenOnReference = ${meta.maxCnvLength?:"250_000_000"};
 private final String prefix="${meta.prefix?:""}";
 private final int max_controls =  ${meta.max_controls?:"50"};
 
+private static String  md5(String s) {
+	MessageDigest md;
+	 try {
+		 md = MessageDigest.getInstance("MD5");
+	 } catch (final Exception err) {
+		throw new RuntimeException(err);
+	 	}
+	md.update(s.getBytes());
+	return new BigInteger(1,md.digest()).toString(16);	
+	}
+
 private boolean hasCNV(Genotype g) {	
 	return g.isHet() || g.isHomVar();
+	}
+
+private String rdf(VariantContext ctx) throws Exception {
+	final String svType = ctx.getAttributeAsString("SVTYPE","undefined");
+	final String ref = "${file(reference).getSimpleName()}";
+	final XMLOutputFactory xof = XMLOutputFactory.newFactory();
+	final StringWriter sw = new StringWriter();
+	final XMLStreamWriter w = xof.createXMLStreamWriter(sw);
+	final String id =  md5(ref+":"+ctx.getContig()+":"+ctx.getStart()+"-"+ctx.getEnd()+":"+svType);
+	w.writeStartElement("rdf","RDF",RDF);
+	w.writeNamespace("rdf", RDF);
+	w.writeNamespace("u", U1087);
+	w.writeAttribute(XMLConstants.XML_NS_PREFIX,XMLConstants.XML_NS_URI,"base",U1087);
+	w.writeStartElement("u","Variant",U1087);
+	w.writeAttribute("rdf", RDF, "about",id);
+
+
+	w.writeStartElement("u", "build", U1087);
+	w.writeCharacters(ref);
+	w.writeEndElement();
+	
+	w.writeStartElement("u", "contig", U1087);
+	w.writeCharacters(ctx.getContig());
+	w.writeEndElement();
+	
+	w.writeStartElement("u", "start", U1087);
+	w.writeCharacters(String.valueOf(ctx.getStart()));
+	w.writeEndElement();
+
+	w.writeStartElement("u", "end", U1087);
+	w.writeCharacters(String.valueOf(ctx.getEnd()));
+	w.writeEndElement();
+	
+	w.writeStartElement("u", "id", U1087);
+	w.writeCharacters(id);
+	w.writeEndElement();
+
+
+	String sn = ctx.getGenotypes().stream().filter(G->G.isHet()).map(G->G.getSampleName()).findFirst().orElse(null);
+	if(sn!=null) {
+		w.writeStartElement("u", "het-sample", U1087);
+		w.writeCharacters(sn);
+		w.writeEndElement();
+		}
+	sn = ctx.getGenotypes().stream().filter(G->G.isHomVar()).map(G->G.getSampleName()).findFirst().orElse(null);
+	if(sn!=null) {
+		w.writeStartElement("u", "homvar-sample", U1087);
+		w.writeCharacters(sn);
+		w.writeEndElement();
+		}
+	sn = ctx.getGenotypes().stream().filter(G->G.isHomRef()).map(G->G.getSampleName()).findFirst().orElse(null);
+	if(sn!=null) {
+		w.writeStartElement("u", "homref-sample", U1087);
+		w.writeCharacters(sn);
+		w.writeEndElement();
+		}
+
+	if(!ctx.isFiltered()) {
+		w.writeStartElement("u", "filter", U1087);
+		w.writeCharacters("PASS");
+		w.writeEndElement();
+		}
+	else {
+		for(final String f: ctx.getFilters() ) {
+			w.writeStartElement("u", "filter", U1087);
+			w.writeCharacters(f);
+			w.writeEndElement();
+			}
+		}
+
+	
+	w.writeStartElement("u", "svtype", U1087);
+	w.writeCharacters(svType);
+	w.writeEndElement();
+
+	w.writeStartElement("u", "svlen", U1087);
+	w.writeCharacters(String.valueOf(ctx.getAttributeAsInt("SVLEN",ctx.getLengthOnReference())));
+	w.writeEndElement();
+
+	w.writeStartElement("u", "n-samples", U1087);
+	w.writeCharacters(String.valueOf(ctx.getNSamples()));
+	w.writeEndElement();
+
+	w.writeStartElement("u", "het-homvar", U1087);
+	w.writeCharacters(String.valueOf(ctx.getGenotypes().stream().filter(G->hasCNV(G)).count()));
+	w.writeEndElement();
+	
+	w.writeStartElement("u", "date", U1087);
+	w.writeCharacters(java.time.LocalDate.now().toString());
+	w.writeEndElement();
+
+
+
+	w.writeEndElement();
+	w.writeEndElement();
+	w.close();
+	return sw.toString();
 	}
 
 private void instanceMain(final String args[]) {
@@ -147,6 +278,8 @@ private void instanceMain(final String args[]) {
 		out.print("controls");
 		out.print("\t");
 		out.print("html");
+		out.print("\t");
+		out.print("rdf");
 		out.println();
 		try(VCFIterator r = new VCFIteratorBuilder().open(System.in)) {
 			long variant_id =0L;
@@ -186,6 +319,8 @@ private void instanceMain(final String args[]) {
 				out.print(String.join(",",unaffected));
 				out.print("\t");
 				out.print(sb.toString());
+				out.print("\t");
+				out.print(rdf(ctx));
 				out.println();
 			}// while r.hasNext
 		out.flush();
@@ -228,6 +363,39 @@ echo "<properties/>" > version.xml
 """
 }
 
+process MERGE_KNOWN {
+input:
+	val(meta)
+	val(L)
+output:
+	path("merged.bed.gz"),emit:bed
+	path("merged.bed.gz.tbi")
+	path("version.xml"),emit:version
+script:
+"""
+hostname 1>&2
+${moduleLoad("htslib")}
+set -o pipefail
+
+gunzip -c ${L.join(" ")} |\
+	grep -v "^#" |\
+	cut -f 1-4 |\
+	sort -t '\t' -T . -k1,1 -k2,2n |\
+	uniq > merged.bed
+
+bgzip merged.bed
+tabix -p bed merged.bed.gz
+
+###############################################################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">merge known files</entry>
+        <entry key="number.of.files">${L.size()}</entry>
+</properties>
+EOF
+"""
+}
 
 process SPLIT_VARIANTS {
 executor "local"
@@ -305,7 +473,7 @@ cat TMP/cases.bams.list TMP/controls.bams.list  | sort | uniq > TMP/all.bams.lis
 cat << "EOF" > TMP/jeter.awk
 function fr(x,y,z){ return int(y+x*(z-y));}
 {SN[\$1]=((NR)*1.0);}
-END{for(S in SN){f=(SN[S]/NR);printf("%s\tdisplay:block;stroke:rgb(%d,%d,%d);fill:none;\\n",S,fr(f,189,151),fr(f,0,11),fr(f,57,53));}}
+END{for(S in SN){f=(SN[S]/NR);printf("%s\tdisplay:block;stroke-opacity:0.8;stroke:rgb(%d,%d,%d);fill:none;\\n",S,fr(f,189,151),fr(f,0,11),fr(f,57,53));}}
 EOF
 
 awk -F '\t' -v C=red  -f TMP/jeter.awk TMP/cases.txt    >  TMP/style.css
@@ -315,7 +483,7 @@ awk -F '\t' -v C=red  -f TMP/jeter.awk TMP/cases.txt    >  TMP/style.css
 cat << "EOF" > TMP/jeter.awk
 function fr(x,y,z){ return int(y+x*(z-y));}
 {SN[\$1]=((NR)*1.0);}
-END{for(S in SN){f=(SN[S]/NR);printf("%s\tdisplay:block;stroke:rgb(%d,%d,%d);fill:none;\\n",S,fr(f,46,22),fr(f,66,41),fr(f,114,85));}}
+END{for(S in SN){f=(SN[S]/NR);printf("%s\tdisplay:block;stroke-opacity:0.7;stroke:rgb(%d,%d,%d);fill:none;\\n",S,fr(f,46,22),fr(f,66,41),fr(f,114,85));}}
 EOF
 
 awk -F '\t' -v C=blue -f TMP/jeter.awk TMP/controls.txt >> TMP/style.css
@@ -332,7 +500,14 @@ java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP  -jar ${JVARKIT_DIST}/cover
 
 cat << EOF > TMP/jeter.xsl
 <?xml version="1.0" encoding="UTF-8"?>
-<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"  version="1.0">
+<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:svg="http://www.w3.org/2000/svg" version="1.0">
+  <xsl:output method="xml" omit-xml-declaration = "yes"/>
+  <xsl:template match="svg:metadata">
+  <svg:metadata>
+    <xsl:apply-templates select="@*|node()" /> 
+    ${row.rdf}
+  </svg:metadata>
+  </xsl:template>
 
   <xsl:template match="div[@id='__PLACEHOLDER__']">
    <div>
@@ -362,6 +537,48 @@ cat << EOF > version.xml
 	<entry key="mapq">${mapq}</entry>
 	<entry key="extend">${extend}</entry>
 	<entry key="coverageplotter.version">\$(java -jar ${JVARKIT_DIST}/coverageplotter.jar --version)</entry>
+</properties>
+EOF
+"""
+}
+
+process MAKEGIF {
+tag "N=${L.size()}"
+input:
+	val(meta)
+	val(L)
+output:
+	path("${meta.prefix?:""}coverage.gif"),emit:output
+	path("version.xml"),emit:version
+when:
+	false
+script:
+"""
+hostname 1>&2
+${moduleLoad("ImageMagick")}
+
+mkdir TMP
+cat << EOF > TMP/jeter.list
+${L.join("\n")}
+EOF
+
+i=1
+cat TMP/jeter.list | while read F
+do
+	xmllint --xpath "//*[local-name()='svg']"   "\$F"  > TMP/jeter.svg
+	convert TMP/jeter.svg TMP/jeter\${i}.png
+	rm TMP/jeter.svg
+	i=\$((i+1))
+done
+
+convert -resize '50%' -delay 1 -loop 0 TMP/jeter*.png "${meta.prefix?:""}coverage.gif"
+
+rm -f TMP/*.png
+###############################################################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+	<entry key="name">${task.process}</entry>
+	<entry key="description">Convert images to GIF</entry>
 </properties>
 EOF
 """
