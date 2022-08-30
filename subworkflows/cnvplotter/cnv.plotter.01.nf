@@ -380,6 +380,7 @@ set -o pipefail
 gunzip -c ${L.join(" ")} |\
 	grep -v "^#" |\
 	cut -f 1-4 |\
+	awk -F '\t' '(\$2 != \$3)' |\
 	sort -t '\t' -T . -k1,1 -k2,2n -k3,3n --unique |\
 	uniq > merged.bed
 
@@ -445,6 +446,7 @@ output:
 	path("${row.prefix}out.html"),emit:output
 	path("version.xml"),emit:version
 script:
+	def num_cases = row.num_cases?:1000000
 	def num_controls = row.num_controls?:10
 	def extend = row.extend?:"5.0"
 	def mapq = row.mapq?:30
@@ -459,10 +461,15 @@ sort -T TMP -t '\t' -k1,1 "${row.bams}" > TMP/samples.bams.tsv
 echo "${row.cases}" | tr "," "\\n" | sort | uniq > TMP/cases.txt
 echo "${row.controls}" | tr "," "\\n" | sort | uniq > TMP/controls.txt
 
-join -t '\t' -1 1 -2 1 -o "2.2" TMP/cases.txt TMP/samples.bams.tsv > TMP/cases.bams.list
+
+join -t '\t' -1 1 -2 1 -o "2.1" TMP/cases.txt TMP/samples.bams.tsv | shuf | head -n ${num_cases} | sort | uniq > TMP/cases2.txt
+mv TMP/cases2.txt TMP/cases.txt
+
 join -t '\t' -1 1 -2 1 -o "2.1" TMP/controls.txt TMP/samples.bams.tsv | shuf | head -n ${num_controls} | sort | uniq > TMP/controls2.txt
 mv TMP/controls2.txt TMP/controls.txt
 
+
+join -t '\t' -1 1 -2 1 -o "2.2" TMP/cases.txt TMP/samples.bams.tsv | sort | uniq > TMP/cases.bams.list
 join -t '\t' -1 1 -2 1 -o "2.2" TMP/controls.txt TMP/samples.bams.tsv | sort | uniq > TMP/controls.bams.list
 
 
