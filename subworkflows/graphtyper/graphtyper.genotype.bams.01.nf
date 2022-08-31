@@ -31,6 +31,7 @@ include {MOSDEPTH_BAMS_01} from '../../subworkflows/mosdepth/mosdepth.01.nf'
 include {COLLECT_TO_FILE_01 as COLLECT_TO_FILE_X1; COLLECT_TO_FILE_01 as COLLECT_TO_FILE_X2} from '../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_CONCAT_01} from '../../subworkflows/bcftools/bcftools.concat.01.nf'
 include {SAMTOOLS_SAMPLES01} from '../../modules/samtools/samtools.samples.01.nf'
+include {SAMTOOLS_DEPTH_01} from '../../subworkflows/samtools/samtools.depth.01.nf'
 
 workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 	take:
@@ -41,45 +42,55 @@ workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 	main:
 		version_ch = Channel.empty()
 		
-		each_interval_ch = bed.splitCsv(header:false,sep:'\t').
-			map{T->T[0]+":"+((T[1] as int)+1)+"-"+T[2]}
 
-		if((meta.depth_method?:"mosdepth").equals("samtoolsdepth")) {
-			snbam_ch = SAMTOOLS_SAMPLES01(meta, referenc, bams)
-			version_ch = version_ch.mix(snbal_ch.version)
-
-			each_sn_bam_ch = snbam_ch.output.splitCsv(header:false,sep:'\t')
-
-			stdepth_ch = SAMTOOLS_DEPTH(meta, reference, each_sn_bam_ch)
-			version_ch = version_ch.mix(stdepth_ch.version)
-
-			COLLECT_TO_FILE_X2(
-			
-			}
-		else	
-			{
+		if(bed.name.equals("NO_FILE")) {
 			gaps_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"ACGT","MAX_TO_MERGE":"1"],reference)
 			version_ch = version_ch.mix(gaps_ch.version)		
-
-			mosdepth_ch = MOSDEPTH_BAMS_01(meta, reference, bams, gaps_ch.bed)
-			version_ch = version_ch.mix(mosdepth_ch.version)
+			bed2 = gaps_ch.bed
+			bed3 = bed2
+			}
+		else
+			{
+			bed2 = bed
+			bed3 = Channel.fromPath(bed)
 			}
 		
-		x1_ch = COVERAGE_DIVIDE_READLENGTH(meta,mosdepth_ch.summary)
-		version_ch = version_ch.mix(x1_ch.version)
+		if((meta.depth_method?:"mosdepth").equals("samtoolsdepth")) {
+			stdp_ch = SAMTOOLS_DEPTH_01(meta,reference,file("NO_FILE"),bams,bed2)
+			version_ch = version_ch.mix(stdp_ch.version)		
+			
+			convert_ch = CONVERT_TO_MOSDEPTH_SUMMARY(meta,stdp_ch.output)
 
+			summary= convert_ch.output
+			}
+		else 
+			{
+			mosdepth_ch = MOSDEPTH_BAMS_01(meta, reference, bams, bed2)
+			version_ch = version_ch.mix(mosdepth_ch.version)
+			summary= mosdepth_ch.summary
+			}
+		
+		x1_ch = COVERAGE_DIVIDE_READLENGTH(meta,summary)
+		version_ch = version_ch.mix(x1_ch.version)
+		
 
 		executable_ch = GRAPHTYPER_DOWNLOAD_01(meta)
 		version_ch = version_ch.mix(executable_ch.version)
 
+		
+		each_interval_ch = bed3.splitCsv(header:false,sep:'\t')
+			.map{T->T[0]+":"+((T[1] as int)+1)+"-"+T[2]} 
+
+	
 		x2_ch = GRAPHTYPER_GENOTYPE_01(meta, executable_ch.executable,x1_ch.output.combine(each_interval_ch).map{T->[
 			"bams":T[0],
 			"avg_cov_by_readlen":T[1],
 			"interval":T[2],
 			"reference":reference
 			]})
-		version_ch = version_ch.mix(x2_ch.version)
 
+		version_ch = version_ch.mix(x2_ch.version)
+		
 		x3_ch = COLLECT_TO_FILE_X1([:],x2_ch.output.map{T->T[1]}.collect())
 		version_ch = version_ch.mix(x3_ch.version)
 
@@ -93,31 +104,22 @@ workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 		vcf = x4_ch.vcf
 	}
 
-process SAMTOOLS_DEPTH {
+
+
+process CONVERT_TO_MOSDEPTH_SUMMARY {
+executor "local"
 input:
 	val(meta)
-	val(reference)
-	path(bed)
-	tuple val(sample),val(bam)
+	path(depths)
+output:
+	path("summary.tsv"),emit:output
 script:
-	def mapq=meta.mapq?:30
 """
-hostname 1>&2
-${moduleLoad("samtools")}
-set -o pipefail
+echo -e "sample\tbam\tref\tcov\tcovr" > jeter.tsv
+awk -F '\t' '/^#/ {next;} {printf("%s\t%s\t%s\t%s\t%s\\n",\$1,\$2,\$3,\$6,\$6);}' '${depths}' >> jeter.tsv
 
-samtools view -F 3844 -T "${reference}" --min-MQ "${mapq}" -M -L "${bed}" -u -O BAM "${bam}" |\
-samtools depth -a -Q "${mapq}" |\
-awk -F '\t' 'BEGIN{N=0;T=0.0;printf("#sample\tbam\t\cov\tcov\n");}	{T+=int(\$3);N++;} END {printf("${sample}\t${bam}\t${reference}\t%f\t%f\\n",T/N,T/N);}' > ${sample}.depth.tsv
 
-##############################################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">use samtools depth to get depth in bed</entry>
-        <entry key="bed">${bed}</entry>
-</properties>
-EOF
+mv jeter.tsv summary.tsv
 """
 }
 

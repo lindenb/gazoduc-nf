@@ -9,6 +9,7 @@ NF=$(realpath graphtyper.genotype.nf)
 all: $(NF) ../../../confs/${HOSTNAME}.cfg $(OUTDIR)/bams.list $(OUTDIR)/jeter.bed
 	module load nextflow && nextflow -C ../../../confs/${HOSTNAME}.cfg run -work-dir "$(OUTDIR)" -resume $(NF) \
 		--publishDir "$(OUTDIR)" \
+		--depth_method samtoolsdepth \
 		--reference $(REF) \
 		--prefix "$(PREFIX)."  \
 		--bams "$(OUTDIR)/bams.list" \
