@@ -28,8 +28,9 @@ include {SCATTER_TO_BED} from '../../subworkflows/picard/picard.scatter2bed.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {isBlank;moduleLoad} from '../../modules/utils/functions.nf'
 include {MOSDEPTH_BAMS_01} from '../../subworkflows/mosdepth/mosdepth.01.nf'
-include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
+include {COLLECT_TO_FILE_01 as COLLECT_TO_FILE_X1; COLLECT_TO_FILE_01 as COLLECT_TO_FILE_X2} from '../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_CONCAT_01} from '../../subworkflows/bcftools/bcftools.concat.01.nf'
+include {SAMTOOLS_SAMPLES01} from '../../modules/samtools/samtools.samples.01.nf'
 
 workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 	take:
@@ -43,11 +44,26 @@ workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 		each_interval_ch = bed.splitCsv(header:false,sep:'\t').
 			map{T->T[0]+":"+((T[1] as int)+1)+"-"+T[2]}
 
-		gaps_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"ACGT","MAX_TO_MERGE":"1"],reference)
-		version_ch = version_ch.mix(gaps_ch.version)		
-		
-		mosdepth_ch = MOSDEPTH_BAMS_01(meta, reference, bams, gaps_ch.bed)
-		version_ch = version_ch.mix(mosdepth_ch.version)
+		if((meta.depth_method?:"mosdepth").equals("samtoolsdepth")) {
+			snbam_ch = SAMTOOLS_SAMPLES01(meta, referenc, bams)
+			version_ch = version_ch.mix(snbal_ch.version)
+
+			each_sn_bam_ch = snbam_ch.output.splitCsv(header:false,sep:'\t')
+
+			stdepth_ch = SAMTOOLS_DEPTH(meta, reference, each_sn_bam_ch)
+			version_ch = version_ch.mix(stdepth_ch.version)
+
+			COLLECT_TO_FILE_X2(
+			
+			}
+		else	
+			{
+			gaps_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"ACGT","MAX_TO_MERGE":"1"],reference)
+			version_ch = version_ch.mix(gaps_ch.version)		
+
+			mosdepth_ch = MOSDEPTH_BAMS_01(meta, reference, bams, gaps_ch.bed)
+			version_ch = version_ch.mix(mosdepth_ch.version)
+			}
 		
 		x1_ch = COVERAGE_DIVIDE_READLENGTH(meta,mosdepth_ch.summary)
 		version_ch = version_ch.mix(x1_ch.version)
@@ -64,7 +80,7 @@ workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 			]})
 		version_ch = version_ch.mix(x2_ch.version)
 
-		x3_ch = COLLECT_TO_FILE_01([:],x2_ch.output.map{T->T[1]}.collect())
+		x3_ch = COLLECT_TO_FILE_X1([:],x2_ch.output.map{T->T[1]}.collect())
 		version_ch = version_ch.mix(x3_ch.version)
 
 
@@ -76,6 +92,34 @@ workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 		version = version_ch
 		vcf = x4_ch.vcf
 	}
+
+process SAMTOOLS_DEPTH {
+input:
+	val(meta)
+	val(reference)
+	path(bed)
+	tuple val(sample),val(bam)
+script:
+	def mapq=meta.mapq?:30
+"""
+hostname 1>&2
+${moduleLoad("samtools")}
+set -o pipefail
+
+samtools view -F 3844 -T "${reference}" --min-MQ "${mapq}" -M -L "${bed}" -u -O BAM "${bam}" |\
+samtools depth -a -Q "${mapq}" |\
+awk -F '\t' 'BEGIN{N=0;T=0.0;printf("#sample\tbam\t\cov\tcov\n");}	{T+=int(\$3);N++;} END {printf("${sample}\t${bam}\t${reference}\t%f\t%f\\n",T/N,T/N);}' > ${sample}.depth.tsv
+
+##############################################################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">use samtools depth to get depth in bed</entry>
+        <entry key="bed">${bed}</entry>
+</properties>
+EOF
+"""
+}
 
 process COVERAGE_DIVIDE_READLENGTH {
 tag "${summary.name}"

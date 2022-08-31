@@ -36,6 +36,7 @@ workflow CNV_PLOTTER_01 {
 		reference
 		vcf
 		bams
+		excludeids
 	main:
 		version_ch = Channel.empty()
 
@@ -61,16 +62,27 @@ workflow CNV_PLOTTER_01 {
 		compile_ch = COMPILE_VCF_PARSER(meta,reference)
 		version_ch = version_ch.mix(compile_ch.version)
 		
-		splitctx_ch = SPLIT_VARIANTS(meta,vcf,compile_ch.jar)		
+		splitctx_ch = SPLIT_VARIANTS(meta,vcf,excludeids, compile_ch.jar)		
 		version_ch = version_ch.mix(splitctx_ch.version)
 
 		ch2_ch = splitctx_ch.output.splitCsv(header:true,sep:'\t').
 			combine(ch1_ch.output).
-			map{T->T[0].plus("bams":T[1])}
+			map{T->T[0].plus([
+				"bams":T[1],
+				"max_cases":(meta.max_cases?:1000000),
+				"max_controls":(meta.max_controls?:10)
+				])}
 
-
-		plot_ch = PLOT_CNV(meta, reference, known_ch.bed, gff3_ch.gff3 , ch2_ch)
+		ch3_ch = ch2_ch.filter{T->!T.svtype.equals("INV")}
+		ch4_ch = ch2_ch.filter{T->T.svtype.equals("INV")}
+	
+		plot_ch = PLOT_CNV(meta, reference, known_ch.bed, gff3_ch.gff3 , ch3_ch)
 		version_ch = version_ch.mix(plot_ch.version)
+
+
+		plotinv_ch = PLOT_INV(meta, reference, known_ch.bed, gff3_ch.gff3 , ch4_ch)
+		version_ch = version_ch.mix(plotinv_ch.version)
+
 
 		all_html = plot_ch.output.collect()
 
@@ -104,7 +116,6 @@ ${moduleLoad("jvarkit")}
 mkdir TMP
 
 cat << "__EOF__" > TMP/Minikit.java
-import java.io.BufferedReader;
 import java.util.regex.*;
 import java.io.*;
 import java.nio.file.*;
@@ -119,7 +130,6 @@ import java.math.*;
 import java.security.MessageDigest;
 import javax.xml.*;
 import javax.xml.stream.*;
-
 
 
 public class Minikit {
@@ -146,13 +156,19 @@ private boolean hasCNV(Genotype g) {
 	return g.isHet() || g.isHomVar();
 	}
 
+private String getVariantId(VariantContext ctx) throws Exception {
+	final String svType = ctx.getAttributeAsString("SVTYPE","undefined");
+	final String ref = "${file(reference).getSimpleName()}";
+	return md5(ref+":"+ctx.getContig()+":"+ctx.getStart()+"-"+ctx.getEnd()+":"+svType);
+	}
+
 private String rdf(VariantContext ctx) throws Exception {
 	final String svType = ctx.getAttributeAsString("SVTYPE","undefined");
 	final String ref = "${file(reference).getSimpleName()}";
 	final XMLOutputFactory xof = XMLOutputFactory.newFactory();
 	final StringWriter sw = new StringWriter();
 	final XMLStreamWriter w = xof.createXMLStreamWriter(sw);
-	final String id =  md5(ref+":"+ctx.getContig()+":"+ctx.getStart()+"-"+ctx.getEnd()+":"+svType);
+	final String id = getVariantId(ctx); 
 	w.writeStartElement("rdf","RDF",RDF);
 	w.writeNamespace("rdf", RDF);
 	w.writeNamespace("u", U1087);
@@ -246,11 +262,16 @@ private String rdf(VariantContext ctx) throws Exception {
 private void instanceMain(final String args[]) {
 	try {
 		String vcf="";
+		final Set<String> excludeIds = new HashSet<>();
 		int optind=0;
 		while(optind < args.length) {
 			if(args[optind].equals("--vcf") && optind+1< args.length) {
 				optind++;
 				vcf = args[optind];
+				}
+			else if(args[optind].equals("--excludeids") && optind+1< args.length) {
+				optind++;
+				excludeIds.addAll(Files.readAllLines(Paths.get(args[optind]),java.nio.charset.Charset.defaultCharset()));
 				}
 			else if(args[optind].equals("--")) {
 				optind++;
@@ -280,16 +301,20 @@ private void instanceMain(final String args[]) {
 		out.print("html");
 		out.print("\t");
 		out.print("rdf");
+		out.print("\t");
+		out.print("svtype");
 		out.println();
 		try(VCFIterator r = new VCFIteratorBuilder().open(System.in)) {
 			long variant_id =0L;
 			final VCFHeader h = r.getHeader();
 			while(r.hasNext()) {
 				final VariantContext ctx = r.next();
+				final String id = getVariantId(ctx);
+				if(excludeIds.contains(id)) continue;
 				int len = ctx.getLengthOnReference();
 				if(len < minLenOnReference || len > maxLenOnReference) continue;
 				final String svType = ctx.getAttributeAsString("SVTYPE","");
-				if(svType==null || svType.isEmpty() || svType.equals("INV")) continue;
+				if(svType==null || svType.isEmpty()) continue;
 				final Set<String> affected = ctx.getGenotypes().stream().
 					filter(G->hasCNV(G)).
 					map(G->G.getSampleName()).
@@ -321,6 +346,8 @@ private void instanceMain(final String args[]) {
 				out.print(sb.toString());
 				out.print("\t");
 				out.print(rdf(ctx));
+				out.print("\t");
+				out.print(svType);
 				out.println();
 			}// while r.hasNext
 		out.flush();
@@ -404,6 +431,7 @@ afterScript "rm -rf TMP"
 input:
       	val(meta)
 	val(vcf)
+	path(excludeids)
 	val(minikit)
 output:
        	path("${meta.prefix?:""}variants.tsv"),emit:output
@@ -417,7 +445,8 @@ set -o pipefail
 
 bcftools view "${vcf}" |\
 	${isBlank(extra_filter)?"":"${extra_filter} |"} \
-	java -cp  \${JVARKIT_DIST}/coverageplotter.jar:${minikit} Minikit --vcf "${vcf}" > "${meta.prefix?:""}variants.tsv"
+	java -cp  \${JVARKIT_DIST}/coverageplotter.jar:${minikit} Minikit --vcf "${vcf}" \
+		${excludeids.name.equals("NO_FILE")?"":"--excludeids \"${excludeids}\""} > "${meta.prefix?:""}variants.tsv"
 
 
 
@@ -446,8 +475,8 @@ output:
 	path("${row.prefix}out.html"),emit:output
 	path("version.xml"),emit:version
 script:
-	def num_cases = row.num_cases?:1000000
-	def num_controls = row.num_controls?:10
+	def num_cases = row.max_cases?:1000000
+	def num_controls = row.max_controls?:10
 	def extend = row.extend?:"5.0"
 	def mapq = row.mapq?:30
 """
@@ -548,6 +577,65 @@ cat << EOF > version.xml
 EOF
 """
 }
+
+process PLOT_INV {
+tag "${row.prefix} ${row.interval}"
+afterScript "rm -rf TMP"
+memory "3g"
+input:
+	val(meta)
+	val(reference)
+	val(known)
+	val(gff3)
+	val(row)
+output:
+	//path("${row.prefix}out.html"),emit:output
+	path("jeter.svg"),emit:output
+	path("version.xml"),emit:version
+script:
+	def mapq = row.mapq?:30
+	def colon = row.interval.indexOf(":")
+	def hyphen = row.interval.indexOf("-",colon+1)
+	def contig = row.interval.substring(0,colon)
+	def start = (row.interval.substring(colon+1,hyphen) as int)
+	def end = (row.interval.substring(hyphen+1) as int)
+	def region = end-start < 300 ? " --region \"${row.interval}\" ":" --region \"${contig}:${Math.max(1,start - 100)}-${start + 100}\" --region \"${contig}:${Math.max(1,end - 100)}-${end + 100}\" "
+
+"""
+hostname 1>&2
+${moduleLoad("jvarkit samtools")}
+set -o pipefail
+mkdir TMP
+
+sort -T TMP -t '\t' -k1,1 "${row.bams}" > TMP/samples.bams.tsv
+
+echo "${row.cases}" | tr "," "\\n" | sort | uniq | shuf | head -n1 > TMP/cases.txt
+
+join -t '\t' -1 1 -2 1 -o "2.2" TMP/cases.txt TMP/samples.bams.tsv | sort | uniq > TMP/cases.bams.list
+
+test -s TMP/cases.bams.list
+
+java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP  -jar ${JVARKIT_DIST}/sv2svg.jar \
+	-R "${reference}" \
+	--mapq "${mapq}" \
+	--depth -1 \
+	--mismatch \
+	${region} \
+	`cat TMP/cases.bams.list` > jeter.svg
+
+###############################################################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+	<entry key="name">${task.process}</entry>
+	<entry key="description">plot INV</entry>
+	<entry key="interval">${row.interval}</entry>
+	<entry key="mapq">${mapq}</entry>
+	<entry key="sv2svg.version">\$(java -jar ${JVARKIT_DIST}/sv2svg.jar --version)</entry>
+</properties>
+EOF
+"""
+}
+
 
 process MAKEGIF {
 tag "N=${L.size()}"

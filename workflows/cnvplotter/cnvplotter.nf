@@ -32,6 +32,7 @@ params.vcf = "NO_FILE"
 params.help = false
 params.publishDir = ""
 params.prefix = ""
+params.excludeids = "NO_FILE"
 
 include {CNV_PLOTTER_01} from '../../subworkflows/cnvplotter/cnv.plotter.01.nf'
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
@@ -52,6 +53,7 @@ ${params.rsrc.author}
   * --reference (fasta) ${params.rsrc.reference} [REQUIRED]
   * --bams (file) one file containing the paths to the BAM/CRAM [REQUIRED]
   * --vcf (file) required SV indexed vcf file. default: ""
+  * --excludeids (file) optional file containing IDs of SV to ignore.
   * --publishDir (dir) Save output in this directory
   * --prefix (string) files prefix. default: ""
 
@@ -84,7 +86,7 @@ if( params.help ) {
 
 
 workflow {
-	ch1 = CNV_PLOTTER_01(params,params.reference, params.vcf , params.bams)
+	ch1 = CNV_PLOTTER_01(params,params.reference, params.vcf , params.bams, file(params.excludeids))
 	html = VERSION_TO_HTML(params,ch1.version)
 	PUBLISH(ch1.version,html.html,ch1.zip)
 	}

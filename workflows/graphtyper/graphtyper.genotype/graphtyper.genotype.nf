@@ -28,7 +28,7 @@ nextflow.enable.dsl=2
 params.reference = ""
 params.bed=""
 params.mapq = -1
-params.bams = ""
+params.bams = "NO_FILE"
 params.help = false
 params.publishDir = ""
 params.prefix = ""
@@ -49,8 +49,7 @@ ${params.rsrc.author}
 
 ## Options
 
-  * --reference_in (fasta) ${params.rsrc.reference} [REQUIRED]
-  * --reference_out (fasta) ${params.rsrc.reference} [REQUIRED]
+  * --reference (fasta) ${params.rsrc.reference} [REQUIRED]
   * --bams (file) one file containing the paths to the BAM/CRAM [REQUIRED]
   * --publishDir (dir) Save output in this directory
   * --prefix (string) files prefix. default: ""
