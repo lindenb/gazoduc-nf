@@ -23,6 +23,7 @@ My Nextflow Pipelines
   * [GATK gvcfs](workflows/gatk/gatk4gvcfs/) calling bams with gvcfs.
   * [VQSR](workflows/vqsr/) variant recalibration.
   * [Graphtyper](workflows/graphtyper/graphtyper.genotype/) calling with graphtyper
+  * [Deepvariant](workflows/deepvariant) calling with DeepVariant
 
 ### Structural variants
 

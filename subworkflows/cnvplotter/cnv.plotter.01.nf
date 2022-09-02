@@ -84,9 +84,9 @@ workflow CNV_PLOTTER_01 {
 		version_ch = version_ch.mix(plotinv_ch.version)
 
 
-		all_html = plot_ch.output.collect()
+		all_html = plot_ch.output.concat(plotinv_ch.output).collect()
 
-		merge_ch = MERGE_PLOTS(meta,splitctx_ch.output,all_html)		
+		merge_ch = MERGE_PLOTS(meta,splitctx_ch.output,all_html)
 		version_ch = version_ch.mix(merge_ch.version)
 
 		gifch = MAKEGIF(meta,all_html)
@@ -589,8 +589,7 @@ input:
 	val(gff3)
 	val(row)
 output:
-	//path("${row.prefix}out.html"),emit:output
-	path("jeter.svg"),emit:output
+	path("${row.prefix}out.html"),emit:output
 	path("version.xml"),emit:version
 script:
 	def mapq = row.mapq?:30
@@ -599,7 +598,8 @@ script:
 	def contig = row.interval.substring(0,colon)
 	def start = (row.interval.substring(colon+1,hyphen) as int)
 	def end = (row.interval.substring(hyphen+1) as int)
-	def region = end-start < 300 ? " --region \"${row.interval}\" ":" --region \"${contig}:${Math.max(1,start - 100)}-${start + 100}\" --region \"${contig}:${Math.max(1,end - 100)}-${end + 100}\" "
+	def extend = 100
+	def region = end-start < extend*4 ? " --region \"${row.interval}\" ":" --region \"${contig}:${Math.max(1,start - extend)}-${start + extend}\" --region \"${contig}:${Math.max(1,end - extend)}-${end + extend}\" "
 
 """
 hostname 1>&2
@@ -621,7 +621,38 @@ java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP  -jar ${JVARKIT_DIST}/sv2sv
 	--depth -1 \
 	--mismatch \
 	${region} \
-	`cat TMP/cases.bams.list` > jeter.svg
+	TMP/cases.bams.list > TMP/jeter.html
+
+cat << EOF > TMP/jeter.xsl
+<?xml version="1.0" encoding="UTF-8"?>
+<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:svg="http://www.w3.org/2000/svg" version="1.0">
+  <xsl:output method="xml" omit-xml-declaration = "yes"/>
+  <xsl:template match="svg:metadata">
+  <svg:metadata>
+    <xsl:apply-templates select="@*|node()" /> 
+    ${row.rdf}
+  </svg:metadata>
+  </xsl:template>
+
+  <xsl:template match="div[@id='__PLACEHOLDER__']">
+   <div>
+   <h3>Description</h3>
+   <div>${row.html}</div>
+   </div>
+  </xsl:template>
+
+  <xsl:template match="@*|node()">
+    <xsl:copy>
+      <xsl:apply-templates select="@*|node()" />
+    </xsl:copy>
+  </xsl:template>
+
+</xsl:stylesheet>
+EOF
+
+
+xsltproc TMP/jeter.xsl TMP/jeter.html >  "${row.prefix}out.html"
+
 
 ###############################################################################
 cat << EOF > version.xml
@@ -630,6 +661,7 @@ cat << EOF > version.xml
 	<entry key="description">plot INV</entry>
 	<entry key="interval">${row.interval}</entry>
 	<entry key="mapq">${mapq}</entry>
+	<entry key="extend">${extend}</entry>
 	<entry key="sv2svg.version">\$(java -jar ${JVARKIT_DIST}/sv2svg.jar --version)</entry>
 </properties>
 EOF
