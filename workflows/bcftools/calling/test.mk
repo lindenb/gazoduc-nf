@@ -1,13 +1,13 @@
 SHELL=/bin/bash
 BUILD=rotavirus
-PREFIX=20220802.$(BUILD).deepvariant
+PREFIX=20220805.$(BUILD).bcftools.call
 OUTDIR=$(PWD)/work
-include ../../../data/reference/references.mk
+include ../../../../data/reference/references.mk
 
-NF=$(realpath deepvariant.nf)
+NF=$(realpath bcftools.call.nf)
 
-all: $(NF) ../../confs/${HOSTNAME}.cfg $(OUTDIR)/bams.txt $(OUTDIR)/jeter.beds
-	module load nextflow && nextflow -C ../../confs/${HOSTNAME}.cfg  run -work-dir "$(OUTDIR)" -resume $(NF) \
+all: $(NF) ../../../confs/${HOSTNAME}.cfg $(OUTDIR)/bams.txt $(OUTDIR)/jeter.beds
+	module load nextflow && nextflow -C ../../../confs/${HOSTNAME}.cfg  run -work-dir "$(OUTDIR)" -resume $(NF) \
 		--publishDir "$(OUTDIR)" \
 		--reference $(REF) \
 		--prefix "$(PREFIX)."  \
@@ -28,7 +28,7 @@ $(OUTDIR)/jeter.bed:
 	echo -e "RF03\t100\t1000" >> $@
 
 README.md: $(NF)
-	module load nextflow && nextflow -C ../../confs/${HOSTNAME}.cfg run -work-dir "$(OUTDIR)" $< --help | tail -n+3 > $@
+	module load nextflow && nextflow -C ../../../confs/${HOSTNAME}.cfg run -work-dir "$(OUTDIR)" $< --help | tail -n+3 > $@
 
 clean:
 	rm -rvf "$(OUTDIR)" .nextflow .nextflow.*

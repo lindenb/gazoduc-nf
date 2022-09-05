@@ -34,16 +34,16 @@ params.help = false
 params.publishDir = ""
 params.prefix = ""
 
-include {DEEPVARIANT_01} from '../../subworkflows/deepvariant/deepvariant.01.nf'
-include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
-include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
-include {runOnComplete} from '../../modules/utils/functions.nf'
+include {BCFTOOLS_CALL_01} from '../../../subworkflows/bcftools/bcftools.call.01.nf'
+include {COLLECT_TO_FILE_01} from '../../../modules/utils/collect2file.01.nf'
+include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
+include {runOnComplete} from '../../../modules/utils/functions.nf'
 
 def helpMessage() {
   log.info"""
 ## About
 
-call deepvariant to a set of bams
+bcftools mpileup+call to a set of bams
 
 ## Author
 
@@ -60,7 +60,7 @@ ${params.rsrc.author}
 ## Usage
 
 ```
-nextflow -C ../../confs/cluster.cfg  run -resume deepvariant.nf \\
+nextflow -C ../../confs/cluster.cfg  run -resume bcftools.call.nf \\
 	--publishDir output \\
 	--prefix "analysis." \\
 	--reference /path/to/reference.fasta \\
@@ -86,7 +86,7 @@ if( params.help ) {
 
 
 workflow {
-	ch1 = DEEPVARIANT_01(params,params.reference,file(params.references),file(params.bams), Channel.fromPath(params.beds))
+	ch1 = BCFTOOLS_CALL_01(params,params.reference,file(params.references),file(params.bams), Channel.fromPath(params.beds))
 	html = VERSION_TO_HTML(params,ch1.version)
 	//PUBLISH(ch1.version,html.html,ch1.summary,ch1.pdf.collect())
 	}

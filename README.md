@@ -24,6 +24,7 @@ My Nextflow Pipelines
   * [VQSR](workflows/vqsr/) variant recalibration.
   * [Graphtyper](workflows/graphtyper/graphtyper.genotype/) calling with graphtyper
   * [Deepvariant](workflows/deepvariant) calling with DeepVariant
+  * [bcftools](workflows/bcftools/calling) calling with bcftools/mpileup+call
 
 ### Structural variants
 
