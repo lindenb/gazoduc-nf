@@ -29,6 +29,7 @@ include {moduleLoad} from '../utils/functions.nf'
 process GLNEXUS_GENOTYPE_01  {
 tag "${bed.name} N=${vcfs.size()}"
 memory "15g"
+cpus 5
 afterScript  "rm -rf TMP GLnexus.DB"
 input:
 	val(meta)
@@ -45,21 +46,35 @@ script:
 	${moduleLoad("bcftools")}
 	mkdir TMP
 
+cat << EOF > TMP/jeter.txt
+${vcfs.join("\n")}
+EOF
+
+i=1
+cat TMP/jeter.txt | while read F
+do
+	ln -vs "\${F}" "TMP/tmp.\${i}.vcf.gz"
+	ln -vs "\${F}.tbi" "TMP/tmp.\${i}.vcf.gz.tbi"
+	echo "/tmpdir/tmp.\${i}.vcf.gz" >> TMP/vcf.list
+	((i=i+1))
+	
+done
+
        	singularity exec\
                	--home \${PWD} \
 		--bind \${PWD}/TMP:/tmpdir \
-		${vcfs.withIndex().collect{B,I -> " --bind "+B.getParent()+":/data"+I}.join(" ")} \
                	--bind \${PWD}:/beddir \
                	--bind \${PWD}:/outdir \
                	${img} \
 		/usr/local/bin/glnexus_cli \
 		--config ${config} \
                	--bed /beddir/${bed.name} \
-		${vcfs.withIndex().collect{B,I -> "/data"+I+"/"+B.name}.join(" ")} > TMP/jeter.vcf.gz
+		${task.cpus?" --threads ${task.cpus}":""} \
+		--mem-gbytes ${task.memory.giga} \
+		--list /tmpdir/vcf.list > TMP/jeter.vcf.gz
 	
-	bcftools view -O b -o merged.bcf TMP/jeter.vcf.gz
-
-	bcftools index "merged.bcf"
+	bcftools +fill-tags ${task.cpus?" --threads ${task.cpus}":""} -O b -o merged.bcf TMP/jeter.vcf.gz -- -t AN,AC,AF
+	bcftools index ${task.cpus?" --threads ${task.cpus}":""} "merged.bcf"
 
 
 ##################
@@ -70,10 +85,9 @@ cat << EOF > version.xml
         <entry key="bed">${bed}</entry>
         <entry key="gvcfs.count">${vcfs.size()}</entry>
    	<entry key="config">${config}</entry>
-        <entry key="glnexus.version">\$( bcftools view --header-only merged.bcf | grep -o GLnexusVersion=.*) </entry>
+        <entry key="glnexus.version">\$( bcftools view --header-only merged.bcf | grep -m1 -o GLnexusVersion=.*) </entry>
 </properties>
 EOF
-
 
 """
 }
