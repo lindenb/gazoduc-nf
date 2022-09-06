@@ -27,7 +27,7 @@ nextflow.enable.dsl=2
 /** path to indexed fasta reference */
 params.reference = ""
 params.bams=""
-params.pedigee=""
+params.pedigree=""
 params.help = false
 /** publish Directory */
 params.publishDir = ""
