@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 
-include {assertNotEmpty;getKeyValue;moduleLoad;isBlank} from '../../modules/utils/functions.nf'
+include {parseBoolean;moduleLoad;isBlank} from '../../modules/utils/functions.nf'
 
 process SAMTOOLS_STATS_01 {
 tag "${row.sample}"
@@ -33,19 +33,22 @@ input:
 	val(meta)
 	val(row)
 output:
-	tuple val(row),path("${row.sample}.stats.tsv.gz"),emit:output
+	tuple val(row),path("*.stats.txt*"),emit:output
 	path("version.xml"),emit:version
 script:
-	def  extra = ${meta.extraSamtoolsStats?:""}
+	def prefix = row.prefix?:(meta.prefix?:"")
+	def extra = meta.extraSamtoolsStats?:""
 """
 hostname 1>&2
 ${moduleLoad("samtools")}
 set -o pipefail
 
 samtools stats ${extra}  --ref-seq "${row.reference}" --reference "${row.reference}" "${row.bam}" |\
-	awk '/^# The command line/ {printf("# sample : ${row.new_sample}\\n");} {print}' > "${row.sample}.stats"
+	awk '/^# The command line/ {printf("# sample : ${row.sample}\\n");} {print}' > "${prefix}${row.sample}.stats.txt"
 
-gzip --best "${row.sample}.stats"
+if ${parseBoolean(meta.gzip)} ; then
+gzip --best "${prefix}${row.sample}.stats.txt"
+fi
 
 ##################
 cat << EOF > version.xml

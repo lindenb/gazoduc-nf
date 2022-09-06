@@ -39,7 +39,7 @@ workflow SAMTOOLS_STATS_01 {
 	main:
 		version_ch = Channel.empty()
 		
-		samples_ch = SAMTOOLS_SAMPLES_01(["with_header":"true"],["reference":reference,"bams":bams,"references":references])
+		samples_ch = SAMTOOLS_SAMPLES_01(["with_header":"true"],reference,references,bams)
 		version_ch = version_ch.mix(samples_ch.version)
 
 		stats_ch = ST_STATS(meta,samples_ch.output.splitCsv(header:true,sep:"\t").map{T->T.plus("sample":T.new_sample)})
