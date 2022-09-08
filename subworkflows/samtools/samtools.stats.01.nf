@@ -48,6 +48,8 @@ workflow SAMTOOLS_STATS_01 {
                 file_list_ch = COLLECT_TO_FILE_01([:], stats_ch.output.map{T->T[1]}.collect())
                 version_ch = version_ch.mix(file_list_ch.version)
 
+		ch1_ch = ZIPIT(meta,file_list_ch.output)
+
                 multiqc_ch = MULTIQC_01(meta,file_list_ch.output.map{T->["files":T,"prefix":(meta.prefix?:"")]})
                 version_ch = version_ch.mix(multiqc_ch.version)
 
@@ -56,5 +58,22 @@ workflow SAMTOOLS_STATS_01 {
 	emit:
 		version = version_ch
 		multiqc_zip = multiqc_ch.zip
+		files = file_list_ch.output
+		zip = ch1_ch.zip
 	}
 
+process ZIPIT {
+executor "local"
+input:
+	val(meta)
+	path(files)
+output:
+	path("${meta.prefix?:""}st.stats.zip"),emit:zip
+script:
+"""
+hostname 1>&2
+set -o pipefail
+
+cat "${files}" | zip -9 -@ -j "${meta.prefix?:""}st.stats.zip"
+"""
+}

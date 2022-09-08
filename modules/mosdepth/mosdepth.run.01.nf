@@ -44,12 +44,13 @@ process MOSDEPTH_RUN_01 {
 		def per_base = parseBoolean(row.per_base?:"false")?"":"--no-per-base"
 		def mapq =row.mapq?:"0"
 		def suffix = row.suffix?:""
+		def extra = (meta.containsKey("mosdepth_extra")?meta.mosdepth_extra:"")
 	"""
 	hostname 1>&2
 	
 
         ${executable} ${bed.name.equals("NO_FILE")?"":"--by \"${bed}\""} ${median} ${per_base} \
- 		-t ${task.cpus} --fasta "${row.reference}" --mapq ${mapq} \
+ 		-t ${task.cpus} --fasta "${row.reference}" --mapq ${mapq} ${extra} \
 		${row.sample}${suffix} ${row.bam}
 
 

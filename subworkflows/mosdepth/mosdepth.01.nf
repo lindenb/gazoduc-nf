@@ -22,7 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {SAMTOOLS_SAMPLES01} from '../../modules/samtools/samtools.samples.01.nf'
+include {SAMTOOLS_SAMPLES_01} from '../../subworkflows/samtools/samtools.samples.01.nf'
+include {SCATTER_TO_BED} from '../../subworkflows/picard/picard.scatter2bed.nf'
 include {MOSDEPTH_DOWNLOAD_01} from '../../modules/mosdepth/mosdepth.downoad.01.nf'
 include {MOSDEPTH_RUN_01} from '../../modules/mosdepth/mosdepth.run.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
@@ -37,16 +38,23 @@ workflow MOSDEPTH_BAMS_01 {
 		bed
 	main:
 		version_ch  = Channel.empty()
-		bams_ch = SAMTOOLS_SAMPLES01(meta,reference,bams)
-		version_ch = version_ch.mix(bams_ch.version)	
+		bams_ch = SAMTOOLS_SAMPLES_01(meta.plus(["with_header":true,"allow_multiple_references":false,"allow_duplicate_samples":false]),reference,file("NO_FILE"),bams)
+		version_ch = version_ch.mix(bams_ch.version)
 
-		ch1 = bams_ch.output.splitCsv(header:false,sep:'\t').combine(bed).map{T->[
-			"reference": reference,
-			"sample": T[0],
-			"bam": T[1],
+		if(bed.name.equals("NO_FILE")) {
+			acgt_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"ACGT","MAX_TO_MERGE":"1"],reference)
+                        version_ch = version_ch.mix(acgt_ch.version)
+                        bed2 = acgt_ch.bed
+			}
+		else
+			{
+			bed2 = Channel.fromPath(bed)
+			}
+
+		ch1 = bams_ch.output.splitCsv(header:true,sep:'\t').combine(bed2).map{T->T[0].plus([
 			"mapq": (meta.mapq?:1),
-			"bed": T[2]
-			]}
+			"bed": T[1]
+			])}
 		mosdepth_ch = MOSDEPTH_DOWNLOAD_01(meta)
 		version_ch = version_ch.mix(mosdepth_ch.version)	
 	
@@ -55,6 +63,9 @@ workflow MOSDEPTH_BAMS_01 {
 
 		merge_ch = MERGE_MOSDEPTH_SUMMARY(meta,ch2.summary.map{T->T[0].sample+"\t"+T[0].bam+"\t"+T[0].reference+"\t"+T[1]}.collect())
 		version_ch = version_ch.mix(merge_ch.version)
+
+		regdist_ch = ZIP_REGION_DIST(meta,ch2.regiondist.map{T->T[1]}.collect())
+		version_ch = version_ch.mix(regdist_ch.version)
 
 		pdf_ch = Channel.empty()
 		plot_ch = PLOT_IT(meta, merge_ch.output)
@@ -70,6 +81,7 @@ workflow MOSDEPTH_BAMS_01 {
 		globaldist = ch2.globaldist
 		perbase = ch2.perbase
 		pdf  = pdf_ch.collect()
+		region_dist_zip = regdist_ch.zip
 	}
 
 process MERGE_MOSDEPTH_SUMMARY {
@@ -79,7 +91,7 @@ input:
 	val(meta)
 	val(L)
 output:
-	path("${params.prefix?:""}summary.tsv"),emit:output
+	path("${meta.prefix?:""}summary.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
 """
@@ -103,7 +115,7 @@ do
 	echo >> TMP/jeter2.txt
 done
 
-mv TMP/jeter2.txt "${params.prefix?:""}summary.tsv"
+mv TMP/jeter2.txt "${meta.prefix?:""}summary.tsv"
 
 ##################
 cat << EOF > version.xml
@@ -116,14 +128,39 @@ EOF
 """
 }
 
+process ZIP_REGION_DIST {
+tag "${L.size()}"
+input:
+	val(meta)
+	val(L)
+output:
+	path("${meta.prefix?:""}regions.dist.zip"),emit:zip
+	path("version.xml"),emit:version
+script:
+"""
+hostname 1>&2
+
+zip -9j "${meta.prefix?:""}regions.dist.zip" ${L.join(" ")}
+
+##################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">merge mosdepth region_dist</entry>
+        <entry key="count">${L.size()}</entry>
+</properties>
+EOF
+"""
+}
+
 process PLOT_IT {
 tag "${summary.name}"
 input:
 	val(meta)
 	path(summary)
 output:
-	path("${params.prefix?:""}coverage.pdf"),emit:coverage
-	path("${params.prefix?:""}coverage_region.pdf"),optional:true,emit:coverage_region
+	path("${meta.prefix?:""}coverage.pdf"),emit:coverage
+	path("${meta.prefix?:""}coverage_region.pdf"),optional:true,emit:coverage_region
 	path("version.xml"),emit:version
 script:
 	def prefix = meta.prefix?:""
