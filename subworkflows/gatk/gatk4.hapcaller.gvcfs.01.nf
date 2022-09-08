@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 include {isBlank;moduleLoad} from './../../modules/utils/functions.nf'
-include {SAMTOOLS_SAMPLES02} from './../../modules/samtools/samtools.samples.02.nf'
+include {SAMTOOLS_SAMPLES_01} from '../samtools/samtools.samples.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 
 workflow GATK4_HAPCALLER_GVCFS_01 {
@@ -37,7 +37,7 @@ workflow GATK4_HAPCALLER_GVCFS_01 {
                 version_ch = Channel.empty()
 
 
-		samples_bams_ch = SAMTOOLS_SAMPLES02(meta.plus(["with_header":true]), ["reference":reference,"bams": bams,"references":references] )
+		samples_bams_ch = SAMTOOLS_SAMPLES_01(meta.plus(["with_header":true,"allow_duplicate_samples":true,"allow_multiple_references":true]), reference, references, bams)
 		version_ch = version_ch.mix(samples_bams_ch.version)
 
 
