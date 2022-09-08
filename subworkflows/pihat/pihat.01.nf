@@ -25,7 +25,7 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 
-include {moduleLoad;getKeyValue;getGnomadExomePath;getGnomadGenomePath} from '../../modules/utils/functions.nf'
+include {hasFeature;moduleLoad;getKeyValue;getGnomadExomePath;getGnomadGenomePath} from '../../modules/utils/functions.nf'
 include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 
@@ -76,7 +76,7 @@ output:
 	tuple val(contig),path("${contig}.bcf"),emit:vcf
 	path("version.xml"),emit:version
 when:
-	contig.matches("(chr)?[0-9XY]+")
+	contig.matches(meta.pihat_contig_regex?:"(chr)?[0-9XY]+")
 script:
 
 	def filters = getKeyValue(meta,"pihat_filters"," --apply-filters '.,PASS' ")

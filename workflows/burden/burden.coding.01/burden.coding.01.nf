@@ -22,6 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+nextflow.enable.dsl=2
 
 include {moduleLoad;getKeyValue;hasFeature} from '../../../modules/utils/functions.nf'
 include {VALIDATE_CASE_CONTROL_PED_01} from '../../../modules/pedigree/validate.case.ctrl.pedigree.01.nf'
