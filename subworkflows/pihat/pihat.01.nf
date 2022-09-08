@@ -79,6 +79,7 @@ when:
 	contig.matches("(chr)?[0-9XY]+")
 script:
 
+	def filters = getKeyValue(meta,"pihat_filters"," --apply-filters '.,PASS' ")
 	def blacklisted = meta.blacklisted?:""	
 	def pihatmaf = getKeyValue(meta,"pihat_MAF","0.1")
 	def pihatMinGQ = getKeyValue(meta,"pihat_min_GQ","20")
@@ -122,7 +123,7 @@ if [ ! -s TMP/jeter.x.bed ] ; then
 
 fi
 
-bcftools view -m2 -M2 --apply-filters '.,PASS' --types snps -O u \
+bcftools view -m2 -M2 ${filters} --types snps -O u \
 		${samples.name.equals("NO_FILE")?"":"--samples-file '${samples.toRealPath()}'"} \
 		"${vcf.toRealPath()}" "${contig}" |\
 	bcftools view --targets-file ^TMP/jeter.x.bed  --targets-overlap 2 --exclude-uncalled  --min-af "${pihatmaf}" --max-af "${1.0 - (pihatmaf as Double)}"  -i 'AC>0 ${contig.matches("(chr)?Y")?"":"&& F_MISSING < ${f_missing}"}'  -O v |\
@@ -215,6 +216,7 @@ cat << EOF > version.xml
 	<entry key="F_MISSING">${f_missing}</entry>
 	<entry key="min.DP">${minDP}</entry>
 	<entry key="max.DP">${maxDP}</entry>
+	<entry key="filters">${filters}</entry>
 </properties>
 EOF
 
