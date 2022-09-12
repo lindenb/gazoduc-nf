@@ -360,10 +360,10 @@ private void instanceMainWithExit(final List<String> args) {
 			}
 		final String[] titles= new String[1];
 		try (BufferedReader br=Files.newBufferedReader(Paths.get(args.get(1)))) {
-			br.lines().map(S->S.split("[\t]")).forEach(T->
+			br.lines().map(S->TAB.split(S)).forEach(T->
 				{
-				int start = Integer.parseInt(T[1])+1;
-				int end  = Integer.parseInt(T[2]);
+				final int start = Integer.parseInt(T[1])+1;
+				final int end  = Integer.parseInt(T[2]);
 				final Interval r = new Interval(
 						T[0],
 						start,
@@ -381,12 +381,16 @@ private void instanceMainWithExit(final List<String> args) {
 		final int min_length_on_reference  = intervals.stream().mapToInt(R->R.getLengthOnReference()).min().orElse(1);
 		final ToIntFunction<Integer> toWidth = L->(int)((L/(double)min_length_on_reference)*50.0);
 
-		final boolean proportional_width=${parseBoolean(meta.proportional_width)};
+		final boolean proportional_width=false;//${parseBoolean(meta.proportional_width)};
 
 		try(PrintWriter w = new PrintWriter(System.out)) {
 			final List<String> components= new ArrayList<>();
 			final List<String> widths= new ArrayList<>();
 			final List<String> names= new ArrayList<>();
+			w.println("# intervals:");
+			w.println("# " + intervals.stream().map(R->R.toString()).collect(Collectors.joining(",")));
+			w.println("# groups:");
+			w.println("# " + collections.stream().map(R->R.toString()).collect(Collectors.joining(",")));
 			for(int ii=0;ii< intervals.size();ii++) {
 				for(int g = 0;g< collections.size();++g) {
 					final String col = collections.get(g);
@@ -394,7 +398,8 @@ private void instanceMainWithExit(final List<String> args) {
 					final String s = "G"+g+"E"+ii;
 					components.add(s);
 					widths.add(String.valueOf(toWidth.applyAsInt(the_interval.getLengthOnReference())));
-					names.add(quote(the_interval.getName()));
+					names.add(quote(g==0?the_interval.getName():""));
+					w.println("# "+col+" "+the_interval);
 					w.print(s+" <- c(");
 					w.print(samples.stream().
 							filter(S->S.collection.equals(col)).
@@ -404,7 +409,7 @@ private void instanceMainWithExit(final List<String> args) {
 					}
 				}
 			w.println("cols<-rainbow("+collections.size()+")");
-			w.println("pdf("+quote("TMP/jeter.pdf")+",width=max(20,"+(collections.size()*intervals.size())+"*0.1),height=8)");
+			w.println("pdf("+quote("TMP/jeter.pdf")+",width=max(20,"+(collections.size()*intervals.size())+"*0.2),height=8)");
 			w.print("boxplot(");
 			w.print(String.join(",",components));
 			if(proportional_width) {
@@ -486,7 +491,7 @@ awk -F '\t' '(\$4=="${transcript}")' "${bed}" |\
 
 test -s "TMP/jeter.bed"
 
-java -cp ${minikit}:\${JVARKIT_DIST}/coverageplotter.jar Minikit "${samples}" jeter.bed > TMP/jeter.R
+java -cp ${minikit}:\${JVARKIT_DIST}/coverageplotter.jar Minikit "${samples}" TMP/jeter.bed > TMP/jeter.R
 
 R --vanilla < TMP/jeter.R
 mv -v TMP/jeter.pdf "${meta.prefix?:""}${transcript}.pdf"
