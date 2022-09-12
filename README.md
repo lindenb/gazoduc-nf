@@ -34,6 +34,7 @@ My Nextflow Pipelines
   * [Smoove](workflows/smoove/) Finds CNVs/SV using [Smoove](https://github.com/brentp/smoove)
   * [Retrocopies GTF/VCF](workflows/retrocopy/) Finds Retrocopies using a SV VCF and a GTF file.
   * [Plot CNV from VCF](workflows/cnvplotter) Plot CNV as SVG+HTML.
+  * [Plot CNV using bed+ samtools depth](/workflows/plotcoverage) Plot CNV as PDF.
 
 ### Relatedness
 

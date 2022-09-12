@@ -27,18 +27,21 @@ nextflow.enable.dsl=2
 /** path to indexed fasta reference */
 params.reference = ""
 params.references = "NO_FILE"
-params.mapq = 0
+params.mapq = 1
 params.bams = ""
 params.bed = ""
 params.help = false
 params.publishDir = ""
 params.prefix = ""
 params.sample2group="NO_FILE"
+params.proportional_width=true
 
 include {SAMTOOLS_SAMPLES_01} from '../../subworkflows/samtools/samtools.samples.01.nf'
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
-include {moduleLoad;runOnComplete} from '../../modules/utils/functions.nf'
+include {moduleLoad;runOnComplete;parseBoolean} from '../../modules/utils/functions.nf'
 include {CONCAT_FILES_01} from '../../modules/utils/concat.files.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {SIMPLE_ZIP_01} from '../../modules/utils/zip.simple.01.nf'
 
 def helpMessage() {
   log.info"""
@@ -87,9 +90,8 @@ if( params.help ) {
 
 
 workflow {
-	BOXPLOTDEPTH(params,params.reference,file(params.references),file(params.bams),file(params.bed),file(params.sample2group))
-	//html = VERSION_TO_HTML(params,ch1.version)
-	//PUBLISH(ch1.version,html.html,ch1.zip)
+	ch1 = BOXPLOTDEPTH(params,params.reference,file(params.references),file(params.bams),file(params.bed),file(params.sample2group))
+	PUBLISH(ch1.zip)
 	}
 
 workflow BOXPLOTDEPTH {
@@ -123,10 +125,23 @@ workflow BOXPLOTDEPTH {
 
 		each_transcript = merge_bed_ch.transcripts.splitText().map{it.trim()}
 
+		to_zip = Channel.empty()
 		plot_ch = PLOT(meta,reference,bed,each_transcript,ch1_ch.output, kit_ch.jar )
 		version_ch = version_ch.mix(plot_ch.version)
+		to_zip = to_zip.mix(plot_ch.pdf)
+		to_zip = to_zip.mix(plot_ch.R)
+
+		version_ch = MERGE_VERSION(meta, "BoxplotDEPTH", "Box Plot DEPTH", version_ch.collect())
+
+		to_zip = to_zip.mix(version_ch.version)
+		
+		html = VERSION_TO_HTML(meta,version_ch.version)
+		to_zip = to_zip.mix(html.html)
+
+		zip_ch = SIMPLE_ZIP_01(meta,to_zip.collect())
 	emit:
 		version= version_ch
+		zip = zip_ch.zip
 }
 
 process MERGE_BED {
@@ -141,8 +156,8 @@ output:
 """
 hostname 1>&2
 ${moduleLoad("bedtools jvarkit")}
-
 set -o pipefail
+
 grep -v -E "^(browser|track|#)" "${bed}" |\
 	cut -f  1,2,3 |\
 	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 1 --convert SKIP |\
@@ -161,6 +176,7 @@ cat << EOF > version.xml
 	<entry key="name">${task.process}</entry>
 	<entry key="description">merge bed intervals</entry>
 	<entry key="bed">${bed}</entry>
+	<entry key="bedtools.version">\$(bedtools --version)</entry>
 </properties>
 EOF
 """
@@ -251,6 +267,8 @@ cat << EOF > version.xml
 	<entry key="name">${task.process}</entry>
 	<entry key="description">samtools depth</entry>
 	<entry key="sample">${row.sample}</entry>
+	<entry key="mapq">${mapq}</entry>
+	<entry key="samtools.version">\$(samtools  --version | head -n 1| cut -d ' ' -f2)</entry>
 </properties>
 EOF
 """
@@ -344,12 +362,14 @@ private void instanceMainWithExit(final List<String> args) {
 		try (BufferedReader br=Files.newBufferedReader(Paths.get(args.get(1)))) {
 			br.lines().map(S->S.split("[\t]")).forEach(T->
 				{
+				int start = Integer.parseInt(T[1])+1;
+				int end  = Integer.parseInt(T[2]);
 				final Interval r = new Interval(
 						T[0],
-						Integer.parseInt(T[1])+1,
-						Integer.parseInt(T[2]),
+						start,
+						end,
 						false,
-						(T.length >4?T[4]:".")
+						(T.length >4?T[4]:T[0]+":"+start+"-"+end)
 						);
 				titles[0] = T[3];
 				intervals.add(r);
@@ -359,8 +379,10 @@ private void instanceMainWithExit(final List<String> args) {
 		final String title= titles[0];
 		final List<String> collections = new ArrayList<>(collectionsSet);
 		final int min_length_on_reference  = intervals.stream().mapToInt(R->R.getLengthOnReference()).min().orElse(1);
-		final ToIntFunction<Integer> toWidth= L->(int)((L/(double)min_length_on_reference)*50.0);
-		
+		final ToIntFunction<Integer> toWidth = L->(int)((L/(double)min_length_on_reference)*50.0);
+
+		final boolean proportional_width=${parseBoolean(meta.proportional_width)};
+
 		try(PrintWriter w = new PrintWriter(System.out)) {
 			final List<String> components= new ArrayList<>();
 			final List<String> widths= new ArrayList<>();
@@ -372,7 +394,7 @@ private void instanceMainWithExit(final List<String> args) {
 					final String s = "G"+g+"E"+ii;
 					components.add(s);
 					widths.add(String.valueOf(toWidth.applyAsInt(the_interval.getLengthOnReference())));
-					names.add(quote(the_interval.getContig()+":"+the_interval.getStart()+"-"+the_interval.getEnd()));
+					names.add(quote(the_interval.getName()));
 					w.print(s+" <- c(");
 					w.print(samples.stream().
 							filter(S->S.collection.equals(col)).
@@ -382,12 +404,15 @@ private void instanceMainWithExit(final List<String> args) {
 					}
 				}
 			w.println("cols<-rainbow("+collections.size()+")");
-			w.println("pdf("+quote("TMP/jeter.pdf")+")");
+			w.println("pdf("+quote("TMP/jeter.pdf")+",width=max(20,"+(collections.size()*intervals.size())+"*0.1),height=8)");
 			w.print("boxplot(");
 			w.print(String.join(",",components));
-			w.print(",width=c("+String.join(",",widths)+"),"
-					+ "col=cols,"
-					+ "las=2,"
+			if(proportional_width) {
+				w.print(",width=c("+String.join(",",widths)+")");
+				}
+		
+			w.print(",col=cols,"
+					+ "las=2,ylab="+quote("Median Depth")+","
 					+ "names=c("+String.join(",",names)+"),"
 					+ "main="+quote(title)
 					+ ")\\n");
@@ -446,7 +471,8 @@ input:
 	path(samples)
 	path(minikit)
 output:
-	path("${transcript}.pdf"),emit:pdf
+	path("${meta.prefix?:""}${transcript}.pdf"),emit:pdf
+	path("${meta.prefix?:""}${transcript}.R"),emit:R
 	path("version.xml"),emit:version
 script:
 """
@@ -463,7 +489,8 @@ test -s "TMP/jeter.bed"
 java -cp ${minikit}:\${JVARKIT_DIST}/coverageplotter.jar Minikit "${samples}" jeter.bed > TMP/jeter.R
 
 R --vanilla < TMP/jeter.R
-mv -v TMP/jeter.pdf "${transcript}.pdf"
+mv -v TMP/jeter.pdf "${meta.prefix?:""}${transcript}.pdf"
+mv -v TMP/jeter.R "${meta.prefix?:""}${transcript}.R"
 
 ###############################################################################
 cat << EOF > version.xml
@@ -479,19 +506,13 @@ EOF
 process PUBLISH {
 publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
 input:
-	val(version)
-	val(html)
 	val(zip)
 output:
 	path("*.zip")
-	path("*.html")
-	path("*.xml")
 when:
 	!params.getOrDefault("publishDir","").trim().isEmpty()
 script:
 """
-ln -s ${version} ./
-ln -s ${html} ./
 ln -s ${zip} ./
 """
 }
