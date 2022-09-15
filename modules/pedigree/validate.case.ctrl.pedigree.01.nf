@@ -27,7 +27,7 @@ cat -n jeter.txt
 test ! -s jeter.txt
 
 # check no extra white spaces
-tr "\t" "${pedigree}" | awk '{S=\$1;gsub(/[ ]/,"",S); if(S!=\$1) print;}' > jeter.txt
+awk -F '\t' '{S=\$1;gsub(/[ ]/,"",S); if(S!=\$1) print;}' "${pedigree}" > jeter.txt
 cat -n jeter.txt
 test ! -s jeter.txt
 

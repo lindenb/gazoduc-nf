@@ -22,42 +22,39 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-/** use linux split to split a file into parts */
-process LINUX_SPLIT {
+
+/**
+ *
+ * builds a file to convert the chrX to X with bcftools annotate for
+ * rvtest because the software is buggy...
+ * https://github.com/zhanxw/rvtests/issues/80
+ *
+ **/
+process RVTESTS_REHEADER_01 {
+tag "${reference}"
 executor "local"
-tag "${filein.name}"
 input:
-      	val(meta)
-        path(filein)
+	val(meta)
+	val(reference)
 output:
-        path("clusters.list"),emit:output
+	path("reheader.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
-       	def prefix = meta.prefix?:"chunck."
-       	def suffix = meta.suffix?:".txt"
-       	def method = meta.method?:"--lines=10"
-        """
+"""
+hostname 1>&2
 
-	mkdir TMP
-        split -a 9 --additional-suffix=${suffix} ${method} "${filein}" "TMP/${prefix}"
+cut -f 1 "${reference}.fai" > chroms.A.txt
+sed 's/^chr//' chroms.A.txt > chroms.B.txt
+paste chroms.A.txt chroms.B.txt > reheader.tsv
+test -s reheader.tsv
+rm chroms.A.txt chroms.B.txt
 
-      	find \${PWD}/TMP -type f -name "${prefix}*${suffix}" > clusters.list
-
-	cat <<- EOF > version.xml
-	<properties id="${task.process}">
-		<entry key="Name">${task.process}</entry>
-		<entry key="Description">Split file into parts</entry>
-		<entry key="Input">${filein}</entry>
-		<entry key="method">${method}</entry>
-		<entry key="N-FILES">\$(wc -l < clusters.list)</entry>
-		<entry key="Output">clusters.list</entry>
-	</properties>
-	EOF
-        """
-	stub:
-	"""
-	echo empty.txt
-	echo "\${PWD}/empty.txt" > clusters.list
-	echo "<properties/>" > version.xml
-	"""
-	}
+############################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+  <entry key="name">${task.process}</entry>
+  <entry key="description">creates a chrom notation converter for bcftools annotate / rvtests.  <url>https://github.com/zhanxw/rvtests/issues/80</url>.</entry>
+</properties>
+EOF
+"""
+}
