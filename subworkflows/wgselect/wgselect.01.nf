@@ -532,8 +532,8 @@ echo "\${JAVA_HOME}"
 	
 	if [ ! -z "${hasFeature(meta,"fisherh") && (fisherh as Double) >= 0 ?"Y":""}" ] && test -s TMP/cases.txt && test -s TMP/controls.txt ; then
 		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcfburdenfisherh.jar --filter '' --pedigree "${jvarkitped}" --min-fisher "${fisherh}"  TMP/jeter1.vcf   > TMP/jeter2.vcf
-		mv TMP/jeter2.vcf TMP/jeter1.vcf
 		countIt "fisherH" TMP/jeter1.vcf TMP/jeter2.vcf
+		mv TMP/jeter2.vcf TMP/jeter1.vcf
 		bcftools annotate -x 'FILTER/CTRL_CASE_RATIO' TMP/jeter1.vcf > TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
 
