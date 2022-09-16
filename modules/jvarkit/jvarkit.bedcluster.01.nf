@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 
-include {moduleLoad;getBoolean;assertNotEmpty;getKeyValue} from '../utils/functions.nf'
+include {moduleLoad;getBoolean;assertNotEmpty;getKeyValue;parseBoolean} from '../utils/functions.nf'
 
 process BED_CLUSTER_01 {
 	tag "${bed.name} method:${meta.bed_cluster_method}"
@@ -40,6 +40,7 @@ process BED_CLUSTER_01 {
 		assertNotEmpty(method,"method for bedcluter must be defined")
 		def by_chrom = getBoolean(meta,"by_chromosome")
 		def chrom_arg = (by_chrom?"--chromosome":"")
+		def names_arg = (parseBoolean(meta.with_names)?"--names":"")
 	"""
 	hostname 1>&2
 	set -o pipefail
@@ -52,6 +53,7 @@ process BED_CLUSTER_01 {
 		-R "${reference}" \
 		${chrom_arg} \
 		${method} \
+		${names_arg} \
 		-o BEDS "${bed}"
 
 	find \${PWD}/BEDS -type f -name "*.bed" > clusters.list
@@ -66,6 +68,7 @@ process BED_CLUSTER_01 {
 		<entry key="bed">${bed}</entry>
 		<entry key="reference">${reference}</entry>
 		<entry key="method">${method}</entry>
+		<entry key="jvarkit.version">\$(java -jar \${JVARKIT_DIST}/bedcluster.jar --version)</entry>
 	</properties>
 	EOF
 	"""

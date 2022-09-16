@@ -25,7 +25,6 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 include {isHg19;runOnComplete;moduleLoad;getKeyValue;hasFeature} from '../../../modules/utils/functions.nf'
-include {LINUX_SPLIT} from '../../../modules/utils/split.nf'
 include {BURDEN_SAMPLE_WGSELECT_PART_01}  from '../../../subworkflows/burden/burden.samples.wgselect.part.nf'
 include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
 include {MERGE_VERSION} from '../../../modules/version/version.merge.nf'
@@ -41,7 +40,7 @@ params.help=false
 /** use only introns overlapping this bed */
 params.bed= "NO_FILE"
 /** in  intron, only keep/annotate in this interval(s) */
-params.regulatory_bed = "NO_FILE"
+params.regulatory_bed = "NO_FILE2" //yes FILE2 to avoid conflicts for symbolic links
 params.bed_cluster_method = " --size 1mb "
 params.soacn = "SO:0001627,SO:0001568"
 
@@ -107,10 +106,8 @@ workflow BURDEN_1ST_INTRON {
 		ch1_ch = BURDEN_SAMPLE_WGSELECT_PART_01(meta,reference,vcf, pedigree, introns_ch.merged_bed)
 		version_ch = version_ch.mix(ch1_ch.version)
 
-		split_ch = LINUX_SPLIT(meta.plus("method":"--lines=100"),introns_ch.intron1_bed)
-		version_ch = version_ch.mix(split_ch.version)
 
-		each_intron_bed_ch = split_ch.output.splitText().map{it.trim()}.map{S->file(S)}
+		each_intron_bed_ch = introns_ch.output.splitText().map{it.trim()}.map{S->file(S)}
 		
 		header_ch = RVTESTS_REHEADER_01(meta, reference)
 		version_ch = version_ch.mix(header_ch.version)
@@ -137,7 +134,7 @@ workflow BURDEN_1ST_INTRON {
 	}
 
 process EXTRACT_1ST_INTRON {
-memory "2g"
+memory "3g"
 afterScript "rm -rf TMP"
 input:
 	val(meta)
@@ -146,7 +143,7 @@ input:
 	path(regulatory_bed)
 output:
 	path("merged.bed"),emit:merged_bed
-	path("1stintron.bed"),emit:intron1_bed
+	path("first.introns.list"),emit:output
 	path("version.xml"),emit:version
 script:
 	def url = isHg19(reference)?"http://hgdownload.cse.ucsc.edu/goldenpath/hg19/database/ensGene.txt.gz":""
@@ -177,17 +174,19 @@ if ${!bed.name.equals("NO_FILE")} ; then
 
 fi
 
-
-mv TMP/jeter2.bed  1stintron.bed
-test -s 1stintron.bed
+# group the BED of each introns by pool of 'x' bases
+mkdir BEDS
+java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/bedcluster.jar -R "${reference}" --out BEDS --names --size "1Mb" TMP/jeter2.bed
+find \${PWD}/BEDS -type f -name "*.bed" > first.introns.list
+test -s first.introns.list
 
 # create merged bed
 
-cut -f 1,2,3 1stintron.bed |\
+cut -f 1,2,3 TMP/jeter2.bed |\
 	sort -T TMP -t '\t' -k1,1 -k2,2n |\
 	bedtools merge > TMP/jeter.bed
 
-if ${!regulatory_bed.name.equals("NO_FILE")} ; then
+if ${!regulatory_bed.name.equals("NO_FILE2") /* yes 'NO_FILE2' to avoid conflicts with syminks */ } ; then
 
 	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 1 --convert SKIP "${regulatory_bed}" |\
 		cut -f1,2,3 |\
@@ -210,7 +209,6 @@ cat << EOF > version.xml
         <entry key="description">1st intron from ucsc</entry>
 	<entry key="url"><url>${url}</url></entry>
 	<entry key="bedtools.version">\$(  bedtools --version )</entry>
-	<entry key="number.of.introns">\$( wc -l < 1stintron.bed )</entry>
 	<entry key="bed">${bed}</entry>
 	<entry key="regulatory_bed">${regulatory_bed}</entry>
 </properties>
