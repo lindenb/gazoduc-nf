@@ -64,9 +64,10 @@ input:
 	tuple val(contig),val(start),val(end),val(enst)
 output:
 	path("assoc.list"),emit:output
+	path("variants.bed"),emit:variants
 	path("version.xml"),emit:version
 script:
-	def soacn=meta.soacn?"":"SO:0001574,SO:0001575,SO:0001818"
+	def soacn=meta.soacn?:"SO:0001574,SO:0001575,SO:0001818"
 """
 hostname 1>&2
 ${moduleLoad("bcftools jvarkit rvtests bedtools")}
@@ -105,13 +106,17 @@ tail -n+2 "${pedigree}" |\
 	sort -T TMP -t '\t' -k2,2 |\
 	join -1 2 -2 1 -t '\t' -o '1.1,1.2,1.3,1.4,1.5,1.6' - TMP/samples.txt >> TMP/jeter.ped
 
+# case/list for contrast
+awk -F '\t' '(\$6=="1") {printf("%s\\n",\$2);}' TMP/jeter.ped > TMP/ctrl.list
+awk -F '\t' '(\$6=="2") {printf("%s\\n",\$2);}' TMP/jeter.ped > TMP/cases.list
+
 # problem with uk biobank is we cannot use bcftools concat because they don't have the same samples !!
 i=1
 cut -f 4 TMP/vcf.bed | while read F
 do
 
 	bcftools view -O u --regions-file TMP/jeter.bed --samples-file TMP/samples.txt --force-samples "\${F}" |\
-		bcftools view -i 'AC>0' --trim-alt-alleles --max-af '0.01' -O b -o TMP/chunk.\${i}.bcf
+		bcftools view -i 'AC>0 && F_MISSING<0.01' --trim-alt-alleles --max-af '0.01' -O b -o TMP/chunk.\${i}.bcf
 	bcftools index TMP/chunk.\${i}.bcf
 	echo "TMP/chunk.\${i}.bcf" >> TMP/chunk.list
 
@@ -142,7 +147,7 @@ bcftools csq -O v --force --local-csq --ncsq 10000 --fasta-ref "${reference}" --
 			--remove-attribute  --rmnoatt \
 			--acn "${soacn}" |\
 	java -jar ${JVARKIT_DIST}/vcfburdenfiltergenes.jar -a "${enst}" |\
-	bcftools view -O z -o TMP/jeter2.vcf.gz
+	    bcftools +contrast -0 TMP/ctrl.list -1 TMP/cases.list -a PASSOC,FASSOC,NASSOC,NOVELAL,NOVELGT -O z -o TMP/jeter2.vcf.gz -
 
 bcftools index -t TMP/jeter2.vcf.gz
 
@@ -162,6 +167,9 @@ rvtest  --noweb \
 	--kernel 'skat[nPerm=1000],kbac,skato' 1>&2 2> TMP/last.rvtest.log
 
 find \${PWD}/ASSOC -type f -name "part*assoc" > assoc.list
+
+echo -n "${contig}\t${start}\t${end}\t${enst}\t" > variants.bed
+bcftools query -f '%POS:%REF:%ALT:%INFO/PASSOC:%INFO/FASSOC\\n' TMP/jeter2.vcf.gz | paste -s -d ',' >> variants.bed
 
 ###############################################################################
 cat << EOF > version.xml
