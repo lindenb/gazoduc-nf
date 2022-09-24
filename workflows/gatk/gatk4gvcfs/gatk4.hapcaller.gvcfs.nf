@@ -22,7 +22,7 @@ workflow  {
 	vcfs_ch = GATK4_HAPCALLER_GVCFS_01(params,params.reference,file(params.references),file(params.bams),Channel.fromPath(params.beds))
 	version_ch = version_ch.mix(vcfs_ch.version)
 
-	if(parseBoolean(getKeyValue(params,"annotate","true"))) {
+	if(hasFeature(params,"annotate")) {
 		bedvcf_ch = COLLECT2FILE1(["header":"interval\tvcf"],vcfs_ch.region_vcf.map{T->T[0]+"\t"+T[1]}.collect())
 		version_ch = version_ch.mix(bedvcf_ch.version)
 
