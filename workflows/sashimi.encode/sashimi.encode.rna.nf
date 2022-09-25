@@ -1,28 +1,64 @@
+/*
+
+Copyright (c) 2022 Pierre Lindenbaum
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+The MIT License (MIT)
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
+nextflow.enable.dsl=2
+
 params.prefix = ""
 params.publishDir = ""
 params.bed = "NO_FILE"
 params.gtf = "NO_FILE"
 
 
+include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
+include {moduleLoad;runOnComplete} from '../../modules/utils/functions.nf'
+include {BATIK_DOWNLOAD_01} from '../../modules/batik/batik.download.01.nf'
+
+
 workflow {
-	SASHIMI_ENCODE_01(params, file(params.bed), file(params.gtf))
+	SASHIMI_ENCODE_01(params, Channel.fromPath(params.bed), file(params.gtf))
 	}
 
+
+runOnComplete(workflow)
 
 workflow SASHIMI_ENCODE_01 {
 	take:
 		meta
 		bed
 		gtf
-	script:
+	main:
 		version_ch = Channel.empty()
+		batik_ch = BATIK_DOWNLOAD_01(meta)
+		version_ch = version_ch.mix(batik_ch.version)
+
 
 		encode_ch = ENCODE_METADATA(meta)
 		version_ch = version_ch.mix(encode_ch.version)
 
 		all_bams = encode_ch.output.splitCsv(header:true,sep:'\t').
-			filter{T->T.File_format.equals("bam") && T.Output_type.equals("alignments") && T.File_assembly.equals("GRCh38")}.
-			map{T->[T.File_acccession,T.File_download_URL]}
+			filter{T->T.File_format.equals("bam") && T.Output_type.equals("alignments") && T.File_assembly.equals("GRCh38") && !T.File_accession.isEmpty() && !T.File_download_URL.isEmpty()}.
+			map{T->[T.File_accession,T.File_download_URL]}
 
 		all_intervals = bed.splitCsv(header: false,sep:'\t',strip:true).
 					map{T->[T[0], (T[1] as Integer) +1,T[2] as Integer ]}
@@ -30,27 +66,37 @@ workflow SASHIMI_ENCODE_01 {
 		extractor_ch = EXTRACTOR(meta)
 		version_ch = version_ch.mix(extractor_ch.version)
 
-		bam_ch = DOWNLOAD_BAM_01(meta, extractor_ch.output, extractor_ch.gtf, all_bams.combine(all_intervals))
+		bam_ch = DOWNLOAD_BAM_01(meta, batik_ch.rasterizer, gtf, extractor_ch.output, all_bams.combine(all_intervals))
 		version_ch = version_ch.mix(bam_ch.version)
+
+		merge_pdf = MERGE_PDF(meta,bam_ch.pdf.groupTuple())
+		version_ch = version_ch.mix(merge_pdf.version)
 	emit:
 		version = version_ch
 	}
 
 process ENCODE_METADATA {
+executor "local"
 input:
 	val(meta)
 output:
 	path("encode.metadata.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
+	def url = meta.url?:"https://www.encodeproject.org/metadata/?type=Experiment&status=released&assembly=GRCh38&assay_title=total+RNA-seq&files.file_type=bam"
 """
 set -o pipefail
-wget -q -O - "https://www.encodeproject.org/metadata/?type=Experiment&status=released&assembly=GRCh38&assay_title=total+RNA-seq&files.file_type=bam" |\
+wget -q -O - "${url}" |\
 awk -F '\t' '{OFS="\t";if(NR==1) {for(i=1;i<=NF;i++) gsub(/[ ]/,"_",\$i);} print;}' > encode.metadata.tsv
 
 test -s encode.metadata.tsv
 
 cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">download encode metadata</entry>
+        <entry key="url"><url>${url}</url></entry>
+</properties>
 EOF
 """
 }
@@ -109,24 +155,39 @@ forEach(rec->{
 
 EOF
 
+
+cat << EOF > version.xml
+<properties id="${task.process}">
+	<entry key="name">${task.process}</entry>
+	<entry key="description">script extracting junctions locations</entry>
+</properties>
+EOF
+
 """
 }
 
 process DOWNLOAD_BAM_01 {
-        tag "${sample} ${contig}:${start}-${end}"
+        tag "${sample} ${contig}:${start}-${end} ${url}"
         cache 'lenient'
 	afterScript 'rm -rf TMP'
+	errorStrategy  {task.exitStatus!=0 && task.attempt<3 ? 'retry' : 'ignore' }
+	memory "5g"
 	maxForks 1
         input:
 		val(meta)
+		path(rasterizer_jar)
 		path(gtf)
 		path(code)
                 tuple val(sample),val(url),val(contig),val(start),val(end)
         output:
                 path("${sample}_${contig}_${start}_${end}.mf"),emit:manifest
-                path("${sample}_${contig}_${start}_${end}.tsv"),emit:manifest
+                path("${sample}_${contig}_${start}_${end}.tsv"),emit:junctions
+		tuple val("${contig}_${start}_${end}"),path("all.pdf.csv"),emit:pdf
+                path("version.xml"),emit:version
+	when:
+		!sample.equals("ENCFF337XBW") //broken bam
         script:
-		def proxyHost = "cache.ha.univ-nantes.fr"
+		def proxyHost = "proxy-upgrade.univ-nantes.prive"
 		def proxyPort = "3128"
 		def proxy = meta.proxy?:" -Dhttp.proxyHost=${proxyHost} -Dhttp.proxyPort=${proxyPort}  -Dhttps.proxyHost=${proxyHost} -Dhttps.proxyPort=${proxyPort} "
 
@@ -136,21 +197,37 @@ process DOWNLOAD_BAM_01 {
 	set -o pipefail
 
 	mkdir TMP
-	java ${proxy} -jar \${JVARKIT_DIST}/bamwithoutbai.jar  -r "${contig}:${start}-${end}"  '${url}' |\
+	java  -Xmx${task.memory.giga}g ${proxy} -jar \${JVARKIT_DIST}/bamwithoutbai.jar  -r "${contig}:${start}-${end}"  '${url}' |\
 	samtools addreplacerg -r '@RG\\tID:${sample}\\tSM:${sample}' -o TMP/jeter.bam -O BAM -
 	samtools index TMP/jeter.bam
 
-	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "TMP/jeter.bam" --convert SKIP "${gtf}" > TMP/tmp.gtf
+	java -Xmx${task.memory.giga}g -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "TMP/jeter.bam" --convert SKIP "${gtf}" > TMP/tmp.gtf
 
 	# bioalcidae
-	java -jar \${JVARKIT_DIST}/bioalcidaejdk.jar --nocode -f "${code}" TMP/jeter.bam | sort -T TMP |\
+	java  -Xmx${task.memory.giga}g -jar \${JVARKIT_DIST}/bioalcidaejdk.jar --nocode -f "${code}" TMP/jeter.bam | sort -T TMP |\
 		uniq -c |\
 		awk '{printf("%s\\t${sample}\\n",\$0);}' > ${sample}_${contig}_${start}_${end}.tsv
 
 	mkdir OUT
 	java -jar \${JVARKIT_DIST}/plotsashimi.jar --hyperlink hg38 --skip-empty -r '${contig}:${start}-${end}' \
 		--gzip --gtf  TMP/tmp.gtf -m "${sample}_${contig}_${start}_${end}.mf" -o \${PWD}/OUT TMP/jeter.bam
-	
+
+	# apply batik	
+	find ./OUT -type f -name "*.svg.gz" | xargs --no-run-if-empty java  -Xmx${task.memory.giga}g -jar ${rasterizer_jar} -m "application/pdf" 
+
+	# find generated pdfs
+	find ./OUT -type f -name "*.pdf" > all.pdf.csv
+
+	cat <<- EOF > version.xml
+	<properties id="${task.process}">
+        	<entry key="name">${task.process}</entry>
+	        <entry key="description">plot sashimi</entry>
+        	<entry key="sample">${sample}</entry>
+        	<entry key="url"><url>${url}</url></entry>
+        	<entry key="interval">${contig}:${start}-${end}</entry>
+        	<entry key="plotsashimi.version">\$(java -jar \${JVARKIT_DIST}/plotsashimi.jar --version)</entry>
+	</properties>
+	EOF
         """
         }
 
@@ -215,3 +292,30 @@ rm chunk.*.pdf
 """
 }
 
+process MERGE_PDF {
+tag "${interval} N=${L.size()}"
+input:
+	val(meta)
+	tuple val(interval),val(L)
+output:
+	path("${params.prefix?:""}${interval}.pdf"),emit:output
+	path("version.xml"),emit:version
+script:
+"""
+hostname 1>&2
+set -o pipefail
+
+cat ${L.join(" ")} | awk -F '/' '{printf("%s,%s\\n",\$NF,\$0);}' |\
+	sort -t, -k1,1 -T. | cut -d, -f2  > jeter.list
+gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -dPDFSETTINGS=/prepress -sOutputFile="${params.prefix?:""}${interval}.pdf" @jeter.list
+rm jeter.list
+
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">merge pdfs</entry>
+        <entry key="gs.version">\$(gs --version)</entry>
+</properties>
+EOF
+"""
+}
