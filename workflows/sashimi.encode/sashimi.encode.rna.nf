@@ -30,13 +30,20 @@ params.bed = "NO_FILE"
 params.gtf = "NO_FILE"
 
 
-include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 include {moduleLoad;runOnComplete} from '../../modules/utils/functions.nf'
 include {BATIK_DOWNLOAD_01} from '../../modules/batik/batik.download.01.nf'
-
-
+include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
+include {SIMPLE_ZIP_01} from '../../modules/utils/zip.simple.01.nf'
 workflow {
-	SASHIMI_ENCODE_01(params, Channel.fromPath(params.bed), file(params.gtf))
+	c1_ch = SASHIMI_ENCODE_01(params, Channel.fromPath(params.bed), file(params.gtf))
+	html =  VERSION_TO_HTML(params,c1_ch.version)
+	zip_ch = Channel.empty().
+			mix(c1_ch.pdfs).
+			mix(c1_ch.version).
+			mix(c1_ch.junctions).
+			mix(html.html)
+	zip_ch = SIMPLE_ZIP_01(params ,zip_ch.collect())
 	}
 
 
@@ -71,8 +78,15 @@ workflow SASHIMI_ENCODE_01 {
 
 		merge_pdf = MERGE_PDF(meta,bam_ch.pdf.groupTuple())
 		version_ch = version_ch.mix(merge_pdf.version)
+
+		junction_ch = COLLECT_ALL_JUNCTIONS(meta,bam_ch.junctions.collect());
+		version_ch = version_ch.mix(junction_ch.version)
+
+		version_ch = MERGE_VERSION(meta, "encodeRNA", "sashimi plot encode RNA", version_ch.collect())
 	emit:
 		version = version_ch
+		pdfs = merge_pdf.output
+		junctions = junction_ch.output
 	}
 
 process ENCODE_METADATA {
@@ -172,7 +186,7 @@ process DOWNLOAD_BAM_01 {
 	afterScript 'rm -rf TMP'
 	errorStrategy  {task.exitStatus!=0 && task.attempt<3 ? 'retry' : 'ignore' }
 	memory "5g"
-	maxForks 1
+	maxForks 5
         input:
 		val(meta)
 		path(rasterizer_jar)
@@ -193,7 +207,7 @@ process DOWNLOAD_BAM_01 {
 
         """
 	hostname 1>&2
-	${moduleLoad("jvarkit samtools")}
+	${moduleLoad("jvarkit samtools tabix")}
 	set -o pipefail
 
 	mkdir TMP
@@ -201,7 +215,7 @@ process DOWNLOAD_BAM_01 {
 	samtools addreplacerg -r '@RG\\tID:${sample}\\tSM:${sample}' -o TMP/jeter.bam -O BAM -
 	samtools index TMP/jeter.bam
 
-	java -Xmx${task.memory.giga}g -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "TMP/jeter.bam" --convert SKIP "${gtf}" > TMP/tmp.gtf
+	tabix "${gtf.toRealPath()}" "${contig}" | java -Xmx${task.memory.giga}g -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "TMP/jeter.bam" --convert SKIP > TMP/tmp.gtf
 
 	# bioalcidae
 	java  -Xmx${task.memory.giga}g -jar \${JVARKIT_DIST}/bioalcidaejdk.jar --nocode -f "${code}" TMP/jeter.bam | sort -T TMP |\
@@ -216,7 +230,7 @@ process DOWNLOAD_BAM_01 {
 	find ./OUT -type f -name "*.svg.gz" | xargs --no-run-if-empty java  -Xmx${task.memory.giga}g -jar ${rasterizer_jar} -m "application/pdf" 
 
 	# find generated pdfs
-	find ./OUT -type f -name "*.pdf" > all.pdf.csv
+	find \${PWD}/OUT -type f -name "*.pdf" > all.pdf.csv
 
 	cat <<- EOF > version.xml
 	<properties id="${task.process}">
@@ -231,14 +245,20 @@ process DOWNLOAD_BAM_01 {
         """
         }
 
-process collectAlljunction {
+process COLLECT_ALL_JUNCTIONS {
 tag "N=${L.size()}"
 input:
-	val L from junctions.collect()
+	val(meta)
+	val(L)
 output:
-	file("${params.prefix}junctions.tsv") into concat_junctions
+	path("${params.prefix}junctions.tsv.gz"),emit:output
+	path("version.xml"),emit:version
 script:
 """
+hostname 1>&2
+set -o pipefail
+
+
 cat << __EOF__ > jeter.txt
 ${L.join("\n")}
 __EOF__
@@ -250,45 +270,17 @@ do
 	awk '{printf("%s\t%s\t%s\t%s\t%s\\n",\$2,\$3,\$4,\$5,\$1);}' \$F >> "${params.prefix}junctions.tsv"
 done
 
+gzip --best "${params.prefix}junctions.tsv"
+
 rm jeter.txt
-"""
-}
-
-process collectPdf {
-tag "collect as PDFN=${L.size()}"
-publishDir params.publishDir , mode: 'copy', overwrite: true
-input:
-	val L from manifest.collect()
-output:
-	file("${params.prefix}all.pdf") into concat_manifest
-script:
-"""
-cat << __EOF__ > jeter.txt
-${L.join("\n")}
-__EOF__
-
-# le deuxieme cat pour eviter erreur si pas de vcf dans fichier
-cat jeter.txt | while read F
-do
-	grep -v "#" "\$F" | cat >> jeter2.txt
-done
-
-# methode recursive parce que ghostview devient lent avec gros pdf
-i=0;
-sort -t '\t' -k1,1 -k2,2n -k6,6  jeter2.txt | cut -f 7 | while read V
-do
-	echo \$V 1>&2
-	inkscape --without-gui  --file=\$V --export-pdf=chunk.\${i}.pdf
-	inkscape --without-gui  --file=\$V --export-width=150 --export-background=white --export-png=chunk.\${i}.png
-	((i=i+1))
-done
-
-
-
-gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -dPDFSETTINGS=/prepress -sOutputFile=${params.prefix}all.pdf `ls chunk.*.pdf | sort -V` 
-
-rm chunk.*.pdf
-
+	
+cat <<- EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+	<entry key="description">merge junctions</entry>
+        <entry key="count">${L.size()}</entry>
+</properties>
+EOF
 """
 }
 
