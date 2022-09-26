@@ -36,6 +36,11 @@ My Nextflow Pipelines
   * [Plot CNV from VCF](workflows/cnvplotter) Plot CNV as SVG+HTML.
   * [Plot CNV using bed+ samtools depth](/workflows/plotcoverage) Plot CNV as PDF.
 
+### RNAseq
+
+  * [Sashimi/Encode](workflows/sashimi.encode/) sashimi plots from Encode data.
+
+
 ### Relatedness
 
   * [Somalier BAMS](workflows/somalier/somalier.bams/) Somalier on bams.
