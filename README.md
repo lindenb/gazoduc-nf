@@ -59,6 +59,7 @@ My Nextflow Pipelines
   * [Samtools depth](workflows/samtoolsdepth/). Apply `samtools depth` on a set of BAMs.
   * [Samtools depth VCF](workflows/depthvcf/). Apply `samtools depth` on a set of BAMs. ouput is a vcf file.
   * [FlagStats](workflows/flagstats/). Apply 'samtools flagstats' on a set of BAMS.
+  * [SpliceAI](/workflows/spliceai). Apply SpliceAI to a VCF
 
 # Works on my machine
 
