@@ -131,7 +131,8 @@ fi
 # reduce samples
 cut -f 4 TMP/vcf.bed | while read F
 do
-	bcftools query -l "\${F}" | sort -T TMP | uniq > TMP/a
+	# SLS: a negative person ID in the FAM file means that the corresponding participant has withdrawn consent and should therefore be excluded.
+	bcftools query -l "\${F}" | awk '!(\$1 ~ /^\-/)' | sort -T TMP | uniq > TMP/a
 	comm -12 TMP/a TMP/samples.txt |  sort -T TMP | uniq > TMP/b
 	mv TMP/b TMP/samples.txt
 	test -s TMP/samples.txt

@@ -290,6 +290,71 @@ String escapeXml(String s) {
 	return sb.toString();
 	}
 
+String __getVersionCmd(java.util.Set<String> tools) {
+	final StringBuilder sb= new StringBuilder("<dl>");
+	for(String t : tools) {
+		if(t.isEmpty()) continue;
+		sb.append("<dt>").append(t).append("</dt><dd>");
+		if(t.equals("bwa")) {
+			sb.append("\$(bwa 2>&1 | grep Version)");
+			}
+		else if(t.equals("samtools")) {
+			sb.append("\$(samtools  --version | head -n 1| cut -d ' ' -f2)");
+			}
+		else if(t.equals("bcftools")) {
+			sb.append("\$(bcftools --version-only)");
+			}
+		else if(t.equals("bedtools")) {
+			sb.append("\$(bedtools --version)");
+			}
+		else if(t.equals("gatk")) {
+			sb.append("\$(gatk --version 2> /dev/null  | paste -s -d ' ' )");
+			}
+		else if(t.equals("java")) {
+			sb.append("\$( java -version 2>&1 | paste -s  -d ' ' )");
+			}
+		else if(t.equals("javac")) {
+			sb.append("\$(javac -version 2>&1 )");
+			}
+		else if(t.equals("wget")) {
+			sb.append("\$(wget --version |head -n1)");
+			}
+		else if(t.equals("awk")) {
+			sb.append("\$(awk --version | head -n1)");
+			}
+		else if(t.equals("gs")) {
+			sb.append("\$(gs --version)");
+			}
+		else if(t.equals("r")) {
+			sb.append("\$(R --version | head -n1)");
+			}
+		else if(t.startsWith("jvarkit/")) {
+			final String j = t.substring(8);
+			sb.append("\$(java -jar \${JVARKIT_DIST}/" + j + ".jar --version )");
+			}
+		else	{
+			log.warn("getVersionCmd is undefined for  :"+t);
+			}
+		sb.append("</dd>");
+		}
+	sb.append("</dl>");
+	return sb.toString();
+	}
+
+
+String getVersionCmd(String s) {
+	final java.util.Set<String> set = new java.util.TreeSet<>();
+	boolean java=false;
+	for(String t : s.toLowerCase().trim().split("[ \t,;]+")) {
+		set.add(t);
+		if(t.startsWith("jvarkit/")) {
+			java=true;
+			}
+		}
+	if(java) set.add("java");
+	set.remove("");
+	return __getVersionCmd(set);
+	}
 
 void runOnComplete(def wf) {
 wf.onComplete {

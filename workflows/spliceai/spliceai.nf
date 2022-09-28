@@ -43,7 +43,7 @@ def helpMessage() {
   log.info"""
 ## About
 
-call deepvariant to a set of bams
+call SpliceAI to a set of bams
 
 ## Author
 
@@ -52,20 +52,20 @@ ${params.rsrc.author}
 ## Options
 
   * --reference (fasta) ${params.rsrc.reference} [REQUIRED]
-  * --bams (file) one file containing the paths to the BAM/CRAM [REQUIRED]
-  * --beds (file) path to multiple bed files
+  * --vcf (file)  indexed vcf file [REQUIRED]
+  * --bed (file) path to multiple bed files
   * --publishDir (dir) Save output in this directory
   * --prefix (string) files prefix. default: ""
 
 ## Usage
 
 ```
-nextflow -C ../../confs/cluster.cfg  run -resume deepvariant.nf \\
+nextflow -C ../../confs/cluster.cfg  run -resume workflow \\
 	--publishDir output \\
 	--prefix "analysis." \\
 	--reference /path/to/reference.fasta \\
-	--bams /path/to/bams.list \\
-	--beds /path/to/in.bed.list
+	--vcf in.vcf.gz \\
+	--bed /path/to/in.bed
 ```
 
 ## Workflow

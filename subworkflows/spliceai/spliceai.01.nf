@@ -28,7 +28,7 @@ include { BED_CLUSTER_01 } from '../../modules/jvarkit/jvarkit.bedcluster.01.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_CONCAT_01} from '../bcftools/bcftools.concat.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
-include {BED_WITH_VARIANTS_01} from '../../modules/bcftools/bed.with.variants.01.nf'
+//include {BED_WITH_VARIANTS_01} from '../../modules/bcftools/bed.with.variants.01.nf'
 
 workflow SPLICEAI_01 {
 	take:
@@ -42,10 +42,10 @@ workflow SPLICEAI_01 {
 		exons_ch = DOWNLOAD_EXONS(meta,reference, bed)
 		version_ch = version_ch.mix(exons_ch.version)
 
-		bed2_ch = BED_WITH_VARIANTS_01(meta, vcf.combine(exons_ch.bed))
-		version_ch = version_ch.mix(bed2_ch.version)
+		//bed2_ch = BED_WITH_VARIANTS_01(meta, vcf.combine(exons_ch.bed))
+		//version_ch = version_ch.mix(bed2_ch.version)
 
-		clusters_ch = BED_CLUSTER_01(meta.plus("bed_cluster_method":"--jobs 1000"), reference, bed2_ch.output.map{T->T[2]})
+		clusters_ch = BED_CLUSTER_01(meta.plus("bed_cluster_method":"--jobs 1000"), reference, exons_ch.bed)
 		version_ch = version_ch.mix(clusters_ch.version)
 		
 		each_bed = clusters_ch.output.splitText().map{T->file(T.trim())}
@@ -123,7 +123,7 @@ process APPLY_SPLICEAI {
 	tag "${bed.name}"
 	conda "${params.conda}/SPLICEAI"
 	afterScript "rm -rf TMP"
-	cpus 5
+	cpus 2
 	input:
 		val(meta)
 		val(reference)
@@ -147,7 +147,7 @@ process APPLY_SPLICEAI {
 	export TMPDIR=\${PWD}/TMP
 		
 	if ${vcf.name.endsWith(".list")} ; then	
-		bcftools merge --file-list "${vcf.toRealPath()}" --regions-file "${bed}" -O b -o TMP/jeter.bcf
+		bcftools concat --remove-duplicates  --allow-overlaps --file-list "${vcf.toRealPath()}" --regions-file "${bed}" -O b -o TMP/jeter.bcf
 	else
 		bcftools view --regions-file "${bed}" -O b -o TMP/jeter.bcf "${vcf.toRealPath()}"
 	fi
@@ -159,8 +159,8 @@ process APPLY_SPLICEAI {
 		comm -12 TMP/a TMP/b > TMP/jeter.samples
 		test -s TMP/jeter.samples
 
-		awk -F '\t' '(\$6=="affected" || \$6=="case")'  "${pedigree}" | cut -f 2  sort -T TMP | uniq > TMP/cases1.txt
-		awk -F '\t' '(\$6=="unaffected" || \$6=="control")'  "${pedigree}" | cut -f 2  sort -T TMP | uniq > TMP/controls1.txt
+		awk -F '\t' '(\$6=="affected" || \$6=="case")'  "${pedigree}" | cut -f 2 | sort -T TMP | uniq > TMP/cases1.txt
+		awk -F '\t' '(\$6=="unaffected" || \$6=="control")'  "${pedigree}" | cut -f 2  | sort -T TMP | uniq > TMP/controls1.txt
 		comm -12 TMP/b TMP/cases1.txt > TMP/cases.txt
 		comm -12 TMP/b TMP/controls1.txt > TMP/controls.txt
 
