@@ -41,6 +41,7 @@ params.prefix = ""
 params.publishDir = ""
 params.bams = "NO_FILE"
 params.mt_accession = "NC_012920.1"
+params.help=false
 
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 include {getVersionCmd;moduleLoad;runOnComplete} from '../../modules/utils/functions.nf'
@@ -67,12 +68,11 @@ ${params.rsrc.author}
 ## Usage
 
 ```
-nextflow -C ../../confs/cluster.cfg  run -resume workflow \\
+nextflow -C ../../confs/cluster.cfg  run -resume workflow.nf \\
 	--publishDir output \\
 	--prefix "analysis." \\
 	--reference /path/to/reference.fasta \\
-	--vcf in.vcf.gz \\
-	--bed /path/to/in.bed
+	--bams /path/to/bams
 ```
 
 ## Workflow
@@ -93,10 +93,27 @@ if( params.help ) {
 
 
 workflow {
+	
 	ch1 = MT_CALLING(params, params.reference, file(params.references), file(params.bams))
 	html = VERSION_TO_HTML(params,ch1.version)
-	//PUBLISH(ch1.version,html.html,ch1.summary,ch1.pdf.collect())
+	ch2 =  Channel.empty().mix(ch1.version).mix(html.html).mix(ch1.pdf).mix(ch1.zip).mix(ch1.haplocheck)
+	PUBLISH(params,ch2.collect())
 	}
+
+
+process PUBLISH {
+executor "local"
+publishDir "${meta.publishDir}" , mode: 'copy', overwrite: true
+input:
+	val(meta)
+	val(L)
+when:
+	meta.containsKey("publishDir")
+script:
+"""
+cp -v ${L.join(" ")} "${meta.publishDir}"
+"""
+}
 
 workflow MT_CALLING {
 	take:
@@ -118,23 +135,67 @@ workflow MT_CALLING {
 
 
 		each_bam = bams_ch.output.splitCsv(header:true,sep:'\t')
+		
+		haplocheck_ch = DOWNLOAD_HAPLOCHECK(meta)
+		version_ch = version_ch.mix(haplocheck_ch.version)
 
-		sn_ch = EXTRACT_MT_BAM(meta, mt_ch.reference, shifted_ch.reference, each_bam)
+
+		/* SLOW, ignore it for now */
+		wgs_ch = COLLECT_WGS_METRICS(meta,each_bam)
+		version_ch = version_ch.mix(wgs_ch.version)
+
+		sn_ch = EXTRACT_MT_VCF(meta, mt_ch.reference, shifted_ch.reference, mt_ch.gnomad, haplocheck_ch.jar, each_bam)
 		version_ch = version_ch.mix(sn_ch.version)
 		
-		merge_ch = MERGE_BCFS(meta,sn_ch.vcf.collect())
+		merge_ch = ZIP_BCFS(meta,sn_ch.vcf.collect())
 		version_ch = version_ch.mix(merge_ch.version)
 
 		pdf_ch = MERGE_PDFS(meta,sn_ch.pdf.collect())
 		version_ch = version_ch.mix(pdf_ch.version)
 
+		hc_ch = MERGE_HAPLOCHECK(meta, sn_ch.haplocheck.collect())
+		version_ch = version_ch.mix(hc_ch.version)
+
 		version_ch = MERGE_VERSION(meta, "Mitochondrial Calling", "Mitrochondrial Call", version_ch.collect())
 	emit:
+		/* version */
 		version= version_ch
-		vcf = merge_ch.vcf
-		index = merge_ch.index
+		/* zip containing vcf and indexes */
+		zip = merge_ch.zip
+		/* path to each vcf */
+		list = merge_ch.list
+		/* pdf depth of coverage */
 		pdf = pdf_ch.pdf
+		/* haplocheck */
+		haplocheck = hc_ch.output
 	}
+
+process DOWNLOAD_HAPLOCHECK {
+executor "local"
+input:
+	val(meta)
+output:
+	path("haplocheck.jar"),emit:jar
+	path("version.xml"),emit:version
+script:
+	def url="https://github.com/genepi/haplocheck/releases/download/v1.3.3/haplocheck.zip"
+
+"""
+wget -O jeter.zip "${url}"
+unzip jeter.zip
+rm jeter.zip
+
+###############################################################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+	<entry key="name">${task.process}</entry>
+	<entry key="description">download haplocheck. <quote>Haplocheck detects in-sample contamination in mtDNA or WGS sequencing studies by analyzing the mitchondrial content</quote></entry>
+	<entry key="url"><url>${url}</url></entry>
+	<entry key="versions">${getVersionCmd("wget")}</entry>
+</properties>
+EOF
+"""
+}
 
 process MT_REFERENCE {
 input:
@@ -142,15 +203,36 @@ input:
 output:
 	path("chrM.fa"),emit:reference
 	path("version.xml"),emit:version
+	path("gnomad.bcf"),emit:gnomad
 script:
 	def acn = meta.mt_accession
+	def gnomad = acn.equals("NC_012920.1")?"https://storage.googleapis.com/gcp-public-data--gnomad/release/3.1/vcf/genomes/gnomad.genomes.v3.1.sites.chrM.vcf.bgz":""
 """
 hostname 1>&2
-${moduleLoad("samtools bwa")}
+${moduleLoad("samtools bwa bcftools")}
 wget -O chrM.fa "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id=${acn}&rettype=fasta&retmode=text"
 samtools faidx chrM.fa
 samtools dict -A -o chrM.dict chrM.fa
 bwa index -a is chrM.fa
+
+if ${gnomad.isEmpty()} ; then
+
+awk 'BEGIN {printf("##fileformat=VCFv4.3\\n");} {printf("##contig=<ID=%s,length=%s>\\n",\$1,\$2);} END {printf("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\\n");}' chrM.fa.fai |\
+	bcftools view -O b -o gnomad.bcf
+	
+else
+
+echo "chrM\t${acn}" > jeter.chroms
+
+wget -O - "${gnomad}" |\
+	bcftools annotate -x 'INFO,FILTER' -O u |\
+	bcftools annotate -O u --set-id '+gnomad3.1-%POS-%REF-%ALT' |\
+	bcftools annotate -O b -o gnomad.bcf  --rename-chrs jeter.chroms
+
+rm jeter.chroms
+
+fi
+bcftools index gnomad.bcf
 
 ###############################################################################
 cat << EOF > version.xml
@@ -158,7 +240,8 @@ cat << EOF > version.xml
 	<entry key="name">${task.process}</entry>
 	<entry key="description">download and index mitochondrial genome</entry>
 	<entry key="acn">${acn}</entry>
-	<entry key="versions">${getVersionCmd("bwa samtools wget")}</entry>
+	<entry key="gnomad"><url>${gnomad}</url></entry>
+	<entry key="versions">${getVersionCmd("bwa samtools wget bcftools")}</entry>
 </properties>
 EOF
 """
@@ -210,7 +293,83 @@ EOF
 }
 
 
-process EXTRACT_MT_BAM {
+/**
+why ? see https://gnomad.broadinstitute.org/news/2020-11-gnomad-v3-1-mitochondrial-dna-variants/
+
+> Samples with an estimated mtDNA copy number less than 50 were removed (N=6,505 samples) since 
+> they are prone to contamination and NUMT-derived false positive calls.
+> Mitochondrial copy number was calculated as 2*mean mitochondrial coverage/median autosomal coverage. 
+> Samples with a mitochondrial copy number greater than 500 were also removed (N=5,633 samples) 
+> because we observed that these samples are more likely to originate from cell lines, 
+> which contain higher numbers of cell culture related heteroplasmies likely due to somatic mutations 
+> and selection. DNA source information (i.e. blood, saliva, cell line) is not routinely available for samples in gnomAD.
+*/
+process COLLECT_WGS_METRICS {
+tag "${row.new_sample} ${file(row.bam).name}"
+afterScript "rm -rf TMP"
+memory "3g"
+input:
+        val(meta)
+        val(row)
+output:
+	tuple val("${row.new_sample}"),path("${meta.prefix?:""}${row.new_sample}.wgs.metrics.txt"),emit:output
+	path("version.xml"),emit:version
+when:
+	false
+script:
+"""
+hostname 1>&2
+${moduleLoad("samtools gatk/0.0.0")}
+mkdir -p TMP
+
+# fai to bed for autosomes
+awk -F '\t' '(\$1 ~ /^(chr)?[0-9]+\$/) {printf("%s\t0\t%s\\n",\$1,\$2);}' "${row.reference}.fai" > TMP/jeter.bed
+test -s TMP/jeter.bed
+
+# read Length
+RL=`samtools view -F 3840 -T "${row.reference}" "${row.bam}" | head -n 10000 | awk '{N+=length(\$10)*1.0;} END{print (N==0?151:int(N/NR))}'`
+
+# convert bed to intervals
+gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" \
+              BedToIntervalList \
+              INPUT=TMP/jeter.bed \
+              OUTPUT=TMP/interval.list \
+	      SD=${row.reference}
+
+# collect metrics
+gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" \
+	CollectWgsMetrics \
+	INPUT=${row.bam} \
+	VALIDATION_STRINGENCY=SILENT \
+	REFERENCE_SEQUENCE=${row.reference} \
+	INTERVALS=TMP/interval.list \
+	READ_LENGTH=\${RL} \
+	OUTPUT=TMP/jeter.txt \
+	USE_FAST_ALGORITHM=true \
+	INCLUDE_BQ_HISTOGRAM=false \
+	THEORETICAL_SENSITIVITY_OUTPUT=TMP/jeter2.txt
+
+
+
+mv TMP/jeter.txt "${meta.prefix?:""}${row.new_sample}.wgs.metrics.txt"
+mv TMP/jeter2.txt "${meta.prefix?:""}${row.new_sample}.sensitivity.txt"
+
+###############################################################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+	<entry key="name">${task.process}</entry>
+	<entry key="description">autosomal wgs metrics to compare with MT metrics see:<url>//gnomad.broadinstitute.org/news/2020-11-gnomad-v3-1-mitochondrial-dna-variants/</url></entry>
+	<entry key="sample">${row.new_sample}</entry>
+	<entry key="read-length">\${RL}</entry>
+	<entry key="bam">${row.bam}</entry>
+	<entry key="reference">${row.reference}</entry>
+	<entry key="versions">${getVersionCmd("gatk samtools")}</entry>
+</properties>
+EOF
+"""
+}
+
+process EXTRACT_MT_VCF {
 tag "${row.new_sample} ${file(row.bam).name}"
 afterScript "rm -rf TMP"
 memory "3g"
@@ -218,10 +377,14 @@ input:
 	val(meta)
 	path(reference)
 	path(shifted_reference)
+	path(gnomad)
+	path(haplocheck)
 	val(row)
 output:
-	path("${row.sample}.genotyped.bcf"),emit:vcf
-	path("${row.sample}.coverage.pdf"),emit:pdf
+	path("${meta.prefix?:""}${row.new_sample}.genotyped.bcf"),emit:vcf
+	path("${meta.prefix?:""}${row.new_sample}.coverage.pdf"),emit:pdf
+	tuple val("${row.new_sample}"),path("${meta.prefix?:""}${row.new_sample}.metrics.1.txt"),path("${meta.prefix?:""}${row.new_sample}.metrics.2.txt"),emit:metrics
+	path("${meta.prefix?:""}${row.new_sample}.haplocheck.txt"),emit:haplocheck
 	path("version.xml"),emit:version
 script:
 	def ref1  = reference.toRealPath()
@@ -229,7 +392,6 @@ script:
 """
 hostname 1>&2
 ${moduleLoad("samtools bwa gatk/0.0.0 bcftools R")}
-set -o pipefail
 set -x
 mkdir TMP
 
@@ -272,7 +434,7 @@ for REF in "${ref1}" "${ref2}"
 do
 
 	# only call in that area, exclude boundaries
-	awk -F '\t' '(NR==1){L=int(\$2);X=500;printf("%s\t%d\t%d\\n",\$1,X,L-X);}' "\${REF}.fai" > TMP/jeter.bed
+	awk -F '\t' '(NR==1){L=int(\$2);X=700;printf("%s\t%d\t%d\\n",\$1,X,L-X);}' "\${REF}.fai" > TMP/jeter.bed
 	
 
 	## Y use clipping for sup align
@@ -326,10 +488,10 @@ do
 		
 		runmedk<-10
 		
-		pdf("${row.sample}.coverage.pdf",width=20)
+		pdf("${meta.prefix?:""}${row.new_sample}.coverage.pdf",width=20)
 		plot(runmed(T1\$T1,runmedk),type="l",
-			main="Coverage on MT genome for ${row.sample}",
-			sub="${row.bam}",
+			main="Coverage on MT genome for ${row.new_sample}",
+			sub="${file(row.bam).name}",
 			col="blue",
 			ylab="depth",
 			xlab="position",
@@ -355,6 +517,9 @@ do
 
 	fi
 
+	# read length
+	RL=`samtools view -F 3840 -T "${row.reference}" "${row.bam}" | head -n 10000 | awk '{N+=length(\$10)*1.0;} END{print (N==0?150:int(N/NR))}'`
+
 
 	# collect metrics
 	gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" \
@@ -362,10 +527,13 @@ do
 	      INPUT=TMP/jeter.bam \
 	      VALIDATION_STRINGENCY=SILENT \
 	      REFERENCE_SEQUENCE=\${REF} \
-	      OUTPUT=wgs.metrics.\${i}.txt \
+	      OUTPUT=TMP/wgs.metrics.\${i}.txt \
+	      READ_LENGTH=\${RL} \
 	      USE_FAST_ALGORITHM=true \
-	      INCLUDE_BQ_HISTOGRAM=true \
-	      THEORETICAL_SENSITIVITY_OUTPUT=theoretical_sensitivity.\${i}.txt
+	      INCLUDE_BQ_HISTOGRAM=false \
+	      THEORETICAL_SENSITIVITY_OUTPUT=TMP/theoretical_sensitivity.\${i}.txt
+
+	mv "TMP/wgs.metrics.\${i}.txt" "${meta.prefix?:""}${row.new_sample}.metrics.\${i}.txt"
 
 	# call mutect
 	gatk  --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" Mutect2 \
@@ -436,14 +604,25 @@ gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" VariantFiltr
 mv TMP/jeter2.vcf.gz TMP/jeter.vcf.gz
 mv TMP/jeter2.vcf.gz.tbi TMP/jeter.vcf.gz.tbi
 
+
+## annotate ID with gnomad
+bcftools annotate  -a "${gnomad.toRealPath()}" -c ID -O z -o TMP/jeter2.vcf.gz TMP/jeter.vcf.gz
+mv TMP/jeter2.vcf.gz TMP/jeter.vcf.gz
+
+
+# run haplocheck
+java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -cp "${haplocheck.toRealPath()}" genepi.haplocheck.App \
+	--out=${meta.prefix?:""}${row.new_sample}.haplocheck.txt TMP/jeter.vcf.gz
+
+
 # bug mutect2 https://github.com/broadinstitute/gatk/issues/6857
 bcftools view TMP/jeter.vcf.gz |\
 	sed '/ID=AS_FilterStatus/s/Number=A/Number=./'  |\
 	bcftools view -O b -o TMP/jeter.bcf -
 
 
-mv TMP/jeter.bcf "${row.sample}.genotyped.bcf"
-bcftools index "${row.sample}.genotyped.bcf"
+mv TMP/jeter.bcf "${meta.prefix?:""}${row.new_sample}.genotyped.bcf"
+bcftools index "${meta.prefix?:""}${row.new_sample}.genotyped.bcf"
 
 cat << EOF >> version.xml
 </properties>
@@ -453,21 +632,18 @@ EOF
 
 
 
-process MERGE_BCFS {
+process ZIP_BCFS {
 tag "N=${L.size()}"
-afterScript "rm -rf TMP"
-memory "3g"
 input:
         val(meta)
         val(L)
 output:
-        path("${meta.prefix?:""}genotyped.bcf"),emit:vcf
-        path("${meta.prefix?:""}genotyped.bcf.csi"),emit:index
+        path("${meta.prefix?:""}genotyped.list"),emit:list
+        path("${meta.prefix?:""}genotyped.zip"),emit:zip
         path("version.xml"),emit:version
 script:
 """
 hostname 1>&2
-${moduleLoad("bcftools")}
 set -o pipefail
 set -x
 
@@ -475,19 +651,26 @@ cat << EOF > jeter.list
 ${L.join("\n")}
 EOF
 
-bcftools merge --missing-to-ref --file-list jeter.list -O b -o "${meta.prefix?:""}genotyped.bcf"
-bcftools index "${meta.prefix?:""}genotyped.bcf"
+cp jeter.list "${meta.prefix?:""}genotyped.list"
+
+# add indexes to the list
+awk '{printf("%s\\n%s.csi\\n",\$0,\$0);}' jeter.list > jeter2.list
+
+zip -j -0 -@ "${meta.prefix?:""}genotyped.zip" < jeter2.list
+
+rm jeter2.list jeter.list
 
 cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
         <entry key="description">merge bcfs</entry>
         <entry key="count">${L.size()}</entry>
-        <entry key="versions">${getVersionCmd("bcftools")}</entry>
 </properties>
 EOF
 """
 }
+
+
 
 process MERGE_PDFS {
 tag "N=${L.size()}"
@@ -525,22 +708,43 @@ EOF
 
 
 
-process PUBLISH {
-publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
+process MERGE_HAPLOCHECK {
+tag "N=${L.size()}"
+afterScript "rm -rf TMP"
+memory "3g"
 input:
-	path(version)
-	path(html)
-	path(summary)
-	path(pdfs)
+        val(meta)
+        val(L)
 output:
-	path("${params.prefix}mosdepth.zip")
-when:
-	!params.getOrDefault("publishDir","").trim().isEmpty()
+        path("${meta.prefix?:""}haplocheck.tsv"),emit:output
+        path("version.xml"),emit:version
 script:
 """
-zip -j "${params.prefix}mosdepth.zip" ${version} ${html} ${summary} ${pdfs.join(" ")}
+hostname 1>&2
+set -o pipefail
+set -x
+
+cat << EOF > jeter.list
+${L.join("\n")}
+EOF
+
+xargs -a jeter.list cat | tr -d '"' | sed 's/^Sample/#Sample/' | LC_ALL=C sort -t '\t' -k1,1 -T . | uniq > ${meta.prefix?:""}haplocheck.tsv
+
+rm jeter.list
+
+####################################################################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">merge haplocheck output</entry>
+        <entry key="count">${L.size()}</entry>
+</properties>
+EOF
 """
 }
+
+
+
 
 runOnComplete(workflow);
 

@@ -316,8 +316,8 @@ String __getVersionCmd(java.util.Set<String> tools) {
 		else if(t.equals("javac")) {
 			sb.append("\$(javac -version 2>&1 )");
 			}
-		else if(t.equals("wget")) {
-			sb.append("\$(wget --version |head -n1)");
+		else if(t.equals("wget") || t.equals("tabix") || t.equals("bgzip")) {
+			sb.append("\$("+t+" --version |head -n1)");
 			}
 		else if(t.equals("awk")) {
 			sb.append("\$(awk --version | head -n1)");
