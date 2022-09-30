@@ -156,6 +156,9 @@ workflow MT_CALLING {
 		hc_ch = MERGE_HAPLOCHECK(meta, sn_ch.haplocheck.collect())
 		version_ch = version_ch.mix(hc_ch.version)
 
+		merged_bcf = MERGE_BCFS(meta,sn_ch.vcf.collect())
+		version_ch = version_ch.mix(merged_bcf.version)
+
 		version_ch = MERGE_VERSION(meta, "Mitochondrial Calling", "Mitrochondrial Call", version_ch.collect())
 	emit:
 		/* version */
@@ -168,6 +171,8 @@ workflow MT_CALLING {
 		pdf = pdf_ch.pdf
 		/* haplocheck */
 		haplocheck = hc_ch.output
+		/* merged vcf */
+		vcf = merged_bcf.vcf
 	}
 
 process DOWNLOAD_HAPLOCHECK {
@@ -674,7 +679,6 @@ EOF
 
 process MERGE_PDFS {
 tag "N=${L.size()}"
-afterScript "rm -rf TMP"
 memory "3g"
 input:
         val(meta)
@@ -701,6 +705,59 @@ cat << EOF > version.xml
         <entry key="description">merge pdf</entry>
         <entry key="count">${L.size()}</entry>
         <entry key="versions">${getVersionCmd("gs")}</entry>
+</properties>
+EOF
+"""
+}
+
+process MERGE_BCFS {
+tag "N=${L.size()}"
+afterScript "rm -rf TMP"
+memory "3g"
+input:
+        val(meta)
+        val(L)
+output:
+        path("${meta.prefix?:""}merged.bcf"),emit:vcf
+        path("version.xml"),emit:version
+script:
+"""
+hostname 1>&2
+${moduleLoad("bcftools")}
+set -o pipefail
+set -x
+mkdir TMP
+
+cat << EOF > TMP/jeter.list
+${L.join("\n")}
+EOF
+
+SQRT=`awk 'END{z=sqrt(NR); if(z<30) z=50; print (z==int(z)?z:int(z)+1);}' TMP/jeter.list`
+split -a 9 --additional-suffix=.list --lines=\${SQRT} TMP/jeter.list TMP/cluster0.
+
+touch TMP/merged.list
+
+i=1
+find TMP/ -type f -name "cluste*.list" | while read C
+do
+	bcftools merge --missing-to-ref --file-list "\${C}" -O u |\
+		bcftools annotate -x 'FILTER,INFO' -O b -o "TMP/merged0.\${i}.bcf"
+	bcftools index "TMP/merged0.\${i}.bcf"
+	echo "TMP/merged0.\${i}.bcf" >> TMP/merged.list
+	i=\$((i+1))
+done
+
+bcftools merge --missing-to-ref --file-list "TMP/merged.list" -O u |\
+	 bcftools  +fill-tags -O b  -o "${meta.prefix?:""}merged.bcf" '-'  -- -t AN,AC,AF
+bcftools index "${meta.prefix?:""}merged.bcf"
+
+
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">merge vcf</entry>
+        <entry key="count">${L.size()}</entry>
+        <entry key="versions">${getVersionCmd("bcftools")}</entry>
 </properties>
 EOF
 """
