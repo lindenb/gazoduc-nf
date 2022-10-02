@@ -24,7 +24,7 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-include {isHg19;runOnComplete;moduleLoad;getKeyValue;hasFeature;getVersionCmd} from '../../../modules/utils/functions.nf'
+include {isHg19;runOnComplete;moduleLoad;getKeyValue;hasFeature;getVersionCmd;parseBoolean} from '../../../modules/utils/functions.nf'
 include {BURDEN_SAMPLE_WGSELECT_PART_01}  from '../../../subworkflows/burden/burden.samples.wgselect.part.nf'
 include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
 include {MERGE_VERSION} from '../../../modules/version/version.merge.nf'
@@ -40,9 +40,10 @@ params.help=false
 /** use only introns overlapping this bed */
 params.bed= "NO_FILE"
 /** in  intron, only keep/annotate in this interval(s) */
-params.regulatory_bed = "NO_FILE2" //yes FILE2 to avoid conflicts for symbolic links
 params.bed_cluster_method = " --size 1mb "
 params.soacn = "SO:0001627,SO:0001568"
+params.with_utr5=true
+params.with_utr3=true
 
 if(params.help) {
   log.info"""
@@ -66,7 +67,7 @@ ${params.rsrc.author}
 ## Usage
 
 ```
-nextflow -C ../../confs/cluster.cfg  run -resume burden.first.intron.01.nf \\
+nextflow -C ../../confs/cluster.cfg  run -resume workflow.nf \\
         --publishDir output \\
         --prefix "analysis." \\
         --reference /path/to/reference.fasta \\
@@ -83,36 +84,36 @@ exit 0
 }
 
 workflow {
-		burden_ch = BURDEN_1ST_INTRON(params, params.reference, params.vcf, file(params.pedigree),file(params.bed),file(params.regulatory_bed))
+		burden_ch = BURDEN_UTR(params, params.reference, params.vcf, file(params.pedigree),file(params.bed))
 		ZIPIT(params,burden_ch.zip.collect())
 		}
 
-workflow BURDEN_1ST_INTRON {
+workflow BURDEN_UTR {
 	take:
 		meta
 		reference
 		vcf
 		pedigree
 		bed
-		regulatory_bed
 	main:
 
 		version_ch = Channel.empty()
 		to_zip = Channel.empty()
+		
 
-		introns_ch = EXTRACT_1ST_INTRON(meta, reference, bed, regulatory_bed)
-		version_ch = version_ch.mix(introns_ch.version)
+		utr_ch = EXTRACT_UTR(meta, reference, bed)
+		version_ch = version_ch.mix(utr_ch.version)
 	
-		ch1_ch = BURDEN_SAMPLE_WGSELECT_PART_01(meta,reference,vcf, pedigree, introns_ch.merged_bed)
+		ch1_ch = BURDEN_SAMPLE_WGSELECT_PART_01(meta,reference,vcf, pedigree, utr_ch.merged_bed)
 		version_ch = version_ch.mix(ch1_ch.version)
 
-
-		each_intron_bed_ch = introns_ch.output.splitText().map{it.trim()}.map{S->file(S)}
+		each_setfilelist_ch = utr_ch.output.splitText().
+				map{S->file(S.trim())}
 		
 		header_ch = RVTESTS_REHEADER_01(meta, reference)
 		version_ch = version_ch.mix(header_ch.version)
 
-		assoc_ch = RVTEST_FIRST_INTRON(meta, reference, ch1_ch.contig_vcfs, ch1_ch.rvtest_pedigree, header_ch.output, each_intron_bed_ch)
+		assoc_ch = RVTEST_UTR(meta, reference, ch1_ch.contig_vcfs, ch1_ch.rvtest_pedigree, header_ch.output, each_setfilelist_ch)
 		version_ch = version_ch.mix(assoc_ch.version)
 		
 		concat_ch = CONCAT_FILES_01(meta,assoc_ch.output.collect())
@@ -122,7 +123,7 @@ workflow BURDEN_1ST_INTRON {
                 version_ch = version_ch.mix(digest_ch.version)
 		to_zip = to_zip.mix(digest_ch.zip)
 
-		version_ch = MERGE_VERSION(meta, "burden 1st intron", "Burden 1st intron ${vcf}", version_ch.collect())
+		version_ch = MERGE_VERSION(meta, "burden UTR", "Burden UTR ${vcf}", version_ch.collect())
 		to_zip = to_zip.mix(version_ch.version)
 
 		html = VERSION_TO_HTML(params,version_ch.version)
@@ -133,90 +134,157 @@ workflow BURDEN_1ST_INTRON {
 		zip = to_zip
 	}
 
-process EXTRACT_1ST_INTRON {
+
+process EXTRACT_UTR {
 memory "3g"
 afterScript "rm -rf TMP"
 input:
 	val(meta)
 	val(reference)
 	path(bed)
-	path(regulatory_bed)
 output:
 	path("merged.bed"),emit:merged_bed
-	path("first.introns.list"),emit:output
+	path("setfiles.list"),emit:output
 	path("version.xml"),emit:version
 script:
 	def url = isHg19(reference)?"http://hgdownload.cse.ucsc.edu/goldenpath/hg19/database/ensGene.txt.gz":""
 """
 hostname 1>&2
-${moduleLoad("jvarkit bedtools")}
+${moduleLoad("java htslib")}
 set -o pipefail
 
 test ! -z "${url}"
 
 mkdir -p TMP
 
+cat << EOF > TMP/Minikit.java
+import java.util.*;
+import java.io.*;
+public class Minikit {
+	private static class Interval {
+		final int start;
+		final int end;
+		Interval(int start,int end) {
+			this.start = start;
+			this.end = end;
+			}
+		}
+	public static void main(String[] args) {
+	final boolean with_utr5 = ${parseBoolean(meta.with_utr5)};
+	final boolean with_utr3 = ${parseBoolean(meta.with_utr3)};
+	try(BufferedReader br=new BufferedReader(new InputStreamReader(System.in))) {
+		String line;
+		while((line=br.readLine())!=null) {
+			final String[] tokens = line.split("[\t]");
+			final int cdsStart = Integer.parseInt(tokens[6]);
+			final int cdsEnd = Integer.parseInt(tokens[7]);
+			if(cdsStart>= cdsEnd) continue;
+
+			final int nExons = Integer.parseInt(tokens[8]);
+			final int[] exonStarts = Arrays.stream(tokens[ 9].split("[,]")).mapToInt(S->Integer.parseInt(S)).toArray();
+			final int[] exonEnds   = Arrays.stream(tokens[10].split("[,]")).mapToInt(S->Integer.parseInt(S)).toArray();
+			final char strand = tokens[3].charAt(0);
+			final List<Interval> L5 = new ArrayList<>();
+			final List<Interval> L3 = new ArrayList<>();
+			if((strand=='+' && with_utr5) || (strand=='-' && with_utr3)) {
+				final List<Interval> L = (strand=='+'?L5:L3);
+				for(int i=0;i<nExons;i++) {
+					if(exonStarts[i] >= cdsStart) break;
+					L.add(new Interval(exonStarts[i],Math.min(cdsStart,exonEnds[i])));
+					}
+				}
+			if((strand=='-' && with_utr5) || (strand=='+' && with_utr3)) {
+				final List<Interval> L = (strand=='+'?L3:L5);
+				for(int i=nExons-1;i>=0;i--) {
+					if(exonEnds[i] <= cdsEnd) break;
+					L.add(new Interval(Math.max(cdsEnd,exonStarts[i]),exonEnds[i]));
+					}
+				}
+			final List<Interval> L53 = new ArrayList<>(L5);
+			L53.addAll(L3);
+
+			for(int side=0;side<3;++side) {
+				final List<Interval> L;
+				final String suffix;
+				switch(side)
+					case 0: L=L5; suffix="UTR_5"; break;
+					case 1: L=L3; suffix="UTR_3"; break;
+					default: L=L53; suffix="UTR_ALL"; break;
+					}
+				if(L.isEmpty()) continue;
+				Collections.sort(L,(A,B)->Integer.compare(A.start,B.start));
+				System.out.print(tokens[12]+"_"+tokens[1]+"_"+suffix+"\t");
+				for(int i=0;i< L.size();i++) {
+					if(i>0)  System.out.print(",");
+					System.out.print(tokens[2]);
+					System.out.print(":");
+					System.out.print(L.get(i).start+1);
+					System.out.print("-");
+					System.out.print(L.get(i).end);
+					}
+				System.out.println();
+				}
+			}
+		}
+	catch(Throwable err) {
+		err.printStackTrace();
+		System.exit(-1);
+		}
+	}
+}
+EOF
+
+javac -d TMP -sourcepath TMP TMP/Minikit.java
+
 wget -O - "${url}" | gunzip -c |\
-	awk -F '\t' '(int(\$9)>1) {split(\$10,S,/[,]/);split(\$11,E,/[,]/);N=int(\$9);if(\$4=="+") printf("%s\t%d\t%d\t%s\\n",\$3,E[1],int(S[2]),\$2);if(\$4=="-") printf("%s\t%d\t%d\t%s\\n",\$3,E[N-1],int(S[N]),\$2);}' |\
-	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 1 --convert SKIP  |\
-	sort -T TMP -t '\t' -k1,1 -k2,2n -k3,3n --unique > TMP/jeter2.bed
+	java -cp TMP Minikit |\
+	sort -T TMP -t '\t' -k2,2 --unique > TMP/jeter.setfile
 
 
 if ${!bed.name.equals("NO_FILE")} ; then
 
-	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 1 --convert SKIP  "${bed}" |\
-		LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n | cut -f1,2,3 > TMP/jeter3.bed
-	test -s TMP/jeter3.bed
+		
+	bgzip TMP/jeter.bed
+	tabix -p bed --force TMP/jeter.bed.gz
 
-	bedtools intersect -u -a TMP/jeter2.bed -b TMP/jeter3.bed |\
-	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter4.bed
-	mv TMP/jeter4.bed TMP/jeter2.bed
+	java -jar \${JVARKIT_DIST}/setfiletools.jar -R "${reference}" TMP/jeter.bed.gz TMP/jeter.setfile > TMP/jeter2.setfile
+	mv TMP/jeter2.setfile TMP/jeter.setfile
 
 fi
 
-# group the BED of each introns by pool of 'x' bases
+# group the set files by pool of 'x' bases
 mkdir BEDS
-java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/bedcluster.jar -R "${reference}" --out BEDS --names --size "1Mb" TMP/jeter2.bed
-find \${PWD}/BEDS -type f -name "*.bed" > first.introns.list
-test -s first.introns.list
+java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/setfiletools.jar -R "${reference}" --out BEDS  --size "1Mb" TMP/jeter.setfile
+find \${PWD}/BEDS -type f -name "*.setfile" > setfile.list
+test -s setfile.list
 
 # create merged bed
 
-cut -f 1,2,3 TMP/jeter2.bed |\
+java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/setfiletools.jar tobed TMP/jeter.setfile |\
+	cut -f 1,2,3 |\
 	sort -T TMP -t '\t' -k1,1 -k2,2n |\
 	bedtools merge > TMP/jeter.bed
 
-if ${!regulatory_bed.name.equals("NO_FILE2") /* yes 'NO_FILE2' to avoid conflicts with syminks */ } ; then
-
-	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 1 --convert SKIP "${regulatory_bed}" |\
-		cut -f1,2,3 |\
-		LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\
-		bedtools merge  > TMP/jeter2.bed
-
-	bedtools intersect -a TMP/jeter.bed -b TMP/jeter2.bed |\
-		LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter3.bed
-
-	mv TMP/jeter3.bed TMP/jeter.bed	
-
-fi
-
-mv TMP/jeter.bed merged.bed
+mv TMP/jeter.bed  merged.bed
 
 ###############################################################################
 cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
-        <entry key="description">1st intron from ucsc</entry>
+        <entry key="description">extract UTR from UCSC</entry>
+        <entry key="utr5">${meta.with_utr5}</entry>
+        <entry key="utr3">${meta.with_utr3}</entry>
+        <entry key="description">extract UTR from UCSC</entry>
 	<entry key="url"><url>${url}</url></entry>
-	<entry key="bedtools.version">\$(  bedtools --version )</entry>
+	<entry key="versions">${getVersionCmd("bedtools jvarkit/setfiletools")}</entry>
 	<entry key="bed">${bed}</entry>
-	<entry key="regulatory_bed">${regulatory_bed}</entry>
 </properties>
 EOF
 """
 }
 
-process RVTEST_FIRST_INTRON {
+
+process RVTEST_UTR {
 tag "${bed.name}"
 afterScript "rm -rf TMP"
 input:
@@ -225,7 +293,7 @@ input:
 	path(vcfs)
 	path(pedigree)
 	path(reheader)
-	path(bed)
+	path(setfile)
 output:
 	path("assoc.list"),emit:output
 	path("version.xml"),emit:version
@@ -241,40 +309,26 @@ set -o pipefail
 set -x
 mkdir -p TMP ASSOC
 
-cut -f 1,2,3 "${bed}" | sort -T TMP -t '\t' -k1,1 -k2,2n | bedtools merge > TMP/jeter.bed
-bcftools concat -a --regions-file TMP/jeter.bed --file-list "${vcfs}" -O b -o TMP/jeter.bcf
-bcftools index TMP/jeter.bcf
 
-i=1
-awk -F '\t' '{printf("%s:%d-%s\t%s\\n",\$1,int(\$2)+1,\$3,\$4);}' "${bed}" | while read RGN ENST
-do
-	bcftools view TMP/jeter.bcf "\${RGN}" |\
-		java -jar \${JVARKIT_DIST}/vcfburdenfiltergenes.jar -a "\${ENST}" |\
-		bcftools annotate -O z --rename-chrs "${reheader}" -o TMP/jeter.vcf.gz -
+java -jar \${JVARKIT_DIST}/setfiletools.jar tobed "${setfile}" |\
+	cut -f 1,2,3 | sort -T TMP -t '\t' -k1,1 -k2,2n | bedtools merge > TMP/jeter.bed
 
-	if test `bcftools query -f '.' TMP/jeter.vcf.gz | wc -c` -gt 0 ; then
+sed 's/\\([\t,]\\)chr/\\1/g' '${setfile}' > TMP/jeter.setfile
 
-		bcftools index --tbi -f TMP/jeter.vcf.gz
-	
+bcftools concat -a --regions-file TMP/jeter.bed --file-list "${vcfs}" -O u |\
+	bcftools rehader -O z -o TMP/jeter.vcf.gz
+bcftools index -t TMP/jeter.vcf.gz
 
-		echo -n "## \${ENST}: " && bcftools query -f '.' TMP/jeter.vcf.gz | wc -c
 
-		# build setFile
-		echo "\${ENST}\t\${RGN}" | sed 's/\tchr/\t/' > TMP/variants.setfile
+rvtest  --noweb \
+        --inVcf TMP/jeter.vcf.gz \
+	--setFile TMP/jeter.setfile \
+	--pheno "${pedigree}" \
+	--out "ASSOC/part" \
+	${rvtest_params} 1>&2 2> TMP/last.rvtest.log
 
-		rvtest  --noweb \
-        		--inVcf TMP/jeter.vcf.gz \
-			--setFile TMP/variants.setfile \
-	        	--pheno "${pedigree}" \
-		        --out "ASSOC/part.\${i}" \
-			${rvtest_params} 1>&2 2> TMP/last.rvtest.log
 
-		i=\$((i+1))
-
-	fi
-done
-
-find \${PWD}/ASSOC -type f -name "part.*assoc" > assoc.list
+find \${PWD}/ASSOC -type f -name "part*assoc" > assoc.list
 
 ###############################################################################
 cat << EOF > version.xml
@@ -282,7 +336,7 @@ cat << EOF > version.xml
         <entry key="name">${task.process}</entry>
         <entry key="description">invoke rvtest for bed</entry>
 	<entry key="rvtest.path">\$(which rvtest)</entry>
-	<entry key="versions">${getVersionCmd("bedtools rvtest bcftools jvarkit/vcfburdenfiltergenes")}</entry>
+	<entry key="versions">${getVersionCmd("bedtools rvtest bcftools jvarkit/setfiletools")}</entry>
 	<entry key="bed">${bed}</entry>
 </properties>
 EOF

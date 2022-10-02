@@ -51,15 +51,17 @@ script:
 	if ${vcf.name.endsWith(".list")} ; then
 		cat "${vcf}" | while read -r V
 		do
-			bcftools index -s "\$V" | awk -F '\t' -vV=\$V '{printf("%s\t0\t%s\t%s\\n",\$1,\$2,V);}' >> TMP/tmp1.tsv
+			bcftools query -f '%CHROM\t%POS0\t%END\\n' "${V}" | \
+				sort -T TMP -t '\t' -k1,1 -k2,2n |\
+				bedtools merge >> TMP/tmp1.bed
 		done
 
-		sort -T TMP -t '\t' -k1,1 -k2,2n TMP/tmp1.tsv | uniq > TMP/vcf.bed
+		sort -T TMP -t '\t' -k1,1 -k2,2n TMP/tmp1.bed | bedtools merge > TMP/vcf.bed
 	else
 		# regular vcf
-		bcftools index -s "${vcf.toRealPath()}" |\
-			awk -F '\t' '{printf("%s\t0\t%s\t${vcf.toRealPath()}\\n",\$1,\$2);}' |\
-			sort -T TMP -t '\t' -k1,1 -k2,2n | uniq > TMP/vcf.bed
+		bcftools query -f '%CHROM\t%POS0\t%END\\n'  '${vcf}' |\
+			sort -T TMP -t '\t' -k1,1 -k2,2n |\
+			bedtools merge > TMP/vcf.bed
 	fi
 
 	# empty vcf ?
