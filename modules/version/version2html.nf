@@ -96,41 +96,13 @@ ${params.rsrc.author}
 </xsl:template>
 
 
-<xsl:template match="pre">
-<pre><xsl:apply-templates/></pre>
+<xsl:template match="i|b|pre|strong|p|div|span|h1|h2|h3|h4|h5|br|hr|tbody|thead|tfoot|ul|ol|li|tr|td|th|table|dl|dt|dd|caption|code|quote">
+<xsl:element name="{local-name(.)}">
+<xsl:for-each select="@*"><xsl:copy-of select="."/></xsl:for-each>
+<xsl:apply-templates/>
+</xsl:element>
 </xsl:template>
 
-<xsl:template match="b">
-<b><xsl:apply-templates/></b>
-</xsl:template>
-
-<xsl:template match="i">
-<i><xsl:apply-templates/></i>
-</xsl:template>
-
-<xsl:template match="code">
-<code><xsl:apply-templates/></code>
-</xsl:template>
-
-<xsl:template match="table">
-<table><xsl:apply-templates/></table>
-</xsl:template>
-
-<xsl:template match="caption">
-<caption><xsl:apply-templates/></caption>
-</xsl:template>
-
-<xsl:template match="tr">
-<tr><xsl:apply-templates/></tr>
-</xsl:template>
-
-<xsl:template match="td">
-<td><xsl:apply-templates/></td>
-</xsl:template>
-
-<xsl:template match="th">
-<th><xsl:apply-templates/></th>
-</xsl:template>
 
 
 <xsl:template match="a">

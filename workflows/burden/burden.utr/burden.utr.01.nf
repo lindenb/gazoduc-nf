@@ -41,7 +41,7 @@ params.help=false
 params.bed= "NO_FILE"
 /** in  intron, only keep/annotate in this interval(s) */
 params.bed_cluster_method = " --size 1mb "
-params.soacn = "SO:0001627,SO:0001568"
+params.soacn = "" /* empty, take all */
 params.with_utr5=true
 params.with_utr3=true
 
@@ -144,13 +144,13 @@ input:
 	path(bed)
 output:
 	path("merged.bed"),emit:merged_bed
-	path("setfiles.list"),emit:output
+	path("setfile.list"),emit:output
 	path("version.xml"),emit:version
 script:
 	def url = isHg19(reference)?"http://hgdownload.cse.ucsc.edu/goldenpath/hg19/database/ensGene.txt.gz":""
 """
 hostname 1>&2
-${moduleLoad("java htslib")}
+${moduleLoad("java bedtools htslib")}
 set -o pipefail
 
 test ! -z "${url}"
@@ -206,7 +206,7 @@ public class Minikit {
 			for(int side=0;side<3;++side) {
 				final List<Interval> L;
 				final String suffix;
-				switch(side)
+				switch(side) {
 					case 0: L=L5; suffix="UTR_5"; break;
 					case 1: L=L3; suffix="UTR_3"; break;
 					default: L=L53; suffix="UTR_ALL"; break;
@@ -237,30 +237,35 @@ EOF
 javac -d TMP -sourcepath TMP TMP/Minikit.java
 
 wget -O - "${url}" | gunzip -c |\
+	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 3 --convert SKIP |\
 	java -cp TMP Minikit |\
 	sort -T TMP -t '\t' -k2,2 --unique > TMP/jeter.setfile
 
 
 if ${!bed.name.equals("NO_FILE")} ; then
-
-		
+	${bed.name.endsWith(".gz")?"gunzip -c ":"cat"} "${bed}" |\
+		cut -f1,2,3 |
+		java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 1 --convert SKIP |\
+		sort -T TMP -t '\t' -k1,1 -k2,2n |\
+		bedtools merge  > TMP/jeter.bed
 	bgzip TMP/jeter.bed
 	tabix -p bed --force TMP/jeter.bed.gz
 
-	java -jar \${JVARKIT_DIST}/setfiletools.jar -R "${reference}" TMP/jeter.bed.gz TMP/jeter.setfile > TMP/jeter2.setfile
+	java -jar \${JVARKIT_DIST}/setfiletools.jar -R "${reference}" intersectbed TMP/jeter.bed.gz TMP/jeter.setfile > TMP/jeter2.setfile
 	mv TMP/jeter2.setfile TMP/jeter.setfile
 
 fi
 
 # group the set files by pool of 'x' bases
 mkdir BEDS
-java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/setfiletools.jar -R "${reference}" --out BEDS  --size "1Mb" TMP/jeter.setfile
+java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/setfiletools.jar -R "${reference}" cluster --out BEDS  --size "1Mb" TMP/jeter.setfile
+
 find \${PWD}/BEDS -type f -name "*.setfile" > setfile.list
 test -s setfile.list
 
 # create merged bed
 
-java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/setfiletools.jar tobed TMP/jeter.setfile |\
+java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/setfiletools.jar -R "${reference}" tobed TMP/jeter.setfile |\
 	cut -f 1,2,3 |\
 	sort -T TMP -t '\t' -k1,1 -k2,2n |\
 	bedtools merge > TMP/jeter.bed
@@ -276,7 +281,7 @@ cat << EOF > version.xml
         <entry key="utr3">${meta.with_utr3}</entry>
         <entry key="description">extract UTR from UCSC</entry>
 	<entry key="url"><url>${url}</url></entry>
-	<entry key="versions">${getVersionCmd("bedtools jvarkit/setfiletools")}</entry>
+	<entry key="versions">${getVersionCmd("bedtools tabix jvarkit/bedrenamechr jvarkit/setfiletools")}</entry>
 	<entry key="bed">${bed}</entry>
 </properties>
 EOF
@@ -285,7 +290,7 @@ EOF
 
 
 process RVTEST_UTR {
-tag "${bed.name}"
+tag "${setfile.name}"
 afterScript "rm -rf TMP"
 input:
 	val(meta)
@@ -310,13 +315,14 @@ set -x
 mkdir -p TMP ASSOC
 
 
-java -jar \${JVARKIT_DIST}/setfiletools.jar tobed "${setfile}" |\
+java -jar \${JVARKIT_DIST}/setfiletools.jar -R "${reference}" tobed "${setfile}" |\
 	cut -f 1,2,3 | sort -T TMP -t '\t' -k1,1 -k2,2n | bedtools merge > TMP/jeter.bed
 
-sed 's/\\([\t,]\\)chr/\\1/g' '${setfile}' > TMP/jeter.setfile
+#remove chr prefix
+java -jar \${JVARKIT_DIST}/setfiletools.jar -R "${reference}" view --trim-chr '${setfile}' > TMP/jeter.setfile
 
 bcftools concat -a --regions-file TMP/jeter.bed --file-list "${vcfs}" -O u |\
-	bcftools rehader -O z -o TMP/jeter.vcf.gz
+	bcftools annotate  --rename-chrs "${reheader}" -O z -o TMP/jeter.vcf.gz
 bcftools index -t TMP/jeter.vcf.gz
 
 
@@ -334,10 +340,10 @@ find \${PWD}/ASSOC -type f -name "part*assoc" > assoc.list
 cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
-        <entry key="description">invoke rvtest for bed</entry>
+        <entry key="description">invoke rvtest for setfile</entry>
 	<entry key="rvtest.path">\$(which rvtest)</entry>
 	<entry key="versions">${getVersionCmd("bedtools rvtest bcftools jvarkit/setfiletools")}</entry>
-	<entry key="bed">${bed}</entry>
+	<entry key="setfile">${setfile}</entry>
 </properties>
 EOF
 """
