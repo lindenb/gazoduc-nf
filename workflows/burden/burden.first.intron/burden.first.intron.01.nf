@@ -208,7 +208,7 @@ cat << EOF > version.xml
         <entry key="name">${task.process}</entry>
         <entry key="description">1st intron from ucsc</entry>
 	<entry key="url"><url>${url}</url></entry>
-	<entry key="bedtools.version">\$(  bedtools --version )</entry>
+	<entry key="versions">${getVersionCmd("wget bedtools jvarkit/bedrenamechr jvarkit/bedcluster")}</entry>
 	<entry key="bed">${bed}</entry>
 	<entry key="regulatory_bed">${regulatory_bed}</entry>
 </properties>

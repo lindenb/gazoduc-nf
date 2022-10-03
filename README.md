@@ -49,7 +49,10 @@ My Nextflow Pipelines
 ### Burden
 
   * [Burden Coding](workflows/burden/burden.coding.01/) Burden on coding regions.
+  * [Burden First Intron](workflows/burden/burden.first.intron/) Burden on first intron.
+  * [Burden UTR](workflows/burden/burden.utr/) Burden on UTR5', UTR3', UTR5+3'.
   * [WGSelect](workflows/wgselect/basic) Basic "wgselect".
+
 
 ### Misc
 
