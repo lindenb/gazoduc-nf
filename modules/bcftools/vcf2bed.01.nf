@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {getModules} from '../../modules/utils/functions.nf'
+include {moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
 
 process VCF_TO_BED {
 tag "${vcf.name}"
@@ -30,56 +30,38 @@ input:
 	val(meta)
 	path(vcf)
 output:
-	path("vcf2bed.bed"),emit:bed
+	path("vcf2bed.bed"),emit:bed /* chrom start end vcf */
+	path("contigs.txt"),emit:chromosomes /* uniq chromosome names */
 	path("version.xml"),emit:version
 script:
-
-	if(vcf.name.endsWith(".list"))
 	"""
 	hostname 1>&2
 	set -o pipefail
-	module load ${getModules("bcftools")}
+	${moduleLoad("bcftools")}
 
-	cat "${vcf}" | while read V
-	do
-		bcftools index -s "\${V}" | awk -F '\t' -vV=\${V} '{printf("%s\t0\t%s\t%s\\n",\$1,\$2,V);}'
-	done | LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n | uniq > vcf2bed.bed
+	if ${vcf.name.endsWith(".list")} ; then
+		cat "${vcf}" | while read V
+		do
+			bcftools index -s "\${V}" | awk -F '\t' -vV=\${V} '{printf("%s\t0\t%s\t%s\\n",\$1,\$2,V);}'
+		done | LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n | uniq > vcf2bed.bed
 
-
-	
-	cat <<- EOF > version.xml
-	<properties id="${task.process}">
-		<entry key="name">${task.process}</entry>
-		<entry key="description">extract contigs in multiple VCFs using bcftools</entry>
-		<entry key="input">${vcf}</entry>
-		<entry key="bcftools">\$( bcftools --version-only)</entry>
-	</properties>
-	EOF
-	"""
 	else
-	"""
-	hostname 1>&2
-	set -o pipefail
-	module load ${getModules("bcftools")}
 
-	bcftools index -s "${vcf.toRealPath()}" |\
-		awk -F '\t' '{printf("%s\t0\t%s\t${vcf.toRealPath()}\\n",\$1,\$2);}' |\
-		LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n |\
-		uniq > vcf2bed.bed
+		bcftools index -s "${vcf.toRealPath()}" |\
+			awk -F '\t' '{printf("%s\t0\t%s\t${vcf.toRealPath()}\\n",\$1,\$2);}' |\
+			LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n |\
+			uniq > vcf2bed.bed
+	fi
 
+	cut -f1 vcf2bed.bed | sort | uniq > contigs.txt 	
 
 	cat <<- EOF > version.xml
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
-		<entry key="description">extract contigs in one VCFs using bcftools</entry>
-		<entry key="input">${vcf}</entry>
-		<entry key="bcftools">\$( bcftools --version-only)</entry>
+		<entry key="description">extract contigs from VCF(s) using bcftools</entry>
+		<entry key="vcf">${vcf}</entry>
+		<entry key="version">${getVersionCmd("bcftools awk")}</entry>
 	</properties>
 	EOF
-	"""
-	stub:
-	"""
-	touch "vcf2bed.bed"
-	echo "<properties/>" > version.xml
 	"""
 	}

@@ -23,49 +23,38 @@ SOFTWARE.
 
 */
 
-include {getVersionCmd;moduleLoad;getKeyValue;assertFileExists;assertNotEmpty} from '../utils/functions.nf'
+include {moduleLoad;getVersionCmd} from '..//utils/functions.nf'
 
-/**
-extract samples from VCF using bcftools query
-**/
-process SAMPLES_IN_VCF_01 {
+/** merge PDFs using ghostscript */
+process GS_SIMPLE_01 {
 executor "local"
-tag "${file(vcf).name}"
-
+tag "${name} N=${L.size()} TODO FIX LOCAL EXECUTOR"
+afterScript "rm -f jeter.list"
 input:
 	val(meta)
-	val(vcf)
+	tuple val(name),val(L) /* name, list to pdf */
 output:
-	path("samples.txt"),emit:samples
+	path("${meta.prefix?:""}${name}.pdf"),emit:output
 	path("version.xml"),emit:version
 script:
 """
 hostname 1>&2
-${moduleLoad("bcftools")}
-set -x
-#set -o pipefail
+set -o pipefail
 
-if ${vcf.endsWith(".list")} ; then
+cat << EOF  | awk -F '/' '{printf("%s,%s\\n",\$NF,\$0);}' | sort -t, -k1,1V -T. | cut -d, -f2  > jeter.list
+${L.join("\n")}
+EOF
 
-	bcftools concat  --allow-overlaps -O u  --file-list "${vcf}" |\
-	bcftools query -l | sort | uniq > jeter.a
+gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -dPDFSETTINGS=/prepress -sOutputFile="${meta.prefix?:""}${name}.pdf" @jeter.list
 
-else
-
-	bcftools query -l "${vcf}" | sort | uniq > jeter.a
-
-fi
-
-mv -v jeter.a "samples.txt"
-
-##################
+##############################################"
 cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
-        <entry key="description">extract samples from vcf</entry>
-        <entry key="vcf">${vcf}</entry>
-        <entry key="samples.count">\$(wc -l < samples.txt )</entry>
-	<entry key="versions">${getVersionCmd("awk bcftools")}</entry>
+        <entry key="description">merge pdfs using ghostscript</entry>
+        <entry key="name">${name}</entry>
+        <entry key="count">${L.size()}</entry>
+        <entry key="versions">${getVersionCmd("gs")}</entry>
 </properties>
 EOF
 """
