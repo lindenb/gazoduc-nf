@@ -292,9 +292,10 @@ String escapeXml(String s) {
 
 String __getVersionCmd(java.util.Set<String> tools) {
 	final StringBuilder sb= new StringBuilder("<dl>");
-	for(String t : tools) {
-		if(t.isEmpty()) continue;
-		sb.append("<dt>").append(t).append("</dt><dd>");
+	for(String t0 : tools) {
+		if(t0.isEmpty()) continue;
+		sb.append("<dt>").append(t0).append("</dt><dd>");
+		final String t = t0.toLowerCase();
 		if(t.equals("bwa")) {
 			sb.append("\$(bwa 2>&1 | grep Version)");
 			}
@@ -316,7 +317,7 @@ String __getVersionCmd(java.util.Set<String> tools) {
 		else if(t.equals("javac")) {
 			sb.append("\$(javac -version 2>&1 )");
 			}
-		else if(t.equals("wget") || t.equals("tabix") || t.equals("bgzip") || t.equals("rvtest") || t.equals("gcc") || t.equals("g++")) {
+		else if(t.equals("wget") || t.equals("git") || t.equals("tabix") || t.equals("bgzip") || t.equals("rvtest") || t.equals("gcc") || t.equals("g++")) {
 			sb.append("\$("+t+" --version |head -n1)");
 			}
 		else if(t.equals("awk")) {
@@ -328,12 +329,19 @@ String __getVersionCmd(java.util.Set<String> tools) {
 		else if(t.equals("r")) {
 			sb.append("\$(R --version | head -n1)");
 			}
+		else if(t.equals("vep")) {
+			sb.append("\$(vep --help 2>&1 | grep \"^  ensembl\" | tr -s \" \" | paste -s -d ' ')");
+			}
 		else if(t.startsWith("jvarkit/")) {
 			final String j = t.substring(8);
 			sb.append("\$(java -jar \${JVARKIT_DIST}/" + j + ".jar --version )");
 			}
+		else if(t.startsWith("picard/")) {
+			final String j = t.substring(7);
+			sb.append("\$(java -jar \${PICARD_JAR} "+t0+" --version 2>&1)");
+			}
 		else	{
-			log.warn("getVersionCmd is undefined for  :"+t);
+			log.warn("getVersionCmd is undefined for  :"+t0);
 			}
 		sb.append("</dd>");
 		}
@@ -345,9 +353,9 @@ String __getVersionCmd(java.util.Set<String> tools) {
 String getVersionCmd(String s) {
 	final java.util.Set<String> set = new java.util.TreeSet<>();
 	boolean java=false;
-	for(String t : s.toLowerCase().trim().split("[ \t,;]+")) {
+	for(String t : s.trim().split("[ \t,;]+")) {
 		set.add(t);
-		if(t.startsWith("jvarkit/")) {
+		if(t.startsWith("jvarkit/") || t.startsWith("picard/")) {
 			java=true;
 			}
 		}
