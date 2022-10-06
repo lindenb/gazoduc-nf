@@ -51,6 +51,8 @@ My Nextflow Pipelines
   * [Burden Coding](workflows/burden/burden.coding.01/) Burden on coding regions.
   * [Burden First Intron](workflows/burden/burden.first.intron/) Burden on first intron.
   * [Burden UTR](workflows/burden/burden.utr/) Burden on UTR5', UTR3', UTR5+3'.
+  * [Burden uORF](workflows/burden/burden.uorf.vep/) Burden on micro-ORF (uORF) in UTR. Using VEP plugin.
+  * [Burden Sliding windows](burden/burden.sliding.window/) Burden with sliding windows.
   * [WGSelect](workflows/wgselect/basic) Basic "wgselect".
 
 
