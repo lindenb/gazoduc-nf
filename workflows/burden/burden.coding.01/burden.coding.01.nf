@@ -24,7 +24,7 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-include {moduleLoad;getKeyValue;hasFeature} from '../../../modules/utils/functions.nf'
+include {getVersionCmd;runOnComplete;moduleLoad;getKeyValue;hasFeature} from '../../../modules/utils/functions.nf'
 include {VALIDATE_CASE_CONTROL_PED_01} from '../../../modules/pedigree/validate.case.ctrl.pedigree.01.nf'
 include {VCF_INTER_CASES_CONTROLS_01} from '../../../subworkflows/bcftools/vcf.inter.cases.controls.01.nf'
 include {DOWNLOAD_GTF_01} from '../../../modules/gtf/download.gtf.01.nf'
@@ -69,12 +69,12 @@ ${params.rsrc.author}
 ## Usage
 
 ```
-nextflow -C ../../confs/cluster.cfg  run -resume burden.coding.01.nf \\
+nextflow -C ../../confs/cluster.cfg  run -resume workflow.nf \\
         --publishDir output \\
         --prefix "analysis." \\
         --reference /path/to/reference.fasta \\
         --vcf /path/to/my.vcf.gz \\
-        --pedigree /path/to/input.ped \
+        --pedigree /path/to/input.ped
 ```
 
 ## Workflow
@@ -194,14 +194,14 @@ hostname 1>&2
 ${moduleLoad("jvarkit bedtools")}
 set -o pipefail
 
-java -jar /${JVARKIT_DIST}/gtf2bed.jar -R "${reference}" --columns "gtf.feature,gene_type" "${gtf}" |\
+java -jar \${JVARKIT_DIST}/gtf2bed.jar -R "${reference}" --columns "gtf.feature,gene_type" "${gtf}" |\
 	awk -F '\t' '(\$4=="gene" && \$5=="protein_coding")' |\
 	cut -f1,2,3 |\
 	bedtools slop -b ${slop} -g "${reference}.fai" |\
 	LC_ALL=C sort -S ${task.memory.kilo} -T . -t '\t' -k1,1 -k2,2n |\
 	bedtools merge > genes.bed
 
-java -jar /${JVARKIT_DIST}/gtf2bed.jar -R "${reference}" --columns "gtf.feature" "${gtf}" |\
+java -jar \${JVARKIT_DIST}/gtf2bed.jar -R "${reference}" --columns "gtf.feature" "${gtf}" |\
 	awk -F '\t' '(\$4=="exon")' |\
 	cut -f1,2,3 |\
 	bedtools slop -b ${slop} -g "${reference}.fai" |\
@@ -234,7 +234,7 @@ cat << EOF > version.xml
         <entry key="description">extract protein_coding genes from gtf</entry>
 	<entry key="gtf">${gtf}</entry>
 	<entry key="slop">${slop}</entry>
-	<entry key="bedtools.version">\$(  bedtools --version )</entry>
+	<entry key="versions">${getVersionCmd("bedtools awk jvarkit/gtf2bed")}</entry>
 	<entry key="number.of.genes">\$( wc -l < genes.bed )</entry>
 	<entry key="number.of.exons">\$( wc -l < exons.bed )</entry>
 	<entry key="bed">${bed}</entry>
@@ -277,7 +277,7 @@ cat << EOF > version.xml
         <entry key="description">keep exons from genes bed</entry>
 	<entry key="beds">${beds}</entry>
 	<entry key="exons">${exons}</entry>
-	<entry key="bedtools.version">\$(  bedtools --version )</entry>
+	<entry key="bedtools.version">${getVersionCmd("bedtools")}</entry>
 </properties>
 EOF
 """
@@ -345,23 +345,4 @@ zip -r "${prefix}archive.zip" "${prefix}archive"
 """
 }
 
-
-
-
-workflow.onComplete {
-
-    println ( workflow.success ? """
-        Pipeline execution summary
-        ---------------------------
-        Completed at: ${workflow.complete}
-        Duration    : ${workflow.duration}
-        Success     : ${workflow.success}
-        workDir     : ${workflow.workDir}
-        exit status : ${workflow.exitStatus}
-        """ : """
-        Failed: ${workflow.errorReport}
-        exit status : ${workflow.exitStatus}
-        """
-    )
-}
-
+runOnComplete(workflow);
