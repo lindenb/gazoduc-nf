@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 
-include { getKeyValue; getModules; isHg19; isHg38} from '../../modules/utils/functions.nf'
+include { moduleLoad;getVersionCmd;getKeyValue; isHg19; isHg38} from '../../modules/utils/functions.nf'
 include { SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.nf'
 
 
@@ -59,7 +59,6 @@ workflow DELLY2_RESOURCES {
 
 process GET_MAPPABILITY {
 tag "${file(reference).name}"
-label "process_tiny"
 input:
 	val(meta)
 	val(reference)
@@ -99,7 +98,6 @@ script:
 process GET_EXCLUDE {
 tag "${file(reference).name}"
 afterScript "rm -f jeter.bed jeter2.bed jeter.interval_list"
-label "process_tiny"
 input:
 	val(meta)
 	val(reference)
@@ -110,13 +108,13 @@ script:
 	def url1 = (isHg19(reference)?"https://raw.githubusercontent.com/hall-lab/speedseq/master/annotations/ceph18.b37.lumpy.exclude.2014-01-15.bed":(isHg38(referen,ce)?"https://raw.githubusercontent.com/hall-lab/speedseq/master/annotations/exclude.cnvnator_100bp.GRCh38.20170403.bed":""))
 """
 hostname 1>&2
-module load ${getModules("jvarkit")}
+${moduleLoad("jvarkit")}
 set -o pipefail
 
 if [ ! -z "${url1}" ] ; then
 	wget -O - "${url1}" |\
 		cut -f 1,2,3|\
-		java -jar \${JVARKIT_DIST}/bedrenamechr.jar -R "${params.reference}" --column 1 --convert SKIP > exclude.bed 
+		java -jar \${JVARKIT_DIST}/bedrenamechr.jar -R "${reference}" --column 1 --convert SKIP > exclude.bed 
 else
 		touch exclude.bed
 fi
@@ -127,6 +125,7 @@ fi
 		<entry key="name">${task.process}</entry>
 		<entry key="description">Download Exclude File</entry>
 		<entry key="url"><a>${url1}</a></entry>
+		<entry key="version">${getVersionCmd("wget jvarkit/bedrenamechr")}</entry>
 	</properties>
 	EOF
 """
@@ -145,7 +144,7 @@ output:
 script:
 """
 hostname 1>&2
-module load ${getModules("bedtools")}
+${moduleLoad("bedtools")}
 
 awk -F '\t' '(!(\$1 ~ /^(chr)?[0-9XY]+\$/)) {printf("%s\t0\t%s\\n",\$1,\$2);}'  "${reference}.fai" > jeter2.bed
 
@@ -160,6 +159,7 @@ rm jeter2.bed
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
 		<entry key="description">merge ${xclude} , ${gaps} and non standard contigs from reference</entry>
+		<entry key="version">${getVersionCmd("bedtools")}</entry>
 	</properties>
 	EOF
 
@@ -169,7 +169,6 @@ rm jeter2.bed
 
 
 process DOWNLOAD_DELLY2 {
-	label "process_tiny"
 	errorStrategy "retry"
 	maxRetries 3
 	input:
@@ -178,7 +177,7 @@ process DOWNLOAD_DELLY2 {
 		path("delly"),emit:executable
 		path("version.xml"),emit:version
 	script:
-		def version = getKeyValue(meta,"delly2_version","v1.0.3")
+		def version = getKeyValue(meta,"delly2_version","v1.1.5")
 		def url = "https://github.com/dellytools/delly/releases/download/${version}/delly_${version}_linux_x86_64bit"
 	"""
 	wget -O delly "${url}"
@@ -190,6 +189,7 @@ process DOWNLOAD_DELLY2 {
 		<entry key="description">Download delly</entry>
 		<entry key="version">${version}</entry>
 		<entry key="url"><a>${url}</a></entry>
+		<entry key="version">${getVersionCmd("wget")}</entry>
 	</properties>
 	EOF
 	"""

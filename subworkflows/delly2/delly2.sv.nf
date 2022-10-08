@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include { getKeyValue; getModules; getBoolean} from '../../modules/utils/functions.nf'
+include {getVersionCmd;getKeyValue; moduleLoad; getBoolean} from '../../modules/utils/functions.nf'
 include {DELLY2_RESOURCES} from './delly2.resources.nf' 
 include {SAMTOOLS_CASES_CONTROLS_01} from '../samtools/samtools.cases.controls.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
@@ -105,7 +105,7 @@ process CALL_DELLY {
     input:
 	val(meta)
 	val(reference)
-	val(delly)
+	path(delly)
 	val(exclude)
 	tuple val(name),val(bam)
     output:
@@ -116,8 +116,9 @@ process CALL_DELLY {
 	hostname 1>&2
 	mkdir -p TMP
 	export TMPDIR=\${PWD}/TMP
+	export PATH=\${PWD}:\${PATH}
 
-	${delly} call --exclude "${exclude}" \
+	delly call --exclude "${exclude}" \
 		--outfile "TMP/${name}.bcf" \
 		--genome "${reference}" \
 		"${bam}" 1>&2
@@ -131,7 +132,7 @@ process CALL_DELLY {
 		<entry key="description">call delly</entry>
 		<entry key="sample">${name}</entry>
 		<entry key="bam">${bam}</entry>
-		<entry key="delly">\$(${delly} --version  | head -n1 | cut -d':' -f 2)</entry>
+		<entry key="versions">${getVersionCmd("delly")}</entry>
 	</properties>
 	EOF
 	"""
@@ -145,7 +146,7 @@ process MERGE_DELLY {
     input:
 	val(meta)
 	val(reference)
-	val(delly)
+	path(delly)
 	val(bcfs)
     output:
 	path("merged.bcf"),emit:output
@@ -155,17 +156,18 @@ process MERGE_DELLY {
 	def bnd = getBoolean(meta,"bnd")
     """
     hostname 1>&2
-    module load ${getModules("bcftools")}
+    ${moduleLoad("bcftools")}
     export LC_ALL=C
     mkdir TMP
     export TMPDIR=\${PWD}/TMP
+    export PATH=\${PWD}:\${PATH}
 
 # see https://github.com/dellytools/delly/issues/158
 cat << EOF > TMP/jeter.tsv
 ${bcfs.join("\n")}
 EOF
     
-    ${delly} merge -o TMP/merged.bcf TMP/jeter.tsv 1>&2
+    delly merge -o TMP/merged.bcf TMP/jeter.tsv 1>&2
 
 	if [ "${bnd?"Y":"N"}" == "N" ] ; then
                 bcftools view -e 'INFO/SVTYPE="BND"' -O b -o  merged.bcf TMP/merged.bcf
@@ -182,7 +184,7 @@ EOF
 		<entry key="name">${task.process}</entry>
 		<entry key="description">merge delly</entry>
 		<entry key="keep bnd">${bnd}</entry>
-		<entry key="delly">\$(${delly} --version  | head -n1 | cut -d':' -f 2)</entry>
+		<entry key="versions">${getVersionCmd("bcftools")}</entry>
 	</properties>
 	EOF
 
@@ -198,7 +200,7 @@ process GENOTYPE_DELLY {
     input:
 	val(meta)
 	val(reference)
-	val(delly)
+	path(delly)
         val(merged)
 	val(exclude)
         tuple val(name),val(bam)
@@ -210,8 +212,9 @@ process GENOTYPE_DELLY {
     hostname 1>&2
     mkdir -p TMP
     export TMPDIR=\${PWD}/TMP
+    export PATH=\${PWD}:\${PATH}
 
-    ${delly} call --vcffile "${merged}" \
+    delly call --vcffile "${merged}" \
 		--exclude "${exclude}" \
 		--outfile "TMP/jeter.bcf" \
 		--genome "${reference}" \
@@ -228,7 +231,7 @@ process GENOTYPE_DELLY {
 		<entry key="sample">${name}</entry>
 		<entry key="bam">${bam}</entry>
 		<entry key="merged">${merged}</entry>
-		<entry key="delly">\$(${delly} --version  | head -n1 | cut -d':' -f 2)</entry>
+		<entry key="versions">${getVersionCmd("delly")}</entry>
 	</properties>
 	EOF
     """
@@ -250,7 +253,7 @@ process MERGE_GENOTYPES {
     script:
     """
     hostname 1>&2
-    module load ${getModules("bcftools")}
+    ${moduleLoad("bcftools")}
 
 cat << EOF > jeter.list
 ${bcfs.join("\n")}
@@ -266,7 +269,7 @@ EOF
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
 		<entry key="description">merge genotype delly</entry>
-		<entry key="bcftools">\$( bcftools --version-only)</entry>
+		<entry key="versions">${getVersionCmd("bcftools")}</entry>
 		<entry key="number of files">${bcfs.size()}</entry>
 	</properties>
 	EOF
@@ -281,7 +284,7 @@ process FILTER_DELLY {
     memory "5g"
     input:
         val(meta)
-        val(delly)
+        path(delly)
 	val(cases_ctrl_list)
 	val(merged)
     output:
@@ -292,8 +295,10 @@ process FILTER_DELLY {
 	prefix = getKeyValue(meta,"prefix","")
     """
     export LC_ALL=C
-    module load ${getModules("bcftools")}
-    ${delly} filter -f germline  -o jeter.bcf "${merged}" 1>&2
+    ${moduleLoad("bcftools")}
+    export PATH=\${PWD}:\${PATH}
+
+    delly filter -f germline  -o jeter.bcf "${merged}" 1>&2
 
     bcftools sort --max-mem "${task.memory.giga}G" -T . -O v -o "jeter1.vcf" jeter.bcf
 
@@ -322,8 +327,7 @@ process FILTER_DELLY {
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
 		<entry key="description">delly filter</entry>
-		<entry key="delly">\$(${delly} --version  | head -n1 | cut -d':' -f 2)</entry>
-		<entry key="bcftools">\$( bcftools --version-only)</entry>
+		<entry key="versions">${getVersionCmd("bcftools delly")}</entry>
 	</properties>
 	EOF
 
@@ -340,7 +344,7 @@ process CALL_CNV {
     input:
 	val(meta)
 	val(reference)
-	val(delly)
+	path(delly)
 	val(mappability)
 	tuple val(name),val(bam),val(sv)
     output:
@@ -351,7 +355,9 @@ process CALL_CNV {
 	hostname 1>&2
 	mkdir -p TMP
 	export TMPDIR=\${PWD}/TMP
-	${delly} cnv \
+	export PATH=\${PWD}:\${PATH}
+
+	delly cnv \
 		--outfile "${name}.cnv.bcf" \
 		--mappability "${mappability}" \
 		--genome "${params.reference}" \
@@ -367,7 +373,7 @@ process CALL_CNV {
 		<entry key="sample">${name}</entry>
 		<entry key="bam">${bam}</entry>
 		<entry key="sv">${sv}</entry>
-		<entry key="delly">\$(${delly} --version  | head -n1 | cut -d':' -f 2)</entry>
+		<entry key="versions">${getVersionCmd("delly")}</entry>
 	</properties>
 	EOF
 	"""
@@ -380,7 +386,7 @@ process MERGE_CNV {
     memory '20 g'
     input:
 	val(meta)
-	val(delly)
+	path(delly)
 	val(bcfs)
     output:
 	path("merged.bcf"),emit:output
@@ -389,12 +395,13 @@ process MERGE_CNV {
     """
     hostname 1>&2
     export LC_ALL=C
+    export PATH=\${PWD}:\${PATH}
 
 cat << EOF > jeter.tsv
 ${bcfs.join("\n")}
 EOF
 
-    ${delly} merge -e -p -o merged.bcf  -m 1000 -n 10000000 jeter.tsv 1>&2
+    delly merge -e -p -o merged.bcf  -m 1000 -n 10000000 jeter.tsv 1>&2
 
 rm jeter.tsv
 
@@ -404,7 +411,7 @@ rm jeter.tsv
 		<entry key="name">${task.process}</entry>
 		<entry key="description">merge CNV</entry>
 		<entry key="count">${bcfs.size()}</entry>
-		<entry key="delly">\$(${delly} --version  | head -n1 | cut -d':' -f 2)</entry>
+		<entry key="version">${getVersionCmd("delly")}</entry>
 	</properties>
 	EOF
 
@@ -421,7 +428,7 @@ process GENOTYPE_CNV {
     input:
 	val(meta)
         val(reference)
-        val(delly)
+        path(delly)
 	val(merged)
         val(mappability)
         tuple val(name),val(bam)
@@ -430,14 +437,12 @@ process GENOTYPE_CNV {
 	path("version.xml"),emit:version
     script:
     """
-
-
-
     hostname 1>&2
     mkdir -p TMP
     export TMPDIR=\${PWD}/TMP
+    export PATH=\${PWD}:\${PATH}
 
-    ${delly} cnv  \
+    delly cnv  \
 		--segmentation \
                 --vcffile "${merged}" \
 		--outfile "jeter.bcf" \
@@ -457,7 +462,7 @@ process GENOTYPE_CNV {
 		<entry key="description">genotype CNV</entry>
 		<entry key="sample">${name}</entry>
 		<entry key="bam">${bam}</entry>
-		<entry key="delly">\$(${delly} --version  | head -n1 | cut -d':' -f 2)</entry>
+		<entry key="version">${getVersionCmd("delly")}</entry>
 	</properties>
 	EOF
     """
@@ -476,7 +481,7 @@ process MERGE_CNV_GENOTYPED {
     script:
     """
     hostname 1>&2
-    module load ${getModules("bcftools")}
+    ${moduleLoad("bcftools")}
 
 cat << EOF > jeter.list
 ${bcfs.join("\n")}
@@ -490,7 +495,7 @@ EOF
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
 		<entry key="description">merge CNVs</entry>
-		<entry key="bcftools">\$( bcftools --version-only)</entry>
+		<entry key="versions">${getVersionCmd("bcftools")}</entry>
 		<entry key="count">${bcfs.size()}</entry>
 	</properties>
 	EOF
@@ -505,7 +510,7 @@ process CLASSIFY_CNV {
     memory "5g"
     input:
 	val(meta)
-	val(delly)
+	path(delly)
 	val(merged)
     output:
 	path("${params.prefix}cnv.bcf"),emit:output
@@ -516,8 +521,10 @@ process CLASSIFY_CNV {
     """
     hostname 1>&2
     export LC_ALL=C
-    module load ${getModules("bcftools")}
-    ${delly} classify -f germline  -o jeter.bcf "${merged}" 1>&2
+    ${moduleLoad("bcftools")}
+    export PATH=\${PWD}:\${PATH}
+
+    delly classify -f germline  -o jeter.bcf "${merged}" 1>&2
 
     bcftools sort --max-mem ${task.memory.giga}G -T . -O b -o "${prefix}cnv.bcf" jeter.bcf
     bcftools index "${prefix}cnv.bcf"
@@ -527,8 +534,7 @@ process CLASSIFY_CNV {
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
 		<entry key="description">classify CNV</entry>
-		<entry key="delly">\$(${delly} --version  | head -n1 | cut -d':' -f 2)</entry>
-		<entry key="bcftools">\$( bcftools --version-only)</entry>
+		<entry key="versions">${getVersionCmd("bcftools delly")}</entry>
 	</properties>
 	EOF
     """

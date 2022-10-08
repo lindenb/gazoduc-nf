@@ -332,6 +332,9 @@ String __getVersionCmd(java.util.Set<String> tools) {
 		else if(t.equals("vep")) {
 			sb.append("\$(vep --help 2>&1 | grep \"^  ensembl\" | tr -s \" \" | paste -s -d ' ')");
 			}
+		else if(t.equals("delly") || t.equals("delly2")) {
+			sb.append("\$(delly --version  | head -n1 | cut -d':' -f 2)");
+			}
 		else if(t.startsWith("jvarkit/")) {
 			final String j = t.substring(8);
 			sb.append("\$(java -jar \${JVARKIT_DIST}/" + j + ".jar --version )");

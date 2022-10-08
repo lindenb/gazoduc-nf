@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include { moduleLoad; getKeyValue; getModules; getBoolean; assertNotEmpty} from '../../modules/utils/functions.nf'
+include { getVersionCmd;moduleLoad; getKeyValue; getModules; getBoolean; assertNotEmpty} from '../../modules/utils/functions.nf'
 include {SAMTOOLS_CASES_CONTROLS_01} from '../samtools/samtools.cases.controls.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include { SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.nf'
@@ -392,18 +392,20 @@ input:
 	val(meta)
 	val(reference)
 	val(img)
-	val(gff)
+	val(gff3)
 	val(L)
 output:
-	path("${prefix}smoove.bcf"),emit:vcf
-	path("${prefix}smoove.bcf.csi"),emit:index
+	path("${meta.prefix?:""}smoove.bcf"),emit:vcf
+	path("${meta.prefix?:""}smoove.bcf.csi"),emit:index
 	path("version.xml"),emit:version
 script:
-	prefix = getKeyValue(meta,"prefix","")
+	def prefix = meta.prefix?:""
+	def gff = ""//gff3
+	log.warn("JE SUPPRIME GFF POUR LE MOMENT. CA BUG POUR SOLENA OCT 2022")
 """
 	hostname 1>&2
 	${moduleLoad("bcftools picard")}
-
+	set -x
 	mkdir -p TMP TMP2
 	# smoove will write to the system TMPDIR. For large cohorts, make sure to set this to something with a lot of space
 	export TMPDIR=\${PWD}/TMP2
@@ -421,7 +423,7 @@ EOF
 			`xargs -a TMP/jeter.list -L 1 dirname | awk '{printf(" --bind %s:/d%d ",\$0,NR);}'  ` \
 		${img} \
 		smoove paste --name paste  \
-			 `awk -F '/' '{printf(" /d%d/%s ",NR,\$NF);}' jeter.list`
+			 `awk -F '/' '{printf(" /d%d/%s ",NR,\$NF);}' TMP/jeter.list`
 
 	mv paste.smoove.square.vcf.gz TMP/jeter1.vcf.gz
 
@@ -464,6 +466,7 @@ fi
 		<entry key="description">smoove paste all and annotate</entry>
 		<entry key="gff">${gff}</entry>
 		<entry key="count">${L.size()}</entry>
+		<entry key="versions">${getVersionCmd("bcftools picard/UpdateVcfSequenceDictionary")}</entry>
 	</properties>
 	EOF
 """

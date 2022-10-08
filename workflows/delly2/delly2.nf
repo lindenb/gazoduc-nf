@@ -37,7 +37,7 @@ params.publishDir = ""
 /** files prefix */
 params.prefix = ""
 /** delly version *:
-params.delly2_version = "v1.0.3"
+params.delly2_version = "v1.1.5"
 /** keep INFO/TYPE=BND */
 params.bnd=true
 /** search CNVs */
