@@ -23,12 +23,11 @@ SOFTWARE.
 
 */
 
-include {moduleLoad;getVersionCmd} from '..//utils/functions.nf'
+include {moduleLoad;getVersionCmd;parseBoolean} from '..//utils/functions.nf'
 
 /** merge PDFs using ghostscript */
 process GS_SIMPLE_01 {
-executor "local"
-tag "${name} N=${L.size()} TODO FIX LOCAL EXECUTOR"
+tag "${name} N=${L.size()}"
 afterScript "rm -f jeter.list"
 input:
 	val(meta)
@@ -37,11 +36,19 @@ output:
 	path("${meta.prefix?:""}${name}.pdf"),emit:output
 	path("version.xml"),emit:version
 script:
+	def with_header = parseBoolean(meta.with_header)
 """
 hostname 1>&2
 set -o pipefail
 
-cat << EOF  | awk -F '/' '{printf("%s,%s\\n",\$NF,\$0);}' | sort -t, -k1,1V -T. | cut -d, -f2  > jeter.list
+if ${with_header} ; then
+	echo "${name}" | groff -Tps | ps2pdf - cover.pdf
+	echo "cover.pdf" > jeter.list
+else
+	touch jeter.list
+fi
+
+cat << EOF  | awk -F '/' '{printf("%s,%s\\n",\$NF,\$0);}' | sort -t, -k1,1V -T. | cut -d, -f2  >> jeter.list
 ${L.join("\n")}
 EOF
 
