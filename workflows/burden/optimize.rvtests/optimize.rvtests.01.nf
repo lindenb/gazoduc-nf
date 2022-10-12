@@ -109,11 +109,14 @@ workflow OPTIMIZE_BURDEN {
 		rows = genes_ch.output.splitCsv(header:true,sep:'\t').
 			filter{T->(T.Count_Variants as int)>2}
 
-		assoc_ch = RVTEST_GENE(meta, reference, ch1_ch.rvtest_pedigree, rows )
+		window_ch = WINDOW_GENE(meta, reference, ch1_ch.rvtest_pedigree, rows )
+		version_ch = version_ch.mix(window_ch.version)
+
+		assoc_ch = RVTEST_SETFILE(meta, reference, window_ch.output.splitCsv(header:true,sep:','))
 		version_ch = version_ch.mix(assoc_ch.version)
-	
-		ch3_ch = assoc_ch.output.flatMap{T->[ [T[0],"CMCFisherExact",T[1]] , [T[0],"CMC",T[2] ] ]}
-		plot_ch = PLOT_IT(meta, ch3_ch)
+
+		ch3_ch = assoc_ch.output.flatMap{T->[ [[T[0],"CMCFisherExact"],T[1]] , [[T[0],"CMC"],T[2] ] ]}
+		plot_ch = PLOT_IT(meta, ch3_ch.groupTuple())
 		version_ch = version_ch.mix(plot_ch.version)
 
 		pdf0_ch = GS1(meta.plus("with_header":true),plot_ch.pdf.groupTuple())
@@ -217,7 +220,7 @@ EOF
 """
 }
 
-process RVTEST_GENE {
+process WINDOW_GENE {
 tag "${file(row.path).name}"
 afterScript "rm -rf TMP"
 input:
@@ -226,21 +229,21 @@ input:
 	path(pedigree)
 	val(row)
 output:
-	tuple val(row),path("ASSOC/part.CMCFisherExact.assoc"),path("ASSOC/part.CMC.assoc"),emit:output
+	path("output.csv"),emit:output
 	path("version.xml"),emit:version
 script:
 	def name= row.splitter.replaceAll("/","_")+"_"+row.gene+"_"+row.key;
 	def vcf = row.path
-	def  rvtest_params = "--burden 'cmc,exactCMC,zeggini' --kernel 'skato'"
 """
 hostname 1>&2
-${moduleLoad("rvtests  bcftools picard")}
+${moduleLoad("bcftools picard")}
 set -o pipefail
 set -x
-mkdir -p TMP ASSOC
+mkdir -p TMP BEDS
 
 cat << EOF > TMP/Minikit.java
 import java.util.*;
+import java.io.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -277,18 +280,19 @@ private int instanceMain(final String[] args) {
 				}
 			}
 		System.err.println("N="+intervals.size());
-
 		for(int n=2; n<= intervals.size();n++) {
+			try(PrintWriter pw = new PrintWriter("BEDS/"+n+".setfile")) {
 			for(int x=0;(x+n) <= intervals.size(); ++x) {
-				System.out.println("${name}_b"+x+"_n"+n+"\t"+
+				pw.println("${name}_b"+x+"_n"+n+"\t"+
 					intervals.subList(x,x+n).
 					stream().
 					map(R->R.getContig()+":"+R.getStart()+"-"+R.getEnd()).
 					collect(Collectors.joining(","))
 					);
 				}
+			pw.flush();
 			}
-		System.out.flush();
+			}
 		return 0;
 		}
 	catch(Throwable err) {
@@ -311,22 +315,15 @@ javac -cp "\${PICARD_JAR}" -d TMP -sourcepath TMP TMP/Minikit.java
 
 bcftools view -G "${vcf}" | java -cp "\${PICARD_JAR}:TMP" Minikit > TMP/input.setfile
 
-
-rvtest  --noweb \
-        --inVcf "${vcf}" \
-	--setFile TMP/input.setfile \
-	--pheno "${pedigree}" \
-	--out "ASSOC/part" \
-	${rvtest_params} 1>&2 2> TMP/last.rvtest.log
-
+find \${PWD}/BEDS -type f -name "*.setfile" |\
+awk 'BEGIN{printf("vcf,pedigree,name,setfile\\n");} {printf("${vcf},${pedigree.toRealPath()},${name},%s\\n",\$0);}' > output.csv
 
 ###############################################################################
 cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
-        <entry key="description">invoke rvtest for setfile</entry>
-	<entry key="rvtest.path">\$(which rvtest)</entry>
-	<entry key="versions">${getVersionCmd("rvtest bcftools picard")}</entry>
+        <entry key="description">split into setfile</entry>
+	<entry key="versions">${getVersionCmd("awk javac")}</entry>
 	<entry key="name">${name}</entry>
 	<entry key="vcf">${vcf}</entry>
 </properties>
@@ -335,16 +332,66 @@ EOF
 }
 
 
-process PLOT_IT {
-tag "${type} ${row.key}"
+
+
+
+process RVTEST_SETFILE {
+tag "${row.name} ${file(row.setfile).name}"
 afterScript "rm -rf TMP"
 input:
 	val(meta)
-	tuple val(row),val(type),path(exact)
+	val(reference)
+	val(row)
 output:
-	tuple val(type),path("${meta.prefix?:""}${row.key}.pdf"),emit:pdf
+	tuple val("${row.name}"),path("ASSOC/part.CMCFisherExact.assoc"),path("ASSOC/part.CMC.assoc"),emit:output
 	path("version.xml"),emit:version
 script:
+	def name= row.name
+	def vcf = row.vcf
+	def  rvtest_params = "--burden 'cmc,exactCMC' "
+"""
+hostname 1>&2
+${moduleLoad("rvtests")}
+set -o pipefail
+set -x
+mkdir -p ASSOC TMP
+
+
+rvtest  --noweb \
+        --inVcf "${vcf}" \
+	--setFile ${row.setfile} \
+	--pheno "${row.pedigree}" \
+	--out "ASSOC/part" \
+	${rvtest_params} 1>&2 2> TMP/last.rvtest.log
+
+###############################################################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">invoke rvtest for setfile</entry>
+	<entry key="rvtest.path">\$(which rvtest)</entry>
+	<entry key="versions">${getVersionCmd("rvtest")}</entry>
+	<entry key="name">${name}</entry>
+	<entry key="vcf">${vcf}</entry>
+	<entry key="setfile">${row.setfile}</entry>
+</properties>
+EOF
+"""	
+}
+
+
+process PLOT_IT {
+tag "${key[0]} ${key[1]} N={L.size()}"
+afterScript "rm -rf TMP"
+input:
+	val(meta)
+	tuple val(key),val(L)
+output:
+	tuple val("${key[1]}"),path("${meta.prefix?:""}${row.key}.pdf"),emit:pdf
+	path("version.xml"),emit:version
+script:
+	def name  = key[0];
+	def type = key[1];
 	def column = type.equals("CMC")?"7":"10"
 """
 hostname 1>&2
@@ -353,14 +400,15 @@ ${moduleLoad("R")}
 mkdir -p TMP
 export LC_ALL=C
 
-awk '/^Range/ {next;} {N=split(\$2,a,/[,:-]/);for(i=1;i<=N;i+=3) {B=int(a[i+1]);E=int(a[i+2]);if(i==1 || B<m) m=B; if(i==1 || E>M) M=E;} printf("%s\t%s\t%s\\n",m,M,\$${column});}' '${exact}' | sort | uniq > jeter.tsv
+cat ${L.join(" ")} |\
+	awk '/^Range/ {next;} {N=split(\$2,a,/[,:-]/);for(i=1;i<=N;i+=3) {B=int(a[i+1]);E=int(a[i+2]);if(i==1 || B<m) m=B; if(i==1 || E>M) M=E;} printf("%s\t%s\t%s\\n",m,M,\$${column});}' '${exact}' | sort -T . | uniq > jeter.tsv
 
 cat << "__EOF__" > TMP/jeter.R
 T1<-read.table("jeter.tsv",sep="\\t",header=FALSE,col.names=c("start","end","pvalue"),colClasses=c("integer","integer","numeric"))
 head(T1)
-pdf("${meta.prefix?:""}${row.key}.pdf")
+pdf("${meta.prefix?:""}${name}.pdf")
 color <- rgb(0.4, 0.4, 1.0, 0.2)
-plot(1, type="n", main="${type} / ${row.gene} / ${row.key}",xlab="position", ylab="-log10(pvalue)", xlim=c(min(T1\$start),max(T1\$end)), ylim=c(0, -1.0 * log10(min(T1\$pvalue))))
+plot(1, type="n", main="${type} / ${name} /",xlab="position", ylab="-log10(pvalue)", xlim=c(min(T1\$start),max(T1\$end)), ylim=c(0, -1.0 * log10(min(T1\$pvalue))))
 for(i in 1:nrow(T1)) {
 	y <- log10(T1[i,]\$pvalue) * -1.0
 	segments(x0=T1[i,]\$start,x1=T1[i,]\$end,y0=y,y1=y,col=color)

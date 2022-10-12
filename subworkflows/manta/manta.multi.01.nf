@@ -24,8 +24,7 @@ SOFTWARE.
 */
 include {moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
-//include {SIMPLE_ZIP_01} from '../../modules/utils/zip.simple.01.nf'
-//include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
+include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 
 workflow MANTA_MULTI_SV01 {
 	take:
@@ -44,12 +43,15 @@ workflow MANTA_MULTI_SV01 {
 		version_ch= version_ch.mix(manta_ch.version)
 	
 		
-		version_merge = MERGE_VERSION(meta,"manta","manta",version_ch.collect())
-		
+		version_ch = MERGE_VERSION(meta,"manta","manta",version_ch.collect())
+		html = VERSION_TO_HTML(params, version_ch.version)
+
+		zip_ch = ZIPIT(meta, version_ch, html.html, manta_ch.output)	
 	emit:
-		version = version_merge.version
-		vcf = manta_ch.vcf
-		index = manta_ch.index
+		version = version_ch
+		zip = zip_ch.zip
+		//vcf = manta_ch.vcf
+		//index = manta_ch.index
 	}
 
 process MANTA_CONFIG {
@@ -119,12 +121,13 @@ process MANTA_MULTI {
 	val(reference)
 	path(workingdir)
     output:
+	path("paths.txt"),emit:output
 	path("version.xml"),emit:version
     script:
 	def prefix = meta.prefix?:""
 	"""
 	hostname 1>&2
-	${moduleLoad("manta")}
+	${moduleLoad("manta bcftools")}
 		
 	WD=`cat "${workingdir}"`
 	test -d "\${WD}"
@@ -132,14 +135,44 @@ process MANTA_MULTI {
 	"\${WD}/runWorkflow.py" --quiet -m local -j ${task.cpus}
 	
 
-#################################################################################################
+	for X in diploidSV candidateSmallIndels candidateSV
+	do
+		bcftools view -O b -o "${meta.prefix?:""}\${X}.bcf" "\${WD}/results/variants/\${X}.vcf.gz"
+		bcftools index "${meta.prefix?:""}\${X}.bcf"
+		echo "\${PWD}/${meta.prefix?:""}\${X}.bcf" >> paths.txt
+		echo "\${PWD}/${meta.prefix?:""}\${X}.bcf.csi" >> paths.txt
+	done
 
+
+#################################################################################################
 cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
 	<entry key="workdir">\${WD}</entry>
+	<entry key="versions">${getVersionCmd("bcftools")}</entry>
 	<entry key="manta.version">\$(configManta.py --version)</entry>
 </properties>
 EOF
 	"""
 	}
+
+
+process ZIPIT {
+input:
+	val(meta)
+	path(version)
+	path(html)
+	path(paths)
+output:
+	path("${meta.prefix?:""}manta.zip"),emit:zip
+script:
+"""
+cat "${paths}" > x.list
+echo "${version.toRealPath()}" >> x.list
+echo "${html.toRealPath()}" >> x.list
+
+zip -9 -@ -j "${meta.prefix?:""}manta.zip" < x.list
+
+rm x.list
+"""
+}

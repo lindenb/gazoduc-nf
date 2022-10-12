@@ -30,7 +30,8 @@ My Nextflow Pipelines
 
   * [Indexcov](workflows/indexcov/) Finds CNVs using [indexcov](https://github.com/brentp/goleft/tree/master/indexcov#indexcov).
   * [Delly2](workflows/delly2/) Finds CNVs/SV using [delly](https://github.com/dellytools/delly).
-  * [Manta](workflows/manta/) Finds CNVs/SV using using [Manta](https://github.com/Illumina/manta).
+  * [Manta](workflows/manta/) Finds CNVs/SV using using [Manta](https://github.com/Illumina/manta). One VCF per sample.
+  * [Manta-Multi](workflows/manta.multi/) Finds CNVs/SV using using [Manta](https://github.com/Illumina/manta). Join calling.
   * [Smoove](workflows/smoove/) Finds CNVs/SV using [Smoove](https://github.com/brentp/smoove)
   * [Retrocopies GTF/VCF](workflows/retrocopy/vcf.retrocopy) Finds Retrocopies using a SV VCF and a GTF file.
   * [Plot CNV from VCF](workflows/cnvplotter) Plot CNV as SVG+HTML.
@@ -54,7 +55,7 @@ My Nextflow Pipelines
   * [Burden uORF](workflows/burden/burden.uorf.vep/) Burden on micro-ORF (uORF) in UTR. Using VEP plugin.
   * [Burden Sliding windows](burden/burden.sliding.window/) Burden with sliding windows.
   * [WGSelect](workflows/wgselect/basic) Basic "wgselect".
-
+  * [Optimize](workflows/burden/optimize.rvtests) Find peak of p-value by applying sliding window on a gene.
 
 ### Misc
 

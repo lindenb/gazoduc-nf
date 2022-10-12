@@ -88,40 +88,22 @@ if( params.help ) {
 workflow {
 	manta_ch = MANTA_MULTI_SV01(params, params.reference, file(params.bams), file(params.bed))
 
-
-	html = VERSION_TO_HTML(params,manta_ch.version)	
-
-	to_publish = Channel.empty().
-			mix(manta_ch.version).
-			mix(manta_ch.vcf).
-			mix(manta_ch.index).
-			mix(html.html)
-
-
-	PUBLISH(to_publish.collect())
+	PUBLISH(manta_ch.zip)
 	}
 
 process PUBLISH {
-tag "N=${files.size()}"
+executor "local"
+tag "${zip.name}"
 publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
 input:
-	val(files)
+	path(zip)
 output:
-	path("*.bcf")
-	path("*.bcf.csi")
-	path("*.xml")
-	path("*.html")
 	path("*.zip")
-	path("*.list")
 when:
 	!params.getOrDefault("publishDir","").trim().isEmpty()
 script:
-	prefix = params.prefix?:""
 """
-for F in ${files.join(" ")}
-do
-	ln -s "\${F}" ./
-done
+ln -s "${zip.toRealPath()}" ./
 """
 }
 
