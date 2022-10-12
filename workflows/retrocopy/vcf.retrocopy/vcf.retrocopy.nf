@@ -28,9 +28,11 @@ nextflow.enable.dsl=2
 params.reference = ""
 params.vcf = ""
 params.gtf = ""
+params.gff3 = "NO_FILE"
 params.publishDir = ""
 params.prefix = ""
 params.help = false
+params.bams = "NO_FILE"
 
 include { VCF_RETROCOPY_01 } from '../../../subworkflows/retrocopy/vcf.retrocopy.01.nf'
 include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
@@ -82,9 +84,9 @@ if( params.help ) {
 
 
 workflow {
-	ch1_ch = VCF_RETROCOPY_01(params, params.reference, params.vcf, params.gtf)
+	ch1_ch = VCF_RETROCOPY_01(params, params.reference, params.vcf, params.gtf, file(params.gff3), file(params.bams))
 	html = VERSION_TO_HTML(params,ch1_ch.version)	
-	PUBLISH(params,ch1_ch.vcf,html.html,ch1_ch.version)
+	PUBLISH(params,ch1_ch.vcf,html.html,ch1_ch.version,ch1_ch.zip)
 	}
 
 
@@ -96,6 +98,7 @@ input:
 	val(vcf)
 	val(html)
 	val(xml)
+	val(zip)
 output:
 	path("${params.prefix}retrocopy.vcf.gz")
 	path("${params.prefix}retrocopy.html")

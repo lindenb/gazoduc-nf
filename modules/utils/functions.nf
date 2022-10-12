@@ -323,6 +323,9 @@ String __getVersionCmd(java.util.Set<String> tools) {
 		else if(t.equals("awk")) {
 			sb.append("\$(awk --version | head -n1)");
 			}
+		else if(t.equals("xsltproc")) {
+			sb.append("\$("+t+" --version | paste -s -d ' ')");
+			}
 		else if(t.equals("gs")) {
 			sb.append("\$(gs --version)");
 			}
@@ -365,6 +368,25 @@ String getVersionCmd(String s) {
 	if(java) set.add("java");
 	set.remove("");
 	return __getVersionCmd(set);
+	}
+
+/** extract md5 cheksum from string */
+def md5(def in) {
+	final java.security.MessageDigest _md5;
+	try {
+		_md5 = java.security.MessageDigest.getInstance("MD5");
+	} catch (final java.security.NoSuchAlgorithmException e) {
+		throw new RuntimeException("MD5 algorithm not found", e);
+		}
+	
+	_md5.reset();
+	_md5.update(in.toString().getBytes());
+	String s = new java.math.BigInteger(1, _md5.digest()).toString(16);
+	if (s.length() != 32) {
+		final String zeros = "00000000000000000000000000000000";
+		s = zeros.substring(0, 32 - s.length()) + s;
+		}
+	return s;
 	}
 
 void runOnComplete(def wf) {

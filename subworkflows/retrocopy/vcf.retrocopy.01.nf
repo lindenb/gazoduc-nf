@@ -25,9 +25,10 @@ SOFTWARE.
 
 include { VCF_TO_BED } from '../../modules/bcftools/vcf2bed.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
-include {moduleLoad;isHg38;isHg19} from '../../modules/utils/functions.nf'
+include {md5;getVersionCmd;moduleLoad;isHg38;isHg19} from '../../modules/utils/functions.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_CONCAT_01} from '../bcftools/bcftools.concat.01.nf'
+include {SAMTOOLS_SAMPLES_01} from '../samtools/samtools.samples.01.nf'
 
 workflow VCF_RETROCOPY_01 {
 	take:
@@ -35,6 +36,8 @@ workflow VCF_RETROCOPY_01 {
 		reference
 		vcf
 		gtf
+		gff3
+		bams
 	main:
 		version_ch = Channel.empty()
 		ch1_ch  = VCF_TO_BED(meta,vcf)
@@ -49,16 +52,41 @@ workflow VCF_RETROCOPY_01 {
 		ch4_ch = SCAN_RETROCOPY(meta,reference,ch3_ch.output,gtf,ch2_ch)
 		version_ch = version_ch.mix(ch4_ch.version)
 		
+
+
 		ch5_ch = COLLECT_TO_FILE_01(meta, ch4_ch.vcf.collect())
 		version_ch = version_ch.mix(ch5_ch.version)
 
 		ch6_ch = BCFTOOLS_CONCAT_01(meta,ch5_ch.output)
 		version_ch = version_ch.mix(ch6_ch.version)
 
+
+		if(!bams.name.equals("NO_FILE")) {
+			samples_ch = SAMTOOLS_SAMPLES_01(
+				meta.plus("with_header":false,"allow_multiple_references":false),
+				reference,
+				file("NO_FILE"),
+				bams)
+			version_ch = version_ch.mix(samples_ch.version)
+
+			join_ch=JOIN_SAMPLE_BAM(meta,reference,ch6_ch.vcf, samples_ch.output)
+			version_ch = version_ch.mix(join_ch.version)
+
+			plot_ch = PLOT(meta,reference,gff3, join_ch.bed.splitCsv(header:true,sep:'\t'))
+			version_ch = version_ch.mix(plot_ch.version)
+
+			zip_ch = ZIP_PLOT(meta,plot_ch.output.collect()).zip
+			}
+		else
+			{
+			zip_ch = file("NO_FILE")
+			}
+
 		version_ch = MERGE_VERSION(meta, "VCF retrocopies", "VCF retrocopies", version_ch.collect())
 	emit:
 		vcf = ch6_ch.vcf
 		version = version_ch
+		zip = zip_ch
 	}
 
 // cf. https://gist.github.com/lindenb/3ee8628039713f5baa532e6f0d6454df
@@ -191,13 +219,156 @@ bcftools index "${contig}.bcf"
 ###
 cat << EOF > version.xml
 <properties id="${task.process}">
-		<entry key="name">${task.process}</entry>
-		<entry key="description">scan vcf for retrogenes</entry>
-		<entry key="contig">${contig}</entry>
-		<entry key="gtfretrocopy.version">\$(java -jar \${JVARKIT_DIST}/gtfretrocopy.jar --version)</entry>
+	<entry key="name">${task.process}</entry>
+	<entry key="description">scan vcf for retrogenes</entry>
+	<entry key="contig">${contig}</entry>
+	<entry key="versions">${getVersionCmd("jvarkit/gtfretrocopy bcftools tabix")}</entry>
 </properties>
 EOF
 
 """
 }
 
+process JOIN_SAMPLE_BAM {
+executor "local"
+input:
+	val(meta)
+	val(reference)
+	path(vcf)
+	path(samples)
+output:
+	path("output.bed"),emit:bed
+	path("version.xml"),emit:version
+script:
+"""
+hostname 1>&2
+${moduleLoad("jvarkit bcftools bedtools")}
+set -o pipefail
+
+cut -f 1,3 "${samples}" |\
+	sort -T . -t '\t' -k1,1 --unique > jeter1.txt
+
+bcftools query -f '[%SAMPLE\t%CHROM\t%POS\t%END\t%GT\\n]' "${vcf}" |\
+	grep -v '0/0\$' |\
+	grep -v '\\./\\.\$' |\
+	sort -T . -t '\t' -k1,1  > jeter2.txt
+
+echo -e "contig\tstart\tend\tbams" > output.bed
+
+join -t '\t' -1 1 -2 1 -o '2.2,2.3,2.4,1.2' jeter1.txt jeter2.txt |\
+	sort -t '\t' -T . -k1,1 -k2,2n |\
+	bedtools merge -c 4 -o distinct >> output.bed
+
+
+###
+cat << EOF > version.xml
+<properties id="${task.process}">
+	<entry key="name">${task.process}</entry>
+	<entry key="description">join samples and VCF</entry>
+	<entry key="versions">${getVersionCmd("bcftools")}</entry>
+</properties>
+EOF
+"""	
+}
+
+process PLOT {
+tag "${row.contig}:${row.start}-${row.end}"
+memory "5g"
+afterScript "rm -rf TMP"
+input:
+	val(meta)
+	val(reference)
+	path(gff3)
+	val(row)
+output:
+	path("${meta.prefix?:""}${row.contig}_${row.start}_${row.end}.html"),emit:output
+	path("version.xml"),emit:version
+script:
+	def mapq = meta.mapq?:"30"
+	def uid = md5("${row.contig}:${row.start}-${row.end}")
+"""
+hostname 1>&2
+${moduleLoad("jvarkit")}
+
+mkdir -p TMP
+
+echo '${row.bams}' | tr "," "\\n" | head -n 10 > TMP/jeter.list
+
+java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP  -jar ${JVARKIT_DIST}/coverageplotter.jar \
+	-R "${reference}" \
+	--mapq "${mapq}" \
+	--include-center \
+	${gff3.name.equals("NO_FILE")?"":"--gff3 '${gff3.toRealPath()}'"} \
+	--region "${row.contig}:${row.start}-${row.end}" \
+	TMP/jeter.list > TMP/jeter.html
+
+
+cat << EOF > TMP/jeter.xsl
+<?xml version="1.0" encoding="UTF-8"?>
+<xsl:stylesheet xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:u="https://umr1087.univ-nantes.fr/" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:svg="http://www.w3.org/2000/svg" version="1.0">
+  <xsl:output method="xml" omit-xml-declaration = "yes"/>
+  <xsl:template match="svg:metadata">
+  <svg:metadata>
+    <xsl:apply-templates select="@*|node()" /> 
+            <u:Variant rdf:about="${uid}">
+              <u:build>hs37d5_all_chr</u:build>
+              <u:contig>${row.contig}</u:contig>
+              <u:start>${row.start}</u:start>
+              <u:end>${row.end}</u:end>
+              <u:id>${uid}</u:id>
+              <u:filter>PASS</u:filter>
+              <u:svtype>RETROCOPY</u:svtype>
+              <u:svlen>${1 + (row.end as int) - (row.start as int)}</u:svlen>
+            </u:Variant>
+  </svg:metadata>
+  </xsl:template>
+
+  <xsl:template match="div[@id='__PLACEHOLDER__']">
+   <div>
+   <h3>Description</h3>
+   <div></div>
+   </div>
+  </xsl:template>
+
+  <xsl:template match="@*|node()">
+    <xsl:copy>
+      <xsl:apply-templates select="@*|node()" />
+    </xsl:copy>
+  </xsl:template>
+
+</xsl:stylesheet>
+EOF
+
+
+xsltproc TMP/jeter.xsl TMP/jeter.html >  "${meta.prefix?:""}${row.contig}_${row.start}_${row.end}.html"
+
+###############################################################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+	<entry key="name">${task.process}</entry>
+	<entry key="description">plot Retrogene</entry>
+	<entry key="interval">${row.contig}:${row.start}-${row.end}</entry>
+	<entry key="mapq">${mapq}</entry>
+	<entry key="gff3">${gff3}</entry>
+	<entry key="versions">${getVersionCmd("jvarkit/coverageplotter xsltproc")}</entry>
+</properties>
+EOF
+"""
+}
+
+process ZIP_PLOT {
+executor "local"
+input:
+	val(meta)
+	val(L)
+output:
+	path("${meta.prefix?:""}plots.zip"),emit:zip
+script:
+"""
+cat << EOF > jeter.list
+${L.join("\n")}
+EOF
+
+zip -j -@ "${meta.prefix?:""}plots.zip" < jeter.list
+"""
+}
