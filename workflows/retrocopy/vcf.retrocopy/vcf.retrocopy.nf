@@ -28,7 +28,6 @@ nextflow.enable.dsl=2
 params.reference = ""
 params.vcf = ""
 params.gtf = ""
-params.gff3 = "NO_FILE"
 params.publishDir = ""
 params.prefix = ""
 params.help = false
@@ -84,9 +83,9 @@ if( params.help ) {
 
 
 workflow {
-	ch1_ch = VCF_RETROCOPY_01(params, params.reference, params.vcf, params.gtf, file(params.gff3), file(params.bams))
+	ch1_ch = VCF_RETROCOPY_01(params, params.reference, params.vcf, params.gtf, file(params.bams))
 	html = VERSION_TO_HTML(params,ch1_ch.version)	
-	PUBLISH(params,ch1_ch.vcf,html.html,ch1_ch.version,ch1_ch.zip)
+	PUBLISH(params,ch1_ch.vcf,html.html,ch1_ch.version,ch1_ch.pdf)
 	}
 
 
@@ -98,7 +97,7 @@ input:
 	val(vcf)
 	val(html)
 	val(xml)
-	val(zip)
+	val(pdf)
 output:
 	path("${params.prefix}retrocopy.vcf.gz")
 	path("${params.prefix}retrocopy.html")
