@@ -54,6 +54,7 @@ My Nextflow Pipelines
   * [Burden UTR](workflows/burden/burden.utr/) Burden on UTR5', UTR3', UTR5+3'.
   * [Burden uORF](workflows/burden/burden.uorf.vep/) Burden on micro-ORF (uORF) in UTR. Using VEP plugin.
   * [Burden Sliding windows](burden/burden.sliding.window/) Burden with sliding windows.
+  * [Burden Pairs](burden/burden.pairs) Burden per pairs of genes.
   * [WGSelect](workflows/wgselect/basic) Basic "wgselect".
   * [Optimize](workflows/burden/optimize.rvtests) Find peak of p-value by applying sliding window on a gene.
 
