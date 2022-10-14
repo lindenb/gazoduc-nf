@@ -38,6 +38,7 @@ params.vcf=""
 params.help=false
 params.bed_cluster_method = " --size 1mb "
 params.bed=""
+params.levels=3
 
 if(params.help) {
   log.info"""
@@ -94,26 +95,26 @@ workflow BURDEN_PAIRS {
 		version_ch = Channel.empty()
 		to_zip = Channel.empty()
 
-		digest_ch = DIGEST_PAIRS(meta, reference, bed)
-		version_ch = version_ch.mix(digest_ch.version)
+		pairs_ch = DIGEST_PAIRS(meta, reference, bed)
+		version_ch = version_ch.mix(pairs_ch.version)
 	
-		ch1_ch = BURDEN_SAMPLE_WGSELECT_PART_01(meta,reference,vcf, pedigree, digest_ch.merged_bed)
+		ch1_ch = BURDEN_SAMPLE_WGSELECT_PART_01(meta,reference,vcf, pedigree, pairs_ch.merged_bed)
 		version_ch = version_ch.mix(ch1_ch.version)
-
-
-		each_gene = digest_ch.genes.splitText().map{it.trim()}
 		
 
 		header_ch = RVTESTS_REHEADER_01(meta, reference)
 		version_ch = version_ch.mix(header_ch.version)
 
+		merged_ch = MERGE_VCF_CONTIGS(meta, ch1_ch.contig_vcfs)
+		version_ch = version_ch.mix(merged_ch.version)
+
+
 		assoc_ch = RVTEST_BY_PAIR(meta,
 				reference,
-				ch1_ch.contig_vcfs,
+				merged_ch.vcf,
 				ch1_ch.rvtest_pedigree,
 				header_ch.output, 
-				digest_ch.bed,
-				each_gene.combine(each_gene).filter{T->T[0].compareTo(T[1])<=0}
+				pairs_ch.setFiles.splitText().map{it.trim()}
 				)
 		version_ch = version_ch.mix(assoc_ch.version)
 		
@@ -136,7 +137,6 @@ workflow BURDEN_PAIRS {
 	}
 
 process DIGEST_PAIRS {
-executor "local"
 afterScript "rm -rf TMP"
 input:
 	val(meta)
@@ -144,8 +144,7 @@ input:
 	path(bed)
 output:
 	path("merged.bed"),emit:merged_bed
-	path("digest.bed"),emit:bed
-	path("genes.txt"),emit:genes
+	path("setfile.list"),emit:setFiles
 	path("version.xml"),emit:version
 script:
 """
@@ -154,7 +153,7 @@ ${moduleLoad("jvarkit bedtools")}
 set -o pipefail
 
 
-mkdir -p TMP
+mkdir -p TMP BEDS
 
 ${bed.name.endsWith(".gz")?"gunzip -c ":"cat"} "${bed}" | cut -f1-4 |\
 	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 1 --convert SKIP |\
@@ -163,16 +162,194 @@ ${bed.name.endsWith(".gz")?"gunzip -c ":"cat"} "${bed}" | cut -f1-4 |\
 # test no empty name
 test `awk -F '\t' '(\$4=="")' TMP/digest.bed |wc -l` -eq 0
 
-# extract uniq names
-cut -f4 TMP/digest.bed | uniq | sort -T . | uniq > genes.txt
+cat << EOF > TMP/Minikit.java
+
+import java.util.*;
+import java.io.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+
+public class Minikit {
+
+private final Map<String,Gene> name2gene = new HashMap<>();
+private PrintWriter writer = null;
+private int num_chuncks = 0;
+private long chunk_size =0L;
+private final static long MAX_CHUNK_SIZE = 5_000_000L;
+private final static int MAX_DEPTH= ${params.levels} ;
+
+private class Interval implements Comparable<Interval> {
+	final String contig;
+	final int start;
+	final int end;
+	Interval(String contig,int start,int end) {
+		this.contig = contig;
+		this.start =start;
+		this.end=end;
+		}
+	@Override
+	public int compareTo(final Interval o) {
+		int i=this.contig.compareTo(o.contig);
+		if(i!=0) return i;
+		i= Integer.compare(start,o.start);
+		if(i!=0) return i;
+		return Integer.compare(end,o.end);
+		}
+	boolean intersects(final Interval o) {
+		return this.contig.equals(o.contig) && !(this.end <= o.start || this.start >= o.end);
+		}
+	int size() {
+		return 1+(end - start);
+		}
+	@Override
+	public String toString() {
+		return this.contig+":"+start+"-"+end;
+		}
+	}
+
+private static class Gene {
+	final String name;
+	final List<Interval> intervals = new ArrayList<>();
+	Gene(final String name) {
+		this.name = name;
+		}
+	}
+
+private void merge(final List<Interval> intervals) {
+		Collections.sort(intervals);
+		int i=0;
+		while(i+1<intervals.size()) {
+			if(intervals.get(i).intersects(intervals.get(i+1))) {
+				intervals.set(i,new Interval(
+					intervals.get(i).contig,
+					Math.min(intervals.get(i).start, intervals.get(i+1).start),
+					Math.max(intervals.get(i).end, intervals.get(i+1).end)
+					));
+				intervals.remove(i+1);
+				}
+			else
+				{
+				i++;
+				}
+			}
+		}
+
+
+private void recursive(
+	final List<Gene> genes,
+	final int[] indexes,
+	int index,
+	int depth
+	) throws IOException
+	{
+	if(depth>=indexes.length)
+		{
+		final List<Interval> intervals = new ArrayList<>();
+		final Set<String> names = new TreeSet<>( );
+		
+		//for(int i=0;i< indexes.length;i++) System.err.print(genes.get(indexes[i]).name+" ");System.err.println();
+		
+		for(int i=0;i< indexes.length;i++) {
+			final Gene g = genes.get(indexes[i]);
+			names.add(g.name);
+			intervals.addAll(g.intervals);
+			}
+		merge(intervals);
+		
+		if(this.writer==null) {
+			this.writer = new PrintWriter("BEDS/chunk."+(this.num_chuncks++)+".setfile");
+			this.chunk_size = 0;
+			}
+		this.writer.print(String.join("_",names));
+		this.writer.print("\t");
+		this.writer.println(intervals.stream().map(T->T.toString()).collect(Collectors.joining(",")));
+		
+		this.chunk_size+= intervals.stream().mapToInt(R->R.size()).sum();
+		
+		if(this.chunk_size > MAX_CHUNK_SIZE && this.writer!=null) {
+			//System.err.println("Closing "+this.chunk_size);
+			this.writer.flush();
+			this.writer.close();
+			this.writer = null;
+			this.chunk_size=0L;
+			}
+		return;
+		}
+	final int[] indexes2 = Arrays.copyOf(indexes,indexes.length);
+	for(int i=0;i< genes.size();i++)
+		{
+		if(depth>0 && indexes2[depth-1]>i) continue;
+		indexes2[depth]=i;
+		recursive(genes,indexes2,0,depth+1);
+		}
+	
+	}
+
+private int instanceMain(final String[] args) {
+	try {
+		try(BufferedReader br=new BufferedReader(new InputStreamReader(System.in))) {
+			String line;
+			while((line=br.readLine())!=null) {
+				final String[] tokens = line.split("[\\t]");
+				final String name = tokens[3];
+				Gene g = name2gene.get(name);
+				if(g==null) {
+					g=new Gene(name);
+					name2gene.put(name,g);
+					}
+				final int start = Integer.parseInt(tokens[1])+1;
+				final int end = Integer.parseInt(tokens[2]);
+				g.intervals.add(new Interval(tokens[0],start,end));
+				}
+			}
+		final List<Gene> genes = new ArrayList<>(name2gene.values());
+		
+		for(Gene g: genes ) {
+			merge(g.intervals);
+			}
+		
+		this.num_chuncks=0;
+		this.writer = null;
+		final int[] indexes = new int[Math.min(MAX_DEPTH,genes.size())];
+		Arrays.fill(indexes,0);
+		recursive(genes,indexes,0,0);
+		if(this.writer!=null) {
+			this.writer.flush();
+			this.writer.close();
+			}	
+		
+		return 0;
+		}
+	catch(Throwable err) {
+		err.printStackTrace();
+		return -1;
+		}
+	}
+
+private void instanceMainWithExit(final String[] args) {
+	System.exit(instanceMain(args));
+	}
+
+public static void main(String[] args) {
+	new Minikit().instanceMainWithExit(args);
+	}
+}
+EOF
+
+javac -d TMP -sourcepath TMP TMP/Minikit.java
+java -cp "TMP" Minikit < TMP/digest.bed
+
+
+## find all setfiles
+find \${PWD}/BEDS -type f -name "*.setfile" > setfile.list
+test -s setfile.list
 
 # merge all regions for wgselect
 cut -f1,2,3 TMP/digest.bed |\
 	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\
 	bedtools merge > merged.bed
 
-
-mv TMP/digest.bed ./
 
 
 ###############################################################################
@@ -187,20 +364,50 @@ EOF
 """
 }
 
+process MERGE_VCF_CONTIGS {
+tag "${vcfs}"
+cpus 10
+input:
+	val(meta)
+	path(vcfs)
+output:
+	path("merged.vcf.gz"),emit:vcf
+	path("version.xml"),emit:version
+script:
+"""
+hostname 1>&2
+${moduleLoad("bcftools")}
+
+bcftools concat --threads ${task.cpus} -a --remove-duplicates --file-list "${vcfs}" -O z -o "merged.vcf.gz"
+bcftools index  --threads ${task.cpus} --tbi merged.vcf.gz
+
+
+###############################################################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">merge vcf</entry>
+	<entry key="versions">${getVersionCmd("bcftools")}</entry>
+	<entry key="vcfs">${vcfs}</entry>
+</properties>
+EOF
+"""
+}
+
 process RVTEST_BY_PAIR {
-tag "${gene1} vs ${gene2}"
-afterScript "rm -rf TMP"
+tag "${file(setfile).name}"
 input:
 	val(meta)
 	val(reference)
-	path(vcfs)
+	path(vcf)
 	path(pedigree)
 	path(reheader)
-	path(digest_bed)
-	tuple val(gene1),val(gene2)
+	val(setfile)
 output:
 	path("assoc.list"),emit:output
 	path("version.xml"),emit:version
+when:
+	true
 script:
 	def  rvtest_params = "--burden 'cmc,exactCMC,zeggini' --kernel 'skato'"
 
@@ -208,32 +415,18 @@ script:
 
 """
 hostname 1>&2
-${moduleLoad("rvtests jvarkit bedtools bcftools")}
+${moduleLoad("rvtests")}
 set -o pipefail
 set -x
-mkdir -p TMP ASSOC
-
-
-awk -F '\t' '(\$4=="${gene1}" || \$4=="${gene2}")'  '${digest_bed}' |\
-	cut -f1,2,3 |\
-	sort -T TMP -t '\t' -k1,1 -k2,2n |\
-	bedtools merge > TMP/jeter.bed
-
-test -s TMP/jeter.bed
-
-bcftools concat -a --regions-file TMP/jeter.bed --file-list "${vcfs}" -O z -o TMP/jeter.vcf.gz
-bcftools index --tbi TMP/jeter.vcf.gz
-
-awk 'BEGIN {printf("${gene1}_${gene2}\t");} {printf("%s%s:%d-%s",(NR==1?"":","),\$1,int(\$2)+1,\$3);} END{printf("\\n");}' TMP/jeter.bed > TMP/jeter.setfile
-test -s TMP/jeter.setfile
+mkdir -p ASSOC
 
 
 rvtest  --noweb \
-        --inVcf TMP/jeter.vcf.gz \
-	--setFile TMP/jeter.setfile \
+        --inVcf ${vcf.toRealPath()} \
+	--setFile "${setfile}" \
 	--pheno "${pedigree}" \
-	--out "ASSOC/part." \
-	${rvtest_params} 1>&2 2> TMP/last.rvtest.log
+	--out "ASSOC/part" \
+	${rvtest_params} 1>&2 2> last.rvtest.log
 
 find \${PWD}/ASSOC -type f -name "part.*assoc" > assoc.list
 
@@ -241,10 +434,10 @@ find \${PWD}/ASSOC -type f -name "part.*assoc" > assoc.list
 cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
-        <entry key="description">invoke rvtest for bed</entry>
+        <entry key="description">rvtest for set of genes</entry>
 	<entry key="rvtest.path">\$(which rvtest)</entry>
-	<entry key="versions">${getVersionCmd("bedtools rvtest bcftools")}</entry>
-	<entry key="genes">${gene1}/${gene2}</entry>
+	<entry key="versions">${getVersionCmd("rvtest")}</entry>
+	<entry key="setfile">${setfile}</entry>
 </properties>
 EOF
 """
