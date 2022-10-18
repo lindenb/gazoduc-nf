@@ -35,7 +35,7 @@ My Nextflow Pipelines
   * [Smoove](workflows/smoove/) Finds CNVs/SV using [Smoove](https://github.com/brentp/smoove)
   * [Retrocopies GTF/VCF](workflows/retrocopy/vcf.retrocopy) Finds Retrocopies using a SV VCF and a GTF file.
   * [Plot CNV from VCF](workflows/cnvplotter) Plot CNV as SVG+HTML.
-  * [Plot CNV using bed+ samtools depth](/workflows/plotcoverage) Plot CNV as PDF.
+  * [Plot CNV using bed+ samtools depth](workflows/plotcoverage) Plot CNV as PDF.
 
 ### RNAseq
 
@@ -58,6 +58,10 @@ My Nextflow Pipelines
   * [WGSelect](workflows/wgselect/basic) Basic "wgselect".
   * [Optimize](workflows/burden/optimize.rvtests) Find peak of p-value by applying sliding window on a gene.
 
+### VNTR
+
+  * [ExpansionHunter](workflows/expansionhunter/) Apply Illumina/ExpansionHunter to a set of bams.
+
 ### Misc
 
   * [VCF stats](workflows/vcfstats/vcfstats01/README.md). Apply `bcftools stats` on a set of vcf files
@@ -66,7 +70,8 @@ My Nextflow Pipelines
   * [Samtools depth](workflows/samtoolsdepth/). Apply `samtools depth` on a set of BAMs.
   * [Samtools depth VCF](workflows/depthvcf/). Apply `samtools depth` on a set of BAMs. ouput is a vcf file.
   * [FlagStats](workflows/flagstats/). Apply 'samtools flagstats' on a set of BAMS.
-  * [SpliceAI](/workflows/spliceai). Apply SpliceAI to a VCF
+  * [SpliceAI](workflows/spliceai). Apply SpliceAI to a VCF
+  * [Sex](workflows/guesssex) . Guess sex from chrX/chrY in BAM file
 
 # Works on my machine
 

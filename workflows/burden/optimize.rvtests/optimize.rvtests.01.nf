@@ -39,6 +39,7 @@ params.pedigree=""
 params.vcf=""
 params.help=false
 params.disableFeatures=""
+params.keyRegex=""
 
 if(params.help) {
   log.info"""
@@ -107,6 +108,7 @@ workflow OPTIMIZE_BURDEN {
 		version_ch = version_ch.mix(genes_ch.version)
 
 		rows = genes_ch.output.splitCsv(header:true,sep:'\t').
+			filter{T->(meta.keyRegex.isEmpty() || T.key.matches(meta.keyRegex))}.
 			filter{T->(T.Count_Variants as int)>2}
 
 		window_ch = WINDOW_GENE(meta, reference, ch1_ch.rvtest_pedigree, rows )

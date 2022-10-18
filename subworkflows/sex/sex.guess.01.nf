@@ -186,7 +186,7 @@ plot(1,
 mc <- rgb(0,0,1.0,alpha=0.5)
 points(x=male\$fx,y=male\$fy,type='p',col=mc,pch=16)
 fc <- rgb(1.0,0,0,alpha=0.5)
-points(x=female\$fx,y=female\$fy,type='p',col=fc,pch=15)
+points(x=female\$fx,y=female\$fy,type='p',col=fc,pch=16)
 legend("topright",legend=c("male","female"),title="Sex",pch=16,col=c(mc,fc)) 
 dev.off()
 __EOF__
