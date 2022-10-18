@@ -176,7 +176,8 @@ process RUN_XHUNTER {
 	rm TMP/jeter.txt
 	
 	#sort and index
-	bcftools sort --max-mem '${task.memory.giga}G' -T TMP -O z -o "TMP/${row.new_sample}.vcf.gz" TMP/jeter.vcf
+	bcftools annotate --set-id '%INFO/REPID' -O u TMP/jeter.vcf |\
+	bcftools sort --max-mem '${task.memory.giga}G' -T TMP -O z -o "TMP/${row.new_sample}.vcf.gz
 	bcftools index -t "TMP/${row.new_sample}.vcf.gz"
 
 	# save json
@@ -227,7 +228,7 @@ cat << EOF > vcfs.list
 ${L.join("\n")}
 EOF
 
-	bcftools merge --threads ${task.cpus} -m all -O u --file-list vcfs.list |\
+	bcftools merge --threads ${task.cpus} -m id -O u --file-list vcfs.list |\
 		bcftools sort  -T . -o "${meta.prefix?:""}merged.bcf" -O b
 
 	bcftools index "${meta.prefix?:""}merged.bcf"

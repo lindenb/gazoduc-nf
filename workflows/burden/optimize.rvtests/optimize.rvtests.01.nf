@@ -383,13 +383,13 @@ EOF
 
 
 process PLOT_IT {
-tag "${key[0]} ${key[1]} N={L.size()}"
+tag "${key[0]} ${key[1]} N=${L.size()}"
 afterScript "rm -rf TMP"
 input:
 	val(meta)
 	tuple val(key),val(L)
 output:
-	tuple val("${key[1]}"),path("${meta.prefix?:""}${row.key}.pdf"),emit:pdf
+	tuple val("${key[1]}"),path("${meta.prefix?:""}${key[1]}.${key[0]}.pdf"),emit:pdf
 	path("version.xml"),emit:version
 script:
 	def name  = key[0];
@@ -397,18 +397,18 @@ script:
 	def column = type.equals("CMC")?"7":"10"
 """
 hostname 1>&2
-${moduleLoad("R")}
+${moduleLoad("r")}
 
 mkdir -p TMP
 export LC_ALL=C
 
 cat ${L.join(" ")} |\
-	awk '/^Range/ {next;} {N=split(\$2,a,/[,:-]/);for(i=1;i<=N;i+=3) {B=int(a[i+1]);E=int(a[i+2]);if(i==1 || B<m) m=B; if(i==1 || E>M) M=E;} printf("%s\t%s\t%s\\n",m,M,\$${column});}' '${exact}' | sort -T . | uniq > jeter.tsv
+	awk '/^Range/ {next;} {N=split(\$2,a,/[,:-]/);for(i=1;i<=N;i+=3) {B=int(a[i+1]);E=int(a[i+2]);if(i==1 || B<m) m=B; if(i==1 || E>M) M=E;} printf("%s\t%s\t%s\\n",m,M,\$${column});}' | sort -T . | uniq > jeter.tsv
 
 cat << "__EOF__" > TMP/jeter.R
 T1<-read.table("jeter.tsv",sep="\\t",header=FALSE,col.names=c("start","end","pvalue"),colClasses=c("integer","integer","numeric"))
 head(T1)
-pdf("${meta.prefix?:""}${name}.pdf")
+pdf("${meta.prefix?:""}${key[1]}.${key[0]}.pdf")
 color <- rgb(0.4, 0.4, 1.0, 0.2)
 plot(1, type="n", main="${type} / ${name} /",xlab="position", ylab="-log10(pvalue)", xlim=c(min(T1\$start),max(T1\$end)), ylim=c(0, -1.0 * log10(min(T1\$pvalue))))
 for(i in 1:nrow(T1)) {
@@ -425,7 +425,7 @@ cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
         <entry key="description">plot rvtest</entry>
-        <entry key="type">${type}</entry>
+        <entry key="type">${key[1]}</entry>
 	<entry key="versions">${getVersionCmd("R awk javac")}</entry>
 </properties>
 EOF
