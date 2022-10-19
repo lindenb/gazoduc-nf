@@ -141,7 +141,7 @@ process RUN_XHUNTER {
 		path(catalog)
 		val(row)
 	output:
-		tuple val(meta),path("${row.new_sample}.vcf.gz"),path("${row.new_sample}.json.gz"),emit:output
+		tuple val(meta),path("${row.new_sample}.bcf"),path("${row.new_sample}.json.gz"),emit:output
 		tuple val(meta),path("${row.new_sample}.realigned.cram"),optional:true,emit:bam
 		path("version.xml"),emit:version
 	script:
@@ -177,8 +177,8 @@ process RUN_XHUNTER {
 	
 	#sort and index
 	bcftools annotate --set-id '%INFO/REPID' -O u TMP/jeter.vcf |\
-	bcftools sort --max-mem '${task.memory.giga}G' -T TMP -O z -o "TMP/${row.new_sample}.vcf.gz
-	bcftools index -t "TMP/${row.new_sample}.vcf.gz"
+	bcftools sort --max-mem '${task.memory.giga}G' -T TMP -O b -o "TMP/${row.new_sample}.bcf"
+	bcftools index "TMP/${row.new_sample}.bcf"
 
 	# save json
 	gzip --best TMP/jeter.json 
@@ -189,8 +189,8 @@ process RUN_XHUNTER {
 	fi
 
 
-	mv TMP/${row.new_sample}.vcf.gz ./
-	mv TMP/${row.new_sample}.vcf.gz.tbi ./
+	mv TMP/${row.new_sample}.bcf ./
+	mv TMP/${row.new_sample}.bcf.csi ./
 	mv TMP/jeter.json.gz "${row.new_sample}.json.gz"
 
 #######################
