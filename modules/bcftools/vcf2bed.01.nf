@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
+include {moduleLoad;parseBoolean;getVersionCmd} from '../../modules/utils/functions.nf'
 
 process VCF_TO_BED {
 tag "${vcf.name}"
@@ -53,7 +53,18 @@ script:
 			uniq > vcf2bed.bed
 	fi
 
+
 	cut -f1 vcf2bed.bed | sort | uniq > contigs.txt 	
+
+	# add header
+	if ${parseBoolean(meta.with_header)} ; then
+
+		echo -e 'contig\tstart\tend\tvcf' > jeter.tmp
+		cat vcf2bed.bed >> jeter.tmp
+		mv jeter.tmp vcf2bed.bed
+
+	fi
+
 
 	cat <<- EOF > version.xml
 	<properties id="${task.process}">

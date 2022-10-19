@@ -74,7 +74,7 @@ exit 0
 }
 
 workflow {
-		ch1 = WGSELECT_02(params, params.reference, file(params.vcf), file(params.pedigree))
+		ch1 = WGSELECT_02(params, params.reference, file(params.vcf), file(params.pedigree), file(params.bed))
 		html = VERSION_TO_HTML(params,ch1.version)
 		PUBLISH(params, ch1.contig_vcfs, ch1.variants_list , ch1.version, html.html)
 		}

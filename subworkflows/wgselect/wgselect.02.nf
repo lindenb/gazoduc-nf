@@ -26,9 +26,9 @@ include {getBoolean;getKeyValue;getModules;getGnomadExomePath;getGnomadGenomePat
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_CONCAT_PER_CONTIG_01} from '../bcftools/bcftools.concat.contigs.01.nf'
-include {VCF_TO_BED_01} from '../../modules/jvarkit/jvarkit.vcf2bed.01.nf'
-include {TO_LIST_01} from  '../../modules/utils/to_list.nf'
+include {JVARKIT_VCF_TO_INTERVALS_01} from '../jvarkit/jvarkit.vcf2intervals.nf'
 include {WGSELECT_01} from './wgselect.01.nf'
+include {LINUX_SPLIT} from '../../modules/utils/split.nf'
 
 workflow WGSELECT_02 {
 	take:
@@ -36,18 +36,21 @@ workflow WGSELECT_02 {
 		reference
 		vcf
 		pedigree
+		bed /* limit to that bed */
 	main:
 		version_ch = Channel.empty()
-		list_ch = TO_LIST_01(meta,vcf)
-		version_ch = version_ch.mix(list_ch.version)
 		
-		vcfs_ch = list_ch.output.splitText().map{it.trim()}
+		vcfs_ch = list_ch.output.splitText().map{"vcf":it.trim()}
 		
-		tobed_ch = VCF_TO_BED_01(meta,vcfs_ch)
+		tobed_ch = JVARKIT_VCF_TO_INTERVALS_01(meta, reference, vcf, bed)
 		version_ch = version_ch.mix(tobed_ch.version)
 
-		each_bed = tobed_ch.output.splitCsv(header:true,sep:'\t').map{T->T.bed}
-	
+		bed2beds_ch = BED2BEDS(meta, tobed_ch.bed)
+		version_ch = version_ch.mix(bed2beds_ch.version)
+
+		each_bed = bed2beds_ch.output.splitCsv(header:false,sep:'\t').
+			map{it.trim()}
+
 		wch1_ch = WGSELECT_01(meta, reference, vcf, pedigree, each_bed)
 		version_ch = version_ch.mix(wch1_ch.version)
 		
@@ -62,3 +65,35 @@ workflow WGSELECT_02 {
 
 	}
 
+
+process BED2BEDS {
+executor "local"
+input:
+	val(meta)
+	path(bed)
+output:
+	path("beds.list"),emit:output
+	path("version.xml"),emit:version
+script:
+"""
+hostname 1>&2
+${moduleLoad("bedtools")}
+set -o pipefail
+mkdir BEDS
+sort -T . -t '\t' -k1,1 -k2,2n "${bed}" |\
+	bedtools merge |\
+	split -a 9 --additional-suffix=.bed --lines=1 - "TMP/one."
+
+find \${PWD}/BEDS -type f -name "one.*bed" > beds.list
+
+####
+cat << EOF > version.xml
+<properties id="${task.process}">
+	<entry key="Name">${task.process}</entry>
+	<entry key="Description">Split BED into parts</entry>
+	<entry key="Input">${bed}</entry>
+</properties>
+EOF
+
+"""
+}

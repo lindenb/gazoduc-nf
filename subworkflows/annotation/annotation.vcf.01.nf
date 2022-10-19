@@ -42,9 +42,9 @@ String getVcfId(meta,reference) {
 
 
 
-String getAmalgamionVcf(meta) {
+String getAmalgamionVcf(meta,reference) {
 	if(!isBlank(meta.joinvcf)) return meta.joinvcf;
-	if(meta.reference.contains("hs37d5")) return "/LAB-DATA/BiRD/shares/ITX/u1087/AMALGAMION/20210603.hs37d5.amalgamion.genotyped.bcf";
+	if(reference.contains("hs37d5")) return "/LAB-DATA/BiRD/shares/ITX/u1087/AMALGAMION/20210603.hs37d5.amalgamion.genotyped.bcf";
 	return "";
 	}
 
@@ -917,7 +917,7 @@ script:
 	EOF
 
 	# save bed or interval
-	if [ ! -z "${isBlank(row.bed)?"":"Y"}" ] ; then
+	if ${row.containsKey("bed")} ; then
 		ln -s "${row.bed}" TMP/tmp.bed
 	else
 		echo "${row.interval}" | awk -F '[:-]' '{printf("%s\t%d\t%s\\n",\$1,int(\$2)-1,\$3);}' > TMP/tmp.bed
@@ -1234,7 +1234,7 @@ script:
 
 
 	# add external info AF,AC,AN e.g. amalgamion
-	if [ ! -z "${hasFeature(meta,"joinvcf")?"Y":""}" ] ; then
+	if ${hasFeature(meta,"joinvcf") && !getAmalgamionVcf(meta,reference).isEmpty()} ; then
 		# get interval for this vcf
 		bcftools query -f '%CHROM\t%POS0\t%END\\n' TMP/jeter1.vcf |\
 			sort -T TMP -t '\t' -k1,1 -k2,2n |\
@@ -1245,16 +1245,16 @@ script:
 			head -n1 "TMP/jeter.123.bed" | awk -F '\t' '{printf("%s\t0\t1\\n",\$1);}'  > TMP/jeter.bed
 		fi
 
-		bcftools norm --regions-file TMP/jeter.bed -O u -m- "${getAmalgamionVcf(reference)}" |\
+		bcftools norm --regions-file TMP/jeter.bed -O u -m- "${getAmalgamionVcf(meta,reference)}" |\
 			bcftools  +fill-tags -O u  -- -t AN,AC,AF |\
 			bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%INFO/AC\t%INFO/AN\t%INFO/AF\\n' > TMP/jeter.tab
 		rm TMP/jeter.bed
 		bgzip TMP/jeter.tab
 		tabix -s1 -b2 -e2 TMP/jeter.tab.gz
 
-		echo -e '##INFO=<ID=AC${getAmalgamionSuffix(meta)},Number=A,Type=Integer,Description="AC from ${getAmalgamionVcf()}">' > TMP/hdr.txt
-		echo -e '##INFO=<ID=AF${getAmalgamionSuffix(meta)},Number=A,Type=Float,Description="AF from ${getAmalgamionVcf()}">' >> TMP/hdr.txt
-		echo -e '##INFO=<ID=AN${getAmalgamionSuffix(meta)},Number=1,Type=Integer,Description="AF from ${getAmalgamionVcf()}">' >> TMP/hdr.txt
+		echo -e '##INFO=<ID=AC${getAmalgamionSuffix(meta)},Number=A,Type=Integer,Description="AC from ${getAmalgamionVcf(meta,reference)}">' > TMP/hdr.txt
+		echo -e '##INFO=<ID=AF${getAmalgamionSuffix(meta)},Number=A,Type=Float,Description="AF from ${getAmalgamionVcf(meta,reference)}">' >> TMP/hdr.txt
+		echo -e '##INFO=<ID=AN${getAmalgamionSuffix(meta)},Number=1,Type=Integer,Description="AF from ${getAmalgamionVcf(meta,reference)}">' >> TMP/hdr.txt
 		
 		bcftools annotate  --mark-sites +IN${getAmalgamionSuffix(meta)} -a TMP/jeter.tab.gz -h TMP/hdr.txt -c 'CHROM,POS,REF,ALT,AC${getAmalgamionSuffix(meta)},AN${getAmalgamionSuffix(meta)},AF${getAmalgamionSuffix(meta)}' TMP/jeter1.vcf > TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
@@ -1265,7 +1265,7 @@ script:
 		cat <<- EOF >> version.xml
 		<properties>
 			<entry key="description">annotation AC,AF,AN with external VCF</entry>
-			<entry key="vcf">${getAmalgamionVcf(reference)}</entry>
+			<entry key="vcf">${getAmalgamionVcf(meta,reference)}</entry>
 			<entry key="bcftools.version">\$(bcftools version | head -n2 | paste -d ' ' -s)</entry>
 		</properties>
 		EOF
@@ -1367,11 +1367,11 @@ stub:
 """
 }
 
-workflow ANNOTATE {
+workflow ANNOTATE_VCF_01 {
 	take:
 		meta
 		reference
-		input
+		row
 	main:
 		annot_ch = Channel.empty()
 		version_ch = Channel.empty()
@@ -1467,7 +1467,7 @@ workflow ANNOTATE {
 			db2_ch.output,
 			gtf_ch.gtf,
 			gff3_ch.gff3,
-			input
+			row
 			)
 		version_ch = version_ch.mix(annot_vcf_ch.version.first())
 

@@ -23,18 +23,22 @@ SOFTWARE.
 
 */
 
-include {moduleLoad;getBoolean;assertNotEmpty;getKeyValue;toAbsolutePath} from '../utils/functions.nf'
+include {moduleLoad;getVersionCmd;parseBoolean} from '../utils/functions.nf'
 
-process VCF_TO_BED_01 {
-	tag "${file(toAbsolutePath(vcf)).name}"
+process JVARKIT_VCF_TO_INTERVALS_01 {
+	tag "${row.vcf.name} ${row.contig?:""} ${row.interval?:""}"
 	memory "2g"
 	input:
 		val(meta)
-		val(vcf)
+		val(row) /* map : vcf , contig */
 	output:
-		path("bed2vcf.tsv"),emit:output
+		path("intervals.bed"),emit:bed /* chrom/start/end/vcf */
 		path("version.xml"),emit:version
 	script:
+		def contig = row.contig?:""
+		def interval = row.interval?:""
+		def vcf = row.vcf
+		def with_header = parseBoolean(row.with_header)
 		def distance = meta.vcf2interval_distance?:"10mb"
 		def min_distance = meta.vcf2interval_min_distance?:"1kb"
 	"""
@@ -44,16 +48,17 @@ process VCF_TO_BED_01 {
 
 	mkdir BEDS
 
-	bcftools view -G "${vcf}" |\
+	if ${with_header} ; then
+		echo -e 'contig\tstart\tend\tvcf' > intervals.bed
+	fi
+
+
+	bcftools view -G "${vcf.toRealPath()}" ${interval.isEmpty()?"":"\"${interval}\""}  ${contig.isEmpty()?"":"\"${contig}\""} |\
 	java -jar \${JVARKIT_DIST}/vcf2intervals.jar \
 		--bed \
 		--distance "${distance}" \
 		--min-distance "${min_distance}" |\
-	cut -f1,2,3 |\
-	split -a 9 --lines=1 --additional-suffix=.bed - "BEDS/cluster."
-
-	find \${PWD}/BEDS -type f -name "*.bed" |\
-		awk  'BEGIN{printf("bed\tvcf\\n");}{printf("%s\t${vcf}\\n",\$1);}' > bed2vcf.tsv
+		awk  '{printf("%s\t%s\t%s\t${vcf.toRealPath()}\\n",\$1,\$2,\$3);}' >> intervals.bed
 	
 	#######################
 	cat <<- EOF > version.xml
@@ -61,15 +66,12 @@ process VCF_TO_BED_01 {
 		<entry key="name">${task.process}</entry>
 		<entry key="description">convert vcf to bed using jvarkit/vcf2intervals</entry>
 		<entry key="vcf">${vcf}</entry>
+		<entry key="contig">${contig}</entry>
+		<entry key="interval">${interval}</entry>
 		<entry key="distance">${distance}</entry>
 		<entry key="min_distance">${min_distance}</entry>
-		<entry key="vcf2interval.version">\$(java -jar \${JVARKIT_DIST}/vcf2intervals.jar  --version)</entry>
+		<entry key="versions">${getVersionCmd("jvarkit/vcf2intervals awk bcftools")}</entry>
 	</properties>
 	EOF
-	"""
-	stub:
-	"""
-	touch bed2vcf.tsv
-	echo "<properties/>" > version.xml
 	"""
 	}

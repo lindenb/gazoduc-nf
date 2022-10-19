@@ -26,19 +26,20 @@ SOFTWARE.
 include {escapeXml} from './functions.nf'
 
 process CONCAT_FILES_01 {
+tag "N=${L.size()}"
 executor "local"
 input:
         val(meta)
         val(L)
 output:
-        path("concat.list"),emit:output
+        path("concat${meta.suffix?:".list"}"),emit:output
 	path("version.xml"),emit:version
 script:
 	def concat_n_files = meta.concat_n_files?:"50"
 	def downstream_cmd = meta.downstream_cmd?:""
 """
 hostname 1>&2
-cat << EOF | xargs -L ${concat_n_files} cat ${downstream_cmd} > concat.list
+cat << EOF | xargs -L ${concat_n_files} cat ${downstream_cmd} > "concat${meta.suffix?:".list"}"
 ${L.join("\n")}
 EOF
 
