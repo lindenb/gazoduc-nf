@@ -72,6 +72,7 @@ My Nextflow Pipelines
   * [FlagStats](workflows/flagstats/). Apply 'samtools flagstats' on a set of BAMS.
   * [SpliceAI](workflows/spliceai). Apply SpliceAI to a VCF
   * [Sex](workflows/guesssex) . Guess sex from chrX/chrY in BAM file
+  * [QC remapping ](workflows/comparemapping). QC remapping by genotype concordance + liftover
 
 # Works on my machine
 

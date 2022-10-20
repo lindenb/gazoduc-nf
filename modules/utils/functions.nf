@@ -98,9 +98,15 @@ String moduleLoad(String s) {
 	return "module load " + getModules(s);
 	}
 
-boolean isHg19(String reference) {
+boolean isHs37d5(String reference) {
 	String fname = file(reference).getSimpleName().toLowerCase();
 	if(fname.contains("hs37d5")) return true;
+	return false;
+	}
+
+boolean isHg19(String reference) {
+	if(isHs37d5(reference)) return true;
+	String fname = file(reference).getSimpleName().toLowerCase();
 	if(fname.contains("human_g1k_v37")) return true;
 	if(fname.contains("hg19")) return true;
 	if(fname.contains("grch37")) return true;
