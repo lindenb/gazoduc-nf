@@ -1,19 +1,72 @@
+/*
+
+Copyright (c) 2022 Pierre Lindenbaum
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+The MIT License (MIT)
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
 package gazoduc;
 import java.util.*;
 import java.util.function.*;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 
 public class Gazoduc {
+	private static final Logger LOG = Logger.getLogger(Gazoduc.class.getSimpleName());
 	private static Gazoduc INSTANCE = null;
 
-	public abstract class Validator {
-		abstract boolean validate(Parameter p,Map<String,Object> o);
+	public abstract interface Validator {
+		abstract public boolean validate(Parameter p,Map<String,Object> o);
 		}
 
+	private class RequiredValidator implements Validator {
+		@Override
+		public boolean validate(Parameter p,final Map<String,Object> params) {
+			if(!params.containsKey(p.getName())) {
+				LOG.log(Level.WARNING, "--"+p.getName()+" is required but was not defined. ("+ p.getDescription()+")");
+				return false;
+				}
+			return true;
+			}	
+		}
+	
+	private abstract class AbstractFileValidator implements Validator {
+		@Override 
+		public boolean validate(Parameter p,final Map<String,Object> params) {
+			return true;
+			}
+		}
+	
+	private class FileExistValidator extends AbstractFileValidator {
+		@Override 
+		public boolean validate(Parameter p,final Map<String,Object> params) {
+			return true;
+			}
+		}
+	
 	public abstract class BaseParam {
 		final String name;
 		String submenu = "";
+		String argName = "value";
 		boolean help = false;
 		Supplier<String> description = ()->this.getName();
 		Supplier<String> value = ()->null;
@@ -34,13 +87,14 @@ public class Gazoduc {
 			return this;
 			}
 		}
-
+	
+	/** parameter definition */
 	public class Parameter extends BaseParam {
 		Parameter(final String name) {
 			super(name);
 			}
 		String getArgName() {
-			return "arg";
+			return this.argName;
 			}
 		boolean validate(Map<String,Object> map) {
 			boolean is_valid = true;
@@ -64,6 +118,7 @@ public class Gazoduc {
 			}
 		}
 	
+	/** parameter factory, creats a parameter */
 	public class ParameterFactory extends BaseParam {
 		ParameterFactory(final String name) {
 			super(name);
@@ -79,15 +134,22 @@ public class Gazoduc {
 			this.submenu = s;
 			return this;
 			}
+		ParameterFactory argName(final String s) {
+			this.argName = s;
+			return this;
+			}
 		ParameterFactory validator(Validator v) {
 			if(v!=null) validators.add(v);
 			return this;
 			}
+		
+		
 		ParameterFactory setInteger() { return setClass(Integer.class);}
 		ParameterFactory setLong() { return setClass(Long.class);}
 		ParameterFactory setClass(final Class<?> C) {
 			return validator(new Validator() {
-				@Override boolean validate(Parameter p,Map<String,Object> o) {
+				@Override
+				public boolean validate(Parameter p,Map<String,Object> o) {
 					return true;
 					}
 				});
@@ -163,7 +225,7 @@ public class Gazoduc {
 		return String.valueOf(o);
 		}
 
-	public boolean parseBoolean(Object o) {	
+	public boolean parseBoolean(final Object o) {	
 		if(o==null) return false;
 		String s= String.valueOf(o).toLowerCase();
 		if(s.equals("t")) return true;
@@ -183,4 +245,5 @@ public class Gazoduc {
 
 		throw new IllegalArgumentException("Illegal boolean value "+s+".");
 		}
+	
 	}
