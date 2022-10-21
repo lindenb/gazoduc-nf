@@ -1,0 +1,16 @@
+cff-version: "1.1.0"
+abstract: "GAZODUC-NF: Institut du Thorax DSL2 workflows "
+authors: 
+  - family-names: "Lindenbaum"
+    given-names: "Pierre"
+    orcid: "https://orcid.org/0000-0003-0148-9787"
+keywords: 
+  - bioinformatics
+  - nextflow
+  - workflow
+  - DSL2
+license: MIT
+message: "If you use this software, please cite it using these metadata."
+repository-code: "https://github.com/lindenb/gazoduc-nf"
+title: gazoduc-nf
+version: " 2022.10.21"
