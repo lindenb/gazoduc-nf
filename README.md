@@ -4,7 +4,10 @@ GAZODUC
 ![Last commit](https://img.shields.io/github/last-commit/lindenb/gazoduc-nf.png)
 ![works on my machine](https://img.shields.io/static/v1?label=works+on&message=my+machine&color=green)
 
-My Nextflow Pipelines
+My [DSL2](https://www.nextflow.io/docs/latest/dsl2.html) [Nextflow](https://www.nextflow.io) Pipelines used at the [Insitut du Thorax/Nantes/France](https://umr1087.univ-nantes.fr/).
+
+Warning: Some NF files use local configurations like `module`, `conda`, full paths to resources. Some workflows are missing an example, tests, etc...
+
 
 ## Workflows
 
@@ -40,7 +43,6 @@ My Nextflow Pipelines
 ### RNAseq
 
   * [Sashimi/Encode](workflows/sashimi.encode/) sashimi plots from Encode data.
-
 
 ### Relatedness
 
@@ -80,9 +82,13 @@ My Nextflow Pipelines
 
 I'd love to, but I've got some problems with NFS.
 
+> Why don't you use/write NF-CORE ?
+
+same: I've got some problems with NFS.
+
 > Why don't you use the `module` directive ?
 
-I will
+I will... I will
 
 ## About the environment
 
@@ -93,4 +99,3 @@ I will
 ## Author
 
 Pierre Lindenbaum PhD. Institut du Thorax. 44000 Nantes. France.
-
