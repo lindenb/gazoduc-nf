@@ -329,6 +329,9 @@ String __getVersionCmd(java.util.Set<String> tools) {
 		else if(t.equals("awk")) {
 			sb.append("\$(awk --version | head -n1)");
 			}
+		else if(t.equals("cnvnator")) {
+			sb.append("\$("+t+" 2>&1 | grep CNVn -m1)");
+			}
 		else if(t.equals("xsltproc")) {
 			sb.append("\$("+t+" --version | paste -s -d ' ')");
 			}
