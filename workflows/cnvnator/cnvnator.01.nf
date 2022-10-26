@@ -96,8 +96,8 @@ workflow CNVNATOR01 {
 		to_zip = Channel.empty()
 		merge_ch = MERGE_BIN_SAMPLE(meta, gaps_ch.bed , call_ch.output.map{T->[[T[0],T[2]],[T[1],T[3]] ]}.groupTuple())
 		version_ch = version_ch.mix(merge_ch.version)
-		to_zip = to_zip.mix(merg_ch.bed.map{T->T[1]})
-		to_zip = to_zip.mix(merg_ch.vcf.map{T->T[1]})
+		to_zip = to_zip.mix(merge_ch.bed.map{T->T[1]})
+		to_zip = to_zip.mix(merge_ch.vcf.map{T->T[1]})
 
 		version_ch = MERGE_VERSION(meta,"cnvnator","cnvnator",version_ch.collect())
 		to_zip = to_zip.mix(version_ch.version)
@@ -176,15 +176,22 @@ process EXTRACT_READS {
 		def genome = getGenome(reference)
 	"""
 	hostname 1>&2
+	${moduleLoad("samtools")}
 	set -o pipefail
 	set -x
 	mkdir TMP
+
+	if ${bam.endsWith(".cram")} ; then
+		samtools view -O BAM -o TMP/jeter.bam -F 3844 --reference "${reference}" "${bam}" "${contig}"
+		samtools index TMP/jeter.bam
+	fi
+
 
 	cnvnator \
 		-root "TMP/contig.root" \
 		${chromOpt} \
 		${genome.isEmpty()?"":" -genome "+genome} \
-		-tree '${bam}' 1>&2
+		-tree ${bam.endsWith(".cram")?"TMP/jeter.bam":"'${bam}'"} 1>&2
 
 	mv TMP/contig.root ./
 
@@ -196,7 +203,7 @@ cat << EOF > version.xml
 	<entry key="sample">${sample}</entry>
 	<entry key="bam">${bam}</entry>
 	<entry key="contig">${contig}</entry>
-	<entry key="versions">${getVersionCmd("cnvnator")}</entry>
+	<entry key="versions">${getVersionCmd("cnvnator samtools")}</entry>
 </properties>
 EOF
 	"""
