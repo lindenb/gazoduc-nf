@@ -44,6 +44,10 @@ Warning: Some NF files use local configurations like `module`, `conda`, full pat
 
   * [Sashimi/Encode](workflows/sashimi.encode/) sashimi plots from Encode data.
 
+### Viruses
+
+  * [Gridss/Virus BreakEnd]workflows/gridss/virusbreakend/).  GRIDSS viral integration detection tool.
+
 ### Relatedness
 
   * [Somalier BAMS](workflows/somalier/somalier.bams/) Somalier on bams.
