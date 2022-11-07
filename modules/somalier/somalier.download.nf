@@ -32,7 +32,7 @@ output:
 	path("somalier"),emit:executable
 	path("version.xml"),emit:version
 script:
-	def somalier_version = getKeyValue(meta,"somalier_version","0.2.15")
+	def somalier_version = getKeyValue(meta,"somalier_version","0.2.16")
 	def url = "https://github.com/brentp/somalier/releases/download/v${somalier_version}/somalier"
 """
 hostname 1>&2

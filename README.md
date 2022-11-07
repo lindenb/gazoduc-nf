@@ -39,6 +39,7 @@ Warning: Some NF files use local configurations like `module`, `conda`, full pat
   * [Retrocopies GTF/VCF](workflows/retrocopy/vcf.retrocopy) Finds Retrocopies using a SV VCF and a GTF file.
   * [Plot CNV from VCF](workflows/cnvplotter) Plot CNV as SVG+HTML.
   * [Plot CNV using bed+ samtools depth](workflows/plotcoverage) Plot CNV as PDF.
+  * [Duphold](/workflows/duphold) Apply Duphold to a set of VCFs+BAMs.
 
 ### RNAseq
 
