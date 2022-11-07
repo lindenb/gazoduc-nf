@@ -46,7 +46,7 @@ Warning: Some NF files use local configurations like `module`, `conda`, full pat
 
 ### Viruses
 
-  * [Gridss/Virus BreakEnd]workflows/gridss/virusbreakend/).  GRIDSS viral integration detection tool.
+  * [Gridss/Virus BreakEnd]workflows/gridss/virusbreakend/).  GRIDSS viral integration detection tool (the vcf was empty for the few BAMs I tested)
 
 ### Relatedness
 
