@@ -22,6 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include {getVersionCmd;moduleLoad;runOnComplete} from '../utils/functions.nf'
 
 
 process NCBI_DOWNLOAD_TAXDUMP_01 {

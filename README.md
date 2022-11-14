@@ -79,7 +79,8 @@ Warning: Some NF files use local configurations like `module`, `conda`, full pat
   * [FlagStats](workflows/flagstats/). Apply 'samtools flagstats' on a set of BAMS.
   * [SpliceAI](workflows/spliceai). Apply SpliceAI to a VCF
   * [Sex](workflows/guesssex) . Guess sex from chrX/chrY in BAM file
-  * [QC remapping ](workflows/comparemapping). QC remapping by genotype concordance + liftover
+  * [QC remapping](workflows/comparemapping). QC remapping by genotype concordance + liftover
+  * [contimination](workflows/contamination). Contaminations in BAMs/FASTQs.
 
 # Works on my machine
 
