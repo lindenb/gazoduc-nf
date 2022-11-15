@@ -65,9 +65,10 @@ cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
         <entry key="description">fastqc</entry>	
-	<entry key="basename">${sample}</properties>
-	<entry key="fastq">${row.fastq}</properties>
-	<entry key="contaminants">${row.contaminants}</properties>
+	<entry key="basename">${sample}</entry>
+	<entry key="fastq">${row.fastq}</entry>
+	<entry key="contaminants">${row.contaminants}</entry>
+	<entry key="adapters">${row.adapters}</entry>
 	<entry key="fastqc.version">\$( fastqc --version)</entry>
 </properties>
 EOF
