@@ -31,7 +31,6 @@ params.publishDir = ""
 params.prefix = ""
 
 include {FASTQC_01} from '../../subworkflows/fastqc/fastqc.01.nf'
-include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 include {runOnComplete} from '../../modules/utils/functions.nf'
 
 def helpMessage() {
@@ -79,27 +78,21 @@ if( params.help ) {
 
 workflow {
 	ch1 = FASTQC_01(params,Channel.fromPath(params.fastqs))
-	html = VERSION_TO_HTML(params,ch1.version)
-	PUBLISH(ch1.version,html.html,ch1.multiqc)
+	PUBLISH(ch1.zip)
 	}
 
 process PUBLISH {
+executor "local"
 publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
 input:
-	val(version)
-	val(html)
-	val(multiqczip)
+	val(zip)
 output:
-	path("*.html")
-	path("*.xml")
 	path("*.zip")
 when:
 	!params.getOrDefault("publishDir","").trim().isEmpty()
 script:
 """
-ln -s ${html} ./
-ln -s ${version} ./
-ln -s ${multiqczip} ./
+ln -s ${zip} ./
 """
 }
 

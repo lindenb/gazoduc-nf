@@ -27,6 +27,8 @@ include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {APPLY_FASTQC_01} from '../../modules/fastqc/fastqc.01.nf'
 include {MULTIQC_01} from '../../modules/multiqc/multiqc.01.nf'
+include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
+include {SIMPLE_ZIP_01} from '../../modules/utils/zip.simple.01.nf'
 
 workflow FASTQC_01 {
 	take:
@@ -52,18 +54,31 @@ workflow FASTQC_01 {
 			combine(adapt_ch.output).
 			map{T->T[0].plus("adapters":T[1])}
 
+		to_zip = Channel.empty()
+
 		qc_ch = APPLY_FASTQC_01(meta,each_fastq_ch)
-		version_ch = version_ch.mix(qc_ch.version)	
+		version_ch = version_ch.mix(qc_ch.version)
+		to_zip = to_zip.mix(qc_ch.output.map{T->T[1]})
 
 		file_list_ch = COLLECT_TO_FILE_01([:],qc_ch.output.map{T->T[1]}.collect())
 		version_ch = version_ch.mix(file_list_ch.version)
 		
+
 		multiqc_ch = MULTIQC_01(meta,file_list_ch.output.map{T->["files":T,"prefix":(meta.prefix?:"")]})
 		version_ch = version_ch.mix(multiqc_ch.version)
+		to_zip = to_zip.mix(multiqc_ch.zip)
+
 
 		version_ch = MERGE_VERSION(meta , "FASTQC", "FASTC", version_ch.collect())
+		to_zip = to_zip.mix(version_ch)
+
+		html = VERSION_TO_HTML(meta, version_ch)
+		to_zip = to_zip.mix(html.html)
+
+		zip_ch = SIMPLE_ZIP_01(meta,to_zip.collect())
 
 	emit:
+		zip = zip_ch.zip
 		version = version_ch
 		multiqc = multiqc_ch.zip
 	}
