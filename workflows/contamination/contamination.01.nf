@@ -127,8 +127,13 @@ workflow CONTAMINATION {
 			)
 		to_zip = to_zip.mix(bwa_vir_ch.idxstats)
 		to_zip = to_zip.mix(bwa_vir_ch.svg)
+		to_zip = to_zip.mix(bwa_vir_ch.freq)
+		to_zip = to_zip.mix(bwa_vir_ch.spades)
 		version_ch= version_ch.mix(bwa_vir_ch.version)
 
+		dig_ch = DIGEST_IDX(meta, compile2_ch.jar, bwa_vir_ch.idxstats.collect())
+		version_ch= version_ch.mix(dig_ch.version)
+		to_zip = to_zip.mix(dig_ch.idxstats)
 
 		version_ch = MERGE_VERSION(meta, "Contamination", "Contamination", version_ch.collect())
 		to_zip = to_zip.mix(version_ch)
@@ -1018,8 +1023,8 @@ EOF
 process BWA_VIRUS {
 	tag "${row.sample}"
 	afterScript "rm -rf TMP"
-	memory "3g"
-	cpus 5
+	memory "15g"
+	cpus 16
 	input:
 		val(meta)
 		val(reference)
@@ -1028,15 +1033,18 @@ process BWA_VIRUS {
 	output:
 		path("${meta.prefix?:""}${row.sample}.contaminations.idx.stats"),emit:idxstats
 		path("${meta.prefix?:""}${row.sample}.contaminations.svg"),emit:svg
+		path("${meta.prefix?:""}${row.sample}.freq.txt"),emit:freq
+		path("${meta.prefix?:""}${row.sample}.spades.fa.gz"),emit:spades
 		path("version.xml"),emit:version
 	script:
 	"""
 	hostname 1>&2
-	${moduleLoad("samtools bwa")}
-        mkdir TMP
-	set -o pipefail
+	${moduleLoad("samtools bwa spades/3.15.2")}
 
+        mkdir TMP
+	set -x
 	bwa mem  -R '@RG\\tID:${row.sample}\\tSM:${row.sample}\\tLB:${row.sample}\\tCN:Nantes\\tPL:ILLUMINA' "${reference}" "${row.R1}" |\
+	samtools view -O BAM --uncompressed -F 2304 - |\
 	samtools sort -o TMP/sorted.bam  -O BAM -T TMP/st.tmp.sort 
 	samtools index "TMP/sorted.bam"
 
@@ -1044,8 +1052,31 @@ process BWA_VIRUS {
 
 	java -cp ${jar}  Minikit "${meta.prefix?:""}${row.sample}.contaminations.idx.stats" > TMP/jeter.dot
 
+	samtools view -f 4 TMP/sorted.bam | samtools fastq - | gzip --best > TMP/unmapped.fastq.gz
+
+	gunzip -c TMP/unmapped.fastq.gz |\
+		paste - - - - |\
+		cut -f 2 |\
+		LC_ALL=C sort -T TMP |\
+		LC_ALL=C uniq -c |\
+		LC_ALL=C sort -T TMP -n |\
+		tail > "${meta.prefix?:""}${row.sample}.freq.txt"
+
 	neato -T svg -o TMP/jeter.svg TMP/jeter.dot
 	mv TMP/jeter.svg "${meta.prefix?:""}${row.sample}.contaminations.svg"
+	
+
+	export TMPDIR=\${PWD}/TMP
+
+	spades.py -k 21,33,55,77,99,127 --careful --sc \
+		-t ${task.memory.giga} \
+		-m ${task.cpus} \
+		-o TMP/${row.sample}_assembly \
+		-s "TMP/unmapped.fastq.gz"
+
+	gzip --best TMP/${row.sample}_assembly/misc/assembled_contigs.fasta 
+	mv "TMP/${row.sample}_assembly/misc/assembled_contigs.fasta.gz" "${meta.prefix?:""}${row.sample}.spades.fa.gz"
+
 
 #######################
 cat << EOF > version.xml
@@ -1061,138 +1092,36 @@ EOF
 	}
 
 
-process DIGEST {
+process DIGEST_IDX {
+        tag "N=${L.size()}"
+        input:
+              	val(meta)
+                val(jar)
+		val(L)
+	output:
+		path("${meta.prefix?:""}ALL_SAMPLES.contaminations.svg"),emit:idxstats
+		path("version.xml"),emit:version
+	script:
+	"""
+	hostname 1>&2
+	${moduleLoad("samtools bwa spades/3.15.2")}
 
-script:
-"""
+cat ${L.join(" ")} > jeter.txt
 
-cat << EOF > Minikit.java
+java -cp ${jar}  Minikit jeter.txt > jeter.dot
+neato -T svg -o jeter.svg jeter.dot
+mv jeter.svg "${meta.prefix?:""}ALL_SAMPLES.contaminations.svg"
 
-import java.io.*;
-import java.util.*;
-import java.util.regex.*;
+rm jeter.dot jeter.txt
 
-public class Minikit
-	{
-	private final Map<Integer,Node> id2node=new HashMap<Integer,Node>(10_000);
-
-	private static class Node
-		{
-		int id=0;
-		int parent_id=-1;
-		Set<Node> children=new HashSet<Node>();;
-		String common_name=null;
-		String scientific_name=null;
-		String rank=null;
-		
-		private Node(int id)
-			{
-			this.id=id;
-			common_name=String.valueOf(this.id);
-			scientific_name=common_name;
-			}	
-		@Override
-		public int hashCode()
-			{
-			return id;
-			}
-		@Override
-		public boolean equals(Object obj)
-			{
-			if(obj==this) return true;
-			return Node.class.cast(obj).id==this.id;
-			}
-		}
-	
-	private Node getNodeById(int id)
-		{
-		Node node=id2node.get(id);
-		if(node==null)
-			{
-			node=new Node(id);
-			id2node.put(id,node);
-			}
-		return node;
-		}
-	
-	private void readNames(BufferedReader in) throws IOException
-		{
-		final Pattern delim=Pattern.compile("\\t\\\\|(\\t)?");
-		String line;
-		while((line=in.readLine())!=null)
-			{
-			String tokens[]=delim.split(line);
-			int id= Integer.parseInt(tokens[0].trim());
-			Node node=this.id2node.get(id);
-			if(node==null) continue;
-			
-			if(tokens[3].equals("common name"))
-				{
-				node.common_name=tokens[1].trim();
-				}
-			else if(tokens[3].equals("scientific name"))
-				{
-				node.scientific_name=tokens[1].trim();
-				}
-			}
-		}	
-	private void readNodes(BufferedReader in) throws IOException
-		{
-		final Pattern delim=Pattern.compile("\\t\\\\|(\\t)?");
-		String line;
-		while((line=in.readLine())!=null)
-			{
-			final String tokens[]=delim.split(line);
-			
-			Node node = getNodeById(Integer.parseInt( tokens[0].trim()));
-			Node parent= getNodeById(Integer.parseInt( tokens[1].trim()));
-			if(parent!=node)
-				{
-				parent.children.add(node);
-				node.parent_id=parent.id;
-				}
-			node.rank=tokens[2].trim();
-			}
-		}	
-	
-	
-	private int doWork(String[] args) {
-		final int root_id = 1;
-		try
-			{
-			try(BufferedReader in = new BufferedReader(new FileReader(new File("${nodes}")))) {
-				readNodes(in);
-				}
-			try(BufferedReader in = new BufferedReader(new FileReader(new File("${nodes}")))) {
-				readNames(in);
-				}
-
-			
-			Node root= this.id2node.get(root_id);
-			if(root==null)
-				{
-				System.err.println("Cannot get node id."+root_id);
-				return -1;
-				}
-			return 0;
-			}
-		catch(Throwable err)
-			{
-			err.printStackTrace();
-			return -1;
-			}
-		}
-
-	public static void main(String[] args)
-		{
-		int ret = new Minikit().doWork(args);
-		System.exit(ret);
-		}
-	}
-
-
-
+#######################
+cat << EOF > version.xml
+<properties id="${task.process}">
+	<entry key="name">${task.process}</entry>
+	<entry key="description">digest samtools idxstats</entry>
+	<entry key="samples.count">${L.size()}</entry>
+	<entry key="version">${getVersionCmd("java")}</entry>
+</properties>
 EOF
-
-"""
-}
+	"""
+	}

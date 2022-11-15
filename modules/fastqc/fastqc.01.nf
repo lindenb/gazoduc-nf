@@ -48,8 +48,8 @@ process APPLY_FASTQC_01 {
       hostname 1>&2
       ${moduleLoad("fastqc")}
       set -o pipefail
-      mkdir TMP
-      mkdir OUT
+      mkdir -p TMP
+      mkdir -p OUT
 
       fastqc --dir TMP -o OUT \
 		--noextract \
@@ -72,5 +72,5 @@ cat << EOF > version.xml
 </properties>
 EOF
 """
-      }
+}
 
