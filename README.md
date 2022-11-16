@@ -19,6 +19,7 @@ Warning: Some NF files use local configurations like `module`, `conda`, full pat
 
   * [Map Fastqs](workflows/mapping/map.fastqs/) Map Fastqs on a reference genome 
   * [Remap bam](workflows/mapping/remap.bwa/) Remap BAM/CRAM on another reference 
+  * [Fastmap](workflows/mapping/fastmap/) Fast map Fastq (split fastq, bwa-mem, samtools merge)
 
 ### Calling
 

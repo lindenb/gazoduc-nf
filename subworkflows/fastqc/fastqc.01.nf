@@ -102,7 +102,7 @@ cat <<- EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
         <entry key="description">Download contamination file</entry>
-	<entry key="wget.version"><url>${url}</url></entry>
+	<entry key="url"><a>${url}</a></entry>
 	<entry key="wget.version">\$(wget --version | head -n1)</entry>
 </properties>
 EOF
@@ -128,7 +128,7 @@ cat <<- EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
         <entry key="description">Download adapters file</entry>
-	<entry key="wget.version"><url>${url}</url></entry>
+	<entry key="url"><a>${url}</a></entry>
 	<entry key="wget.version">\$(wget --version | head -n1)</entry>
 </properties>
 EOF

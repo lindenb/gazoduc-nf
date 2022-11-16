@@ -42,7 +42,9 @@ params.min_qual = 30
 params.min_read_len = 50
 params.max_reads= 1_000_000
 params.max_repeat = 6
-
+params.max_N = 2
+/* use spades ? */
+params.with_spades=false
 
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 include {getVersionCmd;moduleLoad;runOnComplete} from '../../modules/utils/functions.nf'
@@ -77,6 +79,7 @@ workflow CONTAMINATION {
 		version_ch= version_ch.mix(taxdump_ch.version)
 
 
+		to_zip = Channel.empty()	
 		fastq_ch = Channel.empty()
 
 		if(!bams.name.equals("NO_FILE")) {
@@ -92,12 +95,13 @@ workflow CONTAMINATION {
 
 
 		if(!fastqs.name.equals("NO_FILE")) {
-			sn2fastq_ch = fastqs.splitCsv(header:true,sep:'\t').map{T->{
-				if(T.containsKey("R2") && !T.R2.isEmpty()) {
-					return [ [T.sample,T.R1], [T.sample,T.R2]  ];
-					}
-				else 	{
-					return [ [T.sample,T.R1] ];			
+			sn2fastq_ch = Channel.fromPath(fastqs).splitCsv(header:true,sep:'\t').
+				map{T->{
+					if(T.containsKey("R2") && !T.R2.isEmpty()) {
+						return [ [T.sample,T.R1], [T.sample,T.R2]  ];
+						}
+					else {
+						return [ [T.sample,T.R1] ];			
 					}
 				}}.flatMap().groupTuple()
 
@@ -118,7 +122,6 @@ workflow CONTAMINATION {
 			)
 		version_ch= version_ch.mix(compile2_ch.version)
 
-		to_zip = Channel.empty()	
 		bwa_vir_ch = BWA_VIRUS(
 			meta,
 			vir_ch.reference,
@@ -183,6 +186,7 @@ int main(int argc,char** argv) {
 	int i=0;
 	long n_reads = 0L;
 	vector<bool> virus_tids;
+	vector<long> counts;
 	int ret;
 	samFile *fp = NULL;
 	bam_hdr_t *hdr = NULL;
@@ -207,6 +211,7 @@ int main(int argc,char** argv) {
        virus_tids.reserve(hdr->n_targets);
 
        for(i=0;i< hdr->n_targets; i++) {
+		counts.push_back(0L);
                 if(strcmp("NC_007605",hdr->target_name[i])==0 ||
 		   strcmp("EBV",hdr->target_name[i])==0
 		) {
@@ -215,6 +220,7 @@ int main(int argc,char** argv) {
 			virus_tids.push_back(false);
 			}
                 }
+	counts.push_back(0L);/* last is for unmapped */
 
 
         out = gzdopen(fileno(stdout), "wb9");
@@ -234,6 +240,13 @@ int main(int argc,char** argv) {
 	string seq;
 
 	while ((ret = sam_read1(fp, hdr,b)) >= 0) {
+		int tid = b->core.tid;
+		if(tid < 0 ) {
+			counts[hdr->n_targets]++;/* unmapped */
+			} else {
+			counts[tid]++;
+			}
+
 		double gc=0;
 		uint8_t *s = bam_get_seq(b);
 		uint8_t *q = bam_get_qual(b);
@@ -243,10 +256,10 @@ int main(int argc,char** argv) {
 		if (HAS_FLAG(BAM_FSECONDARY)) continue;
 		if (HAS_FLAG(BAM_FSUPPLEMENTARY)) continue;
 		if (len < ${params.min_read_len} ) continue;
-		if (!(HAS_FLAG(BAM_FUNMAP) || virus_tids[b->core.tid])) continue;
+		if (!(HAS_FLAG(BAM_FUNMAP) || virus_tids[tid])) continue;
 
 		seq.resize(len, ' ');
-		unsigned int N=0;
+		int N=0;
 		for (i = 0; i < len; i++) {
 			seq[i] =seq_nt16_str[bam_seqi(s, i)];
 			switch(seq[i]) {
@@ -255,7 +268,7 @@ int main(int argc,char** argv) {
 				default: break;				
 				}
 			}
-		if (N > 0UL ) continue;
+		if (N > ${params.max_N} ) continue;
 		double gc_percent = gc/seq.size();
 		if ( gc_percent < ${params.min_gc} || gc_percent > ${params.max_gc} ) continue;
 
@@ -274,7 +287,7 @@ int main(int argc,char** argv) {
 		double mean_qual=0.0;
 		if (q[0] != 0xff) {
             		for (i = 0; i < len; ++i) {
-	                	mean_qual += (int)(s[i]);/* don't add 33 */
+	                	mean_qual += (int)(q[i]);/* don't add 33 */
 				}
 			mean_qual /= len;
 			if ( mean_qual < ${params.min_qual} ) continue;
@@ -305,11 +318,35 @@ int main(int argc,char** argv) {
 
 		n_reads++;
 		}
+	/* save counts */
+	FILE* xo = fopen(argv[3],"w");
+	if(xo==NULL) {
+		fprintf(stderr,"I/O error cannot open %s\\n",argv[3]);
+                return EXIT_FAILURE;
+		}
+	for(i=0;i< (int)counts.size();i++) {
+		if(i<  hdr->n_targets) {
+			fprintf(xo,"%s\t%ld",hdr->target_name[i],(long)hdr->target_len[i]);
+			} 
+		else
+			{
+			fprintf(xo,"*\t0");//unmappd
+			}
+		
+		fprintf(xo,"\t%ld\t0\\n",counts[i]);
+		}
+	fflush(xo);
+	fclose(xo);
+
+
+
 	sam_hdr_destroy(hdr);
 	hts_close(fp);
 	bam_destroy1(b);
 	gzflush(out,Z_FINISH);
         gzclose(out);
+
+
 	return EXIT_SUCCESS;
 	}
 
@@ -346,7 +383,7 @@ process EXTRACT_BAM_UNMAPPED {
 		val(fastqfilter)
 		val(row)
 	output:
-		tuple val("${row.new_sample}"),path("${row.new_sample}.fastq.gz"),emit:output
+		tuple val("${row.new_sample}"),path("${row.new_sample}.fastq.gz"),path("${row.new_sample}.ctg.count"),emit:output
 		path("version.xml"),emit:version
 	script:
 		def sample = row.new_sample
@@ -357,7 +394,7 @@ process EXTRACT_BAM_UNMAPPED {
         mkdir TMP
 	echo "LD_LIBRARY_PATH=\${LD_LIBRARY_PATH}"  1>&2
 
-	${fastqfilter} "${bam}" "${row.reference}" > TMP/tmp.fastq.gz
+	${fastqfilter} "${bam}" "${row.reference}" "${sample}.ctg.count" > TMP/tmp.fastq.gz
 
 	mv TMP/tmp.fastq.gz "${sample}.fastq.gz"
 
@@ -378,13 +415,15 @@ EOF
 process EXTRACT_FASTQ_UNMAPPED {
 	tag "${sample} N=${L.size()}"
 	afterScript "rm -rf TMP"
+	cpus 4
+	memory "10g"
 	input:
 		val(meta)
 		val(reference)
 		val(fastqfilter)
 		tuple val(sample),val(L)
 	output:
-		tuple val("${sample}"),path("${sample}.fastq.gz"),emit:output
+		tuple val("${sample}"),path("${sample}.fastq.gz"),path("${sample}.ctg.count"),emit:output
 		path("version.xml"),emit:version
 	script:
 	"""
@@ -394,19 +433,22 @@ process EXTRACT_FASTQ_UNMAPPED {
 	echo "LD_LIBRARY_PATH=\${LD_LIBRARY_PATH}"  1>&2
 	set -o pipefail
 
-	cat ${L.join(" ")} |\
-	bwa mem -R '@RG\\tID:${sample}\\tSM:${sample}\\tLB:${sample}\\tCN:Nantes\\tPL:ILLUMINA' "${reference}" - |\
-	${fastqfilter} "-" "${reference}" > TMP/tmp.fastq.gz
-
+	for F in ${L.join(" ")}
+	do
+		echo "#\${F}" 1>&2
+		bwa mem -t 3 -R '@RG\\tID:${sample}\\tSM:${sample}\\tLB:${sample}\\tCN:Nantes\\tPL:ILLUMINA' "${reference}" "\${F}" |\
+		${fastqfilter} "-" "${reference}" "${sample}.ctg.count" >> TMP/tmp.fastq.gz
+	done
 	mv TMP/tmp.fastq.gz "${sample}.fastq.gz"
 
 #######################
 cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
-	<entry key="description">extract unmapped bams from BAM</entry>
-	<entry key="sample">${row.new_sample}</entry>
-	<entry key="bam">${row.bam}</entry>
+	<entry key="description">extract unmapped bams from FASTQ</entry>
+	<entry key="reference">${reference}</entry>
+	<entry key="sample">${sample}</entry>
+	<entry key="fastqs.count">${L.size()}</entry>
 	<entry key="version">${getVersionCmd("bwa")}</entry>
 </properties>
 EOF
@@ -1024,7 +1066,7 @@ process BWA_VIRUS {
 	tag "${row.sample}"
 	afterScript "rm -rf TMP"
 	memory "15g"
-	cpus 16
+	cpus ((params.with_spades as boolean)?16:4)
 	input:
 		val(meta)
 		val(reference)
@@ -1034,12 +1076,13 @@ process BWA_VIRUS {
 		path("${meta.prefix?:""}${row.sample}.contaminations.idx.stats"),emit:idxstats
 		path("${meta.prefix?:""}${row.sample}.contaminations.svg"),emit:svg
 		path("${meta.prefix?:""}${row.sample}.freq.txt"),emit:freq
-		path("${meta.prefix?:""}${row.sample}.spades.fa.gz"),emit:spades
+		path("${meta.prefix?:""}${row.sample}.spades.fa.gz"),optional:true,emit:spades
 		path("version.xml"),emit:version
 	script:
+		def with_spades = (params.with_spades as boolean)
 	"""
 	hostname 1>&2
-	${moduleLoad("samtools bwa spades/3.15.2")}
+	${moduleLoad("samtools bwa "+(with_spades?"spades/3.15.2":""))}
 
         mkdir TMP
 	set -x
@@ -1050,7 +1093,7 @@ process BWA_VIRUS {
 
 	samtools idxstats "TMP/sorted.bam" > "${meta.prefix?:""}${row.sample}.contaminations.idx.stats" 
 
-	java -cp ${jar}  Minikit "${meta.prefix?:""}${row.sample}.contaminations.idx.stats" > TMP/jeter.dot
+	java -Xmx${task.memory.giga}G -cp ${jar}  Minikit "${meta.prefix?:""}${row.sample}.contaminations.idx.stats" > TMP/jeter.dot
 
 	samtools view -f 4 TMP/sorted.bam | samtools fastq - | gzip --best > TMP/unmapped.fastq.gz
 
@@ -1066,17 +1109,19 @@ process BWA_VIRUS {
 	mv TMP/jeter.svg "${meta.prefix?:""}${row.sample}.contaminations.svg"
 	
 
-	export TMPDIR=\${PWD}/TMP
+	if ${with_spades} ; then
 
-	spades.py -k 21,33,55,77,99,127 --careful --sc \
-		-t ${task.memory.giga} \
-		-m ${task.cpus} \
-		-o TMP/${row.sample}_assembly \
-		-s "TMP/unmapped.fastq.gz"
+		export TMPDIR=\${PWD}/TMP
 
-	gzip --best TMP/${row.sample}_assembly/misc/assembled_contigs.fasta 
-	mv "TMP/${row.sample}_assembly/misc/assembled_contigs.fasta.gz" "${meta.prefix?:""}${row.sample}.spades.fa.gz"
+		spades.py -k 21,33,55,77,99,127 --careful --sc \
+			-t ${task.memory.giga} \
+			-m ${task.cpus} \
+			-o TMP/${row.sample}_assembly \
+			-s "TMP/unmapped.fastq.gz"
 
+		gzip --best TMP/${row.sample}_assembly/misc/assembled_contigs.fasta 
+		mv "TMP/${row.sample}_assembly/misc/assembled_contigs.fasta.gz" "${meta.prefix?:""}${row.sample}.spades.fa.gz"
+	fi
 
 #######################
 cat << EOF > version.xml
@@ -1094,6 +1139,7 @@ EOF
 
 process DIGEST_IDX {
         tag "N=${L.size()}"
+	memory "5g"
         input:
               	val(meta)
                 val(jar)
@@ -1108,7 +1154,7 @@ process DIGEST_IDX {
 
 cat ${L.join(" ")} > jeter.txt
 
-java -cp ${jar}  Minikit jeter.txt > jeter.dot
+java -Xmx${task.memory.giga}G -cp ${jar}  Minikit jeter.txt > jeter.dot
 neato -T svg -o jeter.svg jeter.dot
 mv jeter.svg "${meta.prefix?:""}ALL_SAMPLES.contaminations.svg"
 
