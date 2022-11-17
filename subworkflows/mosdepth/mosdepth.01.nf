@@ -27,7 +27,9 @@ include {SCATTER_TO_BED} from '../../subworkflows/picard/picard.scatter2bed.nf'
 include {MOSDEPTH_DOWNLOAD_01} from '../../modules/mosdepth/mosdepth.downoad.01.nf'
 include {MOSDEPTH_RUN_01} from '../../modules/mosdepth/mosdepth.run.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
-include {moduleLoad} from '../../modules/utils/functions.nf'
+include {MULTIQC_01} from '../../modules/multiqc/multiqc.01.nf'
+include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
+include {moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
 
 
 workflow MOSDEPTH_BAMS_01 {
@@ -64,8 +66,14 @@ workflow MOSDEPTH_BAMS_01 {
 		merge_ch = MERGE_MOSDEPTH_SUMMARY(meta,ch2.summary.map{T->T[0].sample+"\t"+T[0].bam+"\t"+T[0].reference+"\t"+T[1]}.collect())
 		version_ch = version_ch.mix(merge_ch.version)
 
-		regdist_ch = ZIP_REGION_DIST(meta,ch2.regiondist.map{T->T[1]}.collect())
+		file_list_ch = COLLECT_TO_FILE_01([:],ch2.regiondist.map{T->T[1]}.collect())
+		version_ch = version_ch.mix(file_list_ch.version)
+
+		regdist_ch = ZIP_REGION_DIST(meta, file_list_ch.output)
 		version_ch = version_ch.mix(regdist_ch.version)
+
+		multiqc_ch = MULTIQC_01(meta,file_list_ch.output.map{T->["files":T,"prefix":(meta.prefix?:"")]})
+		version_ch = version_ch.mix(multiqc_ch.version)
 
 		pdf_ch = Channel.empty()
 		plot_ch = PLOT_IT(meta, merge_ch.output)
@@ -82,6 +90,7 @@ workflow MOSDEPTH_BAMS_01 {
 		perbase = ch2.perbase
 		pdf  = pdf_ch.collect()
 		region_dist_zip = regdist_ch.zip
+		multiqc = multiqc_ch.zip
 	}
 
 process MERGE_MOSDEPTH_SUMMARY {
@@ -129,10 +138,10 @@ EOF
 }
 
 process ZIP_REGION_DIST {
-tag "${L.size()}"
+tag "${files.name}"
 input:
 	val(meta)
-	val(L)
+	path(files)
 output:
 	path("${meta.prefix?:""}regions.dist.zip"),emit:zip
 	path("version.xml"),emit:version
@@ -140,14 +149,14 @@ script:
 """
 hostname 1>&2
 
-zip -9j "${meta.prefix?:""}regions.dist.zip" ${L.join(" ")}
+zip -9@j "${meta.prefix?:""}regions.dist.zip" < "${files}"
 
 ##################
 cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
         <entry key="description">merge mosdepth region_dist</entry>
-        <entry key="count">${L.size()}</entry>
+        <entry key="input">${files}</entry>
 </properties>
 EOF
 """
@@ -199,6 +208,7 @@ cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
 	<entry key="description">plot mosdepth summary</entry>
+	<entry key="versions">${getVersionCmd("r")}</entry>
 </properties>
 EOF
 """

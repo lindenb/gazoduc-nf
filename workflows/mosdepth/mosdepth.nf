@@ -87,7 +87,7 @@ if( params.help ) {
 workflow {
 	ch1 = MOSDEPTH_BAMS_01(params,params.reference,params.bams, file(params.bed))
 	html = VERSION_TO_HTML(params,ch1.version)
-	PUBLISH(ch1.version,html.html,ch1.summary,ch1.pdf.collect())
+	PUBLISH(ch1.version,html.html,ch1.summary,ch1.multiqc,ch1.pdf.collect())
 	}
 
 process PUBLISH {
@@ -96,6 +96,7 @@ input:
 	path(version)
 	path(html)
 	path(summary)
+	path(multiqc)
 	path(pdfs)
 output:
 	path("${params.prefix}mosdepth.zip")
@@ -103,7 +104,7 @@ when:
 	!params.getOrDefault("publishDir","").trim().isEmpty()
 script:
 """
-zip -j "${params.prefix}mosdepth.zip" ${version} ${html} ${summary} ${pdfs.join(" ")}
+zip -j "${params.prefix}mosdepth.zip" ${version} ${html} ${summary} ${multiqc} ${pdfs.join(" ")}
 """
 }
 

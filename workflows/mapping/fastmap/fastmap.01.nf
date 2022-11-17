@@ -151,9 +151,11 @@ script:
 	def PL = "ILLUMINA"
 """
 hostname 1>&2
-${moduleLoad("samtools bwa")}
+${moduleLoad("samtools/1.15.1 bwa")}
 set -o pipefail
 mkdir TMP
+
+echo "\${LD_LIBRARY_PATH}" 1>&2 
 
 ${splitter} -n "${row.n_chunks}" -m "${row.chunck}" ${row.R1} ${row.R2?:""} |\
 bwa mem -p -t ${task.cpus} -R '@RG\\tID:${sample}.${row.chunck}\\tSM:${sample}\\tLB:${sample}\\tCN:${CN}\\tPL:${PL}' "${reference}" - |\
