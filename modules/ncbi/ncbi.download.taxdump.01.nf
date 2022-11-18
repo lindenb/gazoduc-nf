@@ -42,7 +42,7 @@ script:
 	def url = "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz"
 """
 hostname 1>&2
-wget -O jeter.tar.gz "${url}"
+wget --no-check-certificate -O jeter.tar.gz "${url}"
 tar xvfz jeter.tar.gz
 rm jeter.tar.gz
 

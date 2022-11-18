@@ -1,6 +1,8 @@
 include { SAMTOOLS_SAMPLES01} from '../../modules/samtools/samtools.samples.01.nf'
 include { COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
-include { getKeyValue; getModules; assertFileExists} from '../../modules/utils/functions.nf'
+include { getKeyValue;moduleLoad; assertFileExists;getVersionCmd} from '../../modules/utils/functions.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+
 
 workflow INDEXCOV {
      take:
@@ -34,11 +36,15 @@ workflow INDEXCOV {
 	executable_ch = DOWNLOAD_GOLEFT(meta.subMap(["goleft_version"]))
 	ch_version = ch_version.mix( executable_ch.version)
     	indexcov_ch = RUN_GOLEFT_INDEXCOV(meta, executable_ch.executable ,reference , bams2_ch, ch_version.collect())
+	ch_version = ch_version.mix( indexcov_ch.version)
+
+	ch_version = MERGE_VERSION(meta, "IndexCov", "Indexcov",ch_version.collect())		
+
 
 	emit:
 		files = indexcov_ch.files
 		zip = indexcov_ch.zip
-		version = indexcov_ch.version
+		version = ch_version
 	}
 
 process DOWNLOAD_GOLEFT {
@@ -77,7 +83,8 @@ process DOWNLOAD_GOLEFT {
 process REBUILD_BAI {
     tag "${sample} ${file(bam).name} mapq=${meta.mapq}"
     afterScript "rm -rf TMP"
-    label "process_low"
+    memory "5g"
+    cpus 3
     input:
         val meta
 	val reference
@@ -90,6 +97,8 @@ process REBUILD_BAI {
     script:
 	def mapq = getKeyValue(meta,"mapq","1")
     """
+	hostname 1>&2
+	${moduleLoad("samtools")}
 	mkdir TMP
 
         # write header only
@@ -115,7 +124,7 @@ process REBUILD_BAI {
 		<entry key="name">${task.process}</entry>
 		<entry key="description">Re-Build BAI without generating a BAM</entry>
 		<entry key="mapq">${mapq}</entry>
-		<entry key="samtools">\$(samtools  --version | head -n 1| cut -d ' ' -f2)</entry>
+		<entry key="samtools">${getVersionCmd("samtools")}</entry>
 	</properties>
 	EOF
     """
@@ -141,7 +150,7 @@ process RUN_GOLEFT_INDEXCOV {
     	def prefix2 = prefix +"."
     """
 	hostname 1>&2
-	module load ${getModules("htslib")}
+	${moduleLoad("htslib")}
 	set -o pipefail
 	mkdir -p "${prefix}"
 
@@ -172,8 +181,6 @@ process RUN_GOLEFT_INDEXCOV {
 	tabix -p bed "${prefix}/${prefix}-indexcov.bed.gz"
 
 
-
-
 	cat <<- EOF > version.xml
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
@@ -181,26 +188,15 @@ process RUN_GOLEFT_INDEXCOV {
 		<entry key="bams">${bams}</entry>
 		<entry key="count-bams">\$(wc -l < {bams})</entry>
 		<entry key="goleft">\$(${executable} -h |  head -n 1 | sed 's/.*: //')</entry>
-		<entry key="steps">
-	EOF
-
-	for X in ${versions.join(" ")}
-	do
-		xmllint --format "\${X}" | tail -n+2 >> version.xml
-	done
-
-	cat <<- EOF >> version.xml
-		</entry>
+		<entry key="versions">${getVersionCmd("tabix")}</entry>
 	</properties>
 	EOF
-	xmllint --format version.xml > "${prefix}/${prefix}-version.xml"
 
 	# all the generated files
 	find "${prefix}" -type f > "${prefix2}files.list"
 
 	# zip results
 	cat "${prefix2}files.list" | zip -@ -9  "${prefix2}indexcov.zip"
-
     """
 }
 

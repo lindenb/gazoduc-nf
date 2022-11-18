@@ -476,7 +476,9 @@ if ${acns.name.equals("NO_FILE")} ; then
 
 ## via https://viralzone.expasy.org/678
 ## "https://ftp.ncbi.nlm.nih.gov/pub/UniVec/UniVec_Core" 
-cat << EOF | sort | uniq | paste -sd, >> jeter.http
+cat << EOF | grep -v "#" | tr "," "\\n" | sort | uniq | paste -sd, >> jeter.http
+# homo sapiens Y
+CP086569
 AF033819.3
 CP003914
 AB009864.2

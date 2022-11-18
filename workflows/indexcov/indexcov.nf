@@ -40,7 +40,10 @@ params.prefix = ""
 params.goleft_version = "v0.2.4"
 
 include {INDEXCOV} from '../../subworkflows/indexcov/indexcov.nf'
-include {assertFileExists} from '../../modules/utils/functions.nf'
+include {runOnComplete;assertFileExists} from '../../modules/utils/functions.nf'
+include {SIMPLE_ZIP_01} from '../../modules/utils/zip.simple.01.nf'
+include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
+
 
 def helpMessage() {
   log.info"""
@@ -95,7 +98,14 @@ workflow {
 	assertFileExists(params.reference,"--reference must be defined")
 	assertFileExists(params.bams,"--bams must be defined")
 	indexcov_ch = INDEXCOV(params,params.reference,params.bams)
-	PUBLISH(indexcov_ch.zip)
+
+	html = VERSION_TO_HTML(params, indexcov_ch.version)
+
+	to_zip = Channel.empty().mix(indexcov_ch.zip).mix(indexcov_ch.version).mix(html.html)
+	zip_ch = SIMPLE_ZIP_01(params,to_zip.collect())
+
+
+	PUBLISH(zip_ch.zip)
 	}
 
 process PUBLISH {
@@ -113,20 +123,4 @@ echo "publishing ${zip}"
 """
 }
 
-workflow.onComplete {
-
-    println ( workflow.success ? """
-        Pipeline execution summary
-        ---------------------------
-        Completed at: ${workflow.complete}
-        Duration    : ${workflow.duration}
-        Success     : ${workflow.success}
-        workDir     : ${workflow.workDir}
-        exit status : ${workflow.exitStatus}
-        """ : """
-        Failed: ${workflow.errorReport}
-        exit status : ${workflow.exitStatus}
-        """
-    )
-}
-
+runOnComplete(workflow)
