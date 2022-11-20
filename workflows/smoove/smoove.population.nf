@@ -41,6 +41,8 @@ params.gff3 = ""
 
 include {SMOOVE_SV_POPULATION_01} from '../../subworkflows/smoove/smoove.population.01.nf' 
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
+include {runOnComplete} from '../../modules/utils/functions.nf'
+
 
 def helpMessage() {
   log.info"""
@@ -133,20 +135,4 @@ done
 """
 }
 
-workflow.onComplete {
-
-    println ( workflow.success ? """
-        Pipeline execution summary
-        ---------------------------
-        Completed at: ${workflow.complete}
-        Duration    : ${workflow.duration}
-        Success     : ${workflow.success}
-        workDir     : ${workflow.workDir}
-        exit status : ${workflow.exitStatus}
-        """ : """
-        Failed: ${workflow.errorReport}
-        exit status : ${workflow.exitStatus}
-        """
-    )
-}
-
+runOnComplete(workflow)
