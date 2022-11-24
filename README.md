@@ -29,6 +29,7 @@ Warning: Some NF files use local configurations like `module`, `conda`, full pat
   * [Graphtyper](workflows/graphtyper/graphtyper.genotype/) calling with graphtyper
   * [Deepvariant](workflows/deepvariant) calling with DeepVariant
   * [bcftools](workflows/bcftools/calling) calling with bcftools/mpileup+call
+  * [ultrarares](workflows/ultrarares). Call variants from a VCF for a list a BAM.
 
 ### Structural variants
 

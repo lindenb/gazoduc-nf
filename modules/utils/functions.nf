@@ -75,11 +75,11 @@ String getModules(String s) {
 			continue;
 			}
 		if(s1.equals("plink")) {
-			ret += "plink/1.90b6.18";
+			ret += " plink/1.90b6.18";
 			continue;
 			}
 		if(s1.equals("gatk4")) {
-			ret += "gatk/0.0.0";
+			ret += " gatk/0.0.0";
 			continue;
 			}
 		if(workflow.userName.equals("lindenbaum-p")) {

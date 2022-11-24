@@ -464,7 +464,7 @@ EOF
 process PLOT_CNV {
 tag "${row.prefix} ${row.interval}"
 afterScript "rm -rf TMP"
-memory "3g"
+memory "10g"
 input:
 	val(meta)
 	val(reference)
