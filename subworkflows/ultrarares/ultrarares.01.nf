@@ -137,7 +137,8 @@ script:
 	def gnomadGenome= getGnomadGenomePath(meta,reference);
 	def gnomadPop = meta.gnomad_population?:"AF_nfe"
 	def gnomadAF = meta.gnomad_max_af?:0.01
-	def max_alleles = 3
+	def extraBcftoolsView1 = meta.extraBcftoolsView1?:""
+	def extraBcftoolsView2 = meta.extraBcftoolsView2?:""
 """
 hostname 1>&2
 ${moduleLoad("bcftools bedtools gatk4 jvarkit")}
@@ -177,7 +178,7 @@ return new VariantContextBuilder(variant).
 	make();
 EOF
 
-bcftools view -m2 -M "${max_alleles}" --regions "${interval}" -O u "${vcf}" |\
+bcftools view ${extraBcftoolsView1} --regions "${interval}" -O u "${vcf}" |\
 	bcftools norm --no-version --multiallelics -any --fasta-ref "${reference}" -O v |\
 	awk -F '\t' '/^##/ {print;next;} /^#CHROM/ {printf("##INFO=<ID=OSAMPLES,Number=.,Type=String,Description=\\\"Found in other samples\\\">\\n");printf("##INFO=<ID=ORIGINAL,Number=0,Type=Flag,Description=\\\"PRESENT IN ORIGNAL VCF\\\">\\n");print;next;} {if(\$5=="*") next;OFS="\t";\$8=sprintf("ORIGINAL;%s",\$8);print;}' |\
 	bcftools sort --max-mem ${task.memory.giga}G  -T TMP -O z -o TMP/jeter.vcf.gz
@@ -192,6 +193,10 @@ if ${!gnomadGenome.isEmpty() && !gnomadPop.isEmpty()} ; then
 	mv TMP/jeter2.vcf.gz TMP/jeter.vcf.gz
 fi
 
+if ${!extraBcftoolsView2.isEmpty()} ; then
+	bcftools view ${extraBcftoolsView2} -O z -o TMP/jeter2.vcf.gz TMP/jeter.vcf.gz
+	mv TMP/jeter2.vcf.gz TMP/jeter.vcf.gz
+fi
 
 bcftools index --tbi TMP/jeter.vcf.gz
 

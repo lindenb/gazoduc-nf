@@ -24,41 +24,42 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
+
 /** path to indexed fasta reference */
 params.reference = ""
-params.bams = "NO_FILE"
+/** path to VCF or file containing paths to VCFs with suffix ".list" */
 params.vcf = "NO_FILE"
-/* run ultrare for each record in the BED file OR make the bed by default */
-params.bed = "NO_FILE"
-params.gnomad_max_af=0.01
-params.gnomad_population="AF_nfe"
-params.n_bams_per_hc_call=5
+params.sample = "NO_FILE"
+/** display help */
 params.help = false
+/** publish Directory */
 params.publishDir = ""
+/** files prefix */
 params.prefix = ""
-params.extraBcftoolsView1=""
-params.extraBcftoolsView2=""
 
-include {ULTRA_RARES_01} from '../../subworkflows/ultrarares/ultrarares.01.nf'
-include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
-include {runOnComplete} from '../../modules/utils/functions.nf'
+params.gnomadAF = 0.01
+params.gnomadPop= "AF_nfe"
+params.soacn = "SO:0001574,SO:0001575,SO:0001818"
+params.bed = "NO_FILE"
+
+include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
+include {moduleLoad;runOnComplete} from '../../../modules/utils/functions.nf'
+include {FAST_ANNOT_01} from '../../../subworkflows/annotation/fastannot.01.nf'
+include {MERGE_VERSION} from '../../../modules/version/version.merge.nf'
 
 def helpMessage() {
   log.info"""
 ## About
 
-search for ultra rares variants
 
 ## Author
 
-${params.rsrc.author}
+Pierre Lindenbaum PhD
 
 ## Options
 
   * --reference (fasta) ${params.rsrc.reference} [REQUIRED]
-  * --vcf (file) indexed vcf file. default: ""
-  * --bams (file) controls bams
-  * --bed (file) how to split the vcf
+  * --vcf (file) path to VCF, or list of VCFs with suffix '.list' [REQUIRED]
   * --publishDir (dir) Save output in this directory
   * --prefix (string) files prefix. default: ""
 
@@ -69,15 +70,15 @@ nextflow -C ../../confs/cluster.cfg  run -resume workflow.nf \\
 	--publishDir output \\
 	--prefix "analysis." \\
 	--reference /path/to/reference.fasta \\
-	--vcf /path/to/in.vcf.gz \\
-	--bams /path/to/bams.list \\
-	--bed /path/input.bed
+	--vcf path/to/vcf
 ```
 
 ## Workflow
 
 ![workflow](./workflow.svg)
   
+## See also
+
 
 """
 }
@@ -90,34 +91,33 @@ if( params.help ) {
 
 
 workflow {
-	ch1 = ULTRA_RARES_01(params, params.reference, params.vcf,file(params.bams), file(params.bed))
-	html = VERSION_TO_HTML(params,ch1.version)
-	//PUBLISH(ch1.version,html.html,ch1.vcf,ch1.index,ch1.pdf)
+	ann_ch = FAST_ANNOT_01(params, params.reference, file(params.vcf), file(params.bed),files(params.samples))
+	html = VERSION_TO_HTML(params, ann_ch.version)
 	}
 
+
+
 process PUBLISH {
+tag "N=${L.size()}"
 publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
 input:
-	val(version)
-	val(html)
-	val(vcf)
+	val(L)
 output:
-	path("*.bcf")
-	path("*.csi")
-	path("*.html")
-	path("*.xml")
-	path("*.pdf")
+        path("*.bcf"),optional:true
+        path("*.bcf.csi"),optional:true
+        path("*.vcf.gz"),optional:true
+        path("*.vcf.gz.tbi"),optional:true
+        path("*.xml")
+        path("*.html")
 when:
-	!params.getOrDefault("publishDir","").trim().isEmpty()
+        !params.getOrDefault("publishDir","").trim().isEmpty()
 script:
 """
-ln -s ${vcf} ./
-ln -s ${csi} ./
-ln -s ${html} ./
-ln -s ${version} ./
-ln -s ${pdf} ./
+for F in ${L.join(" ")}
+do
+        ln -s "\${F}" ./
+done
 """
 }
 
 runOnComplete(workflow);
-

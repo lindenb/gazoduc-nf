@@ -317,6 +317,9 @@ String __getVersionCmd(java.util.Set<String> tools) {
 		else if(t.equals("gatk")) {
 			sb.append("\$(gatk --version 2> /dev/null  | paste -s -d ' ' )");
 			}
+		else if(t.equals("snpeff")) {
+			sb.append("\$(java -jar \${SNPEFF_JAR} -version)");
+			}
 		else if(t.equals("java")) {
 			sb.append("\$( java -version 2>&1 | paste -s  -d ' ' )");
 			}
@@ -370,7 +373,7 @@ String getVersionCmd(String s) {
 	boolean java=false;
 	for(String t : s.trim().split("[ \t,;]+")) {
 		set.add(t);
-		if(t.startsWith("jvarkit/") || t.startsWith("picard/")) {
+		if(t.startsWith("jvarkit/") || t.startsWith("picard/") || t.startsWith("gatk") || t.equalsIgnoreCase("snpeff")) {
 			java=true;
 			}
 		}
