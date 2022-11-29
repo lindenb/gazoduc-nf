@@ -1,6 +1,5 @@
-include {readContigFile;hasFeature;parseBoolean;getKeyValue} from '../../../modules/utils/functions.nf'
+include {hasFeature;parseBoolean;getKeyValue} from '../../../modules/utils/functions.nf'
 include {GATK4_HAPCALLER_GVCFS_01} from '../../../subworkflows/gatk/gatk4.hapcaller.gvcfs.01.nf'
-include {ANNOTATE} from '../../../subworkflows/annotation/annotation.vcf.01.nf'
 include {COLLECT_TO_FILE_01 as COLLECT2FILE1; COLLECT_TO_FILE_01 as COLLECT2FILE2} from '../../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_CONCAT_01} from '../../../subworkflows/bcftools/bcftools.concat.01.nf'
 include {MERGE_VERSION} from '../../../modules/version/version.merge.nf'
@@ -22,30 +21,11 @@ workflow  {
 	vcfs_ch = GATK4_HAPCALLER_GVCFS_01(params,params.reference,file(params.references),file(params.bams),Channel.fromPath(params.beds))
 	version_ch = version_ch.mix(vcfs_ch.version)
 
-	if(hasFeature(params,"annotate")) {
-		bedvcf_ch = COLLECT2FILE1(["header":"interval\tvcf"],vcfs_ch.region_vcf.map{T->T[0]+"\t"+T[1]}.collect())
-		version_ch = version_ch.mix(bedvcf_ch.version)
-
-
-		cfg2=readContigFile(params.annotation_config?:"${workflow.projectDir}/../../../confs/annotation.cfg").plus(params)
-
-		annot_vcf= ANNOTATE(cfg2,params.reference,bedvcf_ch.output.splitCsv(header:true,sep:'\t'))
-		version_ch = version_ch.mix(annot_vcf.version)
-
-		file_list_ch = COLLECT2FILE2([:],annot_vcf.bedvcf.splitCsv(header:false,sep:'\t').map{T->T[1]}.collect())
-		version_ch = version_ch.mix(file_list_ch.version)
-		}
-	else
-		{
-		file_list_ch = COLLECT2FILE1([:],vcfs_ch.region_vcf.map{T->T[1]}.collect())
-		}
+	file_list_ch = COLLECT2FILE1([:],vcfs_ch.region_vcf.map{T->T[1]}.collect())
 	concat_ch = BCFTOOLS_CONCAT_01([:],file_list_ch.output)
 	version_ch = version_ch.mix(concat_ch.version)
 
-
 	version2_ch = MERGE_VERSION(params, "Calling gatk", "Calling gatk in gvcf mode", version_ch.collect())
-
-
 
 	html_ch = VERSION_TO_HTML(params,version2_ch.version)
 

@@ -31,6 +31,10 @@ Warning: Some NF files use local configurations like `module`, `conda`, full pat
   * [bcftools](workflows/bcftools/calling) calling with bcftools/mpileup+call
   * [ultrarares](workflows/ultrarares). Call variants from a VCF for a list a BAM.
 
+### Annotation
+
+  * [VCF fastannot](annotation/fastannot/) quick VCF annotation
+
 ### Structural variants
 
   * [Indexcov](workflows/indexcov/) Finds CNVs using [indexcov](https://github.com/brentp/goleft/tree/master/indexcov#indexcov).

@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {moduleLoad;parseBoolean} from '../../modules/utils/functions.nf'
+include {getVersionCmd;moduleLoad;parseBoolean} from '../../modules/utils/functions.nf'
 include {SAMTOOLS_SAMPLES_01} from '../../subworkflows/samtools/samtools.samples.01.nf'
 include {DOWNLOAD_GFF3_01} from '../../modules/gff3/download.gff3.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
@@ -130,13 +130,17 @@ process DRAW_COVERAGE {
 		tuple val(row),path("${params.prefix?:""}${row.chrom}_${row.start}_${row.end}.${row.sample}.pdf"),emit:pdf
 		path("version.xml"),emit:version
 	script:
+		def LARGE_SV = 500_000
+		def svlen = 1 + (row.end as int )-(row.start as int)
+		def gene_type = (svlen < LARGE_SV?"exon":"gene")
 	"""
 	hostname 1>&2
-	${moduleLoad("samtools java R/3.3.3 tabix bedtools")}
-	mkdir TMP
+	${moduleLoad("samtools java r/4.2.1 tabix bedtools")}
+	mkdir -p TMP
 
 	tabix "${gtf.toRealPath()}" "${row.chrom}:${row.start}-${row.end}" |\
-		LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n |\
+		awk -F '\t' '(\$3=="${gene_type}") {printf("%s\t%d\t%s\\n",\$1,int(\$4)-1,\$5);}' |\
+		LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\
 		bedtools merge |\
 		awk -F '\t' '{printf("rect(%d, 0,%d, -1, col=\\\"green\\\")\\n",\$2,\$3);}' > TMP/exons.R
 
@@ -145,53 +149,101 @@ process DRAW_COVERAGE {
 
 
 cat << __EOF__  > TMP/jeter.R
+	start_date <- Sys.time()
+	DEBUG <- function(...) {
+		cat("[DEBUG][",file=stderr())
+		cat((Sys.time() - start_date), file=stderr())
+		cat("]:",file=stderr())
+		cat(sprintf(...), sep='', file=stderr())
+		cat(".\\n",file=stderr())
+		}
+	normalize_median <- ${(parseBoolean(params.median))?"TRUE":"FALSE"}
 
-normalize_median <- ${(parseBoolean(params.median))?"TRUE":"FALSE"}
-
-
+	DEBUG("screen : ${row.start} to ${row.end}  . SV ${row.delstart} to ${row.delend}");
+	LARGE_SV <- ${LARGE_SV}
 	distance <- 1 + (${row.end} - ${row.start})
+	DEBUG("distance=%d",distance)
 
 	smoothvalue <- 1 + 2 * min((distance-1)%/% 2, ceiling(0.01*distance))
-
-	T<-read.table("TMP/depth.txt", header = FALSE, sep = "\t",colClasses = c("integer","integer"),col.names=c("pos","cov"))
+	DEBUG("read table")
+	T1 <-read.table("TMP/depth.txt", header = FALSE, sep = "\t",colClasses = c("integer","numeric"),col.names=c("pos","cov"))
 	
-	yaxis <- T\\\$cov
-	capy <- median(yaxis) *3.0
-	
-	if( normalize_median == TRUE ) {
-		mediany <- median(yaxis)
-		if( mediany > 1 ) {
-			yaxis <- yaxis / mediany
-			}
-		}
 
 	## smooth yaxis using runmed
-	if(smoothvalue>3) {
-		yaxis <- runmed(yaxis,smoothvalue)
+	if(smoothvalue> 3 ) {
+		DEBUG("runmed %d",smoothvalue)
+		T1\\\$cov <- runmed(T1\\\$cov,smoothvalue)
+		DEBUG("end runmed")
 		}
 
+
+	# median in outer region
+	DEBUG("get median")
+	# outer median
+	DEBUG("N = %d",nrow(T1))
+	DEBUG("N-outer = %d",nrow(T1[T1\\\$pos < ${row.delstart} | T1\\\$pos > ${row.delend},]))
+	DEBUG("N-inner = %d",nrow(T1[T1\\\$pos >= ${row.delstart} & T1\\\$pos <= ${row.delend},]))
+	mediany <- median(T1[T1\\\$pos < ${row.delstart} | T1\\\$pos > ${row.delend},]\\\$cov)
+	DEBUG("outer-mediany=%f",mediany)
+
+
+	yaxis <- T1\\\$cov
+	
+	if( normalize_median == TRUE ) {
+		DEBUG("normalize median: TRUE")
+		capy <- 3.0
+		if( mediany > 1 ) {
+			T1\\\$pos <- T1\\\$pos / mediany
+			mediany <- median(T1[T1\\\$pos < ${row.delstart} | T1\\\$pos > ${row.delend},]\\\$cov)
+			DEBUG("outer-mediany=%f",mediany)
+			}
+	} else {
+		DEBUG("normalize median: FALSE")
+		}
+	# inner median
+	mediany_in <- median(T1[T1\\\$pos >= ${row.delstart} & T1\\\$pos <= ${row.delend},]\\\$cov)
+	DEBUG("inner-mediany=%f",mediany_in)
+
+	if(normalize_median == TRUE ) {
+		capy <- mediany *3.0
+		} else {
+		capy <- max( mediany_in, ifelse(mediany > 1.0 , mediany *3.0, 3.0))
+		}
+	DEBUG("capy=%f vs median=%f", capy, mediany)
+
+
+	DEBUG("plot")
 	pdf("TMP/jeter.pdf", 15, 5)
-	plot(x=T\\\$pos,y=yaxis,
+	plot(x=T1\\\$pos,y=yaxis,
 	   main=paste("${row.sample}",ifelse(normalize_median == TRUE ," Normalized","")," Coverage ${row.chrom}:",format(${row.delstart},big.mark=","),"-",format(${row.delend},big.mark=",")," len=",format((${row.delend}-${row.delstart}),big.mark=",")," ","${row.title}",sep=""),
 	  sub="${row.bam}",
 	  xlab="Position",
           ylab=paste(ifelse(normalize_median == TRUE ," Normalized ",""),"Depth"),
-	  xlim = c(min(T[1]),max(T[1])),
-	  ylim = c(0,ifelse(normalize_median == TRUE ,2.0,capy)),
+	  xlim = c(${row.start},${row.end}),
+	  ylim = c(0,capy),
 	  col=rgb(0.2,0.1,0.5,0.9) , 
 	  type="l", 
 	  pch=19)
 	
-	mediany <- ifelse(normalize_median == TRUE ,1.0,median(yaxis))	
+	mediany <- ifelse(normalize_median == TRUE ,1.0, mediany )
 
-	abline(h=mediany, col="blue")
+	# outer median plot
+	segments(x0=${row.delstart},x1=${row.delend},y0=mediany_in,col="blue")
+	segments(x0=${row.start},x1=${row.delstart},y0=mediany,col="blue")
+	# inner median plot
+	segments(x0=${row.delend},x1=${row.end},y0=mediany,col="blue")
 	abline(h=mediany*0.5, col="orange")
 	abline(h=mediany*1.5, col="orange")
+		
+
 	abline(v=${row.delstart}, col="green")
 	abline(v=${row.delend}, col="green")
-
+	
+	DEBUG("plot exons")
 	source("TMP/exons.R",local=TRUE)
 	dev.off()
+	DEBUG("done")
+
 __EOF__
 
 
@@ -208,8 +260,8 @@ cat << EOF > version.xml
         <entry key="bam">${row.bam}</entry>
         <entry key="interval">${row.chrom}:${row.delstart}-${row.delend}</entry>
         <entry key="xinterval">${row.chrom}:${row.start}-${row.end}</entry>
-	<entry key="R.version">\$(R --version | head -n1)</entry>
-	<entry key="bcftools.version">\$(bcftools version | head -n 2 | paste -s)</entry>
+	<entry key="gene.type">${gene_type}</entry>
+	<entry key="version">${getVersionCmd("R samtools awk tabix")}</entry>
 </properties>
 EOF
 """
@@ -226,7 +278,9 @@ process MERGE_PDFS {
 		path("version.xml"),emit:version
 	script:
 	"""
-cat << EOF  | sort -T . -k1,1 -t '\t' | cut -f 2 > jeter.txt
+	hostname 1>&2
+
+cat << EOF  | sort -T . -k1,1V -t '\t' | cut -f 2 > jeter.txt
 ${L.join("\n")}
 EOF
 
