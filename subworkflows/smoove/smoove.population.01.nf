@@ -29,6 +29,8 @@ include { SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.nf
 include { DOWNLOAD_GFF3_01 } from '../../modules/gff3/download.gff3.01.nf'
 include {SQRT_FILE} from '../../modules/utils/sqrt.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
+include {CONCAT_FILES_01} from '../../modules/utils/concat.files.nf'
+include {VCF_DUPHOLD_01} from '../duphold/vcf.duphold.01.nf'
 
 workflow SMOOVE_SV_POPULATION_01 {
 	take:
@@ -84,11 +86,19 @@ workflow SMOOVE_SV_POPULATION_01 {
 		pasteall_ch = PASTE_ALL(meta, reference, img_ch.smoove_img, gff_ch.gff3 , paste01_ch.vcf.collect())
 		version_ch= version_ch.mix(pasteall_ch.version)
 
+		
+		all_bams_ch = CONCAT_FILES_01(meta, Channel.from(cases,controls).collect())
+		version_ch= version_ch.mix(all_bams_ch.version)
+
+
+		duphold_ch = VCF_DUPHOLD_01(meta, reference, all_bams_ch.output , pasteall_ch.vcf, file("NO_FILE"))
+		version_ch= version_ch.mix(duphold_ch.version)
+
 		version_ch = MERGE_VERSION(meta, "smoove", "smoove", version_ch.collect())
 	emit:
 		version = version_ch.version
-		vcf = pasteall_ch.vcf
-		index = pasteall_ch.index
+		vcf = duphold_ch.vcf
+		index = duphold_ch.index
 	}
 
 
