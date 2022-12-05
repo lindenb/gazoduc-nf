@@ -32,6 +32,8 @@ params.excludeGoTerms = ""
 params.help = false
 params.publishDir = ""
 params.prefix = ""
+params.whiteListedGeneList = "NO_FILE"
+params.blackListedGeneList = "NO_FILE"
 
 include {runOnComplete} from '../../modules/utils/functions.nf'
 include {GO_TO_BED_01} from '../../subworkflows/go/go2bed.01.nf'
@@ -83,7 +85,7 @@ if( params.help ) {
 
 
 workflow {
-	ch1 = GO_TO_BED_01(params, params.reference, file(params.gtf))
+	ch1 = GO_TO_BED_01(params, params.reference, file(params.gtf), params.whiteListedGeneList, params.blackListedGeneList )
 	html = VERSION_TO_HTML(params, ch1.version)
 	pub_ch = Channel.empty().mix(html.html).mix(ch1.version).mix(ch1.bed).mix(ch1.index).mix(ch1.terms)
 	SIMPLE_PUBLISH_01(params, pub_ch.collect())

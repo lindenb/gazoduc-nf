@@ -38,6 +38,8 @@ workflow GO_TO_BED_01 {
 		meta
 		reference
 		gff3
+		whiteListedGeneList
+		blackListedGeneList
 	main:
 		version_ch = Channel.empty()
 
@@ -57,7 +59,7 @@ workflow GO_TO_BED_01 {
 			gff = gff3
 			}
 
-		bed4genes_ch = BED_FOR_GENES(meta, reference, gff, obo_ch.obo, goa_ch.gaf)
+		bed4genes_ch = BED_FOR_GENES(meta, reference, gff, obo_ch.obo, goa_ch.gaf, whiteListedGeneList, blackListedGeneList)
                 version_ch = version_ch.mix(bed4genes_ch.version)
 
 		version_ch = MERGE_VERSION(meta, "go2bed", "GeneOntology To Bed", version_ch.collect())
@@ -81,6 +83,8 @@ input:
 	path(gff3)
       	path(obo)
 	path(goa)
+	val(whiteListedGeneList)
+	val(blackListedGeneList)
 output:
        	path("go.bed.gz"),emit:bed
        	path("go.bed.gz.tbi"),emit:bed_index
@@ -97,6 +101,7 @@ ${moduleLoad("jvarkit htslib datamash bedtools")}
 set -o pipefail
 mkdir -p TMP
 
+export LC_ALL=C
 
 echo '${meta.goTerms}' | tr " ,|;" "\\n" | sort |uniq | grep -v '^\$' > TMP/include.terms
 
@@ -146,8 +151,45 @@ LC_ALL=C join -t '\t' -1 1 -2 2  -o '1.1,1.2,2.1' TMP/go.terms.tsv  TMP/sn_acn.t
 LC_ALL=C join -t '\t' -1 4 -2 3 -o '1.1,1.2,1.3,1.4,1.5,2.1,2.2' TMP/genes.symbols.bed  TMP/gene_go.tsv |\
 	sed 's/\t/|/6' |\
 	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n -k3,3n -k4,4 -k5,5 |\
-	LC_ALL=C datamash groupby 1,2,3,4,5  unique 6 |\
-	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n | bgzip > go.bed.gz
+	LC_ALL=C datamash groupby 1,2,3,4,5  unique 6 >  TMP/jeter.bed
+
+# white list
+if ${!file(whiteListedGeneList).name.equals("NO_FILE")} ; then
+
+	cat "${whiteListedGeneList}" | sort -T TMP | uniq > TMP/jeter.a
+	# gene already in bed
+	cut -f 4 TMP/jeter.bed |  sort -T TMP | uniq > TMP/jeter.b
+	# unique to white list
+	comm -23 TMP/jeter.a TMP/jeter.b > TMP/jeter.c
+	
+	if test -s TMP/jeter.c ; then
+		
+		join -t '\t' -1 4 -2 1 TMP/genes.symbols.bed TMP/jeter.c -o '1.1,1.2,1.3,1.4,1.5' |\
+			sed 's/\$/\t./' >> TMP/jeter.bed
+
+		LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n TMP/jeter.bed > TMP/jeter2.bed
+		mv TMP/jeter2.bed TMP/jeter.bed
+	fi
+fi
+
+
+# blacklisted list
+if ${!file(blackListedGeneList).name.equals("NO_FILE")} ; then
+
+	cat "${blackListedGeneList}" | sort -T TMP | uniq > TMP/jeter.a
+		
+	sort -t '\t' -T TMP -k4,4 TMP/jeter.bed |\
+		join -t '\t' -1 4 -2 1 -v 1  -o '1.1,1.2,1.3,1.4,1.5,1.6'  - TMP/jeter.a  > TMP/jeter2.bed
+	mv TMP/jeter2.bed TMP/jeter.bed
+
+fi
+
+LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n TMP/jeter.bed > TMP/jeter2.bed
+mv TMP/jeter2.bed TMP/jeter.bed
+
+bgzip TMP/jeter.bed
+
+mv TMP/jeter.bed.gz go.bed.gz
 
 tabix -p bed go.bed.gz
 
