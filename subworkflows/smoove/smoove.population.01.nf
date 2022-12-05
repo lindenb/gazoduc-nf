@@ -86,19 +86,27 @@ workflow SMOOVE_SV_POPULATION_01 {
 		pasteall_ch = PASTE_ALL(meta, reference, img_ch.smoove_img, gff_ch.gff3 , paste01_ch.vcf.collect())
 		version_ch= version_ch.mix(pasteall_ch.version)
 
-		
-		all_bams_ch = CONCAT_FILES_01(meta, Channel.from(cases,controls).collect())
-		version_ch= version_ch.mix(all_bams_ch.version)
+		/** duphold is slow when many samples . */
+		if(meta.with_duphold) {
+			all_bams_ch = CONCAT_FILES_01(meta, Channel.from(cases,controls).collect())
+			version_ch= version_ch.mix(all_bams_ch.version)
 
-
-		duphold_ch = VCF_DUPHOLD_01(meta, reference, all_bams_ch.output , pasteall_ch.vcf, file("NO_FILE"))
-		version_ch= version_ch.mix(duphold_ch.version)
+			duphold_ch = VCF_DUPHOLD_01(meta, reference, all_bams_ch.output , pasteall_ch.vcf, file("NO_FILE"))
+			version_ch= version_ch.mix(duphold_ch.version)
+			
+			final_vcf = duphold_ch.vcf
+			final_idx = duphold_ch.index
+			}
+		else {
+			final_vcf = pasteall_ch.vcf
+			final_idx = pasteall_ch.index
+		}
 
 		version_ch = MERGE_VERSION(meta, "smoove", "smoove", version_ch.collect())
 	emit:
 		version = version_ch.version
-		vcf = duphold_ch.vcf
-		index = duphold_ch.index
+		vcf = final_vcf
+		index = final_idx
 	}
 
 

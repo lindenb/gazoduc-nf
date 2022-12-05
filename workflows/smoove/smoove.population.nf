@@ -38,6 +38,8 @@ params.publishDir = ""
 params.prefix = ""
 params.smoove_image = ""
 params.gff3 = ""
+/* use duphold ? slow if too many samples */
+params.with_duphold = false
 
 include {SMOOVE_SV_POPULATION_01} from '../../subworkflows/smoove/smoove.population.01.nf' 
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
