@@ -34,6 +34,8 @@ Warning: Some NF files use local configurations like `module`, `conda`, full pat
 ### Annotation
 
   * [VCF fastannot](annotation/fastannot/) quick VCF annotation
+  * [GO / BED](workflows/go4bed) generate BED file from GFF3+GO+GOA
+  * [CardioBED](workflows/cardiobed) generate BED file from GFF3+GO+GOA for Cardiac-related genes
 
 ### Structural variants
 

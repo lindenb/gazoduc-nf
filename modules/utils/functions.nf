@@ -326,7 +326,7 @@ String __getVersionCmd(java.util.Set<String> tools) {
 		else if(t.equals("javac")) {
 			sb.append("\$(javac -version 2>&1 )");
 			}
-		else if(t.equals("wget") || t.equals("git") || t.equals("tabix") || t.equals("bgzip") || t.equals("rvtest") || t.equals("gcc") || t.equals("g++")) {
+		else if(t.equals("wget") || t.equals("git") || t.equals("tabix") || t.equals("bgzip") || t.equals("rvtest") || t.equals("gcc") || t.equals("g++") || t.equals("datamash")) {
 			sb.append("\$("+t+" --version |head -n1)");
 			}
 		else if(t.equals("awk")) {
