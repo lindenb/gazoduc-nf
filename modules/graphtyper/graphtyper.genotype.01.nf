@@ -23,10 +23,10 @@ SOFTWARE.
 
 */
 
-include {isBlank;moduleLoad} from '../../modules/utils/functions.nf'
+include {isBlank;moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
 
 process GRAPHTYPER_GENOTYPE_01 {
-tag "${row.interval}"
+tag "${row.interval?:row.bed}"
 cpus 1
 afterScript "rm -rf results TMP"
 input:
@@ -39,14 +39,23 @@ output:
 script:
 	if(!row.reference) {exit 1,"reference missing"}
 	if(!row.bams) {exit 1,"bams missing"}
-	if(!row.interval) {exit 1,"interval missing"}
+	if(!row.interval && !row.bed) {exit 1,"interval/bed missing"}
+	if(row.interval && row.bed) {exit 1,"interval/bed both defined"}
 
 	def avg_cov_by_readlen= row.avg_cov_by_readlen?:""
 	def arg2 = isBlank(avg_cov_by_readlen)?"":"--avg_cov_by_readlen=${avg_cov_by_readlen}"
 """
 hostname 1>&2
-${moduleLoad("bcftools")}
-mkdir TMP
+${moduleLoad("bcftools bedtools")}
+mkdir -p TMP
+
+if ${row.containsKey("bed")} ; then
+	cut -f1,2,3 '${row.bed}' |\
+		sort -T TMP -t '\t' -k1,1 -k2,2n |\
+		bedtools merge |\
+		awk -F '\t' '{printf("%s:%d-%s\\n",\$1,int(\$2)+1,\$3);}' > TMP/input.intervals
+	test -s TMP/input.intervals
+fi
 
 export TMPDIR=\${PWD}/TMP
 
@@ -55,7 +64,7 @@ ${graphtyper} genotype \
 	--force_no_copy_reference \
 	--force_use_input_ref_for_cram_reading \
 	--sams=${row.bams} \
-	--region=${row.interval} \
+	${row.containsKey("bed")?  "--region_file=TMP/input.intervals" : "--region=${row.interval}"} \
 	--threads=${task.cpus} \
 	${arg2}
 
@@ -72,6 +81,11 @@ cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
         <entry key="description">run graphtyper</entry>
+        <entry key="bed">${row.bed?:""}</entry>
+        <entry key="interval">${row.interval?:""}</entry>
+        <entry key="bams">${row.bams}</entry>
+        <entry key="reference">${row.reference}</entry>
+        <entry key="version">${getVersionCmd("bcftools bedtools")}</entry>
 </properties>
 EOF
 """

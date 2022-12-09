@@ -126,6 +126,13 @@ workflow BCFTOOLS_ANNOTATE_SOURCES {
 			annot_ch = annot_ch.mix(db12_ch.output)
 		}
 
+
+		if(hasFeature(meta, "encode_ccre")) {
+			db13_ch = DOWNLOAD_ENCODE_CCRE(meta, reference, sorted_bed)
+			version_ch = version_ch.mix(db13_ch.version)
+			annot_ch = annot_ch.mix(db13_ch.output)
+		}
+
 		db2_ch = CONCAT_FILES_01(meta,annot_ch.collect())
 
 		version_ch = MERGE_VERSION(meta, "bcftoolsAnnotation", "annotations for bcftools", version_ch.collect())
@@ -797,7 +804,7 @@ if ${!isBlank(url)} ; then
 wget -O - "${url}" |\
 	gunzip -c |\
 	awk -F '\t' '/^[^#]/ {printf("%s\t%d\t%s\t%s\\n",\$1,int(\$4)-1,\$5,\$3);}' |\
-	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${meta.reference}" --column 1 --convert SKIP  |\
+	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 1 --convert SKIP  |\
 	LC_ALL=C sort -t '\t' -k1,1 -k2,2n -T . |\
 	bgzip > regulatory_features.bed.gz
 
@@ -813,6 +820,66 @@ tabix -p bed -f regulatory_features.bed.gz
 echo '##INFO=<ID=REGULATORY_FEAT,Number=.,Type=String,Description="${whatis}">' > regulatory_features.header
 
 echo "\${PWD}/regulatory_features.bed.gz\tCHROM,FROM,TO,REGULATORY_FEAT\t\${PWD}/regulatory_features.header" > regulatory_features.tsv
+
+#########################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="Name">${task.process}</entry>
+        <entry key="description">${whatis}</entry>
+        <entry key="url"><a>${url}</a></entry>
+</properties>
+EOF
+"""
+}
+/**
+
+http://genome.ucsc.edu/cgi-bin/hgTables?db=hg38&hgta_group=regulation&hgta_track=encodeCcreCombined&hgta_table=encodeCcreCombined&hgta_doSchema=describe+table+schema
+
+This track displays the ENCODE Registry of candidate cis-Regulatory Elements (cCREs) in the human genome, a total of 926,535 elements identified and classified by the ENCODE Data Analysis Center according to biochemical signatures. 
+
+*/
+process DOWNLOAD_ENCODE_CCRE {
+afterScript "rm -rf TMP"
+input:
+	val(meta)
+	val(reference)
+	path(sortedbed)
+output:
+       	path("encode.ccre.tsv"),emit:output
+        path("version.xml"),emit:version
+script:
+	def url = isHg38(reference)?"http://hgdownload.soe.ucsc.edu/gbdb/hg38/encode3/ccre/encodeCcreCombined.bb":""
+	def whatis = "ENCODE Registry of candidate cis-Regulatory Elements (cCREs) in the human genome from ${url}"
+
+"""
+hostname 1>&2
+${moduleLoad("htslib jvarkit bedtools ucsc")}
+set -o pipefail
+mkdir -p TMP
+
+if ${!isBlank(url)} ; then
+
+wget -O TMP/jeter.bb "${url}"
+
+bigBedToBed TMP/jeter.bb stdout |\
+	awk -F '\t' '{printf("%s\t%s\t%s\t%s|%s|%s\\n",\$1,\$2,\$3,\$4,\$5,\$11)}' |\
+	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 1 --convert SKIP  |\
+	${sortedbed.name.equals("NO_FILE")?"":" sort -T TMP -t '\t' -k1,1 -k2,2n | bedtools intersect -u -a - -b '${sortedbed}' | "} \
+	LC_ALL=C sort -t '\t' -k1,1 -k2,2n -T TMP |\
+	bgzip > encode.ccre.bed.gz
+
+else
+
+	touch encode.ccre.bed
+	bgzip encode.ccre.bed
+fi
+
+
+tabix -p bed -f encode.ccre.bed.gz
+
+echo '##INFO=<ID=ENCODE_CCRE,Number=.,Type=String,Description="format=NAME|SCORE|LABEL    ${whatis}">' > encode.ccre.header
+
+echo "\${PWD}/encode.ccre.bed.gz\tCHROM,FROM,TO,ENCODE_CCRE\t\${PWD}/encode.ccre.header" > encode.ccre.tsv
 
 #########################################
 cat << EOF > version.xml

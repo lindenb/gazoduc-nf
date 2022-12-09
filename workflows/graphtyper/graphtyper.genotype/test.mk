@@ -6,19 +6,22 @@ include ../../../../data/reference/references.mk
 
 NF=$(realpath graphtyper.genotype.nf)
 
-all: $(NF) ../../../confs/${HOSTNAME}.cfg $(OUTDIR)/bams.list $(OUTDIR)/jeter.bed
+all: $(NF) ../../../confs/${HOSTNAME}.cfg $(OUTDIR)/bams.list $(OUTDIR)/beds.list
 	module load nextflow && nextflow -C ../../../confs/${HOSTNAME}.cfg run -work-dir "$(OUTDIR)" -resume $(NF) \
 		--publishDir "$(OUTDIR)" \
 		--depth_method samtoolsdepth \
 		--reference $(REF) \
 		--prefix "$(PREFIX)."  \
 		--bams "$(OUTDIR)/bams.list" \
-		--bed "$(OUTDIR)/jeter.bed"
+		--beds "$(OUTDIR)/beds.list"
 	-dot -T svg -o workflow.svg $(OUTDIR)/$(PREFIX).workflow.dot
 
 $(OUTDIR)/bams.list : 
 	mkdir -p $(dir $@)
 	find ${HOME}/src/jvarkit-git/src/test/resources/ -type f -name "S*.bam" > $@	
+
+$(OUTDIR)/beds.list: $(OUTDIR)/jeter.bed
+	echo $< > $@
 
 $(OUTDIR)/jeter.bed : $(addsuffix .fai, $(REF))
 	mkdir -p $(dir $@)

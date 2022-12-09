@@ -26,12 +26,14 @@ nextflow.enable.dsl=2
 
 /** path to indexed fasta reference */
 params.reference = ""
-params.bed="NO_FILE"
+params.beds="NO_FILE"
 params.mapq = -1
 params.bams = "NO_FILE"
 params.help = false
 params.publishDir = ""
 params.prefix = ""
+/** tab delimited SAMPLE / DEPTH . Optional. Prevent samtools depth */
+params.sample2depth="NO_FILE"
 
 include {GRAPHTYPER_GENOTYPE_BAMS_01} from '../../../subworkflows/graphtyper/graphtyper.genotype.bams.01.nf'
 include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
@@ -82,7 +84,7 @@ if( params.help ) {
 
 
 workflow {
-	c1_ch = GRAPHTYPER_GENOTYPE_BAMS_01(params,params.reference,file(params.bams),file(params.bed))
+	c1_ch = GRAPHTYPER_GENOTYPE_BAMS_01(params,params.reference,file(params.bams),file(params.beds), file(params.sample2depth))
 	html = VERSION_TO_HTML(params,c1_ch.version)	
 	}
 
