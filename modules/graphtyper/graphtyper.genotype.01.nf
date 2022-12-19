@@ -72,7 +72,8 @@ find \${PWD}/results/ -type f -name "*.vcf.gz" | grep -v '/input_sites/' > TMP/v
 
 bcftools concat --file-list TMP/vcf.list \
 	--allow-overlaps --remove-duplicates \
-	--threads ${task.cpus} -O b -o "genotyped.bcf"
+	--threads ${task.cpus} -O u |\
+	bcftools sort -T TMP -O b -o "genotyped.bcf"
 
 bcftools index --threads ${task.cpus} "genotyped.bcf"
 
