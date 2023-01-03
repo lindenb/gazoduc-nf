@@ -33,79 +33,64 @@ import java.util.stream.Collectors;
 public class Gazoduc {
 	private static final Logger LOG = Logger.getLogger(Gazoduc.class.getSimpleName());
 	private static Gazoduc INSTANCE = null;
+	private final List<Parameter> parameters = new Vector<>();
 
-	public abstract interface Validator {
-		abstract public boolean validate(Parameter p,Map<String,Object> o);
-		}
 
-	private class RequiredValidator implements Validator {
-		@Override
-		public boolean validate(Parameter p,final Map<String,Object> params) {
-			if(!params.containsKey(p.getName())) {
-				LOG.log(Level.WARNING, "--"+p.getName()+" is required but was not defined. ("+ p.getDescription()+")");
-				return false;
-				}
-			return true;
-			}	
-		}
-	
-	private abstract class AbstractFileValidator implements Validator {
-		@Override 
-		public boolean validate(Parameter p,final Map<String,Object> params) {
-			return true;
+	public class Parameter {
+		private final String key;
+		private Object value;
+		private String argName = "value";
+		private String shortDesc = "";
+		private String longDesc = "";
+		private String menu = "";
+		private boolean required = false;
+		Parameter(final String key, Object value) {
+			this.key = key;
+			this.value = value;
 			}
-		}
-	
-	private class FileExistValidator extends AbstractFileValidator {
-		@Override 
-		public boolean validate(Parameter p,final Map<String,Object> params) {
-			return true;
+		Parameter(final String key) {
+			this(key,null);
 			}
-		}
-	
-	public abstract class BaseParam {
-		final String name;
-		String submenu = "";
-		String argName = "value";
-		boolean help = false;
-		Supplier<String> description = ()->this.getName();
-		Supplier<String> value = ()->null;
-		List<Validator> validators = new ArrayList<>();
-		BaseParam(final String name) {
-			this.name = name;
-			}
-		String getName() {
-			return this.name;
-			}
-		BaseParam copy(BaseParam o) {
-			if(o==this) return this;
-			this.submenu = o.submenu;
-			this.help = o.help;
-			this.description = o.description;
-			this.value = o.value;
-			this.validators = new ArrayList<>(o.validators);
+		public Parameter value(Object o) {
+			this.value = o;
 			return this;
 			}
+		public Parameter argName(final String s) {
+			this.argName = s;
+			return this;
+			}
+		public Parameter menu(final String s) {
+			this.menu = s;
+			return this;
+			}
+		public Parameter desc(final String s) {
+			this.shortDesc = s;
+			return this;
+			}
+		public Parameter required(final boolean b) {
+			this.required = b;
+			return this;
+			}
+		public Parameter required() {
+			return this.required(true);
+			}
+		public void put(final Map<String,Object> map) {
+			if(map.containsKey(this.key)) {
+				LOG.error("params already contains "+this);
+				return -1;
+				}
+			Gazoduc.this.parameters.add(this);
+			map.put(this.key,this.value);
+			}
+		@Override
+		public String toString() {
+			}
+		}
+
+	public Parameter make(final String key, final Object value) {
+		return new Parameter(key,value);
 		}
 	
-	/** parameter definition */
-	public class Parameter extends BaseParam {
-		Parameter(final String name) {
-			super(name);
-			}
-		String getArgName() {
-			return this.argName;
-			}
-		boolean validate(Map<String,Object> map) {
-			boolean is_valid = true;
-			for(Validator v: this.validators) {
-				if(!v.validate(this,map)) is_valid =false;
-				}
-			return is_valid;
-			}
-		public String getDescription() {
-			return this.description.get();
-			}
 		public String markdown() {
 			StringBuilder sb = new StringBuilder(" * ");
 			sb.append(getName());

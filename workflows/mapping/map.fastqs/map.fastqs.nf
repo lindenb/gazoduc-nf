@@ -31,6 +31,7 @@ params.bams = ""
 params.help = false
 params.publishDir = ""
 params.prefix = ""
+params.with_bqsr = true
 
 include {MAP_BWA_01} from '../../../subworkflows/mapping/map.bwa.01.nf'
 include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'

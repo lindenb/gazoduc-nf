@@ -46,6 +46,7 @@ params.vcf=""
 params.disableFeatures="";
 params.help=false
 params.bed= "NO_FILE"
+params.annot_method="vep"
 
 if(params.help) {
   log.info"""

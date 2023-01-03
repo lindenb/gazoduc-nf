@@ -726,6 +726,7 @@ echo "\${JAVA_HOME}"
 
 	    else
 		echo "undefined annotation method" 1>&2
+		exit -1
 	    fi
 	
 

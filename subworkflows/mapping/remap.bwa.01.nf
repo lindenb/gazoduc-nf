@@ -235,7 +235,7 @@ EOF
 
 process JOIN_UNPAIRED {
 tag "${sample} ${R1} ${R2}"
-afterScript "rm -f jeter.fq.gz jeter2.fq.gz"
+afterScript "rm -rf TMP"
 memory "3g"
 input:
 	val(meta)
@@ -246,23 +246,27 @@ output:
 	path("version.xml"),emit:version
 script:
 """
-
+hostname 1>&2
+mkdir -p TMP
+set -o pipefail
 
 LC_ALL=C join -t '\t' -1 1 -2 1 -o '1.1,1.2,1.3,1.4,2.1,2.2,2.3,2.4' \
 	<(gunzip -c "${R1}")  \
 	<(gunzip -c "${R2}") |\
+	awk -F '\t' '{OFS="\t";if(NR==1 || PREV!=\$1) print; PREV=\$1;}' |\
 	tr "\t" "\\n" |\
-	gzip --best > jeter.fq.gz
+	gzip --best > TMP/jeter.fq.gz
 
 LC_ALL=C join -t '\t' -1 1 -2 1 -v 1 -v2 \
 	<(gunzip -c "${R1}")  \
 	<(gunzip -c "${R2}") |\
+	awk -F '\t' '{OFS="\t";if(NR==1 || PREV!=\$1) print; PREV=\$1;}' |\
 	tr "\t" "\\n" |\
-	gzip --best > jeter2.fq.gz
+	gzip --best > TMP/jeter2.fq.gz
 
 
-mv jeter.fq.gz  "${sample}.R1R2.fq.gz"
-mv jeter2.fq.gz "${sample}.R0.fq.gz"
+mv TMP/jeter.fq.gz  "${sample}.R1R2.fq.gz"
+mv TMP/jeter2.fq.gz "${sample}.R0.fq.gz"
 
 ##################
 cat << EOF > version.xml

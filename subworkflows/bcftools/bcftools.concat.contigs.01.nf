@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {moduleLoad;getKeyValue;getModules} from '../../modules/utils/functions.nf'
+include {moduleLoad;getKeyValue;getModules;getVersionCmd} from '../../modules/utils/functions.nf'
 include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
@@ -59,6 +59,7 @@ workflow BCFTOOLS_CONCAT_PER_CONTIG_01 {
 
 
 process VCF_PER_CONTIG {
+tag "${vcfs}"
 input:
 	val(meta)
 	path(vcfs)
@@ -96,6 +97,7 @@ cat << EOF > version.xml
         <entry key="count(vcfs.in)">\$(wc -l < "${vcfs}")</entry>
         <entry key="count(contigs.out)">\$(wc -l < ctg2vcfs.tsv)</entry>
         <entry key="contigs">\$(cut -f 1 ctg2vcfs.tsv | paste -s -d,)</entry>
+        <entry key="versions">${getVersionCmd("bcftools awk")}</entry>
 </properties>
 EOF
 
@@ -138,6 +140,7 @@ cat << EOF > version.xml
         <entry key="description">concatenate VCF for one contig</entry>
         <entry key="count(vcfs.in)">\$(wc -l < "${vcfs}")</entry>
         <entry key="count(contigs)">${contig}</entry>
+        <entry key="versions">${getVersionCmd("bcftools")}</entry>
 </properties>
 EOF
 

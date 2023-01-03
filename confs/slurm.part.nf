@@ -1,6 +1,6 @@
 process {
 executor="slurm"
-clusterOptions = " --partition=Bird"
+clusterOptions = "--partition=Bird "
 cache="lenient"
 maxForks=100
 errorStrategy= "finish"
