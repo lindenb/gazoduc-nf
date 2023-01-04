@@ -50,6 +50,7 @@ Warning: Some NF files use local configurations like `module`, `conda`, full pat
   * [Duphold](workflows/duphold) Apply Duphold to a set of VCFs+BAMs.
   * [wgs coverage](workflows/wgscovplot) WGS coverage genome wide. Plot as SVG.
   * [etching](workflows/etching.germline) Call germline SV using etching. Doesn't work for now.
+  * [truvari](workflows/truvari) Merge SV using truvari
 
 ### RNAseq
 

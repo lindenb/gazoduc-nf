@@ -24,6 +24,7 @@ SOFTWARE.
 */
 package gazoduc;
 import java.util.*;
+import java.io.*;
 import java.util.function.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -32,20 +33,40 @@ import java.util.stream.Collectors;
 
 public class Gazoduc {
 	private static final Logger LOG = Logger.getLogger(Gazoduc.class.getSimpleName());
+	private static final String MAIN_MENU="Main options";
 	private static Gazoduc INSTANCE = null;
 	private final List<Parameter> parameters = new Vector<>();
 
 
+
 	public class Parameter {
+		private final List<Validator> validators = new Vector<>();
 		private final String key;
-		private Object value;
+		private Object value = null;
 		private String argName = "value";
 		private String shortDesc = "";
 		private String longDesc = "";
-		private String menu = "";
-		private boolean required = false;
+		private String menu = MAIN_MENU;
+
+
+		private class Validator {
+			public boolean validate(final Map<String,Object> map) {
+				Object o = map.getOrDefault(getKey(),null);
+				if(o==null) return true;
+				return validateObject(o);
+				}
+			public boolean validateObject(final Object o) {
+				if(o==null) return true;
+				return validate(String.valueOf(o));
+				}
+			public boolean validate(final String o) {
+				return true;
+				}
+			}
+
 		Parameter(final String key, Object value) {
 			this.key = key;
+			if(key==null || key.trim().isEmpty()) throw new IllegalArgumentException("Key is empty/null");
 			this.value = value;
 			}
 		Parameter(final String key) {
@@ -67,130 +88,184 @@ public class Gazoduc {
 			this.shortDesc = s;
 			return this;
 			}
-		public Parameter required(final boolean b) {
-			this.required = b;
-			return this;
+		public String getKey() {
+			return this.key;
 			}
 		public Parameter required() {
-			return this.required(true);
+			return validator(new Validator() {
+				@Override
+				public boolean validate(final Map<String,Object> map) {
+					if(!map.containsKey(getKey()) || map.get(getKey())==null) {
+						LOG.severe("option --"+ getKey() +" is not defined. " + markdown());
+						return false;
+						}
+					return true;
+					}
+				});
 			}
-		public void put(final Map<String,Object> map) {
+
+		public Parameter notEmpty() {
+			return validator(new Validator() {
+				@Override
+				public boolean validate(final String s) {
+					if(s==null || s.trim().isEmpty()) {
+						LOG.severe("option --"+ getKey() +" is not defined or empty. " + markdown());
+						return false;
+						}
+					return true;
+					}
+				});
+			}
+
+
+		public Parameter existingFile() {
+			return notEmpty().
+				validator(new Validator() {
+				@Override
+				public boolean validate(final String s) {
+					try {
+						final File f = new File(s);
+						if(!f.exists()) {
+							LOG.severe("option --"+ getKey() +" file doesn't exist: "+f);
+							return false; 
+							}
+						}
+					catch(Throwable err) {
+						LOG.severe("option --"+ getKey() +" is not defined or empty. " + markdown()+" "+err.getMessage()); 
+						return false;
+						}
+					return true;
+					}
+				});
+			}
+
+
+		public Parameter suffixes(final String...suffixes) {
+			return validator(new Validator() {
+				@Override
+				public boolean validate(final String s) {					
+					for(final String suffix : suffixes) {
+						if(s.endsWith(suffix)) return true;	
+						}
+					LOG.severe("option --"+ getKey() +" value "+s+ "doesn't end with  (" + String.join(" | ", suffixes) +")/"); 
+					return false;
+					}
+				});
+			}
+
+
+
+
+
+		public Parameter validator(final Validator v) {
+			if(v!=null) this.validators.add(v);
+			return this;
+			}
+		
+
+		public boolean put(final Map<String,Object> map) {
 			if(map.containsKey(this.key)) {
-				LOG.error("params already contains "+this);
-				return -1;
+				LOG.warning("params already contains "+this);
+				return false;
 				}
 			Gazoduc.this.parameters.add(this);
 			map.put(this.key,this.value);
+			return true;
+			}
+
+		public boolean validate(final Map<String,Object> map) {
+			boolean ok=true;
+			for(Validator v: this.validators) {
+				if(!v.validate(map)) ok=false;
+				}
+			return ok;
+			}
+
+		public String markdown() {
+			return markdown(2);
+			}
+		public String markdown(int margin) {
+			StringBuilder sb = new StringBuilder();
+			while(margin>0) {
+				sb.append(" ");
+				margin--;
+				}
+			sb.append("* --");
+			sb.append(this.key);
+			sb.append(" <");
+			sb.append(this.argName);
+			sb.append("> ");
+			sb.append(this.shortDesc);
+			sb.append("\n");
+			return sb.toString();
 			}
 		@Override
 		public String toString() {
+			return markdown();
 			}
 		}
 
 	public Parameter make(final String key, final Object value) {
 		return new Parameter(key,value);
 		}
+	/** alias of make */
+	public final Parameter build(final String key, final Object value) {
+		return make(key,value);
+		}
+	/** alias of make */
+	public final Parameter param(final String key, final Object value) {
+		return make(key,value);
+		}
 	
+	
+	public class UsageBuilder {
+		private UsageBuilder() {
+			}
+		public void print() {
+			System.out.println(markdown());
+			}
 		public String markdown() {
-			StringBuilder sb = new StringBuilder(" * ");
-			sb.append(getName());
-			sb.append(" <");
-			sb.append(getArgName());
-			sb.append("> ");
-			sb.append(getDescription());
-			sb.append("\n");
-			return sb.toString();
-			}
-		}
-	
-	/** parameter factory, creats a parameter */
-	public class ParameterFactory extends BaseParam {
-		ParameterFactory(final String name) {
-			super(name);
-			}
-		ParameterFactory description(final String s) {
-			return description(()->s);
-			} 
-		ParameterFactory description(final Supplier<String> s) {
-			this.description = s;
-			return this;
-			} 
-		ParameterFactory menu(final String s) {
-			this.submenu = s;
-			return this;
-			}
-		ParameterFactory argName(final String s) {
-			this.argName = s;
-			return this;
-			}
-		ParameterFactory validator(Validator v) {
-			if(v!=null) validators.add(v);
-			return this;
-			}
-		
-		
-		ParameterFactory setInteger() { return setClass(Integer.class);}
-		ParameterFactory setLong() { return setClass(Long.class);}
-		ParameterFactory setClass(final Class<?> C) {
-			return validator(new Validator() {
-				@Override
-				public boolean validate(Parameter p,Map<String,Object> o) {
-					return true;
+			final Set<String> menus = Gazoduc.this.parameters.stream().
+				map(S->S.menu).
+				collect(Collectors.toCollection(TreeSet::new));
+
+			StringBuilder w = new StringBuilder();
+			
+			for(int side=0;side<2;side++) {
+			for(String menu: menus) {
+				if(menu.equals(MAIN_MENU) && side==1) continue;
+				if(!menu.equals(MAIN_MENU) && side==0) continue;
+				w.append("## ").append(menu.isEmpty()?"Main options":menu).append("\n\n");
+				for(Parameter p: Gazoduc.this.parameters) {
+					if(!p.menu.equals(menu)) continue;
+					w.append(p.markdown(4));
 					}
-				});
+				}
 			}
-		ParameterFactory value(final String s) {
-			return value(()->s);
-			} 
-		ParameterFactory value(final Supplier<String> s) {
-			this.value = s;
-			return this;
-			} 
-		public Parameter build(Map<String,Object> nfParams) {
-			Parameter p = new Parameter(this.name);
-			p.copy(this);
-			Gazoduc.this.params.put(p.getName(),p);
-			String v = p.value.get();
-			if(v!=null) nfParams.put(p.getName(),v);
-			return p;
+			return w.toString();
+			}
+		@Override
+		public String toString() {
+			return markdown();
 			}
 		}
 
-	private Map<String,Parameter> params = new HashMap<>();
 
-	private Gazoduc() {
+	public UsageBuilder usage() {
+		return new UsageBuilder();
 		}
 	
-	public ParameterFactory option(final String name) {
-		return new ParameterFactory(name);
-		}
 
 	public void validate(final Map<String,Object> m) {
 		boolean is_valid = true;
-		for(Parameter p: this.params.values()) {
+		for(Parameter p: this.parameters) {
 			if(!p.validate(m)) is_valid=false;
 			}
 		if(!is_valid) {
-			
+			throw new IllegalArgumentException("Validation failed");
 			}
 		}
 
-	public String usage() {
-		final Set<String> menus = this.params.values().stream().
-				map(S->S.submenu).
-				collect(Collectors.toCollection(TreeSet::new));
-
-		StringBuilder w = new StringBuilder();
-
-		for(String menu: menus) {
-			w.append("## ").append(menu.isEmpty()?"Main options":menu).append("\n\n");
-			for(Parameter p: this.params.values()) {
-				if(!p.submenu.equals(menu)) continue;
-				w.append(p.markdown());
-				}
-			}
-		return w.toString();
-		}
 
 	public static Gazoduc getInstance() {
 		if(INSTANCE==null) {
@@ -200,17 +275,8 @@ public class Gazoduc {
 			}
 		return INSTANCE;
 		}
-	public String what(Object o) {	
-		Class<?> c = o.getClass();
-		do {
-		    System.err.println(c);
-			c=c.getSuperclass();
-                    } while(!c.equals(Object.class));
-		
-		return String.valueOf(o);
-		}
 
-	public boolean parseBoolean(final Object o) {	
+	static boolean parseBoolean(final Object o) {	
 		if(o==null) return false;
 		String s= String.valueOf(o).toLowerCase();
 		if(s.equals("t")) return true;
