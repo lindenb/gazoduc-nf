@@ -8,7 +8,7 @@ NF=$(realpath plotcoverage.nf)
 
 
 all: $(NF) ../../confs/${HOSTNAME}.cfg $(OUTDIR)/bams.txt $(OUTDIR)/jeter.bed
-	module load nextflow && nextflow -C ../../confs/${HOSTNAME}.cfg  run -work-dir "$(OUTDIR)" -resume $(NF) \
+	module load nextflow/22.04.0 && nextflow -C ../../confs/${HOSTNAME}.cfg run -lib ../../lib  -work-dir "$(OUTDIR)" -resume $(NF) \
 		--publishDir "$(OUTDIR)" \
 		--reference $(REF) \
 		--prefix "$(PREFIX)."  \

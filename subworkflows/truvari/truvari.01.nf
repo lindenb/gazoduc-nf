@@ -88,6 +88,7 @@ process PER_CONTIG {
 
 	# invoke truvari
 	truvari collapse ${extraCmd} --reference "${reference}" -i "TMP/merged.vcf.gz" -c TMP/collapsed.vcf.gz |\
+		bcftools +fill-tags -O u -- -t AN,AC,AF |\
 		bcftools sort -T TMP -O b -o truvari.bcf
 
 	bcftools index truvari.bcf	

@@ -24,19 +24,25 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
+def gazoduc = gazoduc.Gazoduc.getInstance().putDefaults(params)
+
+
 /** path to indexed fasta reference */
-params.reference = ""
+//params.reference = ""
 params.references = "NO_FILE"
 params.mapq = 0
 params.bams = ""
 params.bed = "BED"
-params.help = false
-params.publishDir = ""
-params.prefix = ""
+//params.help = false
+//params.publishDir = ""
+//params.prefix = ""
 
 
 include {PLOT_COVERAGE_01} from '../../subworkflows/plotdepth/plot.coverage.01.nf'
 include {runOnComplete} from '../../modules/utils/functions.nf'
+
+
+gazoduc.reference().required().put(params)
 
 def helpMessage() {
   log.info"""
@@ -84,6 +90,7 @@ if( params.help ) {
     exit 0
 }
 
+gazoduc.usage().print()
 
 workflow {
 	ch1 = PLOT_COVERAGE_01(params,params.reference, file(params.references),file(params.bams), file(params.bed))

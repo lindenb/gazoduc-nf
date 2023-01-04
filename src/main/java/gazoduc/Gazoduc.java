@@ -24,6 +24,7 @@ SOFTWARE.
 */
 package gazoduc;
 import java.util.*;
+import java.util.regex.*;
 import java.io.*;
 import java.util.function.*;
 import java.util.logging.Level;
@@ -34,6 +35,7 @@ import java.util.stream.Collectors;
 public class Gazoduc {
 	private static final Logger LOG = Logger.getLogger(Gazoduc.class.getSimpleName());
 	private static final String MAIN_MENU="Main options";
+	private static final String DEFAULT_VALUE= "value";
 	private static Gazoduc INSTANCE = null;
 	private final List<Parameter> parameters = new Vector<>();
 
@@ -43,11 +45,11 @@ public class Gazoduc {
 		private final List<Validator> validators = new Vector<>();
 		private final String key;
 		private Object value = null;
-		private String argName = "value";
+		private String argName = DEFAULT_VALUE ;
 		private String shortDesc = "";
 		private String longDesc = "";
 		private String menu = MAIN_MENU;
-
+		private boolean required = false;
 
 		private class Validator {
 			public boolean validate(final Map<String,Object> map) {
@@ -92,6 +94,7 @@ public class Gazoduc {
 			return this.key;
 			}
 		public Parameter required() {
+			this.required = true;
 			return validator(new Validator() {
 				@Override
 				public boolean validate(final Map<String,Object> map) {
@@ -119,6 +122,7 @@ public class Gazoduc {
 
 
 		public Parameter existingFile() {
+			if(this.argName.equals(DEFAULT_VALUE)) argName("path to file");
 			return notEmpty().
 				validator(new Validator() {
 				@Override
@@ -153,7 +157,101 @@ public class Gazoduc {
 				});
 			}
 
+		public Parameter indexedFasta() {
+			if(this.argName.equals(DEFAULT_VALUE)) argName("path to fasta file");
+			return existingFile().
+				suffixes(".fa",".fasta",".fa.gz",".fasta.gz",".fna",".fna.gz").
+				validator(new Validator() {
+                                @Override
+                                public boolean validate(final String s) {
+					boolean ok=true;
+					try {
+						File f = new File(s);
+						if(!f.exists()) ok=false;
+						f = new File(s+".fai");
+						if(!f.exists()) ok=false;
+						int dot = s.lastIndexOf(".");
+						if(dot>0 ) {
+							String s2 = s.substring(0,dot);
+							f = new File(s2+".dict");
+							if(!f.exists()) ok=false;
+							}
+						return true;
+						}
+					catch(Throwable err) {
+						LOG.severe(err.getMessage());
+						}
+					if(!ok) LOG.severe("option --"+ getKey() +" value "+s+ "doesn't look like an indexed fasta sequence (.fai and .dict required)/");
+                                        return ok;
+                                        }
+				});
+			}
 
+		public Parameter regex(final String reg) {
+			return validator(new Validator() {
+				@Override
+				public boolean validate(final String s) {
+					 Pattern p = Pattern.compile(reg);
+					 Matcher m = p.matcher(s);
+					 if(!m.matches()) {
+						LOG.severe("option --"+ getKey() +" value "+s+ "doesn't match the regular expression '" + reg+"'"); 
+						return false;
+						}
+					return true;
+					}
+				});
+			}
+
+
+		public Parameter inSet(final String...values) {
+			return validator(new Validator() {
+				@Override
+				public boolean validate(final String s) {					
+					for(final String s2 : values) {
+						if(s.equals(s2)) return true;	
+						}
+					LOG.severe("option --"+ getKey() +" value "+s+ "doesn't end match with any of (" + String.join(" | ", values) +")/"); 
+					return false;
+					}
+				});
+			}
+
+		public Parameter setBoolean() {
+			return inSet("true","false");
+			}
+
+
+		private Parameter setConsummer(java.util.function.Consumer<String> fun,final String msg) {
+			return validator(new Validator() {
+				@Override
+				public boolean validate(final String s) {
+					try {
+						fun.accept(s);
+						return true;
+						}
+					catch(final Throwable err) {
+						LOG.severe("option --"+ getKey() +" value "+s+ " error. "+msg); 
+						return false;
+						}
+					}
+				});
+			}
+
+
+		public Parameter setInteger() {
+			if(this.argName.equals(DEFAULT_VALUE)) argName("integer");
+			return setConsummer(S->Integer.parseInt(S),"Value should be an integer");
+			}
+
+		public Parameter setLong() {
+			if(this.argName.equals(DEFAULT_VALUE)) argName("long");
+			return setConsummer(S->Long.parseLong(S),"Value should be a long integer.");
+			}
+
+		public Parameter setDouble() {
+			if(this.argName.equals(DEFAULT_VALUE)) argName("double");
+			return setConsummer(S->Double.parseDouble(S),"Value should be a floating value.");
+			}
 
 
 
@@ -164,13 +262,23 @@ public class Gazoduc {
 		
 
 		public boolean put(final Map<String,Object> map) {
-			if(map.containsKey(this.key)) {
-				LOG.warning("params already contains "+this);
+			if(map.containsKey(this.key)) { /** user set this key on the NF command line, it already defined but we register it */
+				this.value = map.get(this.key);
+				}
+			else
+				{
+				map.put(this.key,this.value);
+				}
+			final Parameter old = Gazoduc.this.parameters.stream().filter(P->P.key.equals(this.key)).findFirst().orElse(null);
+			if(old!=null) {
+				LOG.severe("key already defined in gazoduc ! "+ this.key+" " + old);
 				return false;
 				}
-			Gazoduc.this.parameters.add(this);
-			map.put(this.key,this.value);
-			return true;
+			else
+				{
+				Gazoduc.this.parameters.add(this);
+				return true;
+				}
 			}
 
 		public boolean validate(final Map<String,Object> map) {
@@ -194,9 +302,18 @@ public class Gazoduc {
 			sb.append(this.key);
 			sb.append(" <");
 			sb.append(this.argName);
-			sb.append("> ");
+			sb.append("> . ");
 			sb.append(this.shortDesc);
-			sb.append("\n");
+			sb.append(". ");
+			if(this.required) {
+				sb.append("[REQUIRED]. ");
+				}
+			if(this.value!=null) {
+				sb.append("[ ");
+				sb.append(this.value);
+				sb.append("]");
+				}
+			sb.append(".\n");
 			return sb.toString();
 			}
 		@Override
@@ -216,7 +333,35 @@ public class Gazoduc {
 	public final Parameter param(final String key, final Object value) {
 		return make(key,value);
 		}
+
+
+	public Parameter make(final String key) {
+		return make(key,null);
+		}
+	/** alias of make */
+	public final Parameter build(final String key) {
+		return make(key);
+		}
+	/** alias of make */
+	public final Parameter param(final String key) {
+		return make(key);
+		}
 	
+
+
+	public Gazoduc putDefaults(final Map<String,Object> map) {
+		make("help",false).desc("Display help for this workflow and exit").menu("Help").setBoolean().put(map);
+		make("prefix","").argName("string").desc("set a suffix for the files generated for this workflow").menu("Output").notEmpty().regex("[A-Z0-9a-z_\\.\\-]+").put(map);
+		make("publishDir","").argName("directory").desc("set a base directory where final output files should be written.").menu("Output").notEmpty().put(map);
+		return this;
+		}
+	public Parameter reference() {
+		return make("reference",false).
+			argName("path to fasta").
+			desc("Path to the reference genome as FASTA. The file must be indexed with 'samtools faidx' and 'samtools dict'").menu("Input").
+			indexedFasta();
+		}
+
 	
 	public class UsageBuilder {
 		private UsageBuilder() {
@@ -240,6 +385,7 @@ public class Gazoduc {
 					if(!p.menu.equals(menu)) continue;
 					w.append(p.markdown(4));
 					}
+				w.append("\n");
 				}
 			}
 			return w.toString();
@@ -276,25 +422,5 @@ public class Gazoduc {
 		return INSTANCE;
 		}
 
-	static boolean parseBoolean(final Object o) {	
-		if(o==null) return false;
-		String s= String.valueOf(o).toLowerCase();
-		if(s.equals("t")) return true;
-		if(s.equals("true")) return true;
-		if(s.equals("yes")) return true;
-		if(s.equals("y")) return true;
-		if(s.equals("on")) return true;
-		if(s.equals("1")) return true;
-
-
-		if(s.equals("f")) return false;
-		if(s.equals("false")) return false;
-		if(s.equals("no")) return false;
-		if(s.equals("n")) return false;
-		if(s.equals("off")) return false;
-		if(s.equals("0")) return false;
-
-		throw new IllegalArgumentException("Illegal boolean value "+s+".");
-		}
 	
 	}
