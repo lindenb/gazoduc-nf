@@ -24,7 +24,7 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-def gazoduc = gazoduc.Gazoduc.getInstance().putDefaults(params)
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults()
 
 
 /** path to indexed fasta reference */
@@ -42,7 +42,7 @@ include {PLOT_COVERAGE_01} from '../../subworkflows/plotdepth/plot.coverage.01.n
 include {runOnComplete} from '../../modules/utils/functions.nf'
 
 
-gazoduc.reference().required().put(params)
+gazoduc.reference();
 
 def helpMessage() {
   log.info"""

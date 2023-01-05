@@ -37,6 +37,7 @@ public class Gazoduc {
 	private static final String MAIN_MENU="Main options";
 	private static final String DEFAULT_VALUE= "value";
 	private static Gazoduc INSTANCE = null;
+	private final Map<String,Object> params;
 	private final List<Parameter> parameters = new Vector<>();
 
 
@@ -52,8 +53,8 @@ public class Gazoduc {
 		private boolean required = false;
 
 		private class Validator {
-			public boolean validate(final Map<String,Object> map) {
-				Object o = map.getOrDefault(getKey(),null);
+			public boolean validate() {
+				Object o = getParams().getOrDefault(getKey(),null);
 				if(o==null) return true;
 				return validateObject(o);
 				}
@@ -97,8 +98,8 @@ public class Gazoduc {
 			this.required = true;
 			return validator(new Validator() {
 				@Override
-				public boolean validate(final Map<String,Object> map) {
-					if(!map.containsKey(getKey()) || map.get(getKey())==null) {
+				public boolean validate() {
+					if(!getParams().containsKey(getKey()) || getParams().get(getKey())==null) {
 						LOG.severe("option --"+ getKey() +" is not defined. " + markdown());
 						return false;
 						}
@@ -261,13 +262,13 @@ public class Gazoduc {
 			}
 		
 
-		public boolean put(final Map<String,Object> map) {
-			if(map.containsKey(this.key)) { /** user set this key on the NF command line, it already defined but we register it */
-				this.value = map.get(this.key);
+		public boolean put() {
+			if(getParams().containsKey(this.key)) { /** user set this key on the NF command line, it already defined but we register it */
+				this.value = getParams().get(this.key);
 				}
 			else
 				{
-				map.put(this.key,this.value);
+				getParams().put(this.key,this.value);
 				}
 			final Parameter old = Gazoduc.this.parameters.stream().filter(P->P.key.equals(this.key)).findFirst().orElse(null);
 			if(old!=null) {
@@ -281,10 +282,10 @@ public class Gazoduc {
 				}
 			}
 
-		public boolean validate(final Map<String,Object> map) {
+		public boolean validate() {
 			boolean ok=true;
 			for(Validator v: this.validators) {
-				if(!v.validate(map)) ok=false;
+				if(!v.validate()) ok=false;
 				}
 			return ok;
 			}
@@ -315,6 +316,9 @@ public class Gazoduc {
 				}
 			sb.append(".\n");
 			return sb.toString();
+			}
+		public String log() {
+			return  new StringBuilder().append(this.key).append("\t|\t").append(this.value).toString();
 			}
 		@Override
 		public String toString() {
@@ -349,32 +353,68 @@ public class Gazoduc {
 	
 
 
-	public Gazoduc putDefaults(final Map<String,Object> map) {
-		make("help",false).desc("Display help for this workflow and exit").menu("Help").setBoolean().put(map);
-		make("prefix","").argName("string").desc("set a suffix for the files generated for this workflow").menu("Output").notEmpty().regex("[A-Z0-9a-z_\\.\\-]+").put(map);
-		make("publishDir","").argName("directory").desc("set a base directory where final output files should be written.").menu("Output").notEmpty().put(map);
+	public Gazoduc putDefaults() {
+		make("help",false).desc("Display help for this workflow and exit").menu("Help").setBoolean().put();
+		make("prefix","").argName("string").desc("set a suffix for the files generated for this workflow").menu("Output").notEmpty().regex("[A-Z0-9a-z_\\.\\-]+").put();
+		make("publishDir","").argName("directory").desc("set a base directory where final output files should be written.").menu("Output").notEmpty().put();
 		return this;
 		}
-	public Parameter reference() {
-		return make("reference",false).
+	public Gazoduc reference() {
+		make("reference",false).
 			argName("path to fasta").
 			desc("Path to the reference genome as FASTA. The file must be indexed with 'samtools faidx' and 'samtools dict'").menu("Input").
-			indexedFasta();
+			required().
+			indexedFasta().
+			put();
+		return this;
 		}
 
 	
 	public class UsageBuilder {
+		private String name = "workflow";
+		private String description = "no description available";
 		private UsageBuilder() {
 			}
+
+		UsageBuilder name(final String s) {
+			this.name = s;
+			return this;
+			}
+		UsageBuilder description(final String s) {
+			this.description = s;
+			return this;
+			}
+
+		UsageBuilder desc(final String s) {
+			return description(s);
+			}
+
 		public void print() {
 			System.out.println(markdown());
 			}
+
+		public void log() {
+			StringBuilder sb = new StringBuilder();
+			for(Parameter p: Gazoduc.this.parameters) {
+				sb.append(p.log()).append("\n");
+				}
+			LOG.info(sb.toString());
+			}
+
 		public String markdown() {
 			final Set<String> menus = Gazoduc.this.parameters.stream().
 				map(S->S.menu).
 				collect(Collectors.toCollection(TreeSet::new));
+			final StringBuilder w = new StringBuilder();
 
-			StringBuilder w = new StringBuilder();
+			w.append("# "+ this.name+"\n\n");
+			w.append(this.description+"\n\n");
+
+			w.append("## Author\n\n");
+			w.append("Pierre Lindenbaum PhD. Institut du Thorax.\n\n");
+
+			w.append("## Options\n\n");
+
 			
 			for(int side=0;side<2;side++) {
 			for(String menu: menus) {
@@ -386,6 +426,16 @@ public class Gazoduc {
 					w.append(p.markdown(4));
 					}
 				w.append("\n");
+				}
+			w.append("\n");
+			try {
+				File f = new File("workflow.svg");
+				if(f.exists()) {
+					w.append("## Workflow\n\n");
+					w.append("![workflow](./workflow.svg)\n\n");
+					}
+				}
+			catch(final Throwable err) {
 				}
 			}
 			return w.toString();
@@ -402,21 +452,29 @@ public class Gazoduc {
 		}
 	
 
-	public void validate(final Map<String,Object> m) {
+	public void validate() {
 		boolean is_valid = true;
 		for(Parameter p: this.parameters) {
-			if(!p.validate(m)) is_valid=false;
+			if(!p.validate()) is_valid=false;
 			}
 		if(!is_valid) {
 			throw new IllegalArgumentException("Validation failed");
 			}
 		}
 
+	private Gazoduc(final Map<String,Object> params) {
+		this.params = params;
+		if(params==null) throw new IllegalArgumentException("params is null");
+		}
 
-	public static Gazoduc getInstance() {
+	Map<String,Object> getParams() {
+		return this.params;
+		}
+
+	public static Gazoduc getInstance(final Map<String,Object> params) {
 		if(INSTANCE==null) {
 			synchronized(Gazoduc.class) {
-				INSTANCE = new Gazoduc();
+				INSTANCE = new Gazoduc(params);
 				}
 			}
 		return INSTANCE;
