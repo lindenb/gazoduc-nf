@@ -52,6 +52,7 @@ public class Gazoduc {
 		private String shortDesc = "";
 		private String menu = MAIN_MENU;
 		private boolean required = false;
+		private boolean hidden = false;
 
 		private class Validator {
 			public boolean validate() {
@@ -95,6 +96,14 @@ public class Gazoduc {
 		public String getKey() {
 			return this.key;
 			}
+		public Parameter hidden() {
+			this.hidden = true;
+			return this;
+			}
+		public boolean isHidden() {
+			return this.hidden;
+			}
+
 		public Parameter required() {
 			this.required = true;
 			return validator(new Validator() {
@@ -434,6 +443,7 @@ public class Gazoduc {
 		public void log() {
 			final StringBuilder sb = new StringBuilder();
 			for(Parameter p: Gazoduc.this.parameters) {
+				if(p.isHidden()) continue;
 				sb.append(p.log()).append("\n");
 				}
 			LOG.info(sb.toString());
@@ -442,6 +452,7 @@ public class Gazoduc {
 		
 		public String markdown() {
 			final Set<String> menus = Gazoduc.this.parameters.stream().
+				filter(S->!S.isHidden()).
 				map(S->S.menu).
 				collect(Collectors.toCollection(TreeSet::new));
 			final StringBuilder w = new StringBuilder();
@@ -465,7 +476,7 @@ public class Gazoduc {
 				if(!menu.equals(MAIN_MENU) && side==0) continue;
 				w.append("## ").append(menu.isEmpty()?"Main options":menu).append("\n\n");
 				for(Parameter p: Gazoduc.this.parameters) {
-					if(!p.menu.equals(menu)) continue;
+					if(!p.menu.equals(menu) || p.isHidden()) continue;
 					w.append(p.markdown(4));
 					}
 				w.append("\n");

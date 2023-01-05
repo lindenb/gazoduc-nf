@@ -7,7 +7,7 @@ include ../../../data/reference/references.mk
 NF=$(realpath boxplotdepth.nf)
 
 all: $(NF) ../../confs/${HOSTNAME}.cfg $(OUTDIR)/bams.txt $(OUTDIR)/jeter.bed $(OUTDIR)/groups.txt
-	module load nextflow && nextflow -C ../../confs/${HOSTNAME}.cfg  run -work-dir "$(OUTDIR)" -resume $(NF) \
+	module load nextflow && nextflow -C ../../confs/${HOSTNAME}.cfg  run -lib ../../lib -work-dir "$(OUTDIR)" -resume $(NF) \
 		--publishDir "$(OUTDIR)" \
 		--reference $(REF) \
 		--prefix "$(PREFIX)."  \
@@ -36,7 +36,7 @@ $(OUTDIR)/jeter.bed:
 	echo -e "RF03\t100\t1000\tTR2\tEX1" >> $@
 
 README.md: $(NF)
-	module load nextflow && nextflow -C ../../confs/${HOSTNAME}.cfg run -work-dir "$(OUTDIR)" $< --help | tail -n+3 > $@
+	module load nextflow && nextflow -C ../../confs/${HOSTNAME}.cfg run -lib ../../lib -work-dir "$(OUTDIR)" $< --help | tail -n+3 > $@
 
 clean:
 	rm -rvf "$(OUTDIR)" .nextflow .nextflow.*
