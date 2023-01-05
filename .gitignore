@@ -34,3 +34,7 @@ timeline.html*
 trace.txt*
 jeter*
 /bin/
+
+# eclipse
+.classpath
+.project

@@ -26,8 +26,8 @@ package gazoduc;
 import java.util.*;
 import java.util.regex.*;
 import java.io.*;
+import java.net.MalformedURLException;
 import java.util.function.*;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -36,10 +36,12 @@ public class Gazoduc {
 	private static final Logger LOG = Logger.getLogger(Gazoduc.class.getSimpleName());
 	private static final String MAIN_MENU="Main options";
 	private static final String DEFAULT_VALUE= "value";
+	public static final String DESC_INDEXED_FASTA = "Path to the reference genome as FASTA. The file must be indexed with 'samtools faidx' and 'samtools dict' ( or picard CreateSequenceDictionary ) ";
+	public static final String DESC_INDEXED_BAM = "The BAM must be indexed with 'samtools index' (an associated .bai must be present) ";
+	public static final String DESC_INDEXED_VCF = "The VCF must be indexed with 'bcftools index' (an associated .tbi/.csi must be present) ";
 	private static Gazoduc INSTANCE = null;
 	private final Map<String,Object> params;
 	private final List<Parameter> parameters = new Vector<>();
-
 
 
 	public class Parameter {
@@ -48,13 +50,12 @@ public class Gazoduc {
 		private Object value = null;
 		private String argName = DEFAULT_VALUE ;
 		private String shortDesc = "";
-		private String longDesc = "";
 		private String menu = MAIN_MENU;
 		private boolean required = false;
 
 		private class Validator {
 			public boolean validate() {
-				Object o = getParams().getOrDefault(getKey(),null);
+				final Object o = getParams().getOrDefault(getKey(),null);
 				if(o==null) return true;
 				return validateObject(o);
 				}
@@ -67,15 +68,15 @@ public class Gazoduc {
 				}
 			}
 
-		Parameter(final String key, Object value) {
+		private Parameter(final String key, Object value) {
 			this.key = key;
 			if(key==null || key.trim().isEmpty()) throw new IllegalArgumentException("Key is empty/null");
 			this.value = value;
 			}
-		Parameter(final String key) {
+		private Parameter(final String key) {
 			this(key,null);
 			}
-		public Parameter value(Object o) {
+		public Parameter value(final Object o) {
 			this.value = o;
 			return this;
 			}
@@ -121,8 +122,8 @@ public class Gazoduc {
 				});
 			}
 
-
-		public Parameter existingFile() {
+		
+		private Parameter file(final Predicate<File> consummer, final String msg) {
 			if(this.argName.equals(DEFAULT_VALUE)) argName("path to file");
 			return notEmpty().
 				validator(new Validator() {
@@ -130,20 +131,40 @@ public class Gazoduc {
 				public boolean validate(final String s) {
 					try {
 						final File f = new File(s);
-						if(!f.exists()) {
-							LOG.severe("option --"+ getKey() +" file doesn't exist: "+f);
-							return false; 
+						if(!consummer.test(f)) {
+							LOG.severe("option --"+ getKey() +" = ("+s+") "+msg); 
+							return false;
 							}
 						}
 					catch(Throwable err) {
-						LOG.severe("option --"+ getKey() +" is not defined or empty. " + markdown()+" "+err.getMessage()); 
+						LOG.severe("option --"+ getKey() +" = ("+s+") "+msg); 
 						return false;
 						}
 					return true;
 					}
 				});
 			}
+		
 
+		public Parameter existingFile() {
+			if(this.argName.equals(DEFAULT_VALUE)) argName("path to file");
+			return file(F->F.exists() && !F.isDirectory(),"Path should exist and be a file.");
+			}
+
+		public Parameter existingDirectory() {
+			if(this.argName.equals(DEFAULT_VALUE) || this.argName.equals("file") || this.argName.equals("path")) {
+				argName("path to directory");
+				}
+			return file(F->F.exists() && F.isDirectory(),"Path should exist and be a directory.");
+			}
+		
+		public Parameter bwaReference() {
+			return desc("path to a reference indexed with bwa").
+				file(F->{
+					final File f = new File(F.getParentFile(), F.getName()+".bwt");
+					return f.exists();
+					},"Path should be the path to a fasta reference indexed with bwa");
+			}
 
 		public Parameter suffixes(final String...suffixes) {
 			return validator(new Validator() {
@@ -162,32 +183,27 @@ public class Gazoduc {
 			if(this.argName.equals(DEFAULT_VALUE)) argName("path to fasta file");
 			return existingFile().
 				suffixes(".fa",".fasta",".fa.gz",".fasta.gz",".fna",".fna.gz").
-				validator(new Validator() {
-                                @Override
-                                public boolean validate(final String s) {
-					boolean ok=true;
-					try {
-						File f = new File(s);
-						if(!f.exists()) ok=false;
-						f = new File(s+".fai");
-						if(!f.exists()) ok=false;
+				file(F->{
+						final String s= F.getName();
+						File f = new File(F.getParentFile(),s+".fai");
+						if(!f.exists())  {
+							LOG.warning("not found "+f);
+							return false;
+							}
 						int dot = s.lastIndexOf(".");
-						if(dot>0 ) {
-							String s2 = s.substring(0,dot);
-							f = new File(s2+".dict");
-							if(!f.exists()) ok=false;
+						if(dot<0) return false;
+						String s2 = s.substring(0,dot);
+						f = new File(F.getParentFile(),s2+".dict");
+						if(!f.exists()) {
+							LOG.warning("not found "+f);
+							return false;
 							}
 						return true;
 						}
-					catch(Throwable err) {
-						LOG.severe(err.getMessage());
-						}
-					if(!ok) LOG.severe("option --"+ getKey() +" value "+s+ "doesn't look like an indexed fasta sequence (.fai and .dict required)/");
-                                        return ok;
-                                        }
-				});
-			}
-
+					,"Fasta file must exists. ref.fa.fai and ref.dict must exists"
+					);
+				};
+						
 		public Parameter regex(final String reg) {
 			return validator(new Validator() {
 				@Override
@@ -254,7 +270,22 @@ public class Gazoduc {
 			return setConsummer(S->Double.parseDouble(S),"Value should be a floating value.");
 			}
 
-
+		public Parameter setURL() {
+			if(this.argName.equals(DEFAULT_VALUE)) argName("url");
+			return setConsummer(S->{
+					try {
+						new java.net.URL(S);
+					} catch(MalformedURLException err) {
+						throw new IllegalArgumentException(err);
+					}
+				},"Value should be an URL value.");
+			}
+		
+		
+		public Parameter setFile() {
+			if(this.argName.equals(DEFAULT_VALUE)) argName("path");
+			return setConsummer(S-> new File(S) ,"Value should be a file.");
+			}
 
 		public Parameter validator(final Validator v) {
 			if(v!=null) this.validators.add(v);
@@ -356,51 +387,59 @@ public class Gazoduc {
 	public Gazoduc putDefaults() {
 		make("help",false).desc("Display help for this workflow and exit").menu("Help").setBoolean().put();
 		make("prefix","").argName("string").desc("set a suffix for the files generated for this workflow").menu("Output").notEmpty().regex("[A-Z0-9a-z_\\.\\-]+").put();
-		make("publishDir","").argName("directory").desc("set a base directory where final output files should be written.").menu("Output").notEmpty().put();
+		make("publishDir","").argName("directory").existingDirectory().desc("set a base directory where final output files should be written.").menu("Output").notEmpty().put();
 		return this;
 		}
+	
 	public Gazoduc reference() {
 		make("reference",false).
 			argName("path to fasta").
-			desc("Path to the reference genome as FASTA. The file must be indexed with 'samtools faidx' and 'samtools dict'").menu("Input").
+			desc(DESC_INDEXED_FASTA).menu("Input").
 			required().
 			indexedFasta().
 			put();
 		return this;
 		}
-
-	
+		
 	public class UsageBuilder {
 		private String name = "workflow";
 		private String description = "no description available";
+		private List<String> authors = new ArrayList<>();
 		private UsageBuilder() {
+			this.authors.add("Pierre Lindenbaum PhD. Institut du Thorax. U1087. 44400 Nantes. France.");
 			}
 
-		UsageBuilder name(final String s) {
+		public UsageBuilder name(final String s) {
 			this.name = s;
 			return this;
 			}
-		UsageBuilder description(final String s) {
+		public UsageBuilder description(final String s) {
 			this.description = s;
 			return this;
 			}
 
-		UsageBuilder desc(final String s) {
+		public UsageBuilder desc(final String s) {
 			return description(s);
 			}
 
+		public UsageBuilder author(final String s) {
+			authors.add(s);
+			return this;
+			}
+		
 		public void print() {
 			System.out.println(markdown());
 			}
 
 		public void log() {
-			StringBuilder sb = new StringBuilder();
+			final StringBuilder sb = new StringBuilder();
 			for(Parameter p: Gazoduc.this.parameters) {
 				sb.append(p.log()).append("\n");
 				}
 			LOG.info(sb.toString());
 			}
 
+		
 		public String markdown() {
 			final Set<String> menus = Gazoduc.this.parameters.stream().
 				map(S->S.menu).
@@ -410,9 +449,13 @@ public class Gazoduc {
 			w.append("# "+ this.name+"\n\n");
 			w.append(this.description+"\n\n");
 
-			w.append("## Author\n\n");
-			w.append("Pierre Lindenbaum PhD. Institut du Thorax.\n\n");
-
+			w.append("## Author(s)\n\n");
+			
+			for(String a: this.authors) {
+				w.append("  * ").append(a).append("\n");
+				}
+			w.append("\n");
+			
 			w.append("## Options\n\n");
 
 			
@@ -428,6 +471,10 @@ public class Gazoduc {
 				w.append("\n");
 				}
 			w.append("\n");
+			
+			w.append("## Issues\n\n");
+			w.append("report issues at https://github.com/lindenb/gazoduc-nf/issues\n\n");
+			
 			try {
 				File f = new File("workflow.svg");
 				if(f.exists()) {
@@ -458,7 +505,7 @@ public class Gazoduc {
 			if(!p.validate()) is_valid=false;
 			}
 		if(!is_valid) {
-			throw new IllegalArgumentException("Validation failed");
+			throw new IllegalArgumentException("Validation of parameters failed");
 			}
 		}
 
@@ -467,7 +514,7 @@ public class Gazoduc {
 		if(params==null) throw new IllegalArgumentException("params is null");
 		}
 
-	Map<String,Object> getParams() {
+	private Map<String,Object> getParams() {
 		return this.params;
 		}
 
