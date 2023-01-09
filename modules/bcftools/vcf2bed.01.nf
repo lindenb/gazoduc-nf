@@ -32,6 +32,7 @@ input:
 output:
 	path("vcf2bed.bed"),emit:bed /* chrom start end vcf */
 	path("contigs.txt"),emit:chromosomes /* uniq chromosome names */
+	path("contigs.bed"),emit:chromsbed /* uniq chromosome names as BED */
 	path("version.xml"),emit:version
 script:
 	"""
@@ -55,6 +56,8 @@ script:
 
 
 	cut -f1 vcf2bed.bed | sort | uniq > contigs.txt 	
+	cut -f1,2,3 vcf2bed.bed | sort | uniq > contigs.bed
+
 
 	# add header
 	if ${parseBoolean(meta.with_header)} ; then
@@ -62,6 +65,10 @@ script:
 		echo -e 'contig\tstart\tend\tvcf' > jeter.tmp
 		cat vcf2bed.bed >> jeter.tmp
 		mv jeter.tmp vcf2bed.bed
+
+		echo -e 'contig\tstart\tend' > jeter.tmp
+		cat contigs.bed >> jeter.tmp
+		mv jeter.tmp contigs.bed
 
 	fi
 

@@ -22,14 +22,13 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include { getKeyValue; getModules; getBoolean} from '../../modules/utils/functions.nf'
+include {getVersionCmd} from '../../modules/utils/functions.nf'
 include {SAMTOOLS_SAMPLES01} from '../../modules/samtools/samtools.samples.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {MANTA_SINGLE_01} from  '../../modules/manta/manta.single.01.nf'
-include {SURVIVOR_INSTALL}  from '../../modules/survivor/survivor.install.nf'
-include {SURVIVOR_MERGE}  from '../../modules/survivor/survivor.merge.nf'
 include {SIMPLE_ZIP_01} from '../../modules/utils/zip.simple.01.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
+include {TRUVARI_01} from '..//truvari/truvari.01.nf'
 
 workflow MANTA_SINGLE_SV01 {
 	take:
@@ -58,28 +57,22 @@ workflow MANTA_SINGLE_SV01 {
 
 		file_list_ch = COLLECT_TO_FILE_01([:],all_manta_files_ch.collect())
 
-
-		if(getKeyValue(meta,"survivor_merge_params","").trim().isEmpty()) {
-			survivor_vcf = Channel.empty()
-			survivor_vcf_index = Channel.empty()
+		
+		if(meta.with_merge_manta_vcf==false) {
+			merge_vcf = Channel.empty()
+			merge_vcf_index = Channel.empty()
 			}
 		else
 			{
-			survivor_ch = SURVIVOR_INSTALL(meta)
-			version_ch= version_ch.mix(survivor_ch.version)
-			
-			diploid_ch = all_manta_files_ch.
-				filter{T->T.endsWith("diploidSV.vcf.gz")}.
-				collect()
 
-			survivor_merge_ch = SURVIVOR_MERGE(meta,survivor_ch.executable,diploid_ch)
-			version_ch= version_ch.mix(survivor_merge_ch.version)
+			truvari_ch = TRUVARI_01(meta, reference, file_list_ch.output)
+			to_zip = to_zip.mix(truvari_ch.version)
 
-			survivor_vcf = survivor_merge_ch.vcf
-			survivor_vcf_index = survivor_merge_ch.index
+			merge_vcf = truvari_ch.vcf
+			merge_vcf_index = truvari_ch.index
 
-			to_zip = to_zip.mix(survivor_vcf).
-					mix(survivor_vcf_index)
+			to_zip = to_zip.mix(merge_vcf).
+					mix(merge_vcf_index)
 			}
 
 
@@ -92,8 +85,8 @@ workflow MANTA_SINGLE_SV01 {
 	emit:
 		version = version_merge.version
 		zip = zip_ch.zip
-		survivor_vcf = survivor_vcf
-		survivor_vcf_index = survivor_vcf_index
+		merge_vcf = merge_vcf
+		merge_vcf_index = merge_vcf_index
 		manta_files = file_list_ch.output
 	}
 

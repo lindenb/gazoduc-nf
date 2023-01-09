@@ -49,7 +49,7 @@ workflow BCFTOOLS_VCFS_TO_BED_01 {
 		
 		each_rgn = rgn_ch.output.splitCsv(header:false,sep:'\t')
 
-		vcfstat_ch = VCF2BED(meta,bed,each_rgn)
+		vcfstat_ch = VCF2BED(meta,each_rgn)
 		version_ch = version_ch.mix(vcfstat_ch.version)
 
 		beds_ch = MERGE_BEDS(meta,vcfstat_ch.bed.collect())
@@ -91,7 +91,7 @@ if ${!bed.name.equals("NO_FILE")} ; then
 fi
 
 	
-awk -F '\t' '{printf("%s:%s-%s\t%s\\n",\$1,\$2,\$3,\$4);}' jeter.bed > intervals.tsv
+awk -F '\t' '{printf("%s:%s-%s\t%s\\n",\$1,int(\$2)+1,\$3,\$4);}' jeter.bed > intervals.tsv
 rm jeter.bed
 
 ###############################################
@@ -111,7 +111,6 @@ process VCF2BED {
 tag "${interval} ${file(vcf).name}"
 input:
 	val(meta)
-	path(bed)
 	tuple val(interval),val(vcf)
 output:
 	path("variants.bed"),emit:output
@@ -122,7 +121,7 @@ hostname 1>&2
 ${moduleLoad("bcftools bedtools")}
 set -o pipefail
 
-bcftools query ${bed.name.equals("NO_FILE")?"":"--regions-file \"${bed.toRealPath()}\""} -f '%CHROM\t%POS0\t%END' --regions "${interval}"  "${vcf}" |\
+bcftools query  -f '%CHROM\t%POS0\t%END' --regions "${interval}"  "${vcf}" |\
 	sort -T . -k1,1 -k2,2n -t '\t' |\
 	bedtools merge > variants.bed
 
@@ -134,7 +133,6 @@ cat << EOF > version.xml
         <entry key="description">extract variants intervals from one vcf</entry>
         <entry key="interval">${interval}</entry>
         <entry key="vcf">${vcf}</entry>
-        <entry key="bed">${bed}</entry>
         <entry key="versions">${getVersionCmd("bcftools bedtools")}</entry>
 </properties>
 EOF

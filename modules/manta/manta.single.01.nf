@@ -29,7 +29,7 @@ process MANTA_SINGLE_01 {
     afterScript "rm -rf TMP"
     cache 'lenient'
     errorStrategy 'finish'
-    cpus 16
+    cpus ((params.manta_cpus?:16) as int)
     memory "20g"
     input:
 	val(meta)

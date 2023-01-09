@@ -33,6 +33,8 @@ import java.util.stream.Collectors;
 
 
 public class Gazoduc {
+	public static final String ANSI_ESCAPE = "\u001B[";
+	public static final String ANSI_RESET = ANSI_ESCAPE+"0m";
 	private static final Logger LOG = Logger.getLogger(Gazoduc.class.getSimpleName());
 	private static final String MAIN_MENU="Main options";
 	private static final String DEFAULT_VALUE= "value";
@@ -93,6 +95,11 @@ public class Gazoduc {
 			this.shortDesc = s;
 			return this;
 			}
+
+		public final Parameter description(final String s) {
+			return this.desc(s);
+			}
+
 		public String getKey() {
 			return this.key;
 			}
@@ -322,10 +329,27 @@ public class Gazoduc {
 				}
 			}
 
+
+		private String pen(int pen,String s) {
+			return ANSI_ESCAPE+pen+"m"+s+ANSI_RESET;
+			}
+		private String green(String s) {
+			return pen(32,s);
+			}
+		private String red(String s) {
+			return pen(31,s);
+			}
+
 		public boolean validate() {
 			boolean ok=true;
 			for(Validator v: this.validators) {
 				if(!v.validate()) ok=false;
+				}
+			if(!ok) {
+				System.err.println("validation for param --"+getKey()+" "+red("[FAILED]"));
+				}
+			else	{
+				System.err.println("validation for param --"+getKey()+" "+green("[OK]"));
 				}
 			return ok;
 			}
@@ -400,14 +424,17 @@ public class Gazoduc {
 		return this;
 		}
 	
-	public Gazoduc reference() {
-		make("reference",false).
+	public Gazoduc putReference() {
+		reference().put();
+		return this;
+		}
+
+	public Parameter reference() {
+		return make("reference",false).
 			argName("path to fasta").
 			desc(DESC_INDEXED_FASTA).menu("Input").
 			required().
-			indexedFasta().
-			put();
-		return this;
+			indexedFasta();
 		}
 		
 	public class UsageBuilder {

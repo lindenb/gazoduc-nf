@@ -24,65 +24,29 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults();
+
 /** path to indexed fasta reference */
 params.reference = ""
 /** one file containing the paths to the BAM/CRAM  */
 params.bams = ""
-/** display help */
-params.help = false
-/** publish Directory */
-params.publishDir = ""
-/** files prefix */
-params.prefix = ""
-params.survivor_merge_params="1000 2 1 1 0 30"
+params.with_merge_manta_vcf = false
+params.manta_cpus = 16
 
+include {runOnComplete} from '../../modules/utils/functions.nf'
 include {MANTA_SINGLE_SV01} from '../../subworkflows/manta/manta.single.01.nf' 
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 
-def helpMessage() {
-  log.info"""
-## About
-
-Detects CNV/SV using manta.
-
-## Author
-
-${params.rsrc.author}
-
-## Options
-
-  * --reference (fasta) ${params.rsrc.reference} [REQUIRED]
-  * --bams (file) one file containing the paths to the BAM/CRAM. [REQUIRED]
-  * --publishDir (dir) Save output in this directory
-  * --prefix (string) files prefix. default: ""
-  * --survivor_merge_params (string) or empty to disable survivor. [${params.survivor_merge_params}]
-
-## Usage
-
-```
-nextflow -C ../../confs/cluster.cfg  run -resume manta.nf \\
-	--publishDir output \\
-	--prefix "analysis." \\
-	--reference /path/to/reference.fasta \\
-	--bams /path/to/bams.list
-```
-
-## Workflow
-
-![workflow](./workflow.svg)
-  
-## See also
-
-  * https://github.com/Illumina/manta
-
-"""
-}
-
 
 if( params.help ) {
-    helpMessage()
+    gazoduc.usage().
+	name("manta").
+	description("call SV/CNV with manta for each bam").
+	print()
     exit 0
-}
+} else {
+	gazoduc.validate();
+	}
 
 
 workflow {
@@ -95,14 +59,16 @@ workflow {
 	to_publish = to_publish.
 			mix(manta_ch.version).
 			mix(manta_ch.zip).
-			mix(manta_ch.survivor_vcf).
-			mix(manta_ch.survivor_vcf_index).
+			mix(manta_ch.merge_vcf).
+			mix(manta_ch.merge_vcf_index).
 			mix(manta_ch.manta_files).
 			mix(html.html)
 
 
 	PUBLISH(to_publish.collect())
 	}
+
+runOnComplete(workflow)
 
 process PUBLISH {
 tag "N=${files.size()}"
@@ -126,22 +92,5 @@ do
 	ln -s "\${F}" ./
 done
 """
-}
-
-workflow.onComplete {
-
-    println ( workflow.success ? """
-        Pipeline execution summary
-        ---------------------------
-        Completed at: ${workflow.complete}
-        Duration    : ${workflow.duration}
-        Success     : ${workflow.success}
-        workDir     : ${workflow.workDir}
-        exit status : ${workflow.exitStatus}
-        """ : """
-        Failed: ${workflow.errorReport}
-        exit status : ${workflow.exitStatus}
-        """
-    )
 }
 

@@ -40,51 +40,24 @@ include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
 include {MERGE_VERSION} from '../../../modules/version/version.merge.nf'
 include {PIHAT_CASES_CONTROLS_01} from '../../../subworkflows/pihat/pihat.cases.controls.01.nf'
 
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults()
+
+gazoduc.make("vcf","NO_FILE").description("path to a indexed VCF or BCF file. If file ends with '.list' is a list of path to one VCF per contig").required().put()
+gazoduc.make("bed","NO_FILE").description("limit anaylsis to that BED file").put()
+
 params.reference=""
 params.pedigree=""
-params.vcf=""
 params.disableFeatures="";
-params.help=false
-params.bed= "NO_FILE"
 params.annot_method="vep"
 
 if(params.help) {
-  log.info"""
-## About
-
-Burden for coding regions.
-
-## Author
-
-${params.rsrc.author}
-
-## Options
-
-  * --reference (fasta) ${params.rsrc.reference} [REQUIRED]
-  * --vcf <file> path to a indexed VCF or BCF file. If file ends with '.list' is a list of path to one VCF per contig [REQUIRED]
-  * --pedigree <file> jvarkit formatted pedigree. phenotype MUST be case|control. Sex MUST be male|female|unknown
-  * --bed <file> optional bed file to limit the analysis to the genes overlapping a  bed file.
-  * --publishDir (dir) Save output in this directory
-  * --prefix (string) files prefix. default: ""
-
-## Usage
-
-```
-nextflow -C ../../confs/cluster.cfg  run -resume workflow.nf \\
-        --publishDir output \\
-        --prefix "analysis." \\
-        --reference /path/to/reference.fasta \\
-        --vcf /path/to/my.vcf.gz \\
-        --pedigree /path/to/input.ped
-```
-
-## Workflow
-
-![workflow](./workflow.svg)
-
-"""
-exit 0
-}
+	gazoduc.usage().name("burden").description("burden for coding regions").print()
+	exit 0
+	}
+else
+	{
+	gazoduc.validate()
+	}
 
 workflow {
 		BURDEN_CODING(params, params.reference, params.vcf, file(params.pedigree),file(params.bed))
