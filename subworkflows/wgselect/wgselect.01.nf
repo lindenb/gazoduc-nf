@@ -100,6 +100,85 @@ EOF
 }
 ************************************/
 
+def gazoduc = gazoduc.Gazoduc.getInstance(params)
+
+gazoduc.build("wgselect_mapability_hg19_bigwig","/LAB-DATA/BiRD/resources/species/human/ucsc/hg19/encodeDCC/wgEncodeDukeMapabilityUniqueness35bp.bigWig").
+	description("Mapability for hg19. bigwig file with the number of time a region is repeated in the genome. 1=uniq . discard if !=1").
+	menu("wgselect").
+	existingFile().
+	put()
+
+gazoduc.build("wgselect_mapability_hg38_bigwig","/LAB-DATA/BiRD/resources/species/human/ucsc/hg38/hoffmanMappability/k24.Umap.MultiTrackMappability.bw").
+	description("Mapability for hg38. bigwig file with the number of time a region is repeated in the genome. 1=uniq . discard if !=1").
+	menu("wgselect").
+	existingFile().
+	put()
+
+gazoduc.build("wgselect_max_alleles_count",3).
+	description("select variants on min/max number of alleles (diallelic is 2)").
+	menu("wgselect").
+	setInteger().
+	put()
+
+gazoduc.build("wgselect_polyx",10).
+	description("remove variant near a poly-x with size > value").
+	menu("wgselect").
+	setInteger().
+	argName("size").
+	put()
+
+gazoduc.build("wgselect_gnomadPop","AF_nfe").
+	description("Allele frequency(AF) to consider in GNOMAD VCF").
+	argName("population").
+	menu("wgselect").
+	put()
+
+gazoduc.build("wgselect_gnomadAF",0.01).
+	description("Allele frequency(AF) treshold in GNOMAD VCF. Discard variants with INFO/AF> value").
+	setDouble().
+	argName("0.0 - 1.0").
+	menu("wgselect").
+	put()
+
+gazoduc.build("wgselect_soacn","SO:0001574,SO:0001575,SO:0001818").
+	description("Accesion number for consequences to keep after the functional annotation. Multiple are comma separated").
+	menu("wgselect").
+	put()
+
+gazoduc.build("wgselect_f_missing",0.05).
+	description("Discard variants where the proportion of NO_CALL (./.) genotypes is grater than is value").
+	menu("wgselect").
+	setDouble().
+	put()
+
+
+gazoduc.build("wgselect_ReadPosRankSum",4).
+        description("INFO/ReadPosRankSum compares whether the positions of the reference and alternate alleles are different within the reads. See https://gatk.broadinstitute.org/hc/en-us/articles/360035890471-Hard-filtering-germline-short-variants. Dicard variant with -x<ReadPosRankSum<x. Ignore if value is 0.").
+        menu("wgselect").
+        setDouble().
+        put()
+
+
+gazoduc.build("wgselect_minDP",10).
+        description("remove variant mean called genotype depth is tool low.").
+        menu("wgselect").
+        setDouble().
+        put()
+
+gazoduc.build("wgselect_maxDP",300).
+        description("remove variant mean called genotype depth is tool high.").
+        menu("wgselect").
+        setDouble().
+        put()
+
+gazoduc.build("wgselect_lowGQ",70).
+        description("ALL genotypes carrying a ALT must have a Genotype Quality GQ >= x. Ignore if x <=0 ").
+        menu("wgselect").
+        setInt().
+        put()
+
+
+
 process ANNOTATE {
 tag "${file(vcf).name} ${file(bed).name}"
 cache "lenient"
@@ -125,28 +204,29 @@ script:
 	def gnomadgenomefilterexpr = (isHg19(reference)?"FILTER~\"GNOMAD_GENOME_AC0\"|| FILTER~\"GNOMAD_GENOME_BAD_AF\"|| FILTER~\"GNOMAD_GENOME_InbreedingCoeff\"|| FILTER~\"GNOMAD_GENOME_RF\"":
 			(isHg38(reference)?"FILTER~\"GNOMAD_GENOME_AC0\"|| FILTER~\"GNOMAD_GENOME_BAD_AF\"|| FILTER~\"GNOMAD_GENOME_InbreedingCoeff\"|| FILTER~\"GNOMAD_GENOME_AS_VQSR\"":
 			""))
-	def mapability= (isHg19(reference)?"/LAB-DATA/BiRD/resources/species/human/ucsc/hg19/encodeDCC/wgEncodeDukeMapabilityUniqueness35bp.bigWig":
-			(isHg38(reference)?"/LAB-DATA/BiRD/resources/species/human/ucsc/hg38/hoffmanMappability/k24.Umap.MultiTrackMappability.bw":
+	def mapability= (isHg19(reference)?(meta.wgselect_mapability_hg19_bigwig):
+			(isHg38(reference)?(meta.wgselect_mapability_hg38_bigwig):
 			""))
 	def snpeffDb = (isHg19(reference)?"GRCh37.75":(isHg38(reference)?"GRCh38.86":""))
 	def vep_module = (isHg19(reference)?"ensembl-vep/104.3":"")
 	def vep_invocation = isHg19(reference)?" vep --cache --format vcf --force_overwrite --no_stats --offline  --dir_cache /LAB-DATA/BiRD/resources/apps/vep  --species homo_sapiens --cache_version 91    --assembly GRCh37  --fasta ${reference} --use_given_ref --vcf ":""
 	
-	def max_alleles_count = getKeyValue(meta,"max_alleles_count","3")
-	def polyx = getKeyValue(meta,"polyx","10")
-	def gnomadPop = getKeyValue(meta,"gnomadPop","AF_nfe")
-	def gnomadAF = getKeyValue(meta,"gnomadAF","0.01")
-	def soacn = getKeyValue(meta,"soacn","SO:0001574,SO:0001575,SO:0001818")
+	def max_alleles_count = meta.wgselect_max_alleles_count?:3
+	def polyx = meta.wgselect_polyx?:10
+	def gnomadPop = meta.wgselect_gnomadPop?:"AF_nfe"
+	def gnomadAF = meta.wgselect_gnomadAF?:0.01
+	def soacn = meta.wgselect_soacn
 	def inverse_so = getBoolean(meta,"inverse_so")
-	def f_missing = getKeyValue(meta,"f_missing",0.05)
-	def ReadPosRankSum = getKeyValue(meta,"ReadPosRankSum","4")
+	def f_missing = meta.wgselect_f_missing?:0.05
+
+	def ReadPosRankSum = meta.wgselect_ReadPosRankSum?:4
 	def MQ = getKeyValue(meta,"MQ","10")
 	def MQRankSum = getKeyValue(meta,"MQRankSum","-10")
 	def maxmaf = getKeyValue(meta,"maxmaf",0.05)
 	def fisherh = getKeyValue(meta,"fisherh",0.05)
-	def minDP= getKeyValue(meta,"minDP","10")
-	def maxDP= getKeyValue(meta,"maxDP","300")
-	def lowGQ = getKeyValue(meta,"lowGQ",70)
+	def minDP= meta.wgselect_minDP?:10
+	def maxDP= meta.wgselect_maxDP?:300
+	def lowGQ = meta.wgselect_lowGQ?:70
 	def hwe = getKeyValue(meta,"hwe",0.000000000000001)
 	def minGQsingleton = getKeyValue(meta,"minGQsingleton",99)
 	def minRatioSingleton  = getKeyValue(meta,"minRatioSingleton",0.2)

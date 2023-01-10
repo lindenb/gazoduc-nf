@@ -39,19 +39,24 @@ Warning: Some NF files use local configurations like `module`, `conda`, full pat
 
 ### Structural variants
 
+#### Calling
+
   * [Indexcov](workflows/indexcov/) Finds CNVs using [indexcov](https://github.com/brentp/goleft/tree/master/indexcov#indexcov).
   * [Delly2](workflows/delly2/) Finds CNVs/SV using [delly](https://github.com/dellytools/delly).
   * [Manta](workflows/manta/) Finds CNVs/SV using using [Manta](https://github.com/Illumina/manta). One VCF per sample.
   * [Manta-Multi](workflows/manta.multi/) Finds CNVs/SV using using [Manta](https://github.com/Illumina/manta). Join calling.
   * [Smoove](workflows/smoove/) Finds CNVs/SV using [Smoove](https://github.com/brentp/smoove)
   * [Retrocopies GTF/VCF](workflows/retrocopy/vcf.retrocopy) Finds Retrocopies using a SV VCF and a GTF file.
-  * [Plot CNV from VCF](workflows/cnvplotter) Plot CNV as SVG+HTML.
-  * [Plot CNV using bed+ samtools depth](workflows/plotcoverage) Plot CNV as PDF.
   * [Duphold](workflows/duphold) Apply Duphold to a set of VCFs+BAMs.
-  * [wgs coverage](workflows/wgscovplot) WGS coverage genome wide. Plot as SVG.
   * [etching](workflows/etching.germline) Call germline SV using etching. Doesn't work for now.
   * [truvari](workflows/truvari) Merge SV using truvari
+
+#### Visualization
+
+  * [Plot CNV from VCF](workflows/cnvplotter) Plot CNV as SVG+HTML.
+  * [Plot CNV using bed+ samtools depth](workflows/plotcoverage) Plot CNV as PDF.
   * [indexcov+circos](workflows/indexcov.circos) Plot indexcov output as circos
+  * [wgs coverage](workflows/wgscovplot) WGS coverage genome wide. Plot as SVG.
 
 ### RNAseq
 

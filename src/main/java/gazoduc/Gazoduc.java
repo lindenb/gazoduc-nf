@@ -250,7 +250,7 @@ public class Gazoduc {
 			}
 
 		public Parameter setBoolean() {
-			return inSet("true","false");
+			return inSet("true","false").argName("true|false");
 			}
 
 
@@ -274,6 +274,10 @@ public class Gazoduc {
 		public Parameter setInteger() {
 			if(this.argName.equals(DEFAULT_VALUE)) argName("integer");
 			return setConsummer(S->Integer.parseInt(S),"Value should be an integer");
+			}
+
+		public final Parameter setInt() {
+			return setInteger();
 			}
 
 		public Parameter setLong() {
@@ -317,7 +321,7 @@ public class Gazoduc {
 				{
 				getParams().put(this.key,this.value);
 				}
-			final Parameter old = Gazoduc.this.parameters.stream().filter(P->P.key.equals(this.key)).findFirst().orElse(null);
+			final Parameter old = Gazoduc.this.findParameterByName(this.key).orElse(null);
 			if(old!=null) {
 				LOG.severe("key already defined in gazoduc ! "+ this.key+" " + old);
 				return false;
@@ -330,15 +334,6 @@ public class Gazoduc {
 			}
 
 
-		private String pen(int pen,String s) {
-			return ANSI_ESCAPE+pen+"m"+s+ANSI_RESET;
-			}
-		private String green(String s) {
-			return pen(32,s);
-			}
-		private String red(String s) {
-			return pen(31,s);
-			}
 
 		public boolean validate() {
 			boolean ok=true;
@@ -346,10 +341,10 @@ public class Gazoduc {
 				if(!v.validate()) ok=false;
 				}
 			if(!ok) {
-				System.err.println("validation for param --"+getKey()+" "+red("[FAILED]"));
+				System.err.println("  --"+getKey()+"="+ this.value +" "+red("[FAILED]"));
 				}
 			else	{
-				System.err.println("validation for param --"+getKey()+" "+green("[OK]"));
+				System.err.println("  --"+getKey()+"="+ this.value +" "+green("[OK]"));
 				}
 			return ok;
 			}
@@ -374,7 +369,7 @@ public class Gazoduc {
 				sb.append("[REQUIRED]. ");
 				}
 			if(this.value!=null) {
-				sb.append("[ ");
+				sb.append("[");
 				sb.append(this.value);
 				sb.append("]");
 				}
@@ -415,6 +410,11 @@ public class Gazoduc {
 		return make(key);
 		}
 	
+	/* find parameter by name */
+	public Optional<Parameter> findParameterByName(final String key) {
+		return this.parameters.stream().filter(P->P.key.equals(key)).findFirst();
+		}
+
 
 
 	public Gazoduc putDefaults() {
@@ -433,6 +433,7 @@ public class Gazoduc {
 		return make("reference",false).
 			argName("path to fasta").
 			desc(DESC_INDEXED_FASTA).menu("Input").
+			existingFile().
 			required().
 			indexedFasta();
 		}
@@ -482,6 +483,7 @@ public class Gazoduc {
 				filter(S->!S.isHidden()).
 				map(S->S.menu).
 				collect(Collectors.toCollection(TreeSet::new));
+
 			final StringBuilder w = new StringBuilder();
 
 			w.append("# "+ this.name+"\n\n");
@@ -495,26 +497,28 @@ public class Gazoduc {
 			w.append("\n");
 			
 			w.append("## Options\n\n");
-
 			
 			for(int side=0;side<2;side++) {
 			for(String menu: menus) {
 				if(menu.equals(MAIN_MENU) && side==1) continue;
 				if(!menu.equals(MAIN_MENU) && side==0) continue;
-				w.append("## ").append(menu.isEmpty()?"Main options":menu).append("\n\n");
-				for(Parameter p: Gazoduc.this.parameters) {
-					if(!p.menu.equals(menu) || p.isHidden()) continue;
+				w.append("### ").append(menu.isEmpty()?"Main options":menu).append("\n\n");
+				final String fmenu = menu;
+				for(Parameter p: Gazoduc.this.parameters.stream().
+							filter(S->S.menu.equals(fmenu)).
+							sorted((A,B)->A.key.compareTo(B.key)).
+							collect(Collectors.toList())) {
 					w.append(p.markdown(4));
 					}
 				w.append("\n");
 				}
 			w.append("\n");
-			
+			}
 			w.append("## Issues\n\n");
 			w.append("report issues at https://github.com/lindenb/gazoduc-nf/issues\n\n");
 			
 			try {
-				File f = new File("workflow.svg");
+				final File f = new File("workflow.svg");
 				if(f.exists()) {
 					w.append("## Workflow\n\n");
 					w.append("![workflow](./workflow.svg)\n\n");
@@ -522,7 +526,7 @@ public class Gazoduc {
 				}
 			catch(final Throwable err) {
 				}
-			}
+			
 			return w.toString();
 			}
 		@Override
@@ -538,13 +542,31 @@ public class Gazoduc {
 	
 
 	public void validate() {
+		System.err.println("VALIDATION");
+		System.err.println("==========");
 		boolean is_valid = true;
 		for(Parameter p: this.parameters) {
 			if(!p.validate()) is_valid=false;
 			}
+		for(String key : getParams().keySet()) {
+			if( this.findParameterByName(key).isPresent() ) continue;
+			System.err.println("key \"--"+key+"\" was defined in params but was not declared ["+red("WARNING")+"].");
+			}
 		if(!is_valid) {
 			throw new IllegalArgumentException("Validation of parameters failed");
 			}
+		}
+
+	private static String pen(int pen,String s) {
+		return ANSI_ESCAPE+pen+"m"+s+ANSI_RESET;
+		}
+
+	private static String green(String s) {
+		return pen(32,s);
+		}
+
+	private static String red(String s) {
+		return pen(31,s);
 		}
 
 	private Gazoduc(final Map<String,Object> params) {

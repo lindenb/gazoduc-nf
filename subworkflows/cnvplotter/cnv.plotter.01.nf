@@ -30,6 +30,30 @@ include {DOWNLOAD_GNOMAD_SV_01} from '../../modules/gnomad/download.gnomad.sv.01
 include {DOWNLOAD_DGV_01} from '../../modules/dgv/download.dgv.01.nf'
 include {DOWNLOAD_GFF3_01} from '../../modules/gff3/download.gff3.01.nf'
 
+def gazoduc = gazoduc.Gazoduc.getInstance(params);
+
+gazoduc.make("max_cases",100_000).
+	description("max number of cases per plot").
+	setInt().
+	put()
+
+gazoduc.make("max_controls",10).
+	description("max number of controls per plot").
+	setInt().
+	put()
+
+gazoduc.make("minCnvLength",1).
+        description("min CNV Length").
+        setInt().
+        put()
+
+gazoduc.make("maxCnvLength",250_000_000).
+        description("min CNV Length").
+        setInt().
+        put()
+
+
+
 workflow CNV_PLOTTER_01 {
 	take:
 		meta	

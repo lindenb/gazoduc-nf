@@ -24,65 +24,46 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-/** path to indexed fasta reference */
-params.reference = ""
-params.mapq = 0
-params.bams = ""
-params.vcf = "NO_FILE"
-params.help = false
-params.publishDir = ""
-params.prefix = ""
-params.excludeids = "NO_FILE"
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
+
+gazoduc.make("vcf","NO_FILE").
+	description("path to an indexed VCF or BCF file").
+	required().
+	existingFile().
+	put()
+
+gazoduc.make("bams","NO_FILE").
+	description("file containing the path to multiple bam files").
+	required().
+	existingFile().
+	put()
+
+gazoduc.make("mapq",0).
+	description("min mapping quality").
+	setInt().
+	put()
+
+gazoduc.make("excludeids","NO_FILE").
+	description("file containing IDS to exclude").
+	put()
+
+
 
 include {CNV_PLOTTER_01} from '../../subworkflows/cnvplotter/cnv.plotter.01.nf'
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 include {runOnComplete} from '../../modules/utils/functions.nf'
 
-def helpMessage() {
-  log.info"""
-## About
-
-apply mosdepth to a set of bams.
-
-## Author
-
-${params.rsrc.author}
-
-## Options
-
-  * --reference (fasta) ${params.rsrc.reference} [REQUIRED]
-  * --bams (file) one file containing the paths to the BAM/CRAM [REQUIRED]
-  * --vcf (file) required SV indexed vcf file. default: ""
-  * --excludeids (file) optional file containing IDs of SV to ignore.
-  * --publishDir (dir) Save output in this directory
-  * --prefix (string) files prefix. default: ""
-
-## Usage
-
-```
-nextflow -C ../../confs/cluster.cfg  run -resume cnvplotter.nf \\
-	--publishDir output \\
-	--prefix "analysis." \\
-	--reference /path/to/reference.fasta \\
-	--bams /path/to/bams.list \\
-	--vcf /path/to/cnv.vcf.gz
-```
-
-## Workflow
-
-![workflow](./workflow.svg)
-  
-## See also
-
-
-"""
-}
-
-
 if( params.help ) {
-    helpMessage()
+    gazoduc.usage().
+		name("cnvplotter").
+		description("plot CNVs as SVG.").
+		print();
     exit 0
-}
+    }
+else
+	{
+	gazoduc.validate()
+	}
 
 
 workflow {
@@ -112,4 +93,3 @@ ln -s ${zip} ./
 }
 
 runOnComplete(workflow);
-
