@@ -66,7 +66,7 @@ workflow INDEXCOV_TO_CIRCOS {
 		sn_ch = EXTRACT_SAMPLES(meta, bed)
 		version_ch = version_ch.mix(sn_ch.version)
 
-		one_ch = ONE_SAMPLE(meta, sn_ch.filter, sn_ch.output.splitCsv(header:true,sep:'\t'))
+		one_ch = ONE_SAMPLE(meta, reference, sn_ch.filter, sn_ch.output.splitCsv(header:true,sep:'\t'))
 		version_ch = version_ch.mix(one_ch.version)
 
 		plot_ch = PLOT_CIRCOS(meta, reference, one_ch.output.collect())		
@@ -91,6 +91,7 @@ output:
 	path("filter.awk"),emit:filter
 	path("version.xml"),emit:version
 script:
+	 def indexcov_treshold = meta.indexcov_treshold
 """
 hostname 1>&2
 
@@ -116,10 +117,13 @@ BEGIN {
 	NSAMPLES = (NF - 3);
 	if(NSAMPLES >= 10) {
 		N_HOMDEL =0;
+		N_HOMVAR =0;
 		for(i=4;i<=NF;i++) {
-			if(\$i < 0.1) N_HOMDEL++;
+			if( \$i < ${indexcov_treshold} ) N_HOMDEL++;
+			if( \$i > (1.5 - ${indexcov_treshold} )  ) N_HOMVAR++;
 			}
-		if(N_HOMDEL==NSAMPLES) next;
+		if(N_HOMDEL>=NSAMPLES) next;
+		if(N_HOMVAR>=NSAMPLES) next;
 		}
 	print;
 	}
@@ -143,6 +147,7 @@ tag "${row.sample}"
 afterScript "rm -rf TMP"
 input:
 	val(meta)
+	val(reference)
 	path(filter)
 	val(row)
 output:
@@ -158,6 +163,7 @@ script:
 	def r1 = r0 + DR
 	def min_size = meta.indexcov_min_sv_length
 	def merge_d = meta.indexcov_merge_length
+	def url = isHg38(reference)?"https://genome-euro.ucsc.edu/cgi-bin/hgTracks?db=hg38&position=[chr]%3A[start]%2D[end]":""
 """
 hostname 1>&2
 set -o pipefail
@@ -187,6 +193,8 @@ cat << EOF > data.conf
 file= \${PWD}/${row.sample}.circos
 r0=${r0}r
 r1=${r1}r
+${url.isEmpty()?"":"url=${url}"}
+stroke_thickness = 2
 </highlight>
 EOF
 
