@@ -28,6 +28,15 @@ include { getKeyValue;moduleLoad; assertFileExists;getVersionCmd} from '../../mo
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 
 
+def gazoduc = gazoduc.Gazoduc.getInstance(params);
+
+
+gazoduc.make("goleft_version","v0.2.4").
+        description("gotleft/indexcov version").
+	menu("goleft").
+        put()
+
+
 workflow INDEXCOV {
      take:
         meta /* meta */

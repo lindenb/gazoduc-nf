@@ -24,79 +24,41 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-/** path to indexed fasta reference */
-params.reference = ""
-/** mapq min mapping quality . If it's <=0, just use the bam index as is. Otherwise, rebuild the bai */
-params.mapq = -1
-/** one file containing the paths to the BAM/CRAM */
-params.bams = ""
-/** display help */
-params.help = false
-/** publish Directory */
-params.publishDir = ""
-/** files prefix */
-params.prefix = ""
-/** goleft version */
-params.goleft_version = "v0.2.4"
+
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
+
+gazoduc.make("mapq",-1).
+	description("mapq min mapping quality . If it's <=0, just use the bam index as is. Otherwise OR IF IT's A CRAM, rebuild the bai").
+	setInteger().
+	argName("MAPQ").
+	put()
+
+gazoduc.make("bams","NO_FILE").
+	description("File containing the paths to the BAM/CRAMS files. One path per line").
+	required().
+	existingFile().
+	put()
+
 
 include {INDEXCOV} from '../../subworkflows/indexcov/indexcov.nf'
-include {runOnComplete;assertFileExists} from '../../modules/utils/functions.nf'
+include {runOnComplete} from '../../modules/utils/functions.nf'
 include {SIMPLE_ZIP_01} from '../../modules/utils/zip.simple.01.nf'
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 
 
-def helpMessage() {
-  log.info"""
-## About
-
-Detects CNV using go-left indexcov
-
-## Author
-
-${params.rsrc.author}
-
-## Options
-
-  * --reference (fasta) ${params.rsrc.reference} [REQUIRED]
-  * --bams (file) one file containing the paths to the BAM/CRAM [REQUIRED]
-  * --mapq (int)  min mapping quality . If it's lower than 0 (this is the default) just use the bam index as is. Otherwise, rebuild the bai
-  * --publishDir (dir) Save output in this directory
-  * --prefix (string) files prefix. default: ""
-  * --goleft_version (string) default: "${params.goleft_version}"
-
-## Usage
-
-```
-nextflow -C ../../confs/cluster.cfg  run -resume indexcov.nf \\
-	--publishDir output \\
-	--prefix "analysis." \\
-	--reference /path/to/reference.fasta \\
-	--bams /path/to/bams.list \\
-	--mapq 30
-```
-
-## Workflow
-
-![workflow](./workflow.svg)
-  
-## See also
-
- * indexcov: https://github.com/brentp/goleft/tree/master/indexcov
- * https://twitter.com/yokofakun/status/1527419449669734426
-
-"""
-}
-
 
 if( params.help ) {
-    helpMessage()
+    gazoduc.usage().
+		name("indexcov").
+		description("Detects CNVs using go-left indexcov").
+		print();
     exit 0
-}
+    } else {
+	gazoduc.validate();
+	}
 
 
 workflow {
-	assertFileExists(params.reference,"--reference must be defined")
-	assertFileExists(params.bams,"--bams must be defined")
 	indexcov_ch = INDEXCOV(params,params.reference,params.bams)
 
 	html = VERSION_TO_HTML(params, indexcov_ch.version)
