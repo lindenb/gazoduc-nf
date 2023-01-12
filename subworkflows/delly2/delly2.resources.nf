@@ -27,6 +27,16 @@ include { moduleLoad;getVersionCmd;getKeyValue; isHg19; isHg38} from '../../modu
 include { SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.nf'
 
 
+def gazoduc = gazoduc.Gazoduc.getInstance(params);
+
+gazoduc.make("delly2_version","v1.1.5").
+        menu("delly").
+        description("delly2 version").
+        put()
+
+
+
+
 workflow DELLY2_RESOURCES {
      take:
         meta /* meta */

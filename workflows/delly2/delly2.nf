@@ -24,78 +24,48 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-/** path to indexed fasta reference */
-params.reference = ""
-/** one file containing the paths to the BAM/CRAM for controls */
-params.controls = ""
-/** one file containing the paths to the BAM/CRAM for cases */
-params.cases = ""
-/** display help */
-params.help = false
-/** publish Directory */
-params.publishDir = ""
-/** files prefix */
-params.prefix = ""
-/** delly version *:
-params.delly2_version = "v1.1.5"
-/** keep INFO/TYPE=BND */
-params.bnd=true
-/** search CNVs */
-params.cnv=true
+
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
+
+gazoduc.make("controls","").
+	description("file containing the path to indexed BAM or CRAM files for controls").
+	argName("file").
+	put()
+
+gazoduc.make("cases","").
+	description("file containing the path to indexed BAM or CRAM files for cases").
+	required().
+	existingFile().
+	put()
+
+gazoduc.make("bnd",true).
+	description("keep BND data").
+	menu("delly").
+	setBoolean().
+	put()
+
+gazoduc.make("cnv",true).
+	description("run 'delly cnv'").
+	menu("delly").
+	setBoolean().
+	put()
+
 
 include {DELLY2_RESOURCES} from '../../subworkflows/delly2/delly2.resources.nf' 
 include {DELLY2_SV} from '../../subworkflows/delly2/delly2.sv.nf' 
 include {SAMTOOLS_CASES_CONTROLS_01} from '../../subworkflows/samtools/samtools.cases.controls.01.nf'
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 
-def helpMessage() {
-  log.info"""
-## About
-
-Detects CNV/SV using delly2
-
-## Author
-
-${params.rsrc.author}
-
-## Options
-
-  * --reference (fasta) ${params.rsrc.reference} [REQUIRED]
-  * --cases (file) one file containing the paths to the BAM/CRAM for cases [REQUIRED]
-  * --controls (file) one file containing the paths to the BAM/CRAM for controls [REQUIRED]
-  * --publishDir (dir) Save output in this directory
-  * --prefix (string) files prefix. default: ""
-  * --delly2_version (string) default: "${params.delly2_version}"
-  * --cnv (boolean) Shall we call CNV ? default: "${params.cnv}"
-  * --bnd (boolean) Shall we output BND ? default: "${params.bnd}"
-
-## Usage
-
-```
-nextflow -C ../../confs/cluster.cfg  run -resume delly2.nf \\
-	--publishDir output \\
-	--prefix "analysis." \\
-	--reference /path/to/reference.fasta \\
-	--cases /path/to/bams.cases.list \\
-	--controls /path/to/bams.controls.list
-```
-
-## Workflow
-
-![workflow](./workflow.svg)
-  
-## See also
-
-  * https://github.com/dellytools/delly
-
-"""
-}
-
-
-if( params.help ) {
-    helpMessage()
-    exit 0
-}
+if(params.help) {
+	gazoduc.usage().
+		name("delly2").
+		description("Detects CNV/SV using delly2 ( https://github.com/dellytools/delly ) ").
+		print();
+	exit 0
+	}
+else	{
+	gazoduc.validate()
+	}
 
 
 workflow {

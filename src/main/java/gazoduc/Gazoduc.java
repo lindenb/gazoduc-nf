@@ -323,7 +323,7 @@ public class Gazoduc {
 				}
 			final Parameter old = Gazoduc.this.findParameterByName(this.key).orElse(null);
 			if(old!=null) {
-				LOG.severe("key already defined in gazoduc ! "+ this.key+" " + old);
+				//LOG.severe("key already defined in gazoduc ! "+ this.key+" " + old);
 				return false;
 				}
 			else
