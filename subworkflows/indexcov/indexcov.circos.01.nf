@@ -209,7 +209,7 @@ output:
 	path("${meta.prefix?:""}circos.png"),emit:png
 	path("version.xml"),emit:version
 script:
-	def karyotype = isHg38(reference)?"data/karyotype/karyotype.human.hg38.txt":""
+	def karyotype = isHg38(reference)?"data/karyotype/karyotype.human.hg38.txt":(isHg19(reference)?"data/karyotype/karyotype.human.hg19.txt":"")
 """
 hostname 1>&2
 ${moduleLoad("circos")}
