@@ -99,6 +99,14 @@ Warning: Some NF files use local configurations like `module`, `conda`, full pat
   * [QC remapping](workflows/comparemapping). QC remapping by genotype concordance + liftover
   * [contimination](workflows/contamination). Contaminations in BAMs/FASTQs.
 
+### Biostars
+
+Solutions for biostars.org.
+
+  + [Biostars9550377](workflows/biostars/biostars9550377.nf) speeding up bcftools view.
+
+
+
 # Works on my machine
 
 > Why don't you use CONDA ?
