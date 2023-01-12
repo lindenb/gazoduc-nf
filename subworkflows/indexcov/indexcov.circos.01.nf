@@ -33,8 +33,7 @@ gazoduc = gazoduc.Gazoduc.getInstance(params)
 gazoduc.build("indexcov_treshold",0.15).desc("DEL if x < 0.5+t. DUP if x > 1.5-t").menu("circos").setDouble().put()
 gazoduc.build("indexcov_min_sv_length",100_000).desc("minimum SV size. Ignore events having length<x.").menu("circos").setLong().put()
 gazoduc.build("indexcov_merge_length",1).desc("merge SV with distance < 'x'.").menu("circos").setLong().put()
-
-
+gazoduc.build("indexcov_nsamples_cleanup",10).desc("if there is more than 'x' samples, ignore data if all samples are DEL/DUP. Ignore if < 0.").menu("circos").setInt().put()
 
 
 workflow INDEXCOV_TO_CIRCOS_01 {
@@ -75,7 +74,8 @@ output:
 	path("filter.awk"),emit:filter
 	path("version.xml"),emit:version
 script:
-	 def indexcov_treshold = meta.indexcov_treshold
+	def indexcov_treshold = meta.indexcov_treshold
+	def n_cleanup = meta.indexcov_nsamples_cleanup
 """
 hostname 1>&2
 
@@ -99,15 +99,21 @@ BEGIN {
 	}
 (\$1 ~ /^(chr)?[0-9XY]+\$/)	{
 	NSAMPLES = (NF - 3);
-	if(NSAMPLES >= 10) {
+	if(${n_cleanup} > 0 && NSAMPLES >= ${n_cleanup}) {
 		N_HOMDEL =0;
 		N_HOMVAR =0;
+		N_DUP =0;
+		N_DEL =0;
 		for(i=4;i<=NF;i++) {
 			if( \$i < ${indexcov_treshold} ) N_HOMDEL++;
-			if( \$i > (1.5 - ${indexcov_treshold} )  ) N_HOMVAR++;
+			if( \$i > (2.0 - ${indexcov_treshold} )) N_HOMVAR++;
+			if( \$i > (1.5 - ${indexcov_treshold} ) && \$i < (1.5 + ${indexcov_treshold}  ) ) N_DUP++;
+			if( \$i < (0.5 + ${indexcov_treshold} )  && \$i > (0.5 - ${indexcov_treshold})) N_DEL++;
 			}
-		if(N_HOMDEL>=NSAMPLES) next;
-		if(N_HOMVAR>=NSAMPLES) next;
+		if(N_HOMDEL >= NSAMPLES) next;
+		if(N_HOMVAR >= NSAMPLES) next;
+		if(N_DUP >= NSAMPLES) next;
+		if(N_DEL >= NSAMPLES) next;
 		}
 	print;
 	}
@@ -140,8 +146,8 @@ output:
 script:
 	def indexcov_treshold = meta.indexcov_treshold?:0.2
 	def nsamples = (row.nsamples as double)
-	def R0=0.3
-	def R1=1.0
+	def R0=0.1
+	def R1=0.9
 	def DR=(R1-R0)/nsamples
 	def r0= R0 + (DR*((row.column as int)-1))
 	def r1 = r0 + DR
