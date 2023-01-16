@@ -23,12 +23,26 @@ SOFTWARE.
 
 */
 
-include { COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
-include { getKeyValue;moduleLoad; assertFileExists;getVersionCmd} from '../../modules/utils/functions.nf'
+include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
+include {getKeyValue;moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
 include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {BCFTOOLS_CONCAT_01} from '../bcftools/bcftools.concat.01.nf'
 
+
+def gazoduc = gazoduc.Gazoduc.getInstance(params)
+
+gazoduc.build("extra_truvari"," --keep maxqual --refdist 500 --sizemin 50 --sizemax 50000").
+	menu("Truvari").
+        desc("extra parameters to add to the truvari command line.").
+        put()
+
+gazoduc.build("extra_view_truvari","").
+	menu("Truvari").
+        desc("extra parameters to add to 'bcftools view' after 'bcftools merge' and before truvari itself. Could be a place to remove large events.").
+        put()
+
+gazoduc.putCondaEnv()
 
 workflow TRUVARI_01 {
      take:
@@ -75,14 +89,16 @@ process PER_CONTIG {
 	path("truvari.bcf.csi"), emit: index
         path "version.xml",emit: version
     script:
-	def extraCmd = meta.extra_truvari?"":" --sizemax 2000000 --chain "
+	def extraCmd = meta.extra_truvari?:""
+	def extraBcftools = meta.extra_view_truvari?:""
     """
 	hostname 1>&2
 	${moduleLoad("bcftools")}
 	mkdir -p TMP
 
 	# bug FORMAT pour dragen
-	bcftools merge --regions "${contig}" --file-list "${vcfs}" -m none -O u |\
+	bcftools merge --filter-logic '+' --regions "${contig}" --file-list "${vcfs}" -m none -O u |\
+		${extraBcftools.isEmpty()?"":"bcftools view -O u ${extraBcftools} |"} \
 		bcftools annotate --force -x 'FORMAT/SR' -O z -o TMP/merged.vcf.gz
 	bcftools index --tbi TMP/merged.vcf.gz
 
@@ -106,4 +122,3 @@ process PER_CONTIG {
 	EOF
     """
    }
-

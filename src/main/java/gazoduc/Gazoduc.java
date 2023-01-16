@@ -437,6 +437,18 @@ public class Gazoduc {
 			required().
 			indexedFasta();
 		}
+
+	public Gazoduc putCondaEnv() {
+		final String env = System.getenv("CONDA_ENVS_PATH");
+		make("conda",env).
+			argName("CONDA_ENVS_PATH").
+			desc("The bird Cluster at institut du Thorax as a global env variable ${CONDA_ENVS_PATH} where conda finds its file").
+			menu("Conda").
+			notEmpty().
+			required().
+			put();
+		return this;
+		}
 		
 	public class UsageBuilder {
 		private String name = "workflow";

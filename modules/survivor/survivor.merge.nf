@@ -23,43 +23,54 @@ SOFTWARE.
 
 */
 
-include {getKeyValue;getModules} from '../../modules/utils/functions.nf'
+include {moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
+
+
+def gazoduc = gazoduc.Gazoduc.getInstance(params)
+
+gazoduc.build("survivor_merge_params","500 1 1 1 0 100").
+	menu("Survivor").
+        desc("Parameters for survivor (max distance between breakpoints ; Minimum number of supporting caller; Take the type into account;  Take the strands of SVs into accoun; Disabled; Minimum size of SVs to be taken into account).").
+        put()
+
 
 process SURVIVOR_MERGE {
-tag "${L.size()}"
+tag "${vcfs.name} contig ${contig}"
 afterScript "rm -rf TMP"
 memory "20g"
 input:
 	val(meta)
-	val(survivor)
-	val(L)
+	path(survivor)
+	val(contig) // empty or '*' for any contig
+	path(vcfs)
 output:
-	path("${prefix}survivor.merge.bcf"),emit:vcf
-	path("${prefix}survivor.merge.bcf.csi"),emit:index
+	path("${meta.prefix?:""}survivor.merge.bcf"),emit:vcf
+	path("${meta.prefix?:""}survivor.merge.bcf.csi"),emit:index
 	path("version.xml"),emit:version
 script:
-	def survivor_params = getKeyValue(meta,"survivor_merge_params","1000 2 1 1 0 30")
-	prefix = getKeyValue(meta,"prefix","")
+	def survivor_params = meta.survivor_merge_params?:""
+	def prefix = meta.prefix?:""
+	def viewExtra = contig.equals("*") || contig.isEmpty() ?"":" --regions \"${contig}\" "
 """
 hostname 1>&2
-module load ${getModules("bcftools")}
+${moduleLoad("bcftools")}
 mkdir TMP
 
-cat << EOF > TMP/jeter.list
-${L.join("\n")}
-EOF
-
 i=1
-cat TMP/jeter.list | while read F
+cat "${vcfs}" | while read F
 do
-	bcftools view -O v -o  "TMP/tmp.\${i}.vcf" "\${F}"
+	bcftools view ${viewExtra} -O v -o  "TMP/tmp.\${i}.vcf" "\${F}"
 	echo "TMP/tmp.\${i}.vcf" >> TMP/sample_files.list
 	i=\$((i+1))
 done
 
-${survivor} merge TMP/sample_files.list ${survivor_params} TMP/sample_merged.vcf
+${survivor.toRealPath()} merge TMP/sample_files.list ${survivor_params} TMP/sample_merged.vcf
 
-bcftools sort --max-mem "${task.memory.giga}G" -T TMP -O b -o "TMP/merged.bcf" TMP/sample_merged.vcf
+	bcftools annotate -x 'INFO/SUPP_VEC' -O u TMP/sample_merged.vcf |\
+	bcftools sort --max-mem "${task.memory.giga}G" -T TMP -O u  |\
+	bcftools +fill-tags -O u -- -t AN,AC,AF |\
+	bcftools view -O b -o "TMP/merged.bcf"
+
 bcftools index TMP/merged.bcf
 
 
@@ -71,7 +82,8 @@ cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
         <entry key="description">merge VCF file(s) with survivor</entry>
-        <entry key="vcfs.count">${L.size()}</entry>
+        <entry key="vcfs">${vcfs}</entry>
+        <entry key="contig">${contig}</entry>
         <entry key="survivor.version">\$(${survivor}  2>&1 /dev/null | grep '^Version' | cut -d ':' -f 2- )</entry>
         <entry key="survivor.params">${survivor_params} . With:
 		* max distance between breakpoints (0-1 percent of length, 1- number of bp) 
@@ -80,13 +92,8 @@ cat << EOF > version.xml
 		* Take the strands of SVs into account (1==yes, else no)
 		* Disabled.
 		* Minimum size of SVs to be taken into account.</entry>
-	<entry key="bcftools.version">\$( bcftools --version-only)</entry>
+	<entry key="bcftools.version">${getVersionCmd("bcftools")}</entry>
 </properties>
 EOF
-"""
-stub:
-"""
-touch "${prefix}survivor.merge.bcf" ""${prefix}survivor.merge.bcf.csi"
-echo "<properties/>" > version.xml
 """
 }

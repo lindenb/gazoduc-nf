@@ -42,7 +42,7 @@ process MANTA_SINGLE_01 {
 	def prefix = meta.getOrDefault("prefix","")
 	"""
 	hostname 1>&2
-	module load ${getModules("manta")}
+	module load ${getModules("manta samtools bcftools")}
 	mkdir -p TMP
 
 	configManta.py  --bam "${bam}" --referenceFasta "${reference}" \
@@ -53,6 +53,17 @@ process MANTA_SINGLE_01 {
 	
 	rm -rf ./TMP/workspace
 
+
+	# convert BND TO INVERSIONS (added 20230115 but not tested)
+	DIPLOID=`find ./TMP -type f -name "*.diploidSV.vcf.gz`
+	test ! -z "\${DIPLOID}"
+	\$(ls \$( dirname \$(which configManta.py) )/../share/manta*/libexec/convertInversion.py)  `which samtools` "${reference}" "\${DIPLOID}" | bcftools sort -T TMP -O z -o TMP/jeter.vcf.gz
+
+	bcftools index -t TMP/jeter.vcf.gz
+
+	mv -v TMP/jeter.vcf.gz "\${DIPLOID}"
+	mv -v TMP/jeter.vcf.gz.tbi "\${DIPLOID}.tbi"
+
 	# change name to sample
 	find ./TMP -type f -name "*.vcf.gz" \
 		-printf 'mv -v %p  ${prefix}${name}.%f\\n mv -v %p.tbi ${prefix}${name}.%f.tbi\\n' |bash 
@@ -61,6 +72,8 @@ process MANTA_SINGLE_01 {
 	find \${PWD}  -maxdepth 1  -type f -name "*.vcf.gz" -o -name "*.vcf.gz.tbi" |\
 		awk '{printf("${name}\t${bam}\t%s\\n",\$0);}' > ${name}.txt
 	grep -m1 vcf ${name}.txt
+
+
 
 #################################################################################################
 
