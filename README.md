@@ -8,6 +8,7 @@ My [DSL2](https://www.nextflow.io/docs/latest/dsl2.html) [Nextflow](https://www.
 
 Warning: Some NF files use local configurations like `module`, `conda`, full paths to resources. Some workflows are missing an example, tests, etc...
 
+Warning: some NF use a custom java library under `lib/`. The NF workflow should be invoked with `nextflow run -lib /path/to/lib ... `
 
 ## Workflows
 
@@ -37,7 +38,7 @@ Warning: Some NF files use local configurations like `module`, `conda`, full pat
   * [GO / BED](workflows/go4bed) generate BED file from GFF3+GO+GOA
   * [CardioBED](workflows/cardiobed) generate BED file from GFF3+GO+GOA for Cardiac-related genes
 
-### Structural variants
+### Structural variants / CNV
 
 #### Calling
 
@@ -49,7 +50,11 @@ Warning: Some NF files use local configurations like `module`, `conda`, full pat
   * [Retrocopies GTF/VCF](workflows/retrocopy/vcf.retrocopy) Finds Retrocopies using a SV VCF and a GTF file.
   * [Duphold](workflows/duphold) Apply Duphold to a set of VCFs+BAMs.
   * [etching](workflows/etching.germline) Call germline SV using etching. Doesn't work for now.
-  * [truvari](workflows/truvari) Merge SV using truvari
+
+#### Merging
+
+  * [Sruvivor](workflows/survivor) Merge SV using survivor.
+  * [truvari](workflows/truvari) Merge SV using truvari.
 
 #### Visualization
 
