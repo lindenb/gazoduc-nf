@@ -24,6 +24,9 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
+
+
 include {getVersionCmd;runOnComplete;moduleLoad;parseBoolean} from '../../../modules/utils/functions.nf'
 include {VALIDATE_CASE_CONTROL_PED_01} from '../../../modules/pedigree/validate.case.ctrl.pedigree.01.nf'
 include {VCF_INTER_CASES_CONTROLS_01} from '../../../subworkflows/bcftools/vcf.inter.cases.controls.01.nf'
@@ -40,7 +43,6 @@ include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
 include {MERGE_VERSION} from '../../../modules/version/version.merge.nf'
 include {PIHAT_CASES_CONTROLS_01} from '../../../subworkflows/pihat/pihat.cases.controls.01.nf'
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
 
 gazoduc.
     make("vcf","NO_FILE").
@@ -71,7 +73,7 @@ gazoduc.
     put()
 
 gazoduc.
-    make("pedigree", "").
+    make("pedigree", "NO_FILE").
     description(gazoduc.Gazoduc.DESC_JVARKIT_PEDIGREE).
     required().
     existingFile().
@@ -91,7 +93,7 @@ else
 	}
 
 workflow {
-		BURDEN_CODING(params, params.reference, params.vcf, file(params.pedigree),file(params.bed))
+		BURDEN_CODING(params, params.reference, params.vcf, file(params.pedigree), file(params.bed))
 		}
 
 workflow BURDEN_CODING {
