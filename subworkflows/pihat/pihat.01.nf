@@ -25,9 +25,11 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 
-include {hasFeature;moduleLoad;getKeyValue;getGnomadExomePath;getGnomadGenomePath} from '../../modules/utils/functions.nf'
+include {moduleLoad;getGnomadExomePath;getGnomadGenomePath} from '../../modules/utils/functions.nf'
 include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putGnomad()
 
 
 workflow PIHAT01 {
@@ -64,6 +66,49 @@ workflow PIHAT01 {
 	}
 
 
+gazoduc.build("pihat_filters", " --apply-filters '.,PASS' ").
+	description("pihat filter").
+	menu("pihat").
+	put()
+
+gazoduc.build("pihat_MAF", 0.1).
+	description("pihat MAF").
+	menu("pihat").
+    setDouble().
+	put()
+
+gazoduc.build("pihat_min_GQ", 20).
+	description("pihat min GQ").
+	menu("pihat").
+    setInt().
+	put()
+
+gazoduc.build("pihat_f_missing", 0.05).
+	description("pihat fraction of missing genotypes").
+	menu("pihat").
+    setDouble().
+	put()
+
+gazoduc.build("pihat_min_DP", 10).
+	description("min Depth").
+	menu("pihat").
+    setInt().
+	put()
+
+gazoduc.build("pihat_max_DP", 300).
+	description("max Depth").
+	menu("pihat").
+    setInt().
+	put()
+
+
+gazoduc.build("pihat_max", 0.05).
+	description("max pihat ").
+	menu("pihat").
+    setDouble().
+	put()
+
+
 process PLINK_PER_CONTIG {
 tag "${vcf.name}/${contig}"
 afterScript "rm -rf TMP"
@@ -79,13 +124,13 @@ when:
 	contig.matches(meta.pihat_contig_regex?:"(chr)?[0-9XY]+")
 script:
 
-	def filters = getKeyValue(meta,"pihat_filters"," --apply-filters '.,PASS' ")
+	def filters = meta.pihat_filters
 	def blacklisted = meta.blacklisted?:""	
-	def pihatmaf = getKeyValue(meta,"pihat_MAF","0.1")
-	def pihatMinGQ = getKeyValue(meta,"pihat_min_GQ","20")
-	def f_missing= getKeyValue(meta,"pihat_f_missing","0.05")
-	def minDP= getKeyValue(meta,"pihat_min_DP","10")
-	def maxDP= getKeyValue(meta,"pihat_max_DP","300")
+	def pihatmaf = (meta.pihat_MAF as double)
+	def pihatMinGQ = (meta.pihat_min_GQ as int)
+	def f_missing= (meta.pihat_f_missing as double)
+	def minDP= (meta.pihat_min_DP as int)
+	def maxDP= (meta.pihat_max_DP as int)
 	def gnomad_genome_path = getGnomadExomePath(meta,reference)
 	def gnomad_exome_path =   getGnomadGenomePath(meta,reference)
 
@@ -291,8 +336,8 @@ output:
 	path("${prefix}plink.genome.txt.gz"),emit:plink_genome
 	path("version.xml"),emit:version
 script:
-	prefix = getKeyValue(meta,"prefix","")
-	maxPiHat = getKeyValue(meta,"pihat_max","0.05")
+	prefix = meta.prefix?:""
+	maxPiHat = (meta.pihat_max as double)
 
 if(!L.isEmpty())
 """

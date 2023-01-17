@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {getBoolean;getKeyValue;getModules;getGnomadExomePath;getGnomadGenomePath;isHg19;isHg38;hasFeature;moduleLoad} from '../../modules/utils/functions.nf'
+include {moduleLoad} from '../../modules/utils/functions.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_CONCAT_PER_CONTIG_01} from '../bcftools/bcftools.concat.contigs.01.nf'

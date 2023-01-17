@@ -24,7 +24,7 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-include {getVersionCmd;runOnComplete;moduleLoad;getKeyValue;hasFeature} from '../../../modules/utils/functions.nf'
+include {getVersionCmd;runOnComplete;moduleLoad;parseBoolean} from '../../../modules/utils/functions.nf'
 include {VALIDATE_CASE_CONTROL_PED_01} from '../../../modules/pedigree/validate.case.ctrl.pedigree.01.nf'
 include {VCF_INTER_CASES_CONTROLS_01} from '../../../subworkflows/bcftools/vcf.inter.cases.controls.01.nf'
 include {DOWNLOAD_GTF_01} from '../../../modules/gtf/download.gtf.01.nf'
@@ -40,15 +40,46 @@ include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
 include {MERGE_VERSION} from '../../../modules/version/version.merge.nf'
 include {PIHAT_CASES_CONTROLS_01} from '../../../subworkflows/pihat/pihat.cases.controls.01.nf'
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults()
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
 
-gazoduc.make("vcf","NO_FILE").description("path to a indexed VCF or BCF file. If file ends with '.list' is a list of path to one VCF per contig").required().put()
-gazoduc.make("bed","NO_FILE").description("limit anaylsis to that BED file").put()
+gazoduc.
+    make("vcf","NO_FILE").
+    description(gazoduc.Gazoduc.DESC_VCF_OR_VCF_LIST).
+    required().
+    put()
 
-params.reference=""
-params.pedigree=""
+gazoduc.
+    make("bed","NO_FILE").
+    description("limit analysis to that BED file").
+    put()
+
+gazoduc.
+    make("with_pihat",false).
+    description("Run a Pihat before burden").
+    setBoolean().
+    put()
+
+gazoduc.
+    make("bed_cluster_method","--size 5mb").
+    description("when clustering exons with jvarkit/bedcluster, how do we cluster genes.").
+    put()
+
+gazoduc.
+    make("genes_slop",50).
+    description("extend exons by 'x' bases").
+    setInteger().
+    put()
+
+gazoduc.
+    make("pedigree", "").
+    description(gazoduc.Gazoduc.DESC_JVARKIT_PEDIGREE).
+    required().
+    existingFile().
+    put()
+
+
 params.disableFeatures="";
-params.annot_method="vep"
+
 
 if(params.help) {
 	gazoduc.usage().name("burden").description("burden for coding regions").print()
@@ -81,7 +112,7 @@ workflow BURDEN_CODING {
 					ped_ch.cases_list, ped_ch.controls_list )
 		version_ch = version_ch.mix(vcf_inter_ch.version)
 
-		if(hasFeature(meta,"pihat")) {
+		if(parseBoolean(meta.with_pihat)) {
 			pihat = PIHAT_CASES_CONTROLS_01(meta,reference,file(vcf),ped_ch.cases_list,ped_ch.controls_list)
 			version_ch = version_ch.mix(pihat.version)
 			to_zip = to_zip.mix(pihat.pihat_png)
@@ -109,8 +140,8 @@ workflow BURDEN_CODING {
 		genes_ch = EXTRACT_GENES(meta,reference,gtf_ch.gtf,bed)
 		version_ch = version_ch.mix(genes_ch.version)
 
-                cluster_ch = BED_CLUSTER_01(meta.plus(
-                        ["bed_cluster_method":getKeyValue(meta,"bed_cluster_method","--size 5mb")]),
+                cluster_ch = BED_CLUSTER_01(
+                        meta,
                         reference,
                         genes_ch.genes_bed
                         )
@@ -118,10 +149,10 @@ workflow BURDEN_CODING {
 
 		sqrt_ch = SQRT_FILE(meta.plus(["min_file_split":100]), cluster_ch.output)
 
-		exons_ch = REMOVE_INTRONS(meta,sqrt_ch.clusters.splitText().map{it.trim()}.combine(genes_ch.exons_bed))
+		exons_ch = REMOVE_INTRONS(meta, sqrt_ch.clusters.splitText().map{it.trim()}.combine(genes_ch.exons_bed))
 		version_ch = version_ch.mix(exons_ch.version)
 
-                file_list_ch = COLLECT_TO_FILE_01([:],exons_ch.bed.splitText().map{it.trim()}.collect())
+        file_list_ch = COLLECT_TO_FILE_01([:],exons_ch.bed.splitText().map{it.trim()}.collect())
 	
 		wgselect_ch = WGSELECT_01(meta,reference,vcf,new_ped_ch,exons_ch.bed.splitText().map{it.trim()}.map{T->file(T)})
 		version_ch = version_ch.mix(wgselect_ch.version.first())
@@ -162,7 +193,7 @@ output:
 	path("exons.bed"),emit:exons_bed
 	path("version.xml"),emit:version
 script:
-	def slop=getKeyValue(meta,"genes_slop","50")
+	def slop= meta.genes_slop
 """
 hostname 1>&2
 ${moduleLoad("jvarkit bedtools")}

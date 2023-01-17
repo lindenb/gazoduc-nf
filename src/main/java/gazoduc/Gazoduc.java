@@ -42,6 +42,7 @@ public class Gazoduc {
 	public static final String DESC_INDEXED_BAM = "The BAM must be indexed with 'samtools index' (an associated .bai must be present) ";
 	public static final String DESC_INDEXED_VCF = "The VCF must be indexed with 'bcftools index' (an associated .tbi/.csi must be present) ";
 	public static final String DESC_VCF_OR_VCF_LIST = "Path to a VCF file or a file with the .list' suffix containing the full path to several VCFs file. " + DESC_INDEXED_VCF  ;
+	public static final String DESC_JVARKIT_PEDIGREE = "Jvarkit formatted pedigree. Tab delimited, no header, FAM/ID/FATHER/MOTHER/SEX/PHENOTYPE";
 	private static Gazoduc INSTANCE = null;
 	private final Map<String,Object> params;
 	private final List<Parameter> parameters = new Vector<>();
@@ -429,6 +430,15 @@ public class Gazoduc {
 		reference().put();
 		return this;
 		}
+
+    public Gazoduc putGnomad() {
+		make("gnomad_exome_hg19","/LAB-DATA/BiRD/resources/species/human/broadinstitute.org/gnomad/release-181127/2.1/vcf/exomes/gnomad.exomes.r2.1.sites.vcf.gz").desc("gnomad exome path for hg19").menu("Gnomad").put();
+        make("gnomad_genome_hg19","/LAB-DATA/BiRD/resources/species/human/broadinstitute.org/gnomad/release-181127/2.1/vcf/genomes/gnomad.genomes.r2.1.sites.vcf.gz").desc("gnomad genome path for hg19").menu("Gnomad").put();
+        make("gnomad_genome_hg38","/LAB-DATA/BiRD/resources/species/human/broadinstitute.org/gnomad/3.0/gnomad.genomes.r3.0.sites.vcf.gz").desc("gnomad genome path for hg38").menu("Gnomad").put();
+		return this;
+		}
+
+
 
 	public Parameter reference() {
 		return make("reference",false).

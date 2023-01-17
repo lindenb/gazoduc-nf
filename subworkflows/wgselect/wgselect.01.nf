@@ -22,11 +22,16 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {getBoolean;getKeyValue;getModules;getGnomadExomePath;getGnomadGenomePath;isHg19;isHg38;hasFeature;moduleLoad} from '../../modules/utils/functions.nf'
+include {getModules;getGnomadExomePath;getGnomadGenomePath;isHg19;isHg38;moduleLoad} from '../../modules/utils/functions.nf'
 include {WGSELECT_EXCLUDE_BED_01 } from './wgselect.exclude.bed.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_CONCAT_PER_CONTIG_01} from '../bcftools/bcftools.concat.contigs.01.nf'
+
+
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putGnomad()
+
+
 
 workflow WGSELECT_01 {
 	take:
@@ -66,41 +71,7 @@ workflow WGSELECT_01 {
 		vcfs = cat_files_ch.output /** path to all chunks of vcf */
 	}
 
-/** DEPRECATED **************************************
-process PED4JVARKIT {
-executor "local"
-input:
-	val(meta)
-	val(cases)
-	val(controls)
-output:
-	path("jvarkit.ped"),emit:pedigree
-	path("version.xml"),emit:version
-script:
-"""
-set -o pipefail
 
-# assert no duplicate between cases and controls
-cat "${cases}" "${controls}" | sort | uniq -d  > dups.txt
-test ! -s dups.txt
-rm dups.txt
-
-awk '{printf("%s\t%s\t0\t0\t0\t1\\n",\$1,\$1);}' "${cases}"    >  jvarkit.ped
-awk '{printf("%s\t%s\t0\t0\t0\t0\\n",\$1,\$1);}' "${controls}" >> jvarkit.ped
-
-############################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">create pedigree for jvarkit</entry>
-</properties>
-EOF
-
-"""
-}
-************************************/
-
-def gazoduc = gazoduc.Gazoduc.getInstance(params)
 
 gazoduc.build("wgselect_mapability_hg19_bigwig","/LAB-DATA/BiRD/resources/species/human/ucsc/hg19/encodeDCC/wgEncodeDukeMapabilityUniqueness35bp.bigWig").
 	description("Mapability for hg19. bigwig file with the number of time a region is repeated in the genome. 1=uniq . discard if !=1").
@@ -158,6 +129,18 @@ gazoduc.build("wgselect_ReadPosRankSum",4).
         setDouble().
         put()
 
+gazoduc.build("wgselect_MQ",10).
+        description("INFO/RMSMappingQuality (MQ) It is meant to include the standard deviation of the mapping qualities. Including the standard deviation allows us to include the variation in the dataset. See https://gatk.broadinstitute.org/hc/en-us/articles/360035890471-Hard-filtering-germline-short-variants. Dicard variant with MQ<x. Ignore if value is <= 0.").
+        menu("wgselect").
+        setDouble().
+        put()
+
+gazoduc.build("wgselect_MQRankSum",-10).
+        description("This is the u-based z-approximation from the Rank Sum Test for mapping qualities. It compares the mapping qualities of the reads supporting the reference allele and the alternate allele. A positive value means the mapping qualities of the reads supporting the alternate allele are higher than those supporting the reference allele; a negative value indicates the mapping qualities of the reference allele are higher than those supporting the alternate allele. A value close to zero is best and indicates little difference between the mapping qualities See https://gatk.broadinstitute.org/hc/en-us/articles/360035890471-Hard-filtering-germline-short-variants.Dicard variant with MQRankSum<x Ignore if value is >0.").
+        menu("wgselect").
+        setDouble().
+        put()
+
 
 gazoduc.build("wgselect_minDP",10).
         description("remove variant mean called genotype depth is tool low.").
@@ -177,6 +160,72 @@ gazoduc.build("wgselect_lowGQ",70).
         setInt().
         put()
 
+gazoduc.build("wgselect_with_count",true).
+        description("Count variants at each step of wgselect").
+        menu("wgselect").
+        setBoolean().
+        put()
+
+gazoduc.build("wgselect_with_homvar",true).
+        description("remove variant on autosome if no HET and found at least one HOM_VAR").
+        menu("wgselect").
+        setBoolean().
+        put()
+
+gazoduc.build("wgselect_maxmaf",0.05).
+        description("remove variant if internal MAF is too high. Disable if < 0").
+        menu("wgselect").
+        setDouble().
+        put()
+
+gazoduc.build("wgselect_fisherh",0.05).
+        description("remove variant if fisher test per variant is lower than 'x'. Disable if <0.").
+        menu("wgselect").
+        sedDouble().
+        put()
+
+gazoduc.build("wgselect_hwe",0.000000000000001).
+        description("remove variants with HW test. Ask Floriane :-P . Disable if <0.").
+        menu("wgselect").
+        sedDouble().
+        put()
+
+gazoduc.build("wgselect_with_contrast",true).
+        description("Apply bcftools contrast on VCF").
+        menu("wgselect").
+        setBoolean().
+        put()
+
+gazoduc.build("wgselect_inverse_so",false).
+        description("Inverse SO").
+        menu("wgselect").
+        hidden().
+        setBoolean().
+        put()
+
+
+gazoduc.build("wgselect_minGQsingleton",99).
+        description("remove variant if singleton has bad GQ < x").
+        menu("wgselect").
+        setInt().
+        put()
+
+gazoduc.build("wgselect_minRatioSingleton",0.2).
+        description("remove variant if HET singleton has AD ratio out of x< AD/ratio < (1.0-x)").
+        menu("wgselect").
+        setDouble().
+        put()
+
+gazoduc.build("minRatioSingleton",0.2).
+        description("remove variant if HET singleton has AD ratio out of x< AD/ratio < (1.0-x)").
+        menu("wgselect").
+        setDouble().
+        put()
+
+gazoduc.build("wgselect_annot_method","vep").
+        description("how to annotate ? 'vep' or 'snpeff'").
+        menu("wgselect").
+        put()
 
 
 process ANNOTATE {
@@ -211,26 +260,26 @@ script:
 	def vep_module = (isHg19(reference)?"ensembl-vep/104.3":"")
 	def vep_invocation = isHg19(reference)?" vep --cache --format vcf --force_overwrite --no_stats --offline  --dir_cache /LAB-DATA/BiRD/resources/apps/vep  --species homo_sapiens --cache_version 91    --assembly GRCh37  --fasta ${reference} --use_given_ref --vcf ":""
 	
-	def max_alleles_count = meta.wgselect_max_alleles_count?:3
-	def polyx = meta.wgselect_polyx?:10
-	def gnomadPop = meta.wgselect_gnomadPop?:"AF_nfe"
-	def gnomadAF = meta.wgselect_gnomadAF?:0.01
+	def max_alleles_count = (meta.wgselect_max_alleles_count as int)
+	def polyx = (meta.wgselect_polyx as int)
+	def gnomadPop = (meta.wgselect_gnomadPop)
+	def gnomadAF = (meta.wgselect_gnomadAF as double)
 	def soacn = meta.wgselect_soacn
-	def inverse_so = getBoolean(meta,"inverse_so")
-	def f_missing = meta.wgselect_f_missing?:0.05
+	def inverse_so = (meta.wgselect_inverse_so as boolean)
+	def f_missing = (meta.wgselect_f_missing as double)
 
-	def ReadPosRankSum = meta.wgselect_ReadPosRankSum?:4
-	def MQ = getKeyValue(meta,"MQ","10")
-	def MQRankSum = getKeyValue(meta,"MQRankSum","-10")
-	def maxmaf = getKeyValue(meta,"maxmaf",0.05)
-	def fisherh = getKeyValue(meta,"fisherh",0.05)
-	def minDP= meta.wgselect_minDP?:10
-	def maxDP= meta.wgselect_maxDP?:300
-	def lowGQ = meta.wgselect_lowGQ?:70
-	def hwe = getKeyValue(meta,"hwe",0.000000000000001)
-	def minGQsingleton = getKeyValue(meta,"minGQsingleton",99)
-	def minRatioSingleton  = getKeyValue(meta,"minRatioSingleton",0.2)
-	def annot_method = getKeyValue(meta,"annot_method","vep")
+	def ReadPosRankSum = (meta.wgselect_ReadPosRankSum as double)
+	def MQ = (meta.wgselect_MQ as double)
+	def MQRankSum =(meta.wgselect_MQRankSum as double)
+	def maxmaf = (meta.wgselect_maxmaf as double)
+	def fisherh = (meta.wgselect_fisherh as double)
+	def minDP= (meta.wgselect_minDP as int)
+	def maxDP= (meta.wgselect_maxDP as int)
+	def lowGQ =( meta.wgselect_lowGQ as int)
+	def hwe = (meta.wgselect_hwe as double)
+	def minGQsingleton = (meta.wgselect_minGQsingleton as int)
+	def minRatioSingleton  = (meta.wgselect_minRatioSingleton as double)
+	def annot_method = (meta.wgselect_annot_method)
 """
 hostname 1>&2
 ${moduleLoad("jvarkit bcftools bedtools java-jdk/8.0.112")}
@@ -244,7 +293,7 @@ echo "\${JAVA_HOME}"
 
 
 	function countIt {
-		if [ ! -z "${hasFeature(meta,"count")?"Y":""}" ] ; then
+		if ${(meta.wgselect_with_count as boolean)} ; then
 			echo -n "\$1\t" >> TMP/variant_list.txt
 			bcftools query -f '%CHROM:%POS:%REF:%ALT\\n' "\$2" | sed 's/^chr//' | LC_ALL=C sort -T . | uniq  > TMP/tmp.A.txt
 			bcftools query -f '%CHROM:%POS:%REF:%ALT\\n' "\$3" | sed 's/^chr//' | LC_ALL=C sort -T . | uniq  > TMP/tmp.B.txt
@@ -279,7 +328,7 @@ echo "\${JAVA_HOME}"
 		
 	else
 		# extract list of samples cases and controls
-		awk -F '\t' '(\$6=="case" ||  \$6=="affected") {print \$2;}' "${jvarkitped}"| sort | uniq > TMP/cases.txt
+		awk -F '\t' '(\$6=="case" ||  \$6=="affected") {print \$2;}' "${jvarkitped}" | sort | uniq > TMP/cases.txt
 		awk -F '\t' '(\$6=="control" ||  \$6=="unaffected") {print \$2;}' "${jvarkitped}" | sort | uniq > TMP/controls.txt
 		cat <<-EOF >> version.xml
 		<properties>
@@ -307,7 +356,7 @@ echo "\${JAVA_HOME}"
 	
 
 	# extract variants ######################################################################################
-	if [ ! -z "${vcf.endsWith(".list")?"Y":""}" ] ; then
+	if ${vcf.endsWith(".list")} ; then
 		bcftools concat --file-list "${vcf}" --regions-file "${bed}" -O u  --allow-overlaps --remove-duplicates -o TMP/jeter1.bcf
 	else
 		bcftools view  --regions-file "${bed}" -O u -o TMP/jeter1.bcf "${vcf}"
@@ -322,7 +371,7 @@ echo "\${JAVA_HOME}"
 	EOF
 
 
-	if [ ! -z "${hasFeature(meta,"count")?"Y":""}" ] ; then
+	if ${(meta.wgselect_with_count as boolean)} ; then
 		bcftools query -f '.\\n' TMP/jeter1.bcf | awk 'END{printf("initial\t%s\t0\t0\t\\n",NR);}' >> TMP/variant_list.txt
 	fi
 
@@ -413,10 +462,10 @@ echo "\${JAVA_HOME}"
 	## sex et homvar (1 homvar and 0 het)
 	cat <<- EOF >> version.xml
 	<properties>
-                <entry key="description">remove variant on autosome if no HET and found at least one HOM_VAR. One can disable by adding <code>homvar</code> to <code>--disableFeatures</code>.</entry>
+                <entry key="description">remove variant on autosome if no HET and found at least one HOM_VAR.</entry>
 	EOF
 
-	if [ ! -z "${hasFeature(meta,"homvar")?"Y":""}" ] ; then
+	if ${(meta.wgselect_with_homvar as boolean)} ; then
 		bcftools view -O v -o TMP/jeter2.vcf TMP/jeter1.bcf
 		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcfpar.jar TMP/jeter2.vcf > TMP/jeter1.vcf
 		bcftools view -e 'INFO/SEX=0 &&  COUNT(GT="RA")==0 && COUNT(GT="AA")>0' -O u -o TMP/jeter2.bcf TMP/jeter1.vcf
@@ -542,7 +591,7 @@ echo "\${JAVA_HOME}"
 		<entry key="min">${MQRankSum}</entry>
 	EOF
 
-	if (( \$(echo "${MQRankSum} < 0 " |bc -l) )) ; then
+	if ${MQRankSum as double) < 0} ; then
 		java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcffilterjdk.jar --nocode   \
 				-e 'final String tag= "MQRankSum"; if(!variant.hasAttribute(tag)) return true; final double v = variant.getAttributeAsDouble(tag,0.0); return v >= ${MQRankSum} ;' TMP/jeter1.vcf > TMP/jeter2.vcf
 		countIt "MQRankSum" TMP/jeter1.vcf TMP/jeter2.vcf
@@ -564,7 +613,7 @@ echo "\${JAVA_HOME}"
 	EOF
 
 
-	if (( \$(echo "${MQ} > 0 " |bc -l) )) ; then
+	if ${(MQ as double) > 0} ; then
 		java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcffilterjdk.jar --nocode   \
 				-e 'final String tag= "MQ"; if(!variant.hasAttribute(tag)) return true; final double v = variant.getAttributeAsDouble(tag,0.0); return v >= ${MQ} ;' TMP/jeter1.vcf > TMP/jeter2.vcf
 		countIt "MQ" TMP/jeter1.vcf TMP/jeter2.vcf
@@ -587,7 +636,7 @@ echo "\${JAVA_HOME}"
 		<entry key="max MAF">${maxmaf}</entry>
 	EOF
 	
-	if [ ! -z "${hasFeature(meta,"maxmaf") && (maxmaf as Double) >= 0.0 ?"Y":""}" ] && test -s TMP/cases.txt && test -s TMP/controls.txt ; then
+	if ${maxmaf>=0} && test -s TMP/cases.txt && test -s TMP/controls.txt ; then
 		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcfburdenmaf.jar \
 			--pedigree "${jvarkitped}" --prefix "" --min-maf 0  --max-maf "${maxmaf}"  TMP/jeter1.vcf   > TMP/jeter2.vcf
 		countIt "MAF" TMP/jeter1.vcf TMP/jeter2.vcf
@@ -607,10 +656,9 @@ echo "\${JAVA_HOME}"
 		<entry key="description">remove variant if fisher test per variant is tool low</entry>
 		<entry key="min-fisher">${fisherh}</entry>
 		<entry key="max-fisher">1.0</entry>
-		<entry key="hasFeature(fisherh)">${hasFeature(meta,"fisherh")}</entry>
 	EOF
 	
-	if [ ! -z "${hasFeature(meta,"fisherh") && (fisherh as Double) >= 0 ?"Y":""}" ] && test -s TMP/cases.txt && test -s TMP/controls.txt ; then
+	if ${fisherh >= 0.0} && test -s TMP/cases.txt && test -s TMP/controls.txt ; then
 		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcfburdenfisherh.jar --filter '' --pedigree "${jvarkitped}" --min-fisher "${fisherh}"  TMP/jeter1.vcf   > TMP/jeter2.vcf
 		countIt "fisherH" TMP/jeter1.vcf TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
@@ -683,7 +731,7 @@ echo "\${JAVA_HOME}"
 
 
 
-	if [ ! -z "${!mapability.isEmpty() && hasFeature(meta,"mapability")?"Y":""}" ] ; then
+	if ${!mapability.isEmpty()} ; then
 
 	cat <<- EOF >> version.xml
         <properties>
@@ -796,7 +844,7 @@ echo "\${JAVA_HOME}"
 	    elif  [  "${annot_method.toLowerCase()}" == "snpeff" ] && [ ! -z "${snpeffDb}" ] ; then 
 
 	   	 # snpeff
-		 module load ${getModules("snpEff/0.0.0")}
+		 module load ${moduleLoad("snpEff/0.0.0")}
 	         java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar "\${SNPEFF_JAR}" eff -config "\${SNPEFF_CONFIG}" -interval "${bed}" -nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf "${snpeffDb}" TMP/jeter1.vcf > TMP/jeter2.vcf
 	         module unload ${getModules("snpEff/0.0.0")}
 	         mv TMP/jeter2.vcf TMP/jeter1.vcf
@@ -846,7 +894,7 @@ echo "\${JAVA_HOME}"
 	EOF
 
 
-    if [ ! -z "${hasFeature(meta,"hwe")?"Y":""}" ] ; then
+    if ${hwe >=0} ; then
 	module load ${getModules("vcftools")}
 	
 	#set -x 
@@ -899,7 +947,7 @@ echo "\${JAVA_HOME}"
 	
 
 
-	if [ ! -z "${hasFeature(meta,"contrast")?"Y":""}" ]  && test -s TMP/cases.txt && test -s TMP/controls.txt ; then
+	if ${(meta.wgselect_with_contrast as boolean)}  && test -s TMP/cases.txt && test -s TMP/controls.txt ; then
 		bcftools +contrast \
 			-0 "TMP/controls.txt" \
 			-1 "TMP/cases.txt" \
@@ -942,7 +990,7 @@ input:
 output:
 	path("${prefix}bed.vcf.list"),emit:list
 script:
-	prefix = getKeyValue(meta,"prefix","")
+	prefix = meta.prefix?:""
 """
 cat << EOF > "${prefix}bed.vcf.list"
 ${L.join("\n")}
@@ -960,7 +1008,7 @@ process DIGEST_VARIANT_LIST {
                 path("${prefix}wgselect.count.tsv"),emit:output
                 path("version.xml"),emit:version
         script:
-        	prefix = getKeyValue(meta,"prefix","")
+        	prefix = meta.prefix?:""
         """
         hostname 1>&2
         ${moduleLoad("datamash")}

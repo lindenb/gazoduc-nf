@@ -22,10 +22,39 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {isHg19;isHg38;hasFeature;moduleLoad} from '../../modules/utils/functions.nf'
+include {isHg19;isHg38;moduleLoad} from '../../modules/utils/functions.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include { SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.nf'
 
+def gazoduc = gazoduc.Gazoduc.getInstance(params)
+
+gazoduc.
+    make("wgselect_with_rmsk",true).
+    menu("wgselect").
+    description("remove variant overlapping repeat masker UCSC regions").
+    setBoolean().
+    put()
+
+gazoduc.
+    make("wgselect_with_encodeExclude",true).
+    menu("wgselect").
+    description("remove variant overlapping excluded ENCODe regions").
+    setBoolean().
+    put()
+
+gazoduc.
+    make("wgselect_with_lcr",true).
+    menu("wgselect").
+    description("remove variant overlapping low complexity regions").
+    setBoolean().
+    put()
+
+gazoduc.
+    make("wgselect_with_simpleRepeats",true).
+    menu("wgselect").
+    description("remove variant overlapping simple repeats regions").
+    setBoolean().
+    put()
 
 workflow WGSELECT_EXCLUDE_BED_01 {
 	take:
@@ -38,26 +67,26 @@ workflow WGSELECT_EXCLUDE_BED_01 {
 		gaps_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"N","MAX_TO_MERGE":"1"],reference)
 		to_merge_ch = to_merge_ch.mix(gaps_ch.bed)
 
-		if(hasFeature(meta,"rmsk")) {
+		if(meta.wgselect_with_rmsk as boolean) {
 			rmsk_ch = RMSK(meta,reference)
 			version_ch = version_ch.mix(rmsk_ch.version)
 			to_merge_ch = to_merge_ch.mix(rmsk_ch.bed)
 			}
 
-		if(hasFeature(meta,"encodeExclude")) {
+		if(meta.wgselect_with_encodeExclude as boolean) {
 			x2_ch = EXCLUDE_ENCODE(meta,reference)
 			version_ch = version_ch.mix(x2_ch.version)
 			to_merge_ch = to_merge_ch.mix(x2_ch.bed)
 			}
 
 
-		if(hasFeature(meta,"lcr")) {
+		if(meta.wgselect_with_lcr as boolean) {
 			x3_ch = LOW_COMPLEXITY_REGIONS(meta,reference)
 			version_ch = version_ch.mix(x3_ch.version)
 			to_merge_ch = to_merge_ch.mix(x3_ch.bed)
 			}
 
-		if(hasFeature(meta,"simpleRepeats")) {
+		if(meta.wgselect_with_simpleRepeats as boolean) {
 			x4_ch = SIMPLE_REPEATS(meta,reference)
 			version_ch = version_ch.mix(x4_ch.version)
 			to_merge_ch = to_merge_ch.mix(x4_ch.bed)
