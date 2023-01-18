@@ -29,6 +29,9 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
+
 /**
  * Small re-implementation of htsjdk.samtools.SAMSequenceDictionary
  */
@@ -46,6 +49,15 @@ public class SAMSequenceDictionary implements Iterable<SAMSequenceRecord> {
 			}
 		this.len = this.array.stream().mapToLong(S->S.getLength()).sum();
 		}
+	
+	public List<String> getChromosomes() {
+		return this.array.stream().map(T->T.getName()).collect(Collectors.toList());
+		}
+	
+	public final List<String> getContigs() {
+		return getChromosomes();
+		}
+
 	public int size() {
 		return array.size();
 		}
@@ -62,6 +74,51 @@ public class SAMSequenceDictionary implements Iterable<SAMSequenceRecord> {
 	public Iterator<SAMSequenceRecord> iterator() {
 		return this.array.iterator();
 		}
+	private boolean hasChromX(final String id,int expect) {
+		SAMSequenceRecord rec = getSequence(id);
+		if(rec==null)  rec = getSequence("chr"+id);
+		if(rec!=null) {
+			if(rec.getSequenceLength()==expect) return true;
+			}
+		return false;
+		}
+	
+	public Optional<String> getUcscName() {
+		if(isHg19()) return Optional.of("hg19");
+		if(isHg38()) return Optional.of("hg38");
+		return Optional.empty();
+		}
+	
+	public Optional<String> getName() {
+		return getUcscName();
+		}
+	
+	/** test if dict looks like GRCh37  */
+	public boolean isHg19() {
+		return hasChromX("1",249_250_621);
+		}
+	/** test if dict looks like GRCh38  */
+	public  boolean isHg38() {
+		return hasChromX("1",248_956_422);
+		}
+	/** true if isHg19() || isHg38()  */
+	public boolean isHuman() {
+		return isHg19() || isHg38();
+		}
+	
+	@Override
+	public boolean equals(final Object obj) {
+		if(obj==this) return true;
+		if(obj==null || !(obj instanceof SAMSequenceDictionary)) return false;
+		final SAMSequenceDictionary o = SAMSequenceDictionary.class.cast(obj);
+		return this.array.equals(o.array);
+		}
+	
+	@Override
+	public int hashCode() {
+		return this.array.hashCode();
+		}
+	
 	@Override
 	public String toString() {
 		return this.array.toString();

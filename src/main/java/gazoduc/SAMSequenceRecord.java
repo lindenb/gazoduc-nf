@@ -54,7 +54,9 @@ public String getName() {
 public int getLength() {
 	return this.length;
 	}
-
+public final int getSequenceLength() {
+	return this.getLength();
+	}
 @Override
 public String toString() {
 	return getName()+"("+this.getLength()+"bp)";

@@ -46,6 +46,7 @@ public class Gazoduc {
 	public static final String DESC_INDEXED_BAM = "The BAM must be indexed with 'samtools index' (an associated .bai must be present) ";
 	public static final String DESC_INDEXED_VCF = "The VCF must be indexed with 'bcftools index' (an associated .tbi/.csi must be present) ";
 	public static final String DESC_VCF_OR_VCF_LIST = "Path to a VCF file or a file with the .list' suffix containing the full path to several VCFs file. " + DESC_INDEXED_VCF  ;
+	public static final String DESC_VCF_LIST = "File with the .list' suffix containing the full path to several VCFs file. " + DESC_INDEXED_VCF  ;
 	public static final String DESC_JVARKIT_PEDIGREE = "Jvarkit formatted pedigree. Tab delimited, no header, FAM/ID/FATHER/MOTHER/SEX/PHENOTYPE";
 	
 	private static Gazoduc INSTANCE = null;
@@ -87,7 +88,6 @@ public class Gazoduc {
 			}
 		/** constructor --key and value */
 		private Parameter(final String key, Object value) {
-			int i;
 			this.key = key;
 			if(key==null || key.trim().isEmpty()) throw new IllegalArgumentException("Key is empty/null");
 			if(key.contains("-"))  throw new IllegalArgumentException("Key contains '-' ("+key+")");
@@ -694,6 +694,9 @@ public class Gazoduc {
 			}
 		return INSTANCE;
 		}
-
-	
+	/** return current singleton instance */
+	public static Gazoduc getInstance() {
+		if(INSTANCE==null) throw new IllegalStateException("gazoduc.Gazoduc was not initialized. INSTANCE is null.");
+		return INSTANCE;
+		}
 	}

@@ -37,7 +37,10 @@ import org.w3c.dom.Node;
 
 
 
-
+/**
+ * One genome definition stored in a genome file
+ *
+ */
 public class Genome {
 	private final Genomes genomes;
 	private final String id;
@@ -98,9 +101,18 @@ public class Genome {
 		return Optional.of(L.get(0));
 		}
 	
+	public boolean hasProperty(final String nodeName) {
+		return elements().
+				stream().
+				anyMatch(N->N.getNodeName().equals(nodeName) && N.hasChildNodes())
+				;
+		}
 	
 	public String getProperty(final String nodeName,final String defaultValue) {
 		return get(nodeName).orElse(defaultValue);
+		}
+	public String getRequiredProperty(final String nodeName) {
+		return get(nodeName).orElseThrow(()->new IllegalArgumentException("Cannot find <"+nodeName+"> for "+ about()));
 		}
 	
 	public Set<String> getAliases() {
@@ -138,9 +150,27 @@ public class Genome {
 		return this.id;
 		}
 
+	public String getDescription() {
+		return get("description").orElse(this.getId());
+		}
+	
 	private String about() {
 		return "<genome id=\""+getId()+"\"> in " + getGenomes().getFile() ;
 		}
+	
+	/** test if dict looks like GRCh37  */
+	public boolean isHg19() {
+		return getDictionary().isHg19();
+		}
+	/** test if dict looks like GRCh38  */
+	public  boolean isHg38() {
+		return getDictionary().isHg38();
+		}
+	/** true if isHg19() || isHg38()  */
+	public boolean isHuman() {
+		return getDictionary().isHuman();
+		}
+	
 	@Override
 	public int hashCode() {
 		return getId().hashCode();

@@ -62,7 +62,14 @@ public class Genomes {
 		}
 	
 	public Genome getById(final String id) {
-		final Genome g = this.id2genome.get(id);
+		Genome g = this.id2genome.get(id);
+		if(g==null) {
+			g = this.id2genome.values().stream().filter(G->G.getAliases().contains(id)).findFirst().orElse(null);
+			if(g!=null) {
+				LOG.warning("Cannot find genome id="+id+" but found "+g+" search its aliases.");
+				}
+			}
+
 		if(g==null) throw new IllegalArgumentException("Cannot find genome id "+id+" in "+ getFile()+". Available are :" + String.join(" ; ", this.id2genome.keySet()));
 		return g;
 		}
