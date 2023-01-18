@@ -77,6 +77,13 @@ gazoduc.build("wgselect_soacn","SO:0001574,SO:0001575,SO:0001818").
 	menu("wgselect").
 	put()
 
+
+gazoduc.build("wgselect_exclude_soacn","").
+	description("Accesion number for consequences to keep after the functional annotation. If not empty, variant with the following SO will be removed after the standard selection on --wgselect_soacn .Multiple are comma separated").
+	menu("wgselect").
+	put()
+
+
 gazoduc.build("wgselect_f_missing",0.05).
 	description("Discard variants where the proportion of NO_CALL (./.) genotypes is grater than is value").
 	menu("wgselect").
@@ -267,6 +274,7 @@ script:
 	def gnomadPop = (meta.wgselect_gnomadPop)
 	def gnomadAF = (meta.wgselect_gnomadAF as double)
 	def soacn = meta.wgselect_soacn
+	def exclude_soacn = meta.wgselect_exclude_soacn
 	def inverse_so = (meta.wgselect_inverse_so as boolean)
 	def f_missing = (meta.wgselect_f_missing as double)
 
@@ -828,6 +836,7 @@ echo "\${JAVA_HOME}"
                 <entry key="name">Functional annotations</entry>
 		<entry key="method">${annot_method}</entry>
 		<entry key="Sequence ontology">${soacn}</entry>
+		<entry key="Exclude Sequence ontology">${exclude_soacn}</entry>
 	EOF
 
 
@@ -861,7 +870,7 @@ echo "\${JAVA_HOME}"
 	
 
 
-	    if [ ! -z "${soacn}" ] ; then
+	    if ${!soacn.isEmpty()} ; then
 	    
 	    	# filter prediction
 		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcffilterso.jar \
@@ -881,6 +890,29 @@ echo "\${JAVA_HOME}"
 	        mv TMP/jeter2.vcf TMP/jeter1.vcf
 
 	    fi
+
+
+	    if ${!exclude_soacn.isEmpty()} ; then
+	    
+	    	# filter prediction
+		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcffilterso.jar \
+			--remove-attribute  --rmnoatt \
+			--invert \
+			--acn "${exclude_soacn}" \
+		   	TMP/jeter1.vcf   2> /dev/null > TMP/jeter2.vcf
+
+		cat <<- EOF
+		<entry key="exclude_sequence.ontology">
+			<properties>
+				<entry key="terms">${exclude_soacn}</entry>
+			</properties>
+		</entry>
+		EOF
+		countIt "exclude.prediction" TMP/jeter1.vcf TMP/jeter2.vcf
+	        mv TMP/jeter2.vcf TMP/jeter1.vcf
+
+	    fi
+
 
 		echo "</properties>" >> version.xml
 
