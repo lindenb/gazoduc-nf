@@ -28,6 +28,7 @@ import java.util.regex.*;
 import java.io.*;
 import java.net.MalformedURLException;
 import java.util.function.*;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
@@ -36,6 +37,9 @@ public class Gazoduc {
 	public static final String ANSI_ESCAPE = "\u001B[";
 	public static final String ANSI_RESET = ANSI_ESCAPE+"0m";
 	private static final Logger LOG = Logger.getLogger(Gazoduc.class.getSimpleName());
+	private static final String PARAM_GENOMES ="genomesFile";
+	private static final String PARAM_GENOME ="genomeId";
+	private static final String PARAM_REFERENCE="reference";
 	private static final String MAIN_MENU="Main options";
 	private static final String DEFAULT_VALUE= "value";
 	public static final String DESC_INDEXED_FASTA = "Path to the reference genome as FASTA. The file must be indexed with 'samtools faidx' and 'samtools dict' ( or picard CreateSequenceDictionary ) ";
@@ -43,11 +47,17 @@ public class Gazoduc {
 	public static final String DESC_INDEXED_VCF = "The VCF must be indexed with 'bcftools index' (an associated .tbi/.csi must be present) ";
 	public static final String DESC_VCF_OR_VCF_LIST = "Path to a VCF file or a file with the .list' suffix containing the full path to several VCFs file. " + DESC_INDEXED_VCF  ;
 	public static final String DESC_JVARKIT_PEDIGREE = "Jvarkit formatted pedigree. Tab delimited, no header, FAM/ID/FATHER/MOTHER/SEX/PHENOTYPE";
+	
 	private static Gazoduc INSTANCE = null;
 	private final Map<String,Object> params;
 	private final List<Parameter> parameters = new Vector<>();
-
-
+	private Genomes genomes = null;
+	
+	/**
+	 * 
+	 * wrapper for nextflow parameter
+	 *
+	 */
 	public class Parameter {
 		private final List<Validator> validators = new Vector<>();
 		private final String key;
@@ -58,6 +68,9 @@ public class Gazoduc {
 		private boolean required = false;
 		private boolean hidden = false;
 
+		/**
+		 * validator for parameter
+		 * */
 		private class Validator {
 			public boolean validate() {
 				final Object o = getParams().getOrDefault(getKey(),null);
@@ -72,7 +85,7 @@ public class Gazoduc {
 				return true;
 				}
 			}
-
+		/** constructor --key and value */
 		private Parameter(final String key, Object value) {
 			this.key = key;
 			if(key==null || key.trim().isEmpty()) throw new IllegalArgumentException("Key is empty/null");
@@ -81,6 +94,8 @@ public class Gazoduc {
 		private Parameter(final String key) {
 			this(key,null);
 			}
+		
+		/** set value */
 		public Parameter value(final Object o) {
 			this.value = o;
 			return this;
@@ -174,6 +189,10 @@ public class Gazoduc {
 				argName("path to directory");
 				}
 			return file(F->F.exists() && F.isDirectory(),"Path should exist and be a directory.");
+			}
+		
+		public Parameter fullPath() {
+			return file(F->F.exists() && F.toString().startsWith(File.separator),"File Should be full path");
 			}
 		
 		public Parameter bwaReference() {
@@ -417,12 +436,34 @@ public class Gazoduc {
 		return this.parameters.stream().filter(P->P.key.equals(key)).findFirst();
 		}
 
-
+	public Gazoduc putGenomes() {
+		make(PARAM_GENOMES,false).
+			desc("Path to a XML file describing all the available genomes on your server. See doc").
+			menu("Genomes").
+			existingFile().
+			required().
+			put();
+		
+		make(PARAM_GENOME,false).
+			desc( "The main genome used. This is the genome id in the XML file (see option --"+ PARAM_GENOMES+")").
+			menu("Genomes").
+			notEmpty().
+			required().
+			put();
+		return this;
+		}
 
 	public Gazoduc putDefaults() {
 		make("help",false).desc("Display help for this workflow and exit").menu("Help").setBoolean().put();
 		make("prefix","").argName("string").desc("set a suffix for the files generated for this workflow").menu("Output").notEmpty().regex("[A-Z0-9a-z_\\.\\-]+").put();
-		make("publishDir","").argName("directory").existingDirectory().desc("set a base directory where final output files should be written.").menu("Output").notEmpty().put();
+		make("publishDir","").
+			argName("directory").
+			existingDirectory().
+			fullPath().
+			desc("set a base directory where final output files should be written.").
+			menu("Output").
+			notEmpty().
+			put();
 		return this;
 		}
 	
@@ -441,9 +482,10 @@ public class Gazoduc {
 
 
 	public Parameter reference() {
-		return make("reference",false).
+		return make(PARAM_REFERENCE,false).
 			argName("path to fasta").
-			desc(DESC_INDEXED_FASTA).menu("Input").
+			desc(DESC_INDEXED_FASTA).
+			menu("Input").
 			existingFile().
 			required().
 			indexedFasta();
@@ -573,25 +615,58 @@ public class Gazoduc {
 			}
 		for(String key : getParams().keySet()) {
 			if( this.findParameterByName(key).isPresent() ) continue;
-			System.err.println("key \"--"+key+"\" was defined in params but was not declared ["+red("WARNING")+"].");
+			System.err.println("key \"--"+key+"\" was defined in params but was not declared ["+yellow("WARNING")+"].");
 			}
 		if(!is_valid) {
 			throw new IllegalArgumentException("Validation of parameters failed");
 			}
 		}
 
+	public Genomes getGenomes() {
+		if(this.genomes == null) {
+			if(!findParameterByName(PARAM_GENOMES).isPresent()) {
+				throw new IllegalArgumentException("Asking for genomes but --"+PARAM_GENOMES+" was not defined");
+				}
+			final String filename = getParams().getOrDefault(PARAM_GENOMES, "NO_FILE").toString();
+			try {
+				this.genomes = Genomes.load(filename);
+			} catch (final Exception e) {
+				LOG.log(Level.SEVERE,"Cannot load genomes from "+ filename, e);
+				throw new RuntimeException("Cannot load genomes --"+PARAM_GENOMES+"="+filename, e);
+				}
+			}
+		return this.genomes;
+		}
+	
+	public Genome getGenome() {
+		final Genomes genomes = getGenomes();
+		Optional<Parameter> opt= findParameterByName(PARAM_GENOME);
+		if(opt.isPresent()) {
+			return genomes.getById(getParams().getOrDefault(PARAM_GENOME,"").toString());
+			}
+		 opt= findParameterByName(PARAM_REFERENCE);
+		 if(opt.isPresent()) {
+			return genomes.getByReference(getParams().getOrDefault(PARAM_REFERENCE,"").toString());
+			}
+		throw new RuntimeException("Cannot load current genome. No parameter  --"+PARAM_GENOME +" or --"+PARAM_REFERENCE+" is defined.");
+		}
+	
 	private static String pen(int pen,String s) {
 		return ANSI_ESCAPE+pen+"m"+s+ANSI_RESET;
 		}
 
-	private static String green(String s) {
+	private static String green(final String s) {
 		return pen(32,s);
 		}
 
-	private static String red(String s) {
+	private static String red(final String s) {
 		return pen(31,s);
 		}
 
+	private static String yellow(final String s) {
+		return pen(93,s);
+		}
+	
 	private Gazoduc(final Map<String,Object> params) {
 		this.params = params;
 		if(params==null) throw new IllegalArgumentException("params is null");
