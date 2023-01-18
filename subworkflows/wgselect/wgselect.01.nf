@@ -22,54 +22,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putGnomad()
+
+
 include {getModules;getGnomadExomePath;getGnomadGenomePath;isHg19;isHg38;moduleLoad} from '../../modules/utils/functions.nf'
 include {WGSELECT_EXCLUDE_BED_01 } from './wgselect.exclude.bed.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_CONCAT_PER_CONTIG_01} from '../bcftools/bcftools.concat.contigs.01.nf'
 
-
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putGnomad()
-
-
-
-workflow WGSELECT_01 {
-	take:
-		meta
-		reference
-		vcf
-		pedigree
-		each_bed
-	main:
-		version_ch = Channel.empty()
-		
-		
-		exclude_ch = WGSELECT_EXCLUDE_BED_01(meta,reference)
-		version_ch = version_ch.mix(exclude_ch.version)
-
-		//pedjvarkit_ch = PED4JVARKIT(meta,cases,controls)
-		//version_ch = version_ch.mix(pedjvarkit_ch.version)
-
-		annotate_ch = ANNOTATE(meta,reference,vcf,each_bed,exclude_ch.bed,pedigree)
-		version_ch = version_ch.mix(annotate_ch.version.first())
-		
-		cat_files_ch = COLLECT_TO_FILE_01(meta, annotate_ch.bed_vcf.map{T->T[1]}.collect())
-
-		c2_ch = cat_files_ch.output.map{T->["vcfs":T]}
-		concat_ch = BCFTOOLS_CONCAT_PER_CONTIG_01(meta, c2_ch)
-		version_ch = version_ch.mix(concat_ch.first())
-
-		digest_ch = DIGEST_VARIANT_LIST(meta, annotate_ch.variants_list.collect())
-		version_ch = version_ch.mix(digest_ch.first())
-
-
-		version_ch = MERGE_VERSION(meta, "wgselect", "wgselect", version_ch.collect())
-	emit:
-		version = version_ch /** version */
-		variants_list = digest_ch.output /** file containing count of variants at each step */
-		contig_vcfs = concat_ch.vcfs /** path to all vcf concatenated per contigs */
-		vcfs = cat_files_ch.output /** path to all chunks of vcf */
-	}
 
 
 
@@ -115,6 +76,13 @@ gazoduc.build("wgselect_soacn","SO:0001574,SO:0001575,SO:0001818").
 	description("Accesion number for consequences to keep after the functional annotation. Multiple are comma separated").
 	menu("wgselect").
 	put()
+
+
+gazoduc.build("wgselect_exclude_soacn","").
+	description("Accesion number for consequences to keep after the functional annotation. If not empty, variant with the following SO will be removed after the standard selection on --wgselect_soacn .Multiple are comma separated").
+	menu("wgselect").
+	put()
+
 
 gazoduc.build("wgselect_f_missing",0.05).
 	description("Discard variants where the proportion of NO_CALL (./.) genotypes is grater than is value").
@@ -181,13 +149,13 @@ gazoduc.build("wgselect_maxmaf",0.05).
 gazoduc.build("wgselect_fisherh",0.05).
         description("remove variant if fisher test per variant is lower than 'x'. Disable if <0.").
         menu("wgselect").
-        sedDouble().
+        setDouble().
         put()
 
 gazoduc.build("wgselect_hwe",0.000000000000001).
         description("remove variants with HW test. Ask Floriane :-P . Disable if <0.").
         menu("wgselect").
-        sedDouble().
+        setDouble().
         put()
 
 gazoduc.build("wgselect_with_contrast",true).
@@ -228,6 +196,47 @@ gazoduc.build("wgselect_annot_method","vep").
         put()
 
 
+
+workflow WGSELECT_01 {
+	take:
+		meta
+		reference
+		vcf
+		pedigree
+		each_bed
+	main:
+		version_ch = Channel.empty()
+		
+		
+		exclude_ch = WGSELECT_EXCLUDE_BED_01(meta,reference)
+		version_ch = version_ch.mix(exclude_ch.version)
+
+		//pedjvarkit_ch = PED4JVARKIT(meta,cases,controls)
+		//version_ch = version_ch.mix(pedjvarkit_ch.version)
+
+		annotate_ch = ANNOTATE(meta,reference,vcf,each_bed,exclude_ch.bed,pedigree)
+		version_ch = version_ch.mix(annotate_ch.version.first())
+		
+		cat_files_ch = COLLECT_TO_FILE_01(meta, annotate_ch.bed_vcf.map{T->T[1]}.collect())
+
+		c2_ch = cat_files_ch.output.map{T->["vcfs":T]}
+		concat_ch = BCFTOOLS_CONCAT_PER_CONTIG_01(meta, c2_ch)
+		version_ch = version_ch.mix(concat_ch.first())
+
+		digest_ch = DIGEST_VARIANT_LIST(meta, annotate_ch.variants_list.collect())
+		version_ch = version_ch.mix(digest_ch.first())
+
+
+		version_ch = MERGE_VERSION(meta, "wgselect", "wgselect", version_ch.collect())
+	emit:
+		version = version_ch /** version */
+		variants_list = digest_ch.output /** file containing count of variants at each step */
+		contig_vcfs = concat_ch.vcfs /** path to all vcf concatenated per contigs */
+		vcfs = cat_files_ch.output /** path to all chunks of vcf */
+	}
+
+
+
 process ANNOTATE {
 tag "${file(vcf).name} ${file(bed).name}"
 cache "lenient"
@@ -265,6 +274,7 @@ script:
 	def gnomadPop = (meta.wgselect_gnomadPop)
 	def gnomadAF = (meta.wgselect_gnomadAF as double)
 	def soacn = meta.wgselect_soacn
+	def exclude_soacn = meta.wgselect_exclude_soacn
 	def inverse_so = (meta.wgselect_inverse_so as boolean)
 	def f_missing = (meta.wgselect_f_missing as double)
 
@@ -293,7 +303,7 @@ echo "\${JAVA_HOME}"
 
 
 	function countIt {
-		if ${(meta.wgselect_with_count as boolean)} ; then
+		if ${meta.wgselect_with_count as boolean} ; then
 			echo -n "\$1\t" >> TMP/variant_list.txt
 			bcftools query -f '%CHROM:%POS:%REF:%ALT\\n' "\$2" | sed 's/^chr//' | LC_ALL=C sort -T . | uniq  > TMP/tmp.A.txt
 			bcftools query -f '%CHROM:%POS:%REF:%ALT\\n' "\$3" | sed 's/^chr//' | LC_ALL=C sort -T . | uniq  > TMP/tmp.B.txt
@@ -371,7 +381,7 @@ echo "\${JAVA_HOME}"
 	EOF
 
 
-	if ${(meta.wgselect_with_count as boolean)} ; then
+	if ${meta.wgselect_with_count as boolean} ; then
 		bcftools query -f '.\\n' TMP/jeter1.bcf | awk 'END{printf("initial\t%s\t0\t0\t\\n",NR);}' >> TMP/variant_list.txt
 	fi
 
@@ -465,7 +475,7 @@ echo "\${JAVA_HOME}"
                 <entry key="description">remove variant on autosome if no HET and found at least one HOM_VAR.</entry>
 	EOF
 
-	if ${(meta.wgselect_with_homvar as boolean)} ; then
+	if ${meta.wgselect_with_homvar as boolean} ; then
 		bcftools view -O v -o TMP/jeter2.vcf TMP/jeter1.bcf
 		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcfpar.jar TMP/jeter2.vcf > TMP/jeter1.vcf
 		bcftools view -e 'INFO/SEX=0 &&  COUNT(GT="RA")==0 && COUNT(GT="AA")>0' -O u -o TMP/jeter2.bcf TMP/jeter1.vcf
@@ -569,7 +579,7 @@ echo "\${JAVA_HOME}"
 		<entry key="max">${ReadPosRankSum}</entry>
 	EOF
 	
-	if [ "${ReadPosRankSum}" != "0" ] ; then
+	if ${(ReadPosRankSum as int) != 0 } ; then
 		java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcffilterjdk.jar --nocode   \
 				-e 'final String tag= "ReadPosRankSum"; if(!variant.hasAttribute(tag)) return true; final double v = variant.getAttributeAsDouble(tag,0.0); return Math.abs(v) < ${ReadPosRankSum} ;' TMP/jeter1.vcf > TMP/jeter2.vcf
 		countIt "ReadPosRankSum" TMP/jeter1.vcf TMP/jeter2.vcf
@@ -591,7 +601,7 @@ echo "\${JAVA_HOME}"
 		<entry key="min">${MQRankSum}</entry>
 	EOF
 
-	if ${MQRankSum as double) < 0} ; then
+	if ${(MQRankSum as double) < 0} ; then
 		java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcffilterjdk.jar --nocode   \
 				-e 'final String tag= "MQRankSum"; if(!variant.hasAttribute(tag)) return true; final double v = variant.getAttributeAsDouble(tag,0.0); return v >= ${MQRankSum} ;' TMP/jeter1.vcf > TMP/jeter2.vcf
 		countIt "MQRankSum" TMP/jeter1.vcf TMP/jeter2.vcf
@@ -826,6 +836,7 @@ echo "\${JAVA_HOME}"
                 <entry key="name">Functional annotations</entry>
 		<entry key="method">${annot_method}</entry>
 		<entry key="Sequence ontology">${soacn}</entry>
+		<entry key="Exclude Sequence ontology">${exclude_soacn}</entry>
 	EOF
 
 
@@ -859,7 +870,7 @@ echo "\${JAVA_HOME}"
 	
 
 
-	    if [ ! -z "${soacn}" ] ; then
+	    if ${!soacn.isEmpty()} ; then
 	    
 	    	# filter prediction
 		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcffilterso.jar \
@@ -879,6 +890,29 @@ echo "\${JAVA_HOME}"
 	        mv TMP/jeter2.vcf TMP/jeter1.vcf
 
 	    fi
+
+
+	    if ${!exclude_soacn.isEmpty()} ; then
+	    
+	    	# filter prediction
+		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcffilterso.jar \
+			--remove-attribute  --rmnoatt \
+			--invert \
+			--acn "${exclude_soacn}" \
+		   	TMP/jeter1.vcf   2> /dev/null > TMP/jeter2.vcf
+
+		cat <<- EOF
+		<entry key="exclude_sequence.ontology">
+			<properties>
+				<entry key="terms">${exclude_soacn}</entry>
+			</properties>
+		</entry>
+		EOF
+		countIt "exclude.prediction" TMP/jeter1.vcf TMP/jeter2.vcf
+	        mv TMP/jeter2.vcf TMP/jeter1.vcf
+
+	    fi
+
 
 		echo "</properties>" >> version.xml
 

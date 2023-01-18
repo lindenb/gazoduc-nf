@@ -87,8 +87,10 @@ public class Gazoduc {
 			}
 		/** constructor --key and value */
 		private Parameter(final String key, Object value) {
+			int i;
 			this.key = key;
 			if(key==null || key.trim().isEmpty()) throw new IllegalArgumentException("Key is empty/null");
+			if(key.contains("-"))  throw new IllegalArgumentException("Key contains '-' ("+key+")");
 			this.value = value;
 			}
 		private Parameter(final String key) {
@@ -120,6 +122,14 @@ public class Gazoduc {
 		public String getKey() {
 			return this.key;
 			}
+
+		/* NF changes some keys when lower/uppercase change e.g: bwaPath -> bwa_path or selectAD -> select-AD */
+		public boolean hasKey(final String s) {
+			final String s1 = this.getKey().replaceAll("[\\-]","");
+			final String s2 = s.replaceAll("[\\-]","");
+			return s1.equalsIgnoreCase(s2);
+			}
+
 		public Parameter hidden() {
 			this.hidden = true;
 			return this;
@@ -433,7 +443,7 @@ public class Gazoduc {
 	
 	/* find parameter by name */
 	public Optional<Parameter> findParameterByName(final String key) {
-		return this.parameters.stream().filter(P->P.key.equals(key)).findFirst();
+		return this.parameters.stream().filter(P->P.hasKey(key) ).findFirst();
 		}
 
 	public Gazoduc putGenomes() {

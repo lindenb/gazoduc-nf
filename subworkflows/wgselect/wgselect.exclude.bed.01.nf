@@ -22,11 +22,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+def gazoduc = gazoduc.Gazoduc.getInstance(params)
+
 include {isHg19;isHg38;moduleLoad} from '../../modules/utils/functions.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include { SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.nf'
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params)
 
 gazoduc.
     make("wgselect_with_rmsk",true).
@@ -36,7 +37,7 @@ gazoduc.
     put()
 
 gazoduc.
-    make("wgselect_with_encodeExclude",true).
+    make("wgselect_with_encode_exclude",true).
     menu("wgselect").
     description("remove variant overlapping excluded ENCODe regions").
     setBoolean().
@@ -50,7 +51,7 @@ gazoduc.
     put()
 
 gazoduc.
-    make("wgselect_with_simpleRepeats",true).
+    make("wgselect_with_simple_repeats",true).
     menu("wgselect").
     description("remove variant overlapping simple repeats regions").
     setBoolean().
@@ -73,7 +74,7 @@ workflow WGSELECT_EXCLUDE_BED_01 {
 			to_merge_ch = to_merge_ch.mix(rmsk_ch.bed)
 			}
 
-		if(meta.wgselect_with_encodeExclude as boolean) {
+		if(meta.wgselect_with_encode_exclude as boolean) {
 			x2_ch = EXCLUDE_ENCODE(meta,reference)
 			version_ch = version_ch.mix(x2_ch.version)
 			to_merge_ch = to_merge_ch.mix(x2_ch.bed)
@@ -86,7 +87,7 @@ workflow WGSELECT_EXCLUDE_BED_01 {
 			to_merge_ch = to_merge_ch.mix(x3_ch.bed)
 			}
 
-		if(meta.wgselect_with_simpleRepeats as boolean) {
+		if(meta.wgselect_with_simple_repeats as boolean) {
 			x4_ch = SIMPLE_REPEATS(meta,reference)
 			version_ch = version_ch.mix(x4_ch.version)
 			to_merge_ch = to_merge_ch.mix(x4_ch.bed)

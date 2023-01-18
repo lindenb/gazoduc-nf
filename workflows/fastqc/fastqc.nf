@@ -41,7 +41,7 @@ run FASTC for a list of bams
 
 ## Author
 
-${params.rsrc.author}
+Pierre Lindenbaum
 
 ## Options
 

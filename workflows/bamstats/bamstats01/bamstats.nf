@@ -44,11 +44,11 @@ samtools stats on mulitple files
 
 ## Author
 
-${params.rsrc.author}
+Pierre Lindenbaum
 
 ## Options
 
-  * --reference (fasta) ${params.rsrc.reference} [REQUIRED]
+  * --reference (fasta) The full path to the indexed fasta reference genome. It must be indexed with samtools faidx and with picard CreateSequenceDictionary or samtools dict. [REQUIRED]
   * --bams (file) one file containing the paths to the BAMs [REQUIRED]
   * --publishDir (dir) Save output in this directory
   * --prefix (string) files prefix. default: ""

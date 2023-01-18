@@ -45,11 +45,11 @@ def helpMessage() {
 
 ## Author
 
-${params.rsrc.author}
+Pierre Lindenbaum
 
 ## Options
 
-  * --reference (fasta) ${params.rsrc.reference} [REQUIRED]
+  * --reference (fasta) The full path to the indexed fasta reference genome. It must be indexed with samtools faidx and with picard CreateSequenceDictionary or samtools dict. [REQUIRED]
   * --mapq (int)  min mapping quality . If it's lower than 0 (this is the default) just use the bam index as is. Otherwise, rebuild the bai
   * --publishDir (dir) Save output in this directory
   * --prefix (string) files prefix. default: ""

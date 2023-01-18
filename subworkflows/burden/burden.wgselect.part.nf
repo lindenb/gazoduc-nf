@@ -22,6 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+def gazoduc = gazoduc.Gazoduc.getInstance(params)
 
 include {moduleLoad;getKeyValue;hasFeature} from '../../modules/utils/functions.nf'
 include {BED_CLUSTER_01} from '../../modules/jvarkit/jvarkit.bedcluster.01.nf'

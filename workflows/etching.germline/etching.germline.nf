@@ -45,7 +45,7 @@ run Etching for a list of fastqs
 
 ## Author
 
-${params.rsrc.author}
+Pierre Lindenbaum
 
 ## Options
 
