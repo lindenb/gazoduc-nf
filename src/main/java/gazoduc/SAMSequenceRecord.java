@@ -30,6 +30,10 @@ package gazoduc;
 public class SAMSequenceRecord {
 private final String name;
 private final int length;
+/**
+@param name chromosome name
+@param length chromosome length
+*/
 SAMSequenceRecord(final String name,int length) {
 	this.name = name;
 	this.length = length;
@@ -48,12 +52,22 @@ public int hashCode() {
 	return name.hashCode()*31 + Integer.hashCode(this.length);
 	}
 
+/**
+@return chromosome name
+*/
 public String getName() {
 	return this.name;
 	}
+/**
+@return chromosome length
+*/
 public int getLength() {
 	return this.length;
 	}
+/**
+alias of getLength
+@return chromosome length
+*/
 public final int getSequenceLength() {
 	return this.getLength();
 	}

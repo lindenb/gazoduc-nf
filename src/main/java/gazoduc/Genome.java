@@ -24,6 +24,7 @@ SOFTWARE.
 */
 package gazoduc;
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -161,13 +162,33 @@ public class Genome {
 		return this.genomes;
 		}
 
+	/** @return path to fasta reference as string */
 	public final String getReference() {
 		return get("fasta").orElseThrow(()->new IllegalArgumentException("Cannot find <fasta> for "+ about()));
 		}
-	
+	/**
+	alias for getReference()
+	@return path to fasta
+	*/
 	public final String getFasta() {
 		return getReference();
 		}
+	boolean validate() {
+		final File f = new File(getReference());
+		if(!f.exists()) {
+			System.err.println("file "+f+" doesn't exists. "+about());
+			return false;
+			}
+		try {
+			getDictionary();
+			}
+		catch(Throwable err) {
+			System.err.println("Cannot get dictionary. "+err.getMessage()+". "+about());
+			return false;
+			}
+		return true;
+		}
+
 	public final String getGff() {
 		return get("gff").orElse(get("gff3").orElse(""));
 		}

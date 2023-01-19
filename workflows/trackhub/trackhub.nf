@@ -82,8 +82,20 @@ workflow TRACK_HUB {
 		c1_ch = COMPILE_JAVA(meta)
                 version_ch = version_ch.mix(c1_ch.version)
 		
-//		scan_ch = SCAN_VCF( meta, vcfs.splitText().map{it.trim()} )
-//		version_ch = version_ch.mix(scan_ch.version)
+		ci_ch = DOWNLOAD_CHROM_INFO(meta)
+		version_ch = version_ch.mix(ci_ch.version)
+
+		as_ch = MAKE_AS(meta)
+		version_ch = version_ch.mix(as_ch.version)
+
+		scan_ch = SCAN_VCF( meta, c1_ch.output, vcfs.splitText().map{file(it.trim())} )
+		version_ch = version_ch.mix(scan_ch.version)
+
+		bed_ch = MERGE_BED(meta, ci_ch.output , as_ch.sv_as, scan_ch.bed.collect())
+		version_ch = version_ch.mix(bed_ch.version)
+	
+		inter_ch = MERGE_BED_PE(meta, ci_ch.output , as_ch.interact_as, scan_ch.bedpe.collect())
+		version_ch = version_ch.mix(inter_ch.version)
 
 		version_ch = MERGE_VERSION(meta, "trackhub", "Trackhub", version_ch.collect())
 
@@ -121,7 +133,10 @@ import htsjdk.variant.vcf.*;
 public class Minikit {
 private static final boolean WITH_BND = ${meta.with_bnd as boolean};
 private final Map<String,String> convertHash = new HashMap<>();
+private static final int MIN_SV_LEN = ${meta.minLen};
+private static final int MAX_SV_LEN = ${meta.maxLen};
 
+ 
 private String convert(final String s) {
 	return convertHash.get(s);
 	}
@@ -158,155 +173,158 @@ private List<Locatable> parseBnd(final VariantContext ctx) {
 		collect(Collectors.toList());
 	}
 
-private int doWork(final List<String> args) throws Exception {
-try 
-	{
+private int doWork(final List<String> args) {
 	if(args.size()!=3) {
 		System.err.println("usage vcfname out.bed out.bedpe");
 		System.exit(-1);
 		}
-	String sampleName = null;
-	File out1 = null;
-	File out2 = null;
-	int optind=0;
-	for(int i=1;i<=22;i++) {
-		convertHash.put(""+i,"chr"+i);
-		convertHash.put("chr"+i,"chr"+i);
-		}
-
-	convertHash.put("X","chrX");
-	convertHash.put("chrX","chrX");
-	convertHash.put("Y","chrY");
-	convertHash.put("chrY","chrY");
-	convertHash.put("MT","chrM");
-	convertHash.put("M","chrM");
-
-	final String vcfName= args.ge(0);
-	try(PrintWriter pw1 = new PrintWriter(args.get(1)); PrintWriter pw2 = new PrintWriter(args.get(2))){
-	
-	try(final VCFIterator r = new VCFIteratorBuilder().open(Paths.get(System.in))) {
-		final List<String> samples = r.getHeader().getSampleNamesInOrder();
-		final SAMSequenceDictionary dict = r.getHeader().getSequenceDictionary();
+	try 
+		{
 		
-		while(r.hasNext()) {
-			final VariantContext ctx = r.next();
-			final SAMSequenceRecord ssr = (dict==null?null:dict.getSequence(ctx.getContig()));
-			if(ssr==null) continue;
-			final int cipos = ctx.getAttributeAsIntList("CIPOS",0).stream().mapToInt(V->V.intValue()).min().orElse(0);
-			final int ciend = ctx.getAttributeAsIntList("CIEND",0).stream().mapToInt(V->V.intValue()).max().orElse(0);
+		String sampleName = null;
+		File out1 = null;
+		File out2 = null;
+		int optind=0;
+		for(int i=1;i<=22;i++) {
+			convertHash.put(""+i,"chr"+i);
+			convertHash.put("chr"+i,"chr"+i);
+			}
 
-			int start0 = Math.max(0,(ctx.getStart()-1) + cipos);
-			int end0 = ctx.getEnd() + ciend;
+		convertHash.put("X","chrX");
+		convertHash.put("chrX","chrX");
+		convertHash.put("Y","chrY");
+		convertHash.put("chrY","chrY");
+		convertHash.put("MT","chrM");
+		convertHash.put("M","chrM");
 
-			if(start0>=end0 || end0>ssr.getSequenceLength()) {
-				start0 = ctx.getStart()-1;
-				end0 = ctx.getEnd();
-				}
-
-			final String type= ctx.getAttributeAsString("SVTYPE",null);
-			if(type==null || type.isEmpty()) continue;
-			String contig =  convert(ctx.getContig());
-			if(contig==null || contig.isEmpty()) continue;
-
-			for(Genotype gt : ctx.getGenotype()) {
-				if(gt.isNoCall() || gt.isHomRef()) continue;
-				if(type.equals("BND")) {
-				for(Locatable bnd : parseBnd(ctx)) {
-					final String contig2 =  convert(bnd.getContig());
-					if(contig2==null || contig2.isEmpty()) continue;
-					pw2.print(contig);
-					pw2.print("\t");
-					pw2.print(start0);
-					pw2.print("\t");
-					pw2.print(end0);
-					pw2.print("\t");
-					pw2.print(sn);
-					pw2.print("\t");
-					pw2.print(ctx.isFiltered()?"100":"900");
-					pw2.print("\t");
-					pw2.print(ctx.isFiltered()?"1":"2");//value
-					pw2.print("\t");
-					pw2.print(sn);//exp
-					pw2.print("\t");
-					pw2.print(contig.equals("contig2")?"0,0,255":"255,0,0");//color
-					pw2.print("\t");
-					pw2.print(contig);//source chrom
-					pw2.print("\t");
-					pw2.print(ctx.getStart()-1);//source start
-					pw2.print("\t");
-					pw2.print(ctx.getEnd());//source end
-					pw2.print("\t");
-					pw2.print(".");//source name
-					pw2.print("\t");
-					pw2.print(".");//source strand
-					pw2.print("\t");
-					pw2.print(contig2);//target chrom
-					pw2.print("\t");
-					pw2.print(bnd.getStart()-1); //target start
-					pw2.print("\t");
-					pw2.print(bnd.getEnd());//target end
-					pw2.print("\t");
-					pw2.print(".");//target name
-					pw2.print("\t");
-					pw2.print(".");//target strand
-					pw2.print("\t");
-					pw2.print(ctx.isFiltered()?String.join("_",ctx.getFilters()):".");//filters
-					pw2.println();
-
-					}
-				} else
-				{
-				final int svlen ;
-				if(ctx.hasAttribute("SVLEN")) {
-					svlen = Math.abs( ctx.getAttributeAsInt("SVLEN",0));
-					}
-				else if(ctx.hasAttribute("SVINSLEN")) {
-					svlen = Math.abs( ctx.getAttributeAsInt("SVINSLEN",0));
-					}
-				else if(ctx.hasAttribute("SVINSSEQ")) {
-					svlen = Math.abs( ctx.getAttributeAsString("SVINSSEQ","").length());
-					}
-				else
-					{
-					svlen = ctx.getLengthOnReference();
-					}
+		final String vcfName= args.get(0);
+		try(PrintWriter pw1 = new PrintWriter(args.get(1)); PrintWriter pw2 = new PrintWriter(args.get(2))){
+			try(final VCFIterator r = new VCFIteratorBuilder().open(System.in)) {
+				final List<String> samples = r.getHeader().getSampleNamesInOrder();
+				final SAMSequenceDictionary dict = r.getHeader().getSequenceDictionary();
 				
-				if( svlen < ${meta.minLen}) continue;
-				if( svlen > ${meta.maxLen}) continue;
+				while(r.hasNext()) {
+					final VariantContext ctx = r.next();
+					final SAMSequenceRecord ssr = (dict==null?null:dict.getSequence(ctx.getContig()));
+					if(ssr==null) continue;
+					final int cipos = ctx.getAttributeAsIntList("CIPOS",0).stream().mapToInt(V->V.intValue()).min().orElse(0);
+					final int ciend = ctx.getAttributeAsIntList("CIEND",0).stream().mapToInt(V->V.intValue()).max().orElse(0);
 
-				pw1.print(contig);
-				pw1.print("\t");
-				pw1.print(start0);
-				pw1.print("\t");
-				pw1.print(end0);
-				pw1.print("\t");
-				pw1.print(sn);
-				pw1.print("\t");
-				pw1.print(ctx.isFiltered()?"100":"900");
-				pw1.print("\t");
-				pw1.print("+");
-				pw1.print("\t");
-				pw1.print(ctx.getStart()-1);
-				pw1.print("\t");
-				pw1.print(ctx.getEnd());
-				pw1.print("\t");
-				pw1.print(type2color(type));
-				pw1.print("\t");
-				pw1.print(type);//type
-				pw1.print("\t");
-				pw1.print(svlen);//svlen
-				pw1.print("\t");
-				pw1.print(ctx.isFiltered()?String.join("_",ctx.getFilters()):".");//filters
-				pw1.println();
+					int start0 = Math.max(0,(ctx.getStart()-1) + cipos);
+					int end0 = ctx.getEnd() + ciend;
+
+					if(start0>=end0 || end0>ssr.getSequenceLength()) {
+						start0 = ctx.getStart()-1;
+						end0 = ctx.getEnd();
+						}
+
+					final String type= ctx.getAttributeAsString("SVTYPE",null);
+					if(type==null || type.isEmpty()) continue;
+					String contig =  convert(ctx.getContig());
+					if(contig==null || contig.isEmpty()) continue;
+
+					for(Genotype gt : ctx.getGenotypes()) {
+						if(gt.isNoCall() || gt.isHomRef()) continue;
+						if(type.equals("BND")) {
+						for(Locatable bnd : parseBnd(ctx)) {
+							final String contig2 =  convert(bnd.getContig());
+							if(contig2==null || contig2.isEmpty()) continue;
+							pw2.print(contig);
+							pw2.print("\t");
+							pw2.print(start0);
+							pw2.print("\t");
+							pw2.print(end0);
+							pw2.print("\t");
+							pw2.print(gt.getSampleName());
+							pw2.print("\t");
+							pw2.print(ctx.isFiltered()?"100":"900");
+							pw2.print("\t");
+							pw2.print(ctx.isFiltered()?"1":"2");//value
+							pw2.print("\t");
+							pw2.print(gt.getSampleName());//exp
+							pw2.print("\t");
+							pw2.print(contig.equals("contig2")?"0,0,255":"255,0,0");//color
+							pw2.print("\t");
+							pw2.print(contig);//source chrom
+							pw2.print("\t");
+							pw2.print(ctx.getStart()-1);//source start
+							pw2.print("\t");
+							pw2.print(ctx.getEnd());//source end
+							pw2.print("\t");
+							pw2.print(".");//source name
+							pw2.print("\t");
+							pw2.print(".");//source strand
+							pw2.print("\t");
+							pw2.print(contig2);//target chrom
+							pw2.print("\t");
+							pw2.print(bnd.getStart()-1); //target start
+							pw2.print("\t");
+							pw2.print(bnd.getEnd());//target end
+							pw2.print("\t");
+							pw2.print(".");//target name
+							pw2.print("\t");
+							pw2.print(".");//target strand
+							pw2.print("\t");
+							pw2.print(ctx.isFiltered()?String.join("_",ctx.getFilters()):".");//filters
+							pw2.println();
+
+							}
+						} else
+						{
+						final int svlen ;
+						if(ctx.hasAttribute("SVLEN")) {
+							svlen = Math.abs( ctx.getAttributeAsInt("SVLEN",0));
+							}
+						else if(ctx.hasAttribute("SVINSLEN")) {
+							svlen = Math.abs( ctx.getAttributeAsInt("SVINSLEN",0));
+							}
+						else if(ctx.hasAttribute("SVINSSEQ")) {
+							svlen = Math.abs( ctx.getAttributeAsString("SVINSSEQ","").length());
+							}
+						else
+							{
+							svlen = ctx.getLengthOnReference();
+							}
+						
+						if( svlen < MIN_SV_LEN) continue;
+						if( svlen > MAX_SV_LEN) continue;
+
+						pw1.print(contig);
+						pw1.print("\t");
+						pw1.print(start0);
+						pw1.print("\t");
+						pw1.print(end0);
+						pw1.print("\t");
+						pw1.print(gt.getSampleName());
+						pw1.print("\t");
+						pw1.print(ctx.isFiltered()?"100":"900");
+						pw1.print("\t");
+						pw1.print("+");
+						pw1.print("\t");
+						pw1.print(ctx.getStart()-1);
+						pw1.print("\t");
+						pw1.print(ctx.getEnd());
+						pw1.print("\t");
+						pw1.print(type2color(type));
+						pw1.print("\t");
+						pw1.print(type);//type
+						pw1.print("\t");
+						pw1.print(svlen);//svlen
+						pw1.print("\t");
+						pw1.print(ctx.isFiltered()?String.join("_",ctx.getFilters()):".");//filters
+						pw1.println();
+						}
+					} // end loop genotypes
 				}
-			} // end loop genotypes
+			
+			}
+		pw1.flush();
+		pw2.flush();
 		}
-	pw1.flush();
-	pw2.flush();
-	} catch(final Throwable err) {
-        err.printStackTrace();
-        return -1;
-        }
+	catch(final Throwable err) {
+		err.printStackTrace();
+		return -1;
+		}
 
 	
 	return 0;
@@ -318,29 +336,38 @@ catch(final Throwable err2) {
 }
 
 public static void main(final String args[]) {
-try {
-	int ret= new Selector().doWork(Arrays.asList(args));
-	System.exit(ret);
+	try {
+		int ret= new Minikit().doWork(Arrays.asList(args));
+		System.exit(ret);
+		}
+	catch(Throwable err) {
+		err.printStackTrace();
+		System.exit(-1);
+		}
 	}
-catch(Throwable err) {
-	err.printStackTrace();
-	System.exit(-1);
-	}
-}
 
 }
-
 __EOF__
 
 mkdir -p TMP
 javac -d TMP -cp \${JVARKIT_DIST}/vcffilterjdk.jar:. Minikit.java
 jar cvf minikit.jar -C TMP .
+
+
+###############################################################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+	<entry key="name">${task.process}</entry>
+	<entry key="description">compile minikit</entry>
+	<entry key="javac.version">\$(javac -version 2>&1)</entry>
+</properties>
 	"""
 	}
 
 
 process SCAN_VCF {
 	tag "${vcf.name}"
+	afterScript "rm -rf TMP"
 	input:
 		val(meta)
 		path(minikit)
@@ -362,6 +389,13 @@ process SCAN_VCF {
 	
 	LC_ALL=C sort -T TMP -k1,1 -k2,2n TMP/tmp.bed | uniq > all.bed
 	LC_ALL=C sort -T TMP -k1,1 -k2,2n TMP/tmp.bedpe | uniq > all.bedpe
+	###############################################################################
+	cat << EOF > version.xml
+	<properties id="${task.process}">
+		<entry key="name">${task.process}</entry>
+		<entry key="description">extract variants</entry>
+	</properties>
+	EOF
 	"""
 	}
 
@@ -379,16 +413,27 @@ script:
 """
 wget -O "chromInfo.txt.gz" "${url}"
 gunzip chromInfo.txt.gz
+
+###############################################################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+	<entry key="name">${task.process}</entry>
+	<entry key="description">download chrominfo</entry>
+	<entry key="url">$(url)</entry>
+</properties>
+EOF
 """
 }
 
 
-process SV_AS {
+process MAKE_AS {
 executor "local"
 input:
 	val(meta)
 output:	
-	path("sv.as"),emit:output
+	path("sv.as"),emit:sv_as
+	path("interact.as"),emit:interact_as
+	path("version.xml"),emit:output
 script:
 """
 cat << EOF > sv.as
@@ -409,6 +454,39 @@ table sv
     string filters; "FILTERs"
     )
 EOF
+
+cat << EOF > interact.as
+table interact
+"BND"
+    (
+    string chrom;      "Chromosome (or contig, scaffold, etc.). For interchromosomal, use 2 records"
+    uint chromStart;   "Start position of lower region. For interchromosomal, set to chromStart of this region"
+    uint chromEnd;     "End position of upper region. For interchromosomal, set to chromEnd of this region"
+    string name;       "Name of item, for display.  Usually 'sourceName/targetName' or empty"
+    uint score;        "Score from 0-1000."
+    double value;      "Strength of interaction or other data value. Typically basis for score"
+    string exp;        "Experiment name (metadata for filtering). Use . if not applicable"
+    string color;      "Item color.  Specified as r,g,b or hexadecimal #RRGGBB or html color name, as in //www.w3.org/TR/css3-color/#html4."
+    string sourceChrom;  "Chromosome of source region (directional) or lower region. For non-directional interchromosomal, chrom of this region."
+    uint sourceStart;  "Start position source/lower/this region"
+    uint sourceEnd;    "End position in chromosome of source/lower/this region"
+    string sourceName;  "Identifier of source/lower/this region"
+    string sourceStrand; "Orientation of source/lower/this region: + or -.  Use . if not applicable"
+    string targetChrom; "Chromosome of target region (directional) or upper region. For non-directional interchromosomal, chrom of other region"
+    uint targetStart;  "Start position in chromosome of target/upper/this region"
+    uint targetEnd;    "End position in chromosome of target/upper/this region"
+    string targetName; "Identifier of target/upper/this region"
+    string targetStrand; "Orientation of target/upper/this region: + or -.  Use . if not applicable"
+    string filters; "FILTER column"
+    )
+EOF
+
+###############################################################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+	<entry key="name">${task.process}</entry>
+	<entry key="description">create SV.as</entry>
+</properties>
 """
 }
 
@@ -437,46 +515,19 @@ process MERGE_BED {
 
 	cut -f 1-4 all.bed > sample.bed
 	rm all.bed
+	###############################################################################
+	cat << EOF > version.xml
+	<properties id="${task.process}">
+		<entry key="name">${task.process}</entry>
+		<entry key="description">create SV.as</entry>
+	</properties>
 	"""
 	}
 
 
-process interactAs {
-executor "local"
-output:	
-	file("interact.as") into interact_as
-script:
-"""
-cat << EOF > interact.as
-table interact
-"BND"
-    (
-    string chrom;      "Chromosome (or contig, scaffold, etc.). For interchromosomal, use 2 records"
-    uint chromStart;   "Start position of lower region. For interchromosomal, set to chromStart of this region"
-    uint chromEnd;     "End position of upper region. For interchromosomal, set to chromEnd of this region"
-    string name;       "Name of item, for display.  Usually 'sourceName/targetName' or empty"
-    uint score;        "Score from 0-1000."
-    double value;      "Strength of interaction or other data value. Typically basis for score"
-    string exp;        "Experiment name (metadata for filtering). Use . if not applicable"
-    string color;      "Item color.  Specified as r,g,b or hexadecimal #RRGGBB or html color name, as in //www.w3.org/TR/css3-color/#html4."
-    string sourceChrom;  "Chromosome of source region (directional) or lower region. For non-directional interchromosomal, chrom of this region."
-    uint sourceStart;  "Start position source/lower/this region"
-    uint sourceEnd;    "End position in chromosome of source/lower/this region"
-    string sourceName;  "Identifier of source/lower/this region"
-    string sourceStrand; "Orientation of source/lower/this region: + or -.  Use . if not applicable"
-    string targetChrom; "Chromosome of target region (directional) or upper region. For non-directional interchromosomal, chrom of other region"
-    uint targetStart;  "Start position in chromosome of target/upper/this region"
-    uint targetEnd;    "End position in chromosome of target/upper/this region"
-    string targetName; "Identifier of target/upper/this region"
-    string targetStrand; "Orientation of target/upper/this region: + or -.  Use . if not applicable"
-    string filters; "FILTER column"
-    )
-EOF
 
-"""
-}
 
-process mergeBedPe {
+process MERGE_BED_PE {
 	tag "${name} ${beds.size()}"
 	executor "ccrt"
 	maxForks 80
@@ -501,17 +552,20 @@ process mergeBedPe {
 	}
 
 process MERGE_TRACK {
-	tag "${name} ${bed.name} ${bedpe.name}"
+	tag "${bed.name} ${bedpe.name}"
 	executor "local"
 
 	input:
 		val(meta)
-		tuple val(name),bed,bedpe from track_bed.join(track_bedpe)
+		path(bed)
+		path(bedpe)
 	output:
-		tuple file("trackDb.txt"),bed,bedpe into list1
+		tuple path("trackDb.txt"),path(bed),path(bedpe)
 	script:
+		def name="HELLO"
 	"""
-	module load ucsc-tools
+	hostname 1>&2
+	${moduleLoad("ucsc-tools")}
 
 
 cat << EOF > trackDb.txt
@@ -519,7 +573,7 @@ cat << EOF > trackDb.txt
 track ${name}
 bigDataUrl ${bed.name}
 shortLabel ${name}
-longLabel ${name} CNV, DEL, INV, etc... (${params.minLen} < SVLEN < ${params.maxLen})
+longLabel ${name} CNV, DEL, INV, etc... (${meta.minLen} < SVLEN < ${meta.maxLen})
 type bigBed 9
 itemRgb "On"
 

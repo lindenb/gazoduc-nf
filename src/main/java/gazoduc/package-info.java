@@ -1,5 +1,5 @@
 /**
-<h1>A helper package for <a>nextflow</a></h1>
+A helper package for <a>nextflow</a>
 <pre>def gazoduc = gazoduc.Gazoduc.getInstance(params);</pre>
 
 @since 2023-01-19

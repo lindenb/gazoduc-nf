@@ -629,10 +629,13 @@ public class Gazoduc {
 			}
 		if(getParams().containsKey(PARAM_GENOMES)) {
 			try {
-				final Genome genomes  = this.getGenomes();
+				final Genomes genomes  = this.getGenomes();
 				 if(getParams().containsKey(PARAM_GENOME)) {
 					try {
-						this.getGenome();
+						if(!this.getGenome().validate()) {
+							is_valid = false;
+							}
+						}
 					 catch(Throwable err2) {
 		                                System.err.println("Cannot load genome ["+red("ERROR")+"]." + err2.getMessage());
                 		                is_valid = false;

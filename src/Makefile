@@ -4,7 +4,7 @@ else
 JAVAC=javac
 endif
 
-../doc/javadoc/index.html : ../lib/gazoduc.jar
+../doc/javadoc/index.html : ../lib/gazoduc.jar ./main/java/gazoduc/package-info.java
 	mkdir -p $(dir $@)
 	javadoc -notimestamp -d $(dir $@) -sourcepath main/java gazoduc
 
