@@ -50,30 +50,50 @@ public class SAMSequenceDictionary implements Iterable<SAMSequenceRecord> {
 		this.len = this.array.stream().mapToLong(S->S.getLength()).sum();
 		}
 	
+	/**
+	@return a list of chromosome names for this dictionary
+	*/
 	public List<String> getChromosomes() {
 		return this.array.stream().map(T->T.getName()).collect(Collectors.toList());
 		}
 	
+	/**
+	Alias of getChromosomes
+	@return a list of chromosome names for this dictionary
+	*/
 	public final List<String> getContigs() {
 		return getChromosomes();
 		}
 
+	/** @return the number of contigs in this dictionary */
 	public int size() {
 		return array.size();
 		}
+	/** @return the length of this genome */
 	public long getReferenceLength() {
 		return this.len;
 		}
+	/**
+	@param index the index of the chromosome
+	@return the index-th SAMSequenceRecord
+	*/
 	public SAMSequenceRecord getSequence(int index) {
 		return array.get(index);
 		}
+
+	/**
+	@param name the name of the chromosome
+	@return SAMSequenceRecord for this chromosome name or null if not found
+	*/
 	public SAMSequenceRecord getSequence(final String name) {
+		if(name==null) throw new IllegalArgumentException("name is null");
 		return id2ssr.get(name);
 		}
 	@Override
 	public Iterator<SAMSequenceRecord> iterator() {
 		return this.array.iterator();
 		}
+	
 	private boolean hasChromX(final String id,int expect) {
 		SAMSequenceRecord rec = getSequence(id);
 		if(rec==null)  rec = getSequence("chr"+id);
@@ -83,25 +103,28 @@ public class SAMSequenceDictionary implements Iterable<SAMSequenceRecord> {
 		return false;
 		}
 	
+	/**
+	@return an optional name for this genome for the UCSC database (hg19, hg38....)
+	*/
 	public Optional<String> getUcscName() {
 		if(isHg19()) return Optional.of("hg19");
 		if(isHg38()) return Optional.of("hg38");
 		return Optional.empty();
 		}
-	
+	/** @return an optional name for this genome */
 	public Optional<String> getName() {
 		return getUcscName();
 		}
 	
-	/** test if dict looks like GRCh37  */
+	/** @return true if dict looks like GRCh37  */
 	public boolean isHg19() {
 		return hasChromX("1",249_250_621);
 		}
-	/** test if dict looks like GRCh38  */
+	/** @return true if dict looks like GRCh38  */
 	public  boolean isHg38() {
 		return hasChromX("1",248_956_422);
 		}
-	/** true if isHg19() || isHg38()  */
+	/** @return true if genome isHg19() or isHg38()  */
 	public boolean isHuman() {
 		return isHg19() || isHg38();
 		}

@@ -42,11 +42,20 @@ import org.w3c.dom.Node;
  *
  */
 public class Genome {
+	private static final String PROPERTY="property";
+	private static final String KEY="key";
+	/** owner genome */
 	private final Genomes genomes;
+	/** genome private id */
 	private final String id;
+	/** root in the XML file */
 	private final Element root;
+	/** associated dict, loaded on request */
 	private SAMSequenceDictionary dict = null;
 
+	/**
+	@param genomes owner
+	@param root root element for this genome */
 	Genome(final Genomes genomes,final Element root) {
 		this.root = root;
 		this.genomes = genomes;
@@ -57,18 +66,24 @@ public class Genome {
 
 	private List<Element> elements() {
 		final List<Element> array = new ArrayList<>();
-		 for(Node n1 = this.root.getFirstChild();n1!=null;n1=n1.getNextSibling()) {
-            if(n1.getNodeType()!=Node.ELEMENT_NODE) continue;
+		for(Node n1 = this.root.getFirstChild();n1!=null;n1=n1.getNextSibling()) {
+		if(n1.getNodeType()!=Node.ELEMENT_NODE) continue;
 			array.add(Element.class.cast(n1));
 			}
 		return array;
 		}
-	
+	/**
+	Alias for getDictionary
+	@return the dictionary for this genome
+	*/
 	public final SAMSequenceDictionary getDict() {
 		return getDictionary();
 		}
 
-	
+	/**
+	Parses the fai file for this genome and build a dictionary 
+	@return the dictionary for this genome
+	*/
 	public SAMSequenceDictionary getDictionary() {
 		if(this.dict==null) {
 			final Path fai = Paths.get(getFasta()+".fai");
@@ -90,37 +105,50 @@ public class Genome {
 		return this.dict;
 		}
 	
-	private Optional<String> get(final String nodeName) {
+	private Optional<String> get(final String name) {
 		final List<String> L = elements().
 				stream().
-				filter(N->N.getNodeName().equals(nodeName) && N.hasChildNodes()).
+				filter(N->N.getNodeName().equals(PROPERTY) && N.getAttributeNode(KEY)!=null && N.getAttribute("key").equals(name) && N.hasChildNodes()).
 				map(E->E.getTextContent()).
 				collect(Collectors.toList());
 		if(L.isEmpty()) return Optional.empty();
-		if(L.size()!=1) throw new IllegalArgumentException("Found "+L.size()+" nodes <"+nodeName+"> , but expected not more than one for "+ about());
+		if(L.size()!=1) throw new IllegalArgumentException("Found "+L.size()+" "+PROPERTY+"/@"+KEY+"="+name+" , but expected not more than one for "+ about());
 		return Optional.of(L.get(0));
 		}
-	
-	public boolean hasProperty(final String nodeName) {
+	/**
+	@param name the key searched
+        @return true if there is any property/@key=name 
+        */
+	public boolean hasProperty(final String name) {
 		return elements().
 				stream().
-				anyMatch(N->N.getNodeName().equals(nodeName) && N.hasChildNodes())
+				anyMatch(N->N.getNodeName().equals(PROPERTY) && N.getAttribute(KEY).equals(name) && N.hasChildNodes())
 				;
 		}
 	
-	public String getProperty(final String nodeName,final String defaultValue) {
-		return get(nodeName).orElse(defaultValue);
+	/**
+	@param name the key searched
+	@param defaultValue the default value if no property was found
+	@return string value for xml element property/@key=name or defaultValue
+	*/
+	public String getProperty(final String name,final String defaultValue) {
+		return get(name).orElse(defaultValue);
 		}
-	public String getRequiredProperty(final String nodeName) {
-		return get(nodeName).orElseThrow(()->new IllegalArgumentException("Cannot find <"+nodeName+"> for "+ about()));
+	/**
+	@param name the key searched
+	@return string value for xml element property/@key=name or throw an error if such element is not found
+	*/
+	public String getRequiredProperty(final String name) {
+		return get(name).orElseThrow(()->new IllegalArgumentException("Cannot find "+PROPERTY+"/@"+KEY+"=\""+name+"\" for "+ about()));
 		}
-	
+
+	/** @return all aliases for this genome <code>property/@key="alias"</code> */
 	public Set<String> getAliases() {
 		final Set<String> set = new HashSet<>();
 		set.add(getId());
 		elements().
 				stream().
-				filter(N->N.getNodeName().equals("alias") && N.hasChildNodes()).
+				filter(N->N.getNodeName().equals(PROPERTY) && N.getAttributeNode(KEY)!=null && N.getAttribute("key").equals("alias") &&  N.hasChildNodes()).
 				map(E->E.getTextContent().trim()).
 				filter(S->!S.isEmpty()).
 				forEach(S->set.add(S))
@@ -128,6 +156,7 @@ public class Genome {
 		return set;
 		}
 	
+	/** @return Genomes object associated to this Genome */
 	public Genomes getGenomes() {
 		return this.genomes;
 		}

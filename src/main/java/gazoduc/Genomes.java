@@ -52,7 +52,7 @@ public class Genomes {
 	private final File file;
 	private final Map<String,Genome> id2genome = new HashMap<>();
 
-	/** path to the XML file */
+	/** @return the path to the  XML source */
 	public File getFile() {
 		return file;
 		}

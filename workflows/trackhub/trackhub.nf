@@ -26,6 +26,7 @@ nextflow.enable.dsl=2
 
 def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putGenomes()
 
+include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 include {runOnComplete;moduleLoad} from '../../modules/utils/functions.nf'
 include {SIMPLE_PUBLISH_01} from '../../modules/utils/publish.simple.01.nf'
@@ -63,16 +64,16 @@ if( params.help ) {
 }
 
 workflow {
-	ch1 = TRACK_HUB(params,params.reference,file(params.vcfs))
+	ch1 = TRACK_HUB(params, file(params.vcfs))
 	html = VERSION_TO_HTML(params,ch1.version)
 
-	pub_ch = Channel.empty().mix(ch1.vcf).mix(ch1.version).mix(html.html)
-	SIMPLE_PUBLISH_01(params, pub_ch.collect())
+//	pub_ch = Channel.empty().mix(ch1.vcf).mix(ch1.version).mix(html.html)
+//	SIMPLE_PUBLISH_01(params, pub_ch.collect())
 	}
 
 
 workflow TRACK_HUB {
-	input:
+	take:
 		meta
 		vcfs
 	main:
@@ -81,8 +82,8 @@ workflow TRACK_HUB {
 		c1_ch = COMPILE_JAVA(meta)
                 version_ch = version_ch.mix(c1_ch.version)
 		
-		scan_ch = SCAN_VCF( meta, vcfs.splitText().map{it.trim()} )
-		version_ch = version_ch.mix(scan_ch.version)
+//		scan_ch = SCAN_VCF( meta, vcfs.splitText().map{it.trim()} )
+//		version_ch = version_ch.mix(scan_ch.version)
 
 		version_ch = MERGE_VERSION(meta, "trackhub", "Trackhub", version_ch.collect())
 
@@ -93,6 +94,7 @@ workflow TRACK_HUB {
 
 
 process COMPILE_JAVA {
+	afterScript "rm -rf TMP"
 	input:
 		val(meta)	
 	output:
@@ -103,7 +105,7 @@ process COMPILE_JAVA {
 	hostname 1>&2
 	${moduleLoad("jvarkit")}
 
-cat << __EOF__ > Selector.java
+cat << __EOF__ > Minikit.java
 import java.nio.file.*;
 import java.io.*;
 import java.util.*;
@@ -159,6 +161,10 @@ private List<Locatable> parseBnd(final VariantContext ctx) {
 private int doWork(final List<String> args) throws Exception {
 try 
 	{
+	if(args.size()!=3) {
+		System.err.println("usage vcfname out.bed out.bedpe");
+		System.exit(-1);
+		}
 	String sampleName = null;
 	File out1 = null;
 	File out2 = null;
@@ -175,10 +181,10 @@ try
 	convertHash.put("MT","chrM");
 	convertHash.put("M","chrM");
 
-	
+	final String vcfName= args.ge(0);
 	try(PrintWriter pw1 = new PrintWriter(args.get(1)); PrintWriter pw2 = new PrintWriter(args.get(2))){
 	
-	try(final VCFIterator r = new VCFIteratorBuilder().open(Paths.get(System.in)) {
+	try(final VCFIterator r = new VCFIteratorBuilder().open(Paths.get(System.in))) {
 		final List<String> samples = r.getHeader().getSampleNamesInOrder();
 		final SAMSequenceDictionary dict = r.getHeader().getSequenceDictionary();
 		
@@ -297,12 +303,16 @@ try
 		}
 	pw1.flush();
 	pw2.flush();
-	}
+	} catch(final Throwable err) {
+        err.printStackTrace();
+        return -1;
+        }
+
 	
 	return 0;
 	}
-catch(final Throwable err) {
-	err.printStackTrace();
+catch(final Throwable err2) {
+	err2.printStackTrace();
 	return -1;	
 	}
 }
@@ -322,10 +332,9 @@ catch(Throwable err) {
 
 __EOF__
 
-mkdir TMP
-javac -d TMP -cp ${classpath}:. Minikit.java
+mkdir -p TMP
+javac -d TMP -cp \${JVARKIT_DIST}/vcffilterjdk.jar:. Minikit.java
 jar cvf minikit.jar -C TMP .
-rm -rf TMP
 	"""
 	}
 

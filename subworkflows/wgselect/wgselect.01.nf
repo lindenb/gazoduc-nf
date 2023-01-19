@@ -191,10 +191,21 @@ gazoduc.build("minRatioSingleton",0.2).
         put()
 
 gazoduc.build("wgselect_annot_method","vep").
-        description("how to annotate ? 'vep' or 'snpeff'").
+	description("how to annotate ? 'vep' or 'snpeff'").
+	menu("wgselect").
+	put()
+
+
+gazoduc.build("wgselect_cadd_tabix","").
+        description("path to tabix-indexed fill containing CADD data. (like ... CADD/v1.6/whole_genome_SNVs.tsv.gz )").
         menu("wgselect").
         put()
 
+gazoduc.build("wgselect_cadd_phred",-1.0).
+        description("Discard variants having CADD phred treshold < 'x'. Ignore if 'x' < 0.0 or --wgselect_cadd_tabix is not defined.").
+        menu("wgselect").
+        setDouble().
+        put()
 
 
 workflow WGSELECT_01 {
@@ -290,6 +301,8 @@ script:
 	def minGQsingleton = (meta.wgselect_minGQsingleton as int)
 	def minRatioSingleton  = (meta.wgselect_minRatioSingleton as double)
 	def annot_method = (meta.wgselect_annot_method)
+	def cadd_phred = (meta.wgselect_cadd_phred as double)
+	def cadd_tabix = (meta.wgselect_cadd_tabix)
 """
 hostname 1>&2
 ${moduleLoad("jvarkit bcftools bedtools java-jdk/8.0.112")}
@@ -549,7 +562,7 @@ echo "\${JAVA_HOME}"
 	mv TMP/jeter2.vcf TMP/jeter1.vcf
 
 
-	## polyx ###################################################################################"
+	## polyx ###################################################################################
 
 	cat <<- EOF >> version.xml
 	<properties>
@@ -570,6 +583,40 @@ echo "\${JAVA_HOME}"
 		echo '<entry key="enabled">false</entry></properties>' >> version.xml
 	fi
 	
+	## CADD ######################################################################################
+
+	cat <<- EOF >> version.xml
+	<properties>
+		<entry key="description">remove variant with low CADD phred score</entry>
+	EOF
+
+	if ${!cadd_tabix.isEmpty() && (cadd_phred as double) > 0}  ; then
+        	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/vcfcadd.jar \
+			--tabix "${cadd_tabix}" TMP/jeter1.vcf > TMP/jeter2.vcf
+	      	mv TMP/jeter2.vcf TMP/jeter1.vcf
+		
+		bcftools view -e 'INFO/CADD_PHRED < ${cadd_phred as double}' -O v -o TMP/jeter2.vcf TMP/jeter1.vcf
+
+		countIt "CADD" TMP/jeter1.vcf TMP/jeter2.vcf
+	      	mv TMP/jeter2.vcf TMP/jeter1.vcf
+
+		cat <<- EOF >> version.xml
+			<entry key="cadd.phred">${cadd_phred}</entry>
+			<entry key="cadd.file">${cadd_tabix}</entry>
+			<entry key="enabled">true</entry>
+		</properties>
+		EOF
+
+
+	else
+
+		echo '<entry key="enabled">false</entry></properties>' >> version.xml
+
+	fi
+
+
+
+
 	## ReadPosRankSum Test for site position within reads. It compares whether the positions of the reference and alternate alleles are different within the reads. 
 	## A value close to zero is best because it indicates there is little difference between the positions of the reference and alternate alleles in the reads.
 	cat <<- EOF >> version.xml

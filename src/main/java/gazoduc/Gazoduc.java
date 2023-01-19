@@ -627,6 +627,28 @@ public class Gazoduc {
 			if( this.findParameterByName(key).isPresent() ) continue;
 			System.err.println("key \"--"+key+"\" was defined in params but was not declared ["+yellow("WARNING")+"].");
 			}
+		if(getParams().containsKey(PARAM_GENOMES)) {
+			try {
+				final Genome genomes  = this.getGenomes();
+				 if(getParams().containsKey(PARAM_GENOME)) {
+					try {
+						this.getGenome();
+					 catch(Throwable err2) {
+		                                System.err.println("Cannot load genome ["+red("ERROR")+"]." + err2.getMessage());
+                		                is_valid = false;
+                                		}
+					}
+				}
+			catch(Throwable err) {
+				System.err.println("Cannot load XML file for genomes ["+red("ERROR")+"]." + err.getMessage());
+				is_valid = false;
+				}
+			}
+		else if(getParams().containsKey(PARAM_GENOME)) {
+			System.err.println("--"+PARAM_GENOME+" is defined but not --"+PARAM_GENOMES+" ["+yellow("WARNING")+"].");
+			}
+
+
 		if(!is_valid) {
 			throw new IllegalArgumentException("Validation of parameters failed");
 			}

@@ -6,9 +6,9 @@ endif
 
 ../doc/javadoc/index.html : ../lib/gazoduc.jar
 	mkdir -p $(dir $@)
-	javadoc -d $(dir $@) -sourcepath main/java gazoduc
+	javadoc -notimestamp -d $(dir $@) -sourcepath main/java gazoduc
 
-../lib/gazoduc.jar : ./main/java/gazoduc/Gazoduc.java
+../lib/gazoduc.jar : $(addsuffix .java,$(addprefix ./main/java/gazoduc/,Gazoduc Genome SAMSequenceDictionary Genomes SAMSequenceRecord))
 	mkdir -p $(dir $@)
 	rm -rf TMP
 	mkdir TMP
