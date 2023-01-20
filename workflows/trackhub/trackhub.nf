@@ -24,53 +24,63 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putGenomes()
+def gazo = gazoduc.Gazoduc.getInstance(params).putDefaults().putGenomes()
 
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
-include {runOnComplete;moduleLoad} from '../../modules/utils/functions.nf'
+include {escapeXml;runOnComplete;moduleLoad} from '../../modules/utils/functions.nf'
 include {SIMPLE_PUBLISH_01} from '../../modules/utils/publish.simple.01.nf'
 
 
-gazoduc.build("vcfs","NO_FILE").
+gazo.build("vcfs","NO_FILE").
 	desc(gazoduc.Gazoduc.DESC_VCF_LIST).
 	existingFile().
 	required().
 	put()
 
-gazoduc.build("with_bnd",true).
+gazo.build("with_bnd",true).
 	desc("include variants with INFO/SVTYPE=BND").
 	setBoolean().
 	put()
 
-gazoduc.build("min_sv_len",0).
+gazo.build("min_sv_len",0).
 	desc("min SV length").
 	setInteger().
 	put()
 
-gazoduc.build("max_sv_len",10_000_000).
+
+gazo.build("max_sv_len",10_000_000).
 	desc("max SV length").
 	setInteger().
 	put()
 
+gazo.build("description","").
+	desc("track description").
+	required().
+	notEmpty().
+	put()
+
+
+
 if( params.help ) {
-    gazoduc.usage().
+    gazo.usage().
 	name("trackhub").
 	desc("Build a UCSC track hub form a set of SV/CNV VCFs files.").
 	print();
     exit 0
 } else {
-   gazoduc.validate();
+   gazo.validate();
 }
 
 workflow {
 	ch1 = TRACK_HUB(params, file(params.vcfs))
 	html = VERSION_TO_HTML(params,ch1.version)
 
-//	pub_ch = Channel.empty().mix(ch1.vcf).mix(ch1.version).mix(html.html)
-//	SIMPLE_PUBLISH_01(params, pub_ch.collect())
+	pub_ch = Channel.empty().mix(ch1.tar).mix(ch1.version).mix(html.html)
+	SIMPLE_PUBLISH_01(params, pub_ch.collect())
 	}
 
+runOnComplete(workflow)
 
 workflow TRACK_HUB {
 	take:
@@ -85,22 +95,33 @@ workflow TRACK_HUB {
 		ci_ch = DOWNLOAD_CHROM_INFO(meta)
 		version_ch = version_ch.mix(ci_ch.version)
 
-		as_ch = MAKE_AS(meta)
-		version_ch = version_ch.mix(as_ch.version)
-
-		scan_ch = SCAN_VCF( meta, c1_ch.output, vcfs.splitText().map{file(it.trim())} )
+		scan_ch = SCAN_VCF( meta, c1_ch.output, Channel.fromPath(vcfs).splitText().map{file(it.trim())} )
 		version_ch = version_ch.mix(scan_ch.version)
 
-		bed_ch = MERGE_BED(meta, ci_ch.output , as_ch.sv_as, scan_ch.bed.collect())
+		types_ch = ALL_TYPES(meta, scan_ch.types.collect())
+		version_ch = version_ch.mix(types_ch.version)
+
+		each_type = types_ch.output.splitText().map{it.trim()}
+
+
+		all_outputs = Channel.empty()
+		bed_ch = MERGE_BED(meta, ci_ch.output , vcfs,  each_type.combine(scan_ch.bed).groupTuple() )
 		version_ch = version_ch.mix(bed_ch.version)
+		all_outputs = all_outputs.mix(bed_ch.output)
 	
-		inter_ch = MERGE_BED_PE(meta, ci_ch.output , as_ch.interact_as, scan_ch.bedpe.collect())
-		version_ch = version_ch.mix(inter_ch.version)
+		if ( meta.with_bnd as boolean ) {
+			inter_ch = MERGE_BED_PE(meta, ci_ch.output , vcfs, scan_ch.bedpe.collect())
+			version_ch = version_ch.mix(inter_ch.version)
+			all_outputs = all_outputs.mix(inter_ch.output)
+			}
+
+		track_ch = MAKE_TRACK(meta, all_outputs.collect() )
+		version_ch = version_ch.mix(track_ch.version)
 
 		version_ch = MERGE_VERSION(meta, "trackhub", "Trackhub", version_ch.collect())
-
 	emit:
 		version = version_ch
+		tar = track_ch.tar
 	}
 
 
@@ -133,8 +154,8 @@ import htsjdk.variant.vcf.*;
 public class Minikit {
 private static final boolean WITH_BND = ${meta.with_bnd as boolean};
 private final Map<String,String> convertHash = new HashMap<>();
-private static final int MIN_SV_LEN = ${meta.minLen};
-private static final int MAX_SV_LEN = ${meta.maxLen};
+private static final int MIN_SV_LEN = ${meta.min_sv_len};
+private static final int MAX_SV_LEN = ${meta.max_sv_len};
 
  
 private String convert(final String s) {
@@ -197,7 +218,11 @@ private int doWork(final List<String> args) {
 		convertHash.put("MT","chrM");
 		convertHash.put("M","chrM");
 
-		final String vcfName= args.get(0);
+		String vcfName= new File(args.get(0)).getName();
+		if(vcfName.endsWith(".vcf.gz")) vcfName=vcfName.substring(0, vcfName.length() -7);
+		if(vcfName.endsWith(".vcf")) vcfName=vcfName.substring(0, vcfName.length() -4);
+		if(vcfName.endsWith(".bcf")) vcfName=vcfName.substring(0, vcfName.length() -4);
+
 		try(PrintWriter pw1 = new PrintWriter(args.get(1)); PrintWriter pw2 = new PrintWriter(args.get(2))){
 			try(final VCFIterator r = new VCFIteratorBuilder().open(System.in)) {
 				final List<String> samples = r.getHeader().getSampleNamesInOrder();
@@ -266,6 +291,10 @@ private int doWork(final List<String> args) {
 							pw2.print(".");//target strand
 							pw2.print("\t");
 							pw2.print(ctx.isFiltered()?String.join("_",ctx.getFilters()):".");//filters
+							pw2.print("\t");
+							pw2.print(gt.getType().name());//gt type
+							pw2.print("\t");
+							pw2.print(vcfName);//vcf Name
 							pw2.println();
 
 							}
@@ -312,6 +341,10 @@ private int doWork(final List<String> args) {
 						pw1.print(svlen);//svlen
 						pw1.print("\t");
 						pw1.print(ctx.isFiltered()?String.join("_",ctx.getFilters()):".");//filters
+						pw1.print("\t");
+						pw1.print(gt.getType().name());//gt type
+						pw1.print("\t");
+						pw1.print(vcfName);//vcf Name
 						pw1.println();
 						}
 					} // end loop genotypes
@@ -361,6 +394,7 @@ cat << EOF > version.xml
 	<entry key="description">compile minikit</entry>
 	<entry key="javac.version">\$(javac -version 2>&1)</entry>
 </properties>
+EOF
 	"""
 	}
 
@@ -375,6 +409,7 @@ process SCAN_VCF {
 	output:
 		path("all.bed"),emit:bed
 		path("all.bedpe"),emit:bedpe
+		path("types.txt"),emit:types
 		path("version.xml"),emit:version
 	when:
 		true
@@ -386,7 +421,9 @@ process SCAN_VCF {
 	
 	bcftools view "${vcf}" |\
 		java -Djava.io.tmpdir=TMP -cp \${JVARKIT_DIST}/vcffilterjdk.jar:${minikit} Minikit "${vcf}" TMP/tmp.bed TMP/tmp.bedpe
-	
+
+	cut -f 10 TMP/tmp.bed | uniq | LC_ALL=C sort -T TMP | LC_ALL=C uniq > types.txt
+
 	LC_ALL=C sort -T TMP -k1,1 -k2,2n TMP/tmp.bed | uniq > all.bed
 	LC_ALL=C sort -T TMP -k1,1 -k2,2n TMP/tmp.bedpe | uniq > all.bedpe
 	###############################################################################
@@ -400,15 +437,17 @@ process SCAN_VCF {
 	}
 
 
+
+
 process DOWNLOAD_CHROM_INFO {
 executor "local"
 input:
 	val(meta)
 output:
-	path("chromInfo.txt.gz"),emit:output
+	path("chromInfo.txt"),emit:output
 	path("version.xml"),emit:version
 script:
-	def build = gazoduc.getGenome().getUcscName().orElse("undefined");
+	def build = gazo.getGenome().getDictionary().getUcscName().orElse("undefined");
 	def url = "https://hgdownload.cse.ucsc.edu/goldenpath/${build}/database/chromInfo.txt.gz"
 """
 wget -O "chromInfo.txt.gz" "${url}"
@@ -419,24 +458,66 @@ cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
 	<entry key="description">download chrominfo</entry>
-	<entry key="url">$(url)</entry>
+	<entry key="url">${url}</entry>
 </properties>
 EOF
 """
 }
 
+process ALL_TYPES {
+	tag "N=${L.size()}"
+        afterScript "rm -rf TMP"
+        input:
+                val(meta)
+                val(L)
+	output:
+		path("types.txt"),emit:output
+		path("version.xml"),emit:version
+	script:
+	"""
+	hostname 1>&2
+	mkdir -p TMP
 
-process MAKE_AS {
-executor "local"
-input:
-	val(meta)
-output:	
-	path("sv.as"),emit:sv_as
-	path("interact.as"),emit:interact_as
-	path("version.xml"),emit:output
-script:
-"""
-cat << EOF > sv.as
+cat << EOF | tr "\\n"  "\\0" > TMP/files.0
+${L.join("\n")}
+EOF
+
+	LC_ALL=C sort -T TMP  --files0-from=TMP/files.0 --merge | uniq > types.txt
+
+	###############################################################################
+	cat << EOF > version.xml
+	<properties id="${task.process}">
+		<entry key="name">${task.process}</entry>
+		<entry key="description">distinct SV types.</entry>
+	</properties>
+	EOF
+
+
+	"""
+	}
+
+process MERGE_BED {
+	tag "${type} N=${beds.size()}"
+	afterScript "rm -rf TMP"
+	input:
+		val(meta)
+		path(chrominfo)
+		path(vcfs)
+		tuple val(type),val(beds)
+	output:
+		path("output.tsv"),emit:output
+		path("version.xml"),emit:version
+	script:
+		def filename = file("${meta.prefix?:""}sv.${type}.bb")
+		def now =  new java.text.SimpleDateFormat("yyyy-MM-dd").format(new java.util.Date());
+
+	"""
+	hostname 1>&2
+	${moduleLoad("ucsc")}
+	set -o pipefail
+	mkdir -p TMP
+
+cat << EOF > TMP/schema.as
 table sv
 "Structural Variant"
     (
@@ -449,13 +530,106 @@ table sv
     uint thickStart;   "VCF/POS"
     uint thickEnd;   "VCF/END"
     uint reserved;        "rgb color of item"
-    string type; "Sv type"
+    string type; "Sv type=${type}"
     int svLen; "Sv Len"
     string filters; "FILTERs"
+    string gtType; "Genotype Type"
+    string vcfName; "VCF source"
     )
 EOF
 
-cat << EOF > interact.as
+cat << EOF | tr "\\n"  "\\0" > TMP/files.0
+${beds.join("\n")}
+EOF
+
+	LC_ALL=C sort -T TMP -k1,1 -k2,2n  --files0-from=TMP/files.0 --merge | awk -F '\t' '(\$10=="${type}")' |  uniq > TMP/all.bed
+
+	bedToBigBed -as=TMP/schema.as -type=bed9+5 TMP/all.bed "${chrominfo}" "${filename.name}"
+
+
+
+#################################################
+
+cat << EOF > trackDb.txt
+track ${filename.getBaseName()}
+bigDataUrl ${filename.name}
+shortLabel ${filename.getBaseName()}
+longLabel ${filename.getBaseName()} ${type} (${meta.min_sv_len} < SVLEN < ${meta.max_sv_len})
+type bigBed 9
+itemRgb "On"
+
+EOF
+
+#################################################
+
+cat << EOF > TMP/jeter.html
+<html>
+<body>
+<h1>${filename.name}</h1>
+<p>${type} (${meta.min_sv_len} < SVLEN < ${meta.max_sv_len}</p>
+<p>${escapeXml(meta.description)}</p>
+<h3>Schema</h3><pre>
+EOF
+
+cat TMP/schema.as >> TMP/jeter.html
+
+cat << EOF >> TMP/jeter.html
+</pre><h3>Sources</h3>
+<pre>
+EOF
+
+cat '${vcfs}' >> TMP/jeter.html
+
+cat << EOF >> TMP/jeter.html
+</pre>
+<hr/>
+<div>Author: Pierre Lindenbaum. Generated on ${now}</div>
+</body>
+</html>
+EOF
+
+mv -v TMP/jeter.html "${filename.getBaseName()}.html"
+
+
+
+	echo "\${PWD}/trackDb.txt\t\${PWD}/${filename.getBaseName()}.html\t\${PWD}/${filename.name}" > output.tsv
+
+
+	###############################################################################
+	cat << EOF > version.xml
+	<properties id="${task.process}">
+		<entry key="name">${task.process}</entry>
+		<entry key="type">${type}</entry>
+		<entry key="description">create SV.as</entry>
+	</properties>
+	EOF
+	"""
+	}
+
+
+
+
+process MERGE_BED_PE {
+	tag "N=${beds.size()}"
+	afterScript "rm -rf TMP"
+	input:
+		val(meta)
+		path(chrominfo)
+		path(vcfs)
+		val(beds)
+	output:
+		path("output.tsv"),emit:output
+		path("version.xml"),emit:version
+	script:
+		def filename = file("${meta.prefix?:""}interact.bb")
+		def now =  new java.text.SimpleDateFormat("yyyy-MM-dd").format(new java.util.Date());
+	"""
+	hostname 1>&2
+	${moduleLoad("ucsc/0.0.0")}
+	mkdir -p TMP
+
+
+cat << EOF > TMP/schema.as
 table interact
 "BND"
     (
@@ -478,160 +652,121 @@ table interact
     string targetName; "Identifier of target/upper/this region"
     string targetStrand; "Orientation of target/upper/this region: + or -.  Use . if not applicable"
     string filters; "FILTER column"
+    string gtType; "Genotype Type"
+    string vcfName; "VCF source"
     )
 EOF
 
-###############################################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="description">create SV.as</entry>
-</properties>
-"""
-}
+cat << EOF | tr "\\n"  "\\0" > TMP/files.0
+${beds.join("\n")}
+EOF
 
+	LC_ALL=C sort -T TMP -k1,1 -k2,2n --merge --files0-from=TMP/files.0 | uniq > TMP/all.bedpe
 
-process MERGE_BED {
-	tag "${name} ${beds.size()}"
-	input:
-		val(meta)
-		path(chrominfo)
-		path(sv_as)
-		val(beds)
-	output:
-		path("${meta.prefix?:""}sv.bb"),emit:bb
-		path("sample.bed"),emit:bed
-		path("version.xml"),emit:version
-	script:
-	"""
-	hostname 1>&2
-	${moduleLoad("ucsc")}
-	set -o pipefail
-	mkdir -p TMP
+	bedToBigBed -as=TMP/schema.as -type=bed5+16 TMP/all.bedpe "${chrominfo}"  "${meta.prefix?:""}interact.bb"
 
-	LC_ALL=C sort -T TMP -k1,1 -k2,2n --merge ${beds.join(" ")} | uniq > all.bed
-
-	bedToBigBed -as=${sv_as} -type=bed9+3 all.bed "${chrominfo}" "${meta.prefix?:""}sv.bb"
-
-	cut -f 1-4 all.bed > sample.bed
-	rm all.bed
-	###############################################################################
-	cat << EOF > version.xml
-	<properties id="${task.process}">
-		<entry key="name">${task.process}</entry>
-		<entry key="description">create SV.as</entry>
-	</properties>
-	"""
-	}
-
-
-
-
-process MERGE_BED_PE {
-	tag "${name} ${beds.size()}"
-	executor "ccrt"
-	maxForks 80
-	input:
-		file chrominfo from chrom_info
-		file ref from reference
-		file inter_as from interact_as
-		set name,beds from track_bedpes.groupTuple()
-	output:
-		set name,file("${name}.i.bb") into track_bedpe
-	script:
-	"""
-	module load ucsc-tools
-	
-
-	LC_ALL=C sort -T . -k1,1 -k2,2n --merge ${beds.join(" ")} | uniq > all.bedpe
-
-	bedToBigBed -as=${inter_as} -type=bed5+14 all.bedpe "${chrominfo}"  ${name}.i.bb
-
-	rm all.bedpe
-	"""
-	}
-
-process MERGE_TRACK {
-	tag "${bed.name} ${bedpe.name}"
-	executor "local"
-
-	input:
-		val(meta)
-		path(bed)
-		path(bedpe)
-	output:
-		tuple path("trackDb.txt"),path(bed),path(bedpe)
-	script:
-		def name="HELLO"
-	"""
-	hostname 1>&2
-	${moduleLoad("ucsc-tools")}
 
 
 cat << EOF > trackDb.txt
 
-track ${name}
-bigDataUrl ${bed.name}
-shortLabel ${name}
-longLabel ${name} CNV, DEL, INV, etc... (${meta.minLen} < SVLEN < ${meta.maxLen})
-type bigBed 9
-itemRgb "On"
-
-EOF
-
-if [ "${meta.with_bnd}" == "true" ] ; then
-
-cat << EOF >> trackDb.txt
-track ${name}.bnd
-bigDataUrl ${bedpe.name}
-shortLabel ${name}.bnd
-longLabel ${name} BND
+track ${filename.getBaseName()}
+bigDataUrl ${filename.name}
+shortLabel ${filename.getBaseName()}
+longLabel ${filename.getBaseName()} BND
 type bigInteract
 itemRgb "On"
 
 EOF
-fi
 
+
+#################################################
+
+cat << EOF > TMP/jeter.html
+<html>
+<h1>${filename.name}</h1>
+<p>BND</p>
+<p>${escapeXml(meta.description)}</p>
+<h3>Schema</h3><pre>
+EOF
+
+cat "TMP/schema.as" >> TMP/jeter.html
+
+cat << EOF >> TMP/jeter.html
+</pre><h3>Sources</h3>
+<pre>
+EOF
+
+cat '${vcfs}' >> TMP/jeter.html
+
+cat << EOF >> TMP/jeter.html
+</pre>
+<hr/>
+<div>Author: Pierre Lindenbaum. Generated on ${now}</div>
+</html>
+EOF
+
+
+mv -v "TMP/jeter.html" "${filename.getBaseName()}.html"
+
+
+	echo "\${PWD}/trackDb.txt\t\${PWD}/${filename.getBaseName()}.html\t\${PWD}/${filename.name}" > output.tsv
+
+
+	###############################################################################
+	cat << EOF > version.xml
+	<properties id="${task.process}">
+		<entry key="name">${task.process}</entry>
+	</properties>
+	EOF
 	"""
 	}
 
+process MAKE_TRACK {
+	tag "N=${L.size()}"
+	//afterScript "rm -rf TMP"
+	input:
+		val(meta)
+		val(L)
+	output:
+		path("${meta.prefix?:""}hub.tar.gz"),emit:tar
+		path("version.xml"),emit:version
+	script:
+		def build = gazo.getGenome().getDictionary().getUcscName().orElse("undefined")
+		def prefix= meta.prefix?:""
+		def now =  new java.text.SimpleDateFormat("yyyy-MM-dd").format(new java.util.Date());
+	"""
+	hostname 1>&2
+	${moduleLoad("ucsc/0.0.0")}
+	mkdir -p "TMP/${build}"
+	set -x
 
-process MAKE_HUB {
-tag "N=${L.size()}"
-input:
-	val(meta)
-	val(L)
-output:
-	path("${meta.prefix?:""}hub.tar.gz"),emit:zip
-	path("version.xml"),emit:version
-script:
-	def build = gazoduc.getGenome().getDictionary().getUcscName().orElse("build");
-	def prefix = meta.prefix?:""
-"""
-cat << EOF > jeter.csv
-${L.join("\n")}
+	cat ${L.join(" ")} > TMP/jeter.list
+
+#################################################
+
+cat << EOF > TMP/genomes.txt
+genome ${build}
+trackDb ${build}/trackDb.txt
 EOF
 
-mkdir -p "${prefix}hub/${build}"
+#################################################
 
-cut -d, -f1 jeter.csv | while read F
-do
-	cat "\${F}" >> ${prefix}hub/${build}/trackDb.txt
-done
+cat << EOF > TMP/hub.html
+<html>
+<head><title>${prefix}hub</title></head>
+<body>
+<h1>${prefix}hub</h1>
+<p>${escapeXml(meta.description)}</p>
+<hr/>
+<div>Author: Pierre Lindenbaum. Generated on ${now}</div>
+</body>
+</html>
+EOF
 
-cut -d, -f2 jeter.csv | while read F
-do
-	ln -s "\${F}" ${prefix}hub/${build}/
-done
+#################################################
 
-if ${meta.with_bnd as boolean} ; then
-   cut -d, -f3 jeter.csv | while read F; do ln -s "\${F}" ${params.prefix}hub/${build}/ ; done
-fi
-
-rm jeter.csv
-
-cat << EOF > ${prefix}hub/hub.txt
-hub ${params.prefix}hub
+cat << EOF > TMP/hub.txt
+hub ${prefix}hub
 shortLabel ${prefix}hub
 longLabel ${prefix}hub
 genomesFile genomes.txt
@@ -639,25 +774,29 @@ email plindenbaum@yahoo.fr
 descriptionUrl hub.html 
 EOF
 
-cat << EOF > ${params.prefix}hub/genomes.txt
-genome ${build}
-trackDb ${build}/trackDb.txt
+touch TMP/${build}/trackDb.txt
+
+cut -f 1 TMP/jeter.list | xargs -L 50 cat  >> TMP/${build}/trackDb.txt
+
+cut -f 2 TMP/jeter.list	| xargs -L1 -I '{}' cp -v '{}' TMP/${build}/
+cut -f 3 TMP/jeter.list	| xargs -L1 -I '{}' cp -v '{}' TMP/${build}/
+
+#################################################
+
+find TMP -type f 1>&2
+
+hubCheck "\${PWD}/TMP/hub.txt"
+
+rm TMP/jeter.list
+mv -v TMP "${prefix}hub"
+
+tar cvfz "${prefix}hub.tar.gz" "${prefix}hub"
+
+###############################################################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+	<entry key="name">${task.process}</entry>
+</properties>
 EOF
-
-cat << EOF > ${params.prefix}hub/hub.html
-<html>
-<head><title>${params.prefix}hub</title></head>
-<body>No description available</body>
-</html>
-EOF
-
-module load ucsc-tools
- 
-hubCheck ${prefix}hub/hub.txt || echo "Warning validation failed"
-
-tar chvfz ${prefix}hub.tar.gz "${prefix}hub"
-
-rm -rf ${prefix}hub
 """
 }
-
