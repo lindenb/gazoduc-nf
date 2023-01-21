@@ -27,6 +27,7 @@ import java.util.*;
 import java.util.regex.*;
 import java.io.*;
 import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.function.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -46,7 +47,8 @@ public class Gazoduc {
 	public static final String DESC_INDEXED_BAM = "The BAM must be indexed with 'samtools index' (an associated .bai must be present) ";
 	public static final String DESC_INDEXED_VCF = "The VCF must be indexed with 'bcftools index' (an associated .tbi/.csi must be present) ";
 	public static final String DESC_VCF_OR_VCF_LIST = "Path to a VCF file or a file with the .list' suffix containing the full path to several VCFs file. " + DESC_INDEXED_VCF  ;
-	public static final String DESC_VCF_LIST = "File with the .list' suffix containing the full path to several VCFs file. " + DESC_INDEXED_VCF  ;
+	public static final String DESC_VCF_LIST = "File with the .list' suffix, containing the full path to several VCFs file. " + DESC_INDEXED_VCF  ;
+	public static final String DESC_BAM_OR_CRAM_LIST = "File with the .list' suffix, containing the full path to several BAMs ir CRAM file. " + DESC_INDEXED_BAM  ;
 	public static final String DESC_JVARKIT_PEDIGREE = "Jvarkit formatted pedigree. Tab delimited, no header, FAM/ID/FATHER/MOTHER/SEX/PHENOTYPE";
 	
 	private static Gazoduc INSTANCE = null;
@@ -205,6 +207,10 @@ public class Gazoduc {
 			return file(F->F.exists() && F.toString().startsWith(File.separator),"File Should be full path");
 			}
 		
+		/**
+		 * check target is a reference is indexed with BWA
+		 * @return this
+		 */
 		public Parameter bwaReference() {
 			return desc("path to a reference indexed with bwa").
 				file(F->{
@@ -301,26 +307,26 @@ public class Gazoduc {
 				});
 			}
 
-
+		/** add a validator to check the value is a {@link java.lang.Integer} */
 		public Parameter setInteger() {
 			if(this.argName.equals(DEFAULT_VALUE)) argName("integer");
 			return setConsummer(S->Integer.parseInt(S),"Value should be an integer");
 			}
-
+		/** alias of setInteger */
 		public final Parameter setInt() {
 			return setInteger();
 			}
-
+		/** add a validator to check the value is a {@link java.lang.Long} */
 		public Parameter setLong() {
 			if(this.argName.equals(DEFAULT_VALUE)) argName("long");
 			return setConsummer(S->Long.parseLong(S),"Value should be a long integer.");
 			}
-
+		/** add a validator to check the value is a {@link java.lang.Double} */
 		public Parameter setDouble() {
 			if(this.argName.equals(DEFAULT_VALUE)) argName("double");
 			return setConsummer(S->Double.parseDouble(S),"Value should be a floating value.");
 			}
-
+		/** add a validator to check the value is a {@link URL} */
 		public Parameter setURL() {
 			if(this.argName.equals(DEFAULT_VALUE)) argName("url");
 			return setConsummer(S->{
@@ -423,25 +429,40 @@ public class Gazoduc {
 	public final Parameter build(final String key, final Object value) {
 		return make(key,value);
 		}
-	/** alias of make */
+	/** 
+	creates a new entry for a Parameter but don't insert it in the  <code>params</code> object. 
+	 @param key name for this parameter
+	 @param value value for this parameter
+	 @return the new parameter
+	 */
 	public final Parameter param(final String key, final Object value) {
 		return make(key,value);
 		}
 
-
+	/** 
+	 alias of make with null value
+	 @param key for this parameter
+	 @return the new parameter
+	 */
 	public Parameter make(final String key) {
 		return make(key,null);
 		}
-	/** alias of make */
+	/** alias of make
+	 @return the new parameter
+	 */
 	public final Parameter build(final String key) {
 		return make(key);
 		}
-	/** alias of make */
+	/** alias of make
+	 @return the new parameter
+	 */
 	public final Parameter param(final String key) {
 		return make(key);
 		}
 	
-	/* find parameter by name */
+	/** find parameter by name
+	 @return an {@link Optional} Parameter 
+	 */
 	public Optional<Parameter> findParameterByName(final String key) {
 		return this.parameters.stream().filter(P->P.hasKey(key) ).findFirst();
 		}
@@ -463,6 +484,10 @@ public class Gazoduc {
 		return this;
 		}
 
+	/**
+	 * put the default parameters in the context. Default parameters are: <code>--help</code>, <code>--prefix</code> and  <code>--publishDir</code>
+	 * @return this
+	 */
 	public Gazoduc putDefaults() {
 		make("help",false).desc("Display help for this workflow and exit").menu("Help").setBoolean().put();
 		make("prefix","").argName("string").desc("set a suffix for the files generated for this workflow").menu("Output").notEmpty().regex("[A-Z0-9a-z_\\.\\-]+").put();
@@ -477,6 +502,10 @@ public class Gazoduc {
 		return this;
 		}
 	
+	/**
+	 * put the default parameter  <code>>--reference</code> in the context
+	 * @return this
+	 */
 	public Gazoduc putReference() {
 		reference().put();
 		return this;
@@ -490,7 +519,10 @@ public class Gazoduc {
 		}
 
 
-
+    /**
+   	 creates a parameter for <code>--reference</code> but doesn't put in the context
+     @return the pararemeter for reference
+     */
 	public Parameter reference() {
 		return make(PARAM_REFERENCE,false).
 			argName("path to fasta").

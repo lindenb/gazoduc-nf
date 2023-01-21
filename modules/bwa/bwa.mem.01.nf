@@ -52,7 +52,7 @@ script:
 hostname 1>&2
 ${moduleLoad("samtools bwa")}
 set -o pipefail
-mkdir TMP
+mkdir -p TMP
 
 bwa mem ${is_interleaved?"-p":""} -t ${task.cpus} -R '@RG\\tID:${ID}\\tSM:${sample}\\tLB:${LB}.R0\\tCN:${CN}\\tPL:${PL}' "${reference}" "${R1}" ${isBlank(R2)?"":"\"${R2}\""} |\
 	samtools view -O BAM -o TMP/jeter.bam

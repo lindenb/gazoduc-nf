@@ -22,6 +22,22 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+
+def gazoduc = gazoduc.Gazoduc.getInstance()
+
+gazoduc.build("with_bqsr", true).
+	desc("run gatk BQSR on bam").
+	setBoolean().
+	menu("mapping").
+	put()
+
+gazoduc.build("bqsr_cluster_method","--size 50mb ").
+	desc("How to group contigs with jvarkit bedcluster for applying GATK BQSR").
+	menu("mapping").
+	notEmpty().
+	put()
+
+
 include {BWA_MEM_01} from '../../modules/bwa/bwa.mem.01.nf'
 include {SAMBAMBA_MARKDUP_01} from '../../modules/sambamba/sambamba.markdup.01.nf'
 include {SAMTOOLS_MERGE_01} from '../../modules/samtools/samtools.merge.01.nf'
@@ -30,7 +46,7 @@ include {MERGE_VERSION as MERGE_VERSION} from '../../modules/version/version.mer
 include {GATK4_BASE_RECALIBRATOR_01} from '../../modules/gatk/gatk4.base.recalibration.01.nf'
 include {GATK4_GATHER_BQSR_01} from '../../modules/gatk/gatk4.gather.bqsr.01.nf'
 include {GATK4_APPLY_BQSR_01} from '../../modules/gatk/gatk4.apply.bqsr.01.nf'
-include {moduleLoad;isBlank;parseBoolean} from '../../modules/utils/functions.nf'
+include {moduleLoad;isBlank;parseBoolean;getVersionCmd} from '../../modules/utils/functions.nf'
 
 workflow MAP_BWA_01 {
 	take:
@@ -98,16 +114,16 @@ output:
 	path("bam.contigs.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
-	def recalGroup = meta.recalGroup?:"50mb"
+
 """
 hostname 1>&2
 ${moduleLoad("samtools jvarkit")}
 set -o pipefail
-mkdir TMP
+mkdir -p TMP
 
 samtools idxstats "${bam}" |\
 	 awk -F '\t' '(\$3!=0 && \$1!="*") {printf("%s\t0\t%s\\n",\$1,\$2);}' |\
-	 java -jar \${JVARKIT_DIST}/bedcluster.jar --reference "${reference}" -o TMP --size "${meta.recalGroup?:"50mb"}"
+	 java -jar \${JVARKIT_DIST}/bedcluster.jar --reference "${reference}" -o TMP  ${meta.bqsr_cluster_method?:""}
 	 
 	 echo -e 'sample\tbam\tbed\trecalibration_vcfs\treference' > bam.contigs.tsv
 	 find \${PWD}/TMP -type f -name "*.bed" |\
@@ -118,7 +134,8 @@ cat << EOF > version.xml
 <properties id="${task.process}">
        	<entry key="name">${task.process}</entry>
         <entry key="description">bam to bed</entry>
-        <entry key="recalGroup">${recalGroup}</entry>
+        <entry key="recalGroup">${meta.bqsr_cluster_method}</entry>
+        <entry key="versions">${getVersionCmd("samtools jvarkit/bedcluster awk")}</entry>
 </properties>
 EOF
 """
