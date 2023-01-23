@@ -161,25 +161,29 @@ extends java.lang.Object</pre>
 </tr>
 <tr class="altColor">
 <td class="colFirst"><code>static java.lang.String</code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#DESC_INDEXED_BAM">DESC_INDEXED_BAM</a></span></code>&nbsp;</td>
+<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#DESC_BAM_OR_CRAM_LIST">DESC_BAM_OR_CRAM_LIST</a></span></code>&nbsp;</td>
 </tr>
 <tr class="rowColor">
+<td class="colFirst"><code>static java.lang.String</code></td>
+<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#DESC_INDEXED_BAM">DESC_INDEXED_BAM</a></span></code>&nbsp;</td>
+</tr>
+<tr class="altColor">
 <td class="colFirst"><code>static java.lang.String</code></td>
 <td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#DESC_INDEXED_FASTA">DESC_INDEXED_FASTA</a></span></code>&nbsp;</td>
 </tr>
-<tr class="altColor">
+<tr class="rowColor">
 <td class="colFirst"><code>static java.lang.String</code></td>
 <td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#DESC_INDEXED_VCF">DESC_INDEXED_VCF</a></span></code>&nbsp;</td>
 </tr>
-<tr class="rowColor">
+<tr class="altColor">
 <td class="colFirst"><code>static java.lang.String</code></td>
 <td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#DESC_JVARKIT_PEDIGREE">DESC_JVARKIT_PEDIGREE</a></span></code>&nbsp;</td>
 </tr>
-<tr class="altColor">
+<tr class="rowColor">
 <td class="colFirst"><code>static java.lang.String</code></td>
 <td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#DESC_VCF_LIST">DESC_VCF_LIST</a></span></code>&nbsp;</td>
 </tr>
-<tr class="rowColor">
+<tr class="altColor">
 <td class="colFirst"><code>static java.lang.String</code></td>
 <td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#DESC_VCF_OR_VCF_LIST">DESC_VCF_OR_VCF_LIST</a></span></code>&nbsp;</td>
 </tr>
@@ -213,7 +217,9 @@ extends java.lang.Object</pre>
 </tr>
 <tr id="i2" class="altColor">
 <td class="colFirst"><code>java.util.Optional&lt;<a href="../gazoduc/Gazoduc.Parameter.html" title="class in gazoduc">Gazoduc.Parameter</a>&gt;</code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#findParameterByName-java.lang.String-">findParameterByName</a></span>(java.lang.String&nbsp;key)</code>&nbsp;</td>
+<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#findParameterByName-java.lang.String-">findParameterByName</a></span>(java.lang.String&nbsp;key)</code>
+<div class="block">find parameter by name</div>
+</td>
 </tr>
 <tr id="i3" class="rowColor">
 <td class="colFirst"><code><a href="../gazoduc/Genome.html" title="class in gazoduc">Genome</a></code></td>
@@ -235,7 +241,9 @@ extends java.lang.Object</pre>
 </tr>
 <tr id="i7" class="rowColor">
 <td class="colFirst"><code><a href="../gazoduc/Gazoduc.Parameter.html" title="class in gazoduc">Gazoduc.Parameter</a></code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#make-java.lang.String-">make</a></span>(java.lang.String&nbsp;key)</code>&nbsp;</td>
+<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#make-java.lang.String-">make</a></span>(java.lang.String&nbsp;key)</code>
+<div class="block">alias of make with null value</div>
+</td>
 </tr>
 <tr id="i8" class="altColor">
 <td class="colFirst"><code><a href="../gazoduc/Gazoduc.Parameter.html" title="class in gazoduc">Gazoduc.Parameter</a></code></td>
@@ -252,7 +260,7 @@ extends java.lang.Object</pre>
 <td class="colFirst"><code><a href="../gazoduc/Gazoduc.Parameter.html" title="class in gazoduc">Gazoduc.Parameter</a></code></td>
 <td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#param-java.lang.String-java.lang.Object-">param</a></span>(java.lang.String&nbsp;key,
      java.lang.Object&nbsp;value)</code>
-<div class="block">alias of make</div>
+<div class="block">creates a new entry for a Parameter but don't insert it in the  <code>params</code> object.</div>
 </td>
 </tr>
 <tr id="i11" class="rowColor">
@@ -261,7 +269,9 @@ extends java.lang.Object</pre>
 </tr>
 <tr id="i12" class="altColor">
 <td class="colFirst"><code><a href="../gazoduc/Gazoduc.html" title="class in gazoduc">Gazoduc</a></code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#putDefaults--">putDefaults</a></span>()</code>&nbsp;</td>
+<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#putDefaults--">putDefaults</a></span>()</code>
+<div class="block">put the default parameters in the context.</div>
+</td>
 </tr>
 <tr id="i13" class="rowColor">
 <td class="colFirst"><code><a href="../gazoduc/Gazoduc.html" title="class in gazoduc">Gazoduc</a></code></td>
@@ -273,11 +283,15 @@ extends java.lang.Object</pre>
 </tr>
 <tr id="i15" class="rowColor">
 <td class="colFirst"><code><a href="../gazoduc/Gazoduc.html" title="class in gazoduc">Gazoduc</a></code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#putReference--">putReference</a></span>()</code>&nbsp;</td>
+<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#putReference--">putReference</a></span>()</code>
+<div class="block">put the default parameter  <code>--reference</code> in the context</div>
+</td>
 </tr>
 <tr id="i16" class="altColor">
 <td class="colFirst"><code><a href="../gazoduc/Gazoduc.Parameter.html" title="class in gazoduc">Gazoduc.Parameter</a></code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#reference--">reference</a></span>()</code>&nbsp;</td>
+<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#reference--">reference</a></span>()</code>
+<div class="block">creates a parameter for <code>--reference</code> but doesn't put in the context</div>
+</td>
 </tr>
 <tr id="i17" class="rowColor">
 <td class="colFirst"><code><a href="../gazoduc/Gazoduc.UsageBuilder.html" title="class in gazoduc">Gazoduc.UsageBuilder</a></code></td>
@@ -400,6 +414,19 @@ extends java.lang.Object</pre>
 </dl>
 </li>
 </ul>
+<a name="DESC_BAM_OR_CRAM_LIST">
+<!--   -->
+</a>
+<ul class="blockList">
+<li class="blockList">
+<h4>DESC_BAM_OR_CRAM_LIST</h4>
+<pre>public static final&nbsp;java.lang.String DESC_BAM_OR_CRAM_LIST</pre>
+<dl>
+<dt><span class="seeLabel">See Also:</span></dt>
+<dd><a href="../constant-values.html#gazoduc.Gazoduc.DESC_BAM_OR_CRAM_LIST">Constant Field Values</a></dd>
+</dl>
+</li>
+</ul>
 <a name="DESC_JVARKIT_PEDIGREE">
 <!--   -->
 </a>
@@ -450,7 +477,14 @@ extends java.lang.Object</pre>
 <h4>param</h4>
 <pre>public final&nbsp;<a href="../gazoduc/Gazoduc.Parameter.html" title="class in gazoduc">Gazoduc.Parameter</a>&nbsp;param(java.lang.String&nbsp;key,
                                      java.lang.Object&nbsp;value)</pre>
-<div class="block">alias of make</div>
+<div class="block">creates a new entry for a Parameter but don't insert it in the  <code>params</code> object.</div>
+<dl>
+<dt><span class="paramLabel">Parameters:</span></dt>
+<dd><code>key</code> - name for this parameter</dd>
+<dd><code>value</code> - value for this parameter</dd>
+<dt><span class="returnLabel">Returns:</span></dt>
+<dd>the new parameter</dd>
+</dl>
 </li>
 </ul>
 <a name="make-java.lang.String-">
@@ -460,6 +494,13 @@ extends java.lang.Object</pre>
 <li class="blockList">
 <h4>make</h4>
 <pre>public&nbsp;<a href="../gazoduc/Gazoduc.Parameter.html" title="class in gazoduc">Gazoduc.Parameter</a>&nbsp;make(java.lang.String&nbsp;key)</pre>
+<div class="block">alias of make with null value</div>
+<dl>
+<dt><span class="paramLabel">Parameters:</span></dt>
+<dd><code>key</code> - for this parameter</dd>
+<dt><span class="returnLabel">Returns:</span></dt>
+<dd>the new parameter</dd>
+</dl>
 </li>
 </ul>
 <a name="build-java.lang.String-">
@@ -470,6 +511,10 @@ extends java.lang.Object</pre>
 <h4>build</h4>
 <pre>public final&nbsp;<a href="../gazoduc/Gazoduc.Parameter.html" title="class in gazoduc">Gazoduc.Parameter</a>&nbsp;build(java.lang.String&nbsp;key)</pre>
 <div class="block">alias of make</div>
+<dl>
+<dt><span class="returnLabel">Returns:</span></dt>
+<dd>the new parameter</dd>
+</dl>
 </li>
 </ul>
 <a name="param-java.lang.String-">
@@ -480,6 +525,10 @@ extends java.lang.Object</pre>
 <h4>param</h4>
 <pre>public final&nbsp;<a href="../gazoduc/Gazoduc.Parameter.html" title="class in gazoduc">Gazoduc.Parameter</a>&nbsp;param(java.lang.String&nbsp;key)</pre>
 <div class="block">alias of make</div>
+<dl>
+<dt><span class="returnLabel">Returns:</span></dt>
+<dd>the new parameter</dd>
+</dl>
 </li>
 </ul>
 <a name="findParameterByName-java.lang.String-">
@@ -489,6 +538,11 @@ extends java.lang.Object</pre>
 <li class="blockList">
 <h4>findParameterByName</h4>
 <pre>public&nbsp;java.util.Optional&lt;<a href="../gazoduc/Gazoduc.Parameter.html" title="class in gazoduc">Gazoduc.Parameter</a>&gt;&nbsp;findParameterByName(java.lang.String&nbsp;key)</pre>
+<div class="block">find parameter by name</div>
+<dl>
+<dt><span class="returnLabel">Returns:</span></dt>
+<dd>an <code>Optional</code> Parameter</dd>
+</dl>
 </li>
 </ul>
 <a name="putGenomes--">
@@ -507,6 +561,11 @@ extends java.lang.Object</pre>
 <li class="blockList">
 <h4>putDefaults</h4>
 <pre>public&nbsp;<a href="../gazoduc/Gazoduc.html" title="class in gazoduc">Gazoduc</a>&nbsp;putDefaults()</pre>
+<div class="block">put the default parameters in the context. Default parameters are: <code>--help</code>, <code>--prefix</code> and  <code>--publishDir</code></div>
+<dl>
+<dt><span class="returnLabel">Returns:</span></dt>
+<dd>this</dd>
+</dl>
 </li>
 </ul>
 <a name="putReference--">
@@ -516,6 +575,11 @@ extends java.lang.Object</pre>
 <li class="blockList">
 <h4>putReference</h4>
 <pre>public&nbsp;<a href="../gazoduc/Gazoduc.html" title="class in gazoduc">Gazoduc</a>&nbsp;putReference()</pre>
+<div class="block">put the default parameter  <code>--reference</code> in the context</div>
+<dl>
+<dt><span class="returnLabel">Returns:</span></dt>
+<dd>this</dd>
+</dl>
 </li>
 </ul>
 <a name="putGnomad--">
@@ -534,6 +598,11 @@ extends java.lang.Object</pre>
 <li class="blockList">
 <h4>reference</h4>
 <pre>public&nbsp;<a href="../gazoduc/Gazoduc.Parameter.html" title="class in gazoduc">Gazoduc.Parameter</a>&nbsp;reference()</pre>
+<div class="block">creates a parameter for <code>--reference</code> but doesn't put in the context</div>
+<dl>
+<dt><span class="returnLabel">Returns:</span></dt>
+<dd>the pararemeter for reference</dd>
+</dl>
 </li>
 </ul>
 <a name="putCondaEnv--">

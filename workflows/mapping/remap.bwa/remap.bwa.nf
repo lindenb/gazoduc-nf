@@ -48,6 +48,11 @@ gazoduc.build("reference_out", "NO_FILE").
 	put()
 
 
+gazoduc.build("bed_in", "NO_FILE").
+	desc("only extract reads from this BED file").
+	put()
+
+
 
 include {REMAP_BWA_01} from '../../../subworkflows/mapping/remap.bwa.01.nf'
 include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
@@ -67,7 +72,7 @@ if( params.help ) {
 
 
 workflow {
-	remap_ch = REMAP_BWA_01(params,params.reference_in,params.reference_out,params.bams)
+	remap_ch = REMAP_BWA_01(params,params.reference_in,params.reference_out,params.bams, file(params.bed_in))
 	//html = VERSION_TO_HTML(params,remap_ch.version)	
 	}
 

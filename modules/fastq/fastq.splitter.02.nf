@@ -62,16 +62,18 @@ class SplitFile {
 		string filename;
 		gzFile out;
 		long count;
-	SplitFile(const char* prefix,int side,int id,level):filename(prefix),out(NULL),count(0L) {
-	        char mode[5];
+		int level;
+	SplitFile(const char* prefix,int side,int id,int level):filename(prefix),out(NULL),count(0L),level(level) {
 		char tmp[30];
 		FILE* exists=NULL;
+
+		sprintf(tmp,".%05d",(id+1));
+		filename.append(tmp);
+
 		if(side==1 || side==2) {
 			filename.append(side==1?".R1":".R2");
 			}		
-
-		sprintf(tmp,".%05d.fastq.gz",(id+1));
-		filename.append(tmp);
+		filename.append(".fastq.gz");
 		
 		exists = fopen(filename.c_str(),"rb");
 		if(exists!=NULL) {
@@ -79,17 +81,20 @@ class SplitFile {
 			fprintf(stderr,"File already exists %s.\\n", filename.c_str() );
 			exit(EXIT_FAILURE);
 			}
-
-		sprintf(mode,"wb%d",level);
-		this->.out = gzopen(this->filename.c_str(),mode);
+		}
+	void open() {
+		if(this->out!=NULL) return;
+	        char mode[5];
+		sprintf(mode,"wb%d",this->level);
+		this->out = gzopen(this->filename.c_str(),mode);
 		if(out==NULL) {
 			fprintf(stderr,"Cannot open %s for writing.(%s)\\n", this->filename.c_str(), strerror(errno));
-			return EXIT_FAILURE;
+			exit(EXIT_FAILURE);
 			}
-
 		}
+
 	void close() {
-		if(this->OUT==NULL) return;
+		if(this->out==NULL) return;
 		fprintf(stderr,"[LOG] closing \\"%s\\" N=%ld.\\n",this->filename.c_str(),this->count);
 		gzclose(this->out);
 		this->out = NULL;
@@ -101,6 +106,7 @@ class SplitFile {
 #define GZWRITE(X) gzwrite(this->out,(void*)(X.s),X.l)
 
 	void write(kseq_t* ks1) {
+		this->open();
 		gzputc(this->out,'@');
 		GZWRITE(ks1->name);
 		gzputc(this->out,'\\n');
@@ -110,7 +116,7 @@ class SplitFile {
 		gzputc(this->out,'\\n');
 		GZWRITE(ks1->qual);
 		if(gzputc(this->out,'\\n')==-1) {
-			fprintf(stderr,"[split2file]I/O error %s\\n",filename->c_str());
+			fprintf(stderr,"[split2file]I/O error %s\\n",filename.c_str());
 			exit(EXIT_FAILURE);
 			}
 		this->count++;
@@ -127,7 +133,7 @@ public:
 	Reader(const char* fname):ks(NULL),filename(fname==NULL?"<STDIN>":fname) {
 		fp1 =  (fname == NULL || strcmp(fname,"-")==0)
 			? gzdopen(fileno(stdin), "r") 
-			: gzopen(fname], "r");
+			: gzopen(fname, "r");
 		if(fp1==NULL) {
 			fprintf(stderr,"Cannot open %s .(%s)\\n",filename.c_str(),strerror(errno));
 			exit(EXIT_FAILURE);
@@ -159,7 +165,7 @@ class AbstractEnd {
 class SingleEnd: public AbstractEnd {
 	public:
 		SplitFile* sf;
-		SingleEnd(const char* prefix,int id,level) {
+		SingleEnd(const char* prefix,int id,int level) {
 			sf = new SplitFile(prefix,-1,id,level);
 			}
 		virtual ~SingleEnd() {
@@ -172,7 +178,7 @@ class PairedEnd: public AbstractEnd {
 	public:
 		SplitFile* sf1;
 		SplitFile* sf2;
-		PairedEnd(const char* prefix,int id,level) {
+		PairedEnd(const char* prefix,int id,int level) {
 			sf1 = new SplitFile(prefix,1,id,level);
 			sf2 = new SplitFile(prefix,2,id,level);
 			}
@@ -240,7 +246,7 @@ int main(int argc,char** argv) {
 	return EXIT_FAILURE;
         }
 
-    if(!(argc==optind || optind+1==argc))
+    if(single==1 && (!(argc==optind || optind+1==argc)))
 	{
 	fprintf(stderr,"Illegal number of arguments.\\n");
 	usage(stderr);
@@ -257,8 +263,8 @@ int main(int argc,char** argv) {
     for(i=0;i< nsplits;i++) {
 	splitFiles.push_back(
 		single==0
-		? new PairedEnd(prefix,(i+1),level)
-		: new SingleEnd(prefix,(i+1),level)
+		? (AbstractEnd*)(new PairedEnd(prefix,(i),level))
+		: (AbstractEnd*)(new SingleEnd(prefix,(i),level))
 		);
 	}
 	

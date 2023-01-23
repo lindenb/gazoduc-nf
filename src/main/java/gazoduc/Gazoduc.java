@@ -503,7 +503,7 @@ public class Gazoduc {
 		}
 	
 	/**
-	 * put the default parameter  <code>>--reference</code> in the context
+	 * put the default parameter  <code>--reference</code> in the context
 	 * @return this
 	 */
 	public Gazoduc putReference() {

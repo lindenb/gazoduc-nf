@@ -39,10 +39,12 @@ gazoduc.build("split_fastq_ignore_if_size", 10000000L).
 	put()
 
 include {MAP_BWA_01} from '../../subworkflows/mapping/map.bwa.01.nf'
+include {COMPILE_FASTQ_SPLIT2FILE} from '../../modules/fastq/fastq.splitter.02.nf'
 include {MERGE_VERSION as MERGE_VERSIONA; MERGE_VERSION as MERGE_VERSIONB} from '../../modules/version/version.merge.nf'
 include {isBlank;moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
 include {SAMTOOLS_SAMPLES_01} from '../samtools/samtools.samples.01.nf'
 
+/*
 boolean isEmptyGz(Object filename) {
 	final java.nio.file.Path p;
 	if(filename instanceof java.nio.file.Path) {
@@ -55,7 +57,7 @@ boolean isEmptyGz(Object filename) {
 	try (java.util.zip.GZIPInputStream in = new  java.util.zip.GZIPInputStream(java.nio.file.Files.newInputStream(p)) ) {
 		return in.read()==-1;
 		}
-	}
+	}*/
 
 workflow REMAP_BWA_01 {
 	take:
@@ -71,12 +73,14 @@ workflow REMAP_BWA_01 {
 		version_ch = version_ch.mix(splitter_ch.version)
 
 		samples_ch = SAMTOOLS_SAMPLES_01(
-			meta.plus(["with_header":"true"]),
-			["reference":reference_in,"references":file("NO_FILE"),"bams":bams]
+				meta.plus("with_header":true),
+				reference_in,
+				file("NO_FILE"),
+				bams
 				)
 		version_ch = version_ch.mix(samples_ch.version)
 
-		each_sn_bam =  all_samples_ch.output.splitCsv(header:true,sep:'\t')
+		each_sn_bam =  samples_ch.output.splitCsv(header:true,sep:'\t')
 
 		remap_ch = REMAP_ONE(meta, splitter_ch.executable, reference_out, bed, each_sn_bam )
 		version_ch = version_ch.mix(remap_ch.version)
@@ -101,25 +105,24 @@ main:
 	version_ch = version_ch.mix(collate_ch.version)
 
 
-	src1_ch = collate_ch.output.splitCsv(header:false,sep:'\t').map{T->[
+	src1_ch = collate_ch.output.splitCsv(header:true,sep:'\t').map{T->[
 		"sample": T.sample,
 		"R1": T.R1,
 		"R2": T.R2,
 		"reference" : reference_out
-		]}.filter{T->!(isEmptyGz(T.R1) || isEmptyGz(T.R2))}
+		]}
 
-	src2_ch = collate_ch.single.splitCsv(header:false,sep:'\t').map{T->[
+	src2_ch = collate_ch.single.splitCsv(header:true,sep:'\t').map{T->[
 		"sample": T.sample,
 		"R1": T.fastq,
 		"reference" : reference_out
-		]}.filter{T->!isEmptyGz(T.R1)}
+		]}
 		
-	src3_ch = collate_ch.unpaired.splitCsv(header:false,sep:'\t').map{T->[
+	src3_ch = collate_ch.unpaired.splitCsv(header:true,sep:'\t').map{T->[
 		"sample": T.sample,
 		"R1": T.fastq,
 		"reference" : reference_out
-		]}.filter{T->!isEmptyGz(T.R1)}
-
+		]}
 	
 	bam1_ch = MAP_BWA_01(meta,reference_out,src1_ch.
 		mix(src2_ch).
@@ -145,36 +148,36 @@ input:
 	path(bed)
 	val(row)
 output:
-	path("TMP2/${sample}.paired.fastq.tsv"),emit:output
-	path("TMP2/${sample}.single.fastq.tsv"),emit:single
-	path("TMP2/${sample}.unpaired.tsv"),emit:unpaired
+	path("FASTQS/${row.new_sample}.paired.fastq.tsv"),emit:output
+	path("FASTQS/${row.new_sample}.singleton.fastq.tsv"),emit:single
+	path("FASTQS/${row.new_sample}.other.fastq.tsv"),emit:unpaired
 	path("version.xml"),emit:version
 script:
 	def sample = row.new_sample
 """
 hostname 1>&2
 set -o pipefail
-moduleLoad("samtools/1.15.1")
+${moduleLoad("samtools/1.15.1")}
 
 mkdir -p TMP TMP2
 
 # extract reads
 if ${!bed.name.equals("NO_FILE")} ; then
-	samtools view  --threads ${task.cpus} --reference "${row.reference}" -M -O BAM -o TMP/jeter.bam --regions-file "${bed}" "${bam}"
+	samtools view  --threads ${task.cpus} --reference "${row.reference}" -M -O BAM -o TMP/jeter.bam --regions-file "${bed}" "${row.bam}"
 fi
 
 # collate
-samtools collate -f --threads 4 -O -u --no-PG --reference "${row.reference}" "${!bed.name.equals("NO_FILE") ? "TMP/jeter.bam":"${bam}"}" TMP/tmp.collate |\
+samtools collate -f --threads 4 -O -u --no-PG --reference "${row.reference}" "${!bed.name.equals("NO_FILE") ? "TMP/jeter.bam":"${row.bam}"}" TMP/tmp.collate |\
 	samtools fastq -n --threads 1 -1 TMP/jeter.paired.R1.fq.gz -2 TMP/jeter.paired.R2.fq.gz -s "TMP/jeter.singleton.fq.gz" -0 "TMP/jeter.other.fq.gz"
 
 # split
 
 if [ `stat -c '%s' "TMP/jeter.paired.R1.fq.gz"` -le "${meta.split_fastq_ignore_if_size}" ]
 then
-	mv -v TMP/jeter.R1.fq.gz "TMP2/${sample}.paired.001.R1.fastq.gz"
-	mv -v TMP/jeter.R2.fq.gz "TMP2/${sample}.paired.001.R2.fastq.gz"
+	mv -v TMP/jeter.paired.R1.fq.gz "TMP2/${sample}.paired.001.R1.fastq.gz"
+	mv -v TMP/jeter.paired.R2.fq.gz "TMP2/${sample}.paired.001.R2.fastq.gz"
 else
-	${splitter.toRealPath()} -n ${meta.split_fastqs_count} -o "TMP2/${sample}.paired" TMP/jeter.R1.fq.gz  TMP/jeter.R2.fq.gz
+	${splitter.toRealPath()} -n ${meta.split_fastqs_count} -o "TMP2/${sample}.paired" TMP/jeter.paired.R1.fq.gz  TMP/jeter.paired.R2.fq.gz
 fi
 
 
@@ -192,17 +195,18 @@ else
 	${splitter.toRealPath()} -s -n ${meta.split_fastqs_count} -o "TMP2/${sample}.other" TMP/jeter.other.fq.gz
 fi
 
-
-find \${PWD}/TMP2 -type f -name "${sample}.paired*.R1.fastq.gz" -o -name "${sample}.paired*.R2.fastq.gz" | LC_ALL=C sort -T TMP | paste - - |\
-	awk -F '\t' 'BEGIN{printf("#sample\tbam\treference\tR1\tR2\\n");} {printf("${sample}\t${row.bam}\t${row.reference}\t%s\t%s\\n",\$1,\$2);}' > TMP2/${sample}.paired.fastq.tsv
-
-find \${PWD}/TMP2 -type f -name "${sample}.singleton*fastq.gz" | \
-	awk -F '\t' 'BEGIN{printf("#sample\tbam\treference\tfastq\\n");} {printf("${sample}\t${row.bam}\t${row.reference}\t%s\\n",\$0);}' > TMP2/${sample}.singleton.fastq.tsv
-
-find \${PWD}/TMP2 -type f -name "${sample}.other*fastq.gz" | \
-	awk -F '\t' 'BEGIN{printf("#sample\tbam\treference\tfastq\\n");} {printf("${sample}\t${row.bam}\t${row.reference}\t%s\\n",\$0);}' > TMP2/${sample}.other.fastq.tsv
-
 mv -v TMP2 FASTQS
+
+
+find \${PWD}/FASTQS -type f -name "${sample}.paired*.R1.fastq.gz" -o -name "${sample}.paired*.R2.fastq.gz" | LC_ALL=C sort -T TMP | paste - - |\
+	awk -F '\t' 'BEGIN{printf("sample\tbam\treference\tR1\tR2\\n");} {printf("${sample}\t${row.bam}\t${row.reference}\t%s\t%s\\n",\$1,\$2);}' > FASTQS/${sample}.paired.fastq.tsv
+
+find \${PWD}/FASTQS -type f -name "${sample}.singleton*.fastq.gz" | \
+	awk -F '\t' 'BEGIN{printf("sample\tbam\treference\tfastq\\n");} {printf("${sample}\t${row.bam}\t${row.reference}\t%s\\n",\$0);}' > FASTQS/${sample}.singleton.fastq.tsv
+
+find \${PWD}/FASTQS -type f -name "${sample}.other*.fastq.gz" | \
+	awk -F '\t' 'BEGIN{printf("sample\tbam\treference\tfastq\\n");} {printf("${sample}\t${row.bam}\t${row.reference}\t%s\\n",\$0);}' > FASTQS/${sample}.other.fastq.tsv
+
 
 
 ##################
@@ -211,7 +215,7 @@ cat << EOF > version.xml
 	<entry key="name">${task.process}</entry>
 	<entry key="description">convert BAM to fastq</entry>
 	<entry key="sample">${sample}</entry>
-	<entry key="bam">${bam}</entry>
+	<entry key="bam">${row.bam}</entry>
         <entry key="versions">${getVersionCmd("samtools awk")}</entry>
 	<entry key="bed">${bed}</entry>
 </properties>
