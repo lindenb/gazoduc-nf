@@ -52,18 +52,22 @@ cat << EOF > jeter.cc
 #include <string>
 #include <vector>
 #include "htslib/kseq.h"
+#include "htslib/bgzf.h"
+#include "htslib/thread_pool.h"
 
 using namespace std;
 
-KSEQ_INIT(gzFile, gzread)
+/* NOTE for future , set to work with bgzf fastq. May be add a compile flag to enable only std gzip */
+KSEQ_INIT(BGZF*, bgzf_read)
 
 class SplitFile {
 	public:
 		string filename;
-		gzFile out;
+		BGZF* out;
 		long count;
 		int level;
-	SplitFile(const char* prefix,int side,int id,int level):filename(prefix),out(NULL),count(0L),level(level) {
+		hts_tpool *pool;
+	SplitFile(const char* prefix,int side,int id,int level,hts_tpool *pool):filename(prefix),out(NULL),count(0L),level(level),pool(pool) {
 		char tmp[30];
 		FILE* exists=NULL;
 
@@ -86,7 +90,8 @@ class SplitFile {
 		if(this->out!=NULL) return;
 	        char mode[5];
 		sprintf(mode,"wb%d",this->level);
-		this->out = gzopen(this->filename.c_str(),mode);
+		this->out = bgzf_open(this->filename.c_str(),mode);
+		if(pool!=NULL) bgzf_thread_pool(this->out,this->pool, 0);
 		if(out==NULL) {
 			fprintf(stderr,"Cannot open %s for writing.(%s)\\n", this->filename.c_str(), strerror(errno));
 			exit(EXIT_FAILURE);
@@ -96,26 +101,33 @@ class SplitFile {
 	void close() {
 		if(this->out==NULL) return;
 		fprintf(stderr,"[LOG] closing \\"%s\\" N=%ld.\\n",this->filename.c_str(),this->count);
-		gzclose(this->out);
+		bgzf_flush(this->out);
+		bgzf_close(this->out);
 		this->out = NULL;
 		}
 	~SplitFile() {
 		close();
 		}
 
-#define GZWRITE(X) gzwrite(this->out,(void*)(X.s),X.l)
+#define GZPUTC(C) c=C; ret = bgzf_write(this->out,(void*)(&c),1)
+
+#define GZWRITE(X) bgzf_write(this->out,(void*)(X.s),X.l)
 
 	void write(kseq_t* ks1) {
+		int ret;
+		char c;
+
 		this->open();
-		gzputc(this->out,'@');
+		GZPUTC('@');
 		GZWRITE(ks1->name);
-		gzputc(this->out,'\\n');
+		GZPUTC('\\n');
 		GZWRITE(ks1->seq);
-		gzputc(this->out,'\\n');
-		gzputc(this->out,'+');
-		gzputc(this->out,'\\n');
+		GZPUTC('\\n');
+		GZPUTC('+');
+		GZPUTC('\\n');
 		GZWRITE(ks1->qual);
-		if(gzputc(this->out,'\\n')==-1) {
+		GZPUTC('\\n');
+		if(ret<0) {
 			fprintf(stderr,"[split2file]I/O error %s\\n",filename.c_str());
 			exit(EXIT_FAILURE);
 			}
@@ -127,17 +139,18 @@ class SplitFile {
 
 class Reader {
 public:
-        gzFile fp1;
+        BGZF* fp1;
 	kseq_t* ks;
 	string filename;
-	Reader(const char* fname):ks(NULL),filename(fname==NULL?"<STDIN>":fname) {
+	Reader(const char* fname, hts_tpool* pool):ks(NULL),filename(fname==NULL?"<STDIN>":fname) {
 		fp1 =  (fname == NULL || strcmp(fname,"-")==0)
-			? gzdopen(fileno(stdin), "r") 
-			: gzopen(fname, "r");
+			? bgzf_dopen(fileno(stdin), "r") 
+			: bgzf_open(fname, "r");
 		if(fp1==NULL) {
 			fprintf(stderr,"Cannot open %s .(%s)\\n",filename.c_str(),strerror(errno));
 			exit(EXIT_FAILURE);
 			}
+		if(pool!=NULL) bgzf_thread_pool(fp1, pool, 0);
 		ks = kseq_init(fp1);
 		if(ks==NULL) {
 			fprintf(stderr,"Cannot initialize reader for %s\\n",filename.c_str()); 
@@ -146,7 +159,7 @@ public:
 		}
 	~Reader() {
 		if(ks!=NULL) kseq_destroy(ks);
-                gzclose(fp1);
+                bgzf_close(fp1);
 		}
 	bool next() {
 		return kseq_read(ks) >= 0;
@@ -165,8 +178,8 @@ class AbstractEnd {
 class SingleEnd: public AbstractEnd {
 	public:
 		SplitFile* sf;
-		SingleEnd(const char* prefix,int id,int level) {
-			sf = new SplitFile(prefix,-1,id,level);
+		SingleEnd(const char* prefix,int id,int level, hts_tpool *pool) {
+			sf = new SplitFile(prefix,-1,id,level,pool);
 			}
 		virtual ~SingleEnd() {
 			delete sf;
@@ -178,9 +191,9 @@ class PairedEnd: public AbstractEnd {
 	public:
 		SplitFile* sf1;
 		SplitFile* sf2;
-		PairedEnd(const char* prefix,int id,int level) {
-			sf1 = new SplitFile(prefix,1,id,level);
-			sf2 = new SplitFile(prefix,2,id,level);
+		PairedEnd(const char* prefix,int id,int level, hts_tpool *pool) {
+			sf1 = new SplitFile(prefix,1,id,level,pool);
+			sf2 = new SplitFile(prefix,2,id,level,pool);
 			}
 		virtual ~PairedEnd() {
 			delete sf1;
@@ -189,13 +202,14 @@ class PairedEnd: public AbstractEnd {
 	};
 
 static void usage(FILE* out) {
-fprintf(out,"split2file. Pierre Lindenbaum 2020.\\n");
+fprintf(out,"split2file. Pierre Lindenbaum 2023.\\n");
 fprintf(out,"Usage:\\n");
-fprintf(out,"  split2file [-s for single end] -C (compression-level 0-9) -n (num)  -o <PREFIX> <fastq|stdin> \\n");
+fprintf(out,"  split2file -t <threads> c[-s for single end] -C (compression-level 0-9) -n (num)  -o <PREFIX> <fastq|stdin> \\n");
 fprintf(out,"\\n");
 }
 
 int main(int argc,char** argv) {
+    hts_tpool *pool = NULL;
     int opt;
     int i;
     long nsplits=0;
@@ -204,14 +218,17 @@ int main(int argc,char** argv) {
     int single  = 0 ;
     vector<AbstractEnd*> splitFiles;
     long nReads = 0L;
-
-    while ((opt = getopt(argc, argv, "sho:n:C:")) != -1) {
+    int cpus = -1;
+    while ((opt = getopt(argc, argv, "sho:n:C:t:")) != -1) {
 	    switch (opt) {
 	    case 'h':
 		    usage(stdout);
 		    return 0;
 	    case 's':
 		    single = 1;
+		    break;
+            case 't':
+		    cpus = atoi(optarg);
 		    break;
             case 'C':
 		    level = atoi(optarg);
@@ -259,12 +276,19 @@ int main(int argc,char** argv) {
 	return EXIT_FAILURE;
 	}
 
+    if(cpus>1) {
+	pool = hts_tpool_init(cpus);
+	if(pool==NULL) {
+		fprintf(stderr,"hts_tpool_init failed (%d). Continuing without multithread\\n",cpus);
+		}
+	}
+
 
     for(i=0;i< nsplits;i++) {
 	splitFiles.push_back(
 		single==0
-		? (AbstractEnd*)(new PairedEnd(prefix,(i),level))
-		: (AbstractEnd*)(new SingleEnd(prefix,(i),level))
+		? (AbstractEnd*)(new PairedEnd(prefix,(i),level,pool))
+		: (AbstractEnd*)(new SingleEnd(prefix,(i),level,pool))
 		);
 	}
 	
@@ -273,13 +297,13 @@ int main(int argc,char** argv) {
 		Reader* r1;
 		Reader* r2;
 		if(optind==argc) {
-			r1 = new Reader(NULL);
+			r1 = new Reader(NULL,pool);
 			r2 = r1;
 			}
 		else
 			{
-			r1 = new Reader(argv[optind  ]);
-			r2 = new Reader(argv[optind+1]);
+			r1 = new Reader(argv[optind  ], pool);
+			r2 = new Reader(argv[optind+1], pool );
 			}
 		while (r1->next())  {
 			PairedEnd* out  = (PairedEnd*)splitFiles[nReads%nsplits];
@@ -303,7 +327,7 @@ int main(int argc,char** argv) {
 		}
 	else
 		{
-		Reader* r1 = new Reader(optind==argc?NULL:argv[optind]);
+		Reader* r1 = new Reader(optind==argc?NULL:argv[optind], pool);
 		while (r1->next())  {
 			SingleEnd* out  = (SingleEnd*)splitFiles[nReads%nsplits];
 			out->sf->write(r1->ks);
@@ -313,11 +337,12 @@ int main(int argc,char** argv) {
 		}
 
 	    
-
      
     for(i=0;i< nsplits;i++) {
 	delete splitFiles[i];
 	}
+
+    if(pool!=NULL)  hts_tpool_destroy(pool);
 
      return EXIT_SUCCESS;
      }
