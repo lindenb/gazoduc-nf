@@ -23,17 +23,17 @@ SOFTWARE.
 
 */
 
-include { moduleLoad;getVersionCmd;getKeyValue; isHg19; isHg38} from '../../modules/utils/functions.nf'
-include { SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.nf'
-
-
 def gazoduc = gazoduc.Gazoduc.getInstance(params);
 
 gazoduc.make("delly2_version","v1.1.5").
         menu("delly").
         description("delly2 version").
+	notEmpty().
         put()
 
+
+include { moduleLoad;getVersionCmd;getKeyValue; isHg19; isHg38} from '../../modules/utils/functions.nf'
+include { SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.nf'
 
 
 
@@ -190,6 +190,7 @@ process DOWNLOAD_DELLY2 {
 		def version = getKeyValue(meta,"delly2_version","v1.1.5")
 		def url = "https://github.com/dellytools/delly/releases/download/${version}/delly_${version}_linux_x86_64bit"
 	"""
+	hostname 1>&2
 	wget -O delly "${url}"
 	chmod a+x delly
 

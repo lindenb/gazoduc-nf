@@ -28,12 +28,12 @@ nextflow.enable.dsl=2
 def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
 
 gazoduc.make("controls","").
-	description("file containing the path to indexed BAM or CRAM files for controls").
+	description("file containing the path to indexed BAM or CRAM files for controls.").
 	argName("file").
 	put()
 
 gazoduc.make("cases","").
-	description("file containing the path to indexed BAM or CRAM files for cases").
+	description("file containing the path to indexed BAM or CRAM files for cases.").
 	required().
 	existingFile().
 	put()
@@ -48,6 +48,11 @@ gazoduc.make("cnv",true).
 	description("run 'delly cnv'").
 	menu("delly").
 	setBoolean().
+	put()
+
+gazoduc.make("genotype_vcf","NO_FILE").
+	description("do not perform SV discovery and genotype the variant in the VCF.").
+	menu("delly").
 	put()
 
 
@@ -69,7 +74,7 @@ else	{
 
 
 workflow {
-	delly_ch = DELLY2_SV(params, params.reference, params.cases, params.controls)
+	delly_ch = DELLY2_SV(params, params.reference, params.cases, params.controls, file(params.genotype_vcf))
 
 
 	html = VERSION_TO_HTML(params,delly_ch.version)	
