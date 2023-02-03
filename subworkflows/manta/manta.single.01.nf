@@ -22,6 +22,16 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+
+def gazoduc = gazoduc.Gazoduc.getInstance();
+
+gazoduc.make("with_merge_manta_vcf",false).
+        description("try to merge manta files at the end").
+	setBoolean().
+        put()
+
+
+
 include {getVersionCmd} from '../../modules/utils/functions.nf'
 include {SAMTOOLS_SAMPLES01} from '../../modules/samtools/samtools.samples.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'

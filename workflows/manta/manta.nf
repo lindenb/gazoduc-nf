@@ -26,12 +26,13 @@ nextflow.enable.dsl=2
 
 def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults();
 
-/** path to indexed fasta reference */
-params.reference = ""
-/** one file containing the paths to the BAM/CRAM  */
-params.bams = ""
-params.with_merge_manta_vcf = false
-params.manta_cpus = 16
+gazoduc.make("bams","NO_FILE").
+        description("file containing the path to multiple bam files").
+        required().
+        existingFile().
+        put()
+
+
 
 include {runOnComplete} from '../../modules/utils/functions.nf'
 include {MANTA_SINGLE_SV01} from '../../subworkflows/manta/manta.single.01.nf' 

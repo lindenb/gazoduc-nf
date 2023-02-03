@@ -22,6 +22,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+
+def gazoduc = gazoduc.Gazoduc.getInstance()
+
+gazoduc.make("manta_cpu",16).
+        description("Number of cpus for manta").
+        setInt().
+        put()
+
+
 include { getKeyValue; getModules} from '../../modules/utils/functions.nf'
 
 process MANTA_SINGLE_01 {
@@ -55,7 +64,7 @@ process MANTA_SINGLE_01 {
 
 
 	# convert BND TO INVERSIONS (added 20230115 but not tested)
-	DIPLOID=`find ./TMP -type f -name "*.diploidSV.vcf.gz`
+	DIPLOID=`find ./TMP -type f -name "*.diploidSV.vcf.gz"`
 	test ! -z "\${DIPLOID}"
 	\$(ls \$( dirname \$(which configManta.py) )/../share/manta*/libexec/convertInversion.py)  `which samtools` "${reference}" "\${DIPLOID}" | bcftools sort -T TMP -O z -o TMP/jeter.vcf.gz
 
