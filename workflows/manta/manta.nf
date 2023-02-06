@@ -77,8 +77,8 @@ publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
 input:
 	val(files)
 output:
-	path("*.bcf")
-	path("*.bcf.csi")
+	path("*.bcf"),optional:true
+	path("*.bcf.csi"),optional:true
 	path("*.xml")
 	path("*.html")
 	path("*.zip")

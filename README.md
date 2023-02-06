@@ -104,6 +104,7 @@ Warning: some NF use a custom java library under `lib/`. The NF workflow should 
   * [Sex](workflows/guesssex) . Guess sex from chrX/chrY in BAM file
   * [QC remapping](workflows/comparemapping). QC remapping by genotype concordance + liftover
   * [contimination](workflows/contamination). Contaminations in BAMs/FASTQs.
+  * [IGV Reports](workflows/igvreport). Generate IGV static HTML reports from VCF+BAMS.
 
 ### Biostars
 
