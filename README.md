@@ -50,6 +50,7 @@ Warning: some NF use a custom java library under `lib/`. The NF workflow should 
   * [Retrocopies GTF/VCF](workflows/retrocopy/vcf.retrocopy) Finds Retrocopies using a SV VCF and a GTF file.
   * [Duphold](workflows/duphold) Apply Duphold to a set of VCFs+BAMs.
   * [etching](workflows/etching.germline) Call germline SV using etching. Doesn't work for now.
+  * [graphtyper CNV](workflows/graphtyper/graphtyper.cnv) Genotype SV variants using graphtype.
 
 #### Merging
 
