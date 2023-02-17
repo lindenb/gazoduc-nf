@@ -92,6 +92,7 @@ Warning: some NF use a custom java library under `lib/`. The NF workflow should 
 ### VNTR
 
   * [ExpansionHunter](workflows/expansionhunter/) Apply Illumina/ExpansionHunter to a set of bams.
+  * [ExpansionHunter DeNovo](workflows/expansionhunter.denovo)
 
 ### Misc
 
