@@ -82,6 +82,7 @@ process EXTEND_BED {
 		path("version.xml"),emit:version
 	script:
 		def extend =meta.extend_bed?:"3.0"
+		def max_sv_len = ((meta.max_sv_length?:-1) as int)
 	"""
 	hostname 1>&2
 	${moduleLoad("jvarkit bedtools")}
@@ -91,7 +92,7 @@ process EXTEND_BED {
 	cut -f1,2 "${reference}.fai" > TMP/jeter.genome
 
 	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -R "${reference}" -c 1 "${bed}" | \
-		awk -F '\t' '{printf("%s\t%s\t%s\t%s\\n",\$1,\$2,\$3,(NF==3 || \$4==""?".":\$4));}' > TMP/jeter1.bed
+		awk -F '\t' '{M=${max_sv_len};L=int(\$3)-int(\$2);if(M>0 && L>M) next; printf("%s\t%s\t%s\t%s\\n",\$1,\$2,\$3,(NF==3 || \$4==""?".":\$4));}' > TMP/jeter1.bed
 
 	cut -f 1,2,3 TMP/jeter1.bed | bedtools slop -i - -g TMP/jeter.genome ${extend.toString().contains(".")?"-pct":""} -b ${extend} | cut -f 2,3 > TMP/jeter2.bed
 
@@ -111,6 +112,8 @@ cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
         <entry key="description">extends bed</entry>
+        <entry key="extend">${extend}</entry>
+        <entry key="max sv length">${max_sv_len}</entry>
 	<entry key="bedtools.version">\$(bedtools --version)</entry>
 </properties>
 EOF

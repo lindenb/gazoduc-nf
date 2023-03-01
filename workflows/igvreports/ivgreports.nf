@@ -49,6 +49,11 @@ gazoduc.make("num_controls",5).
 	setInt().
         put()
 
+gazoduc.make("sv_flanking",250).
+        description("display 'x' bases around breakpoints of SV variants.").
+	setInt().
+        put()
+
 
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 include {runOnComplete;moduleLoad} from '../../modules/utils/functions.nf'
@@ -239,7 +244,7 @@ public class Minikit {
         	}
     	try                              
             {
-    		final int SV_FLANKING=250;
+    	    final int SV_FLANKING= ${meta.sv_flanking?:250};
             try(BufferedReader in=Files.newBufferedReader(bams)) {
                     in.lines().
                     	filter(T->!T.startsWith("#")).
@@ -265,7 +270,7 @@ public class Minikit {
                 while(r.hasNext()) {
                         final VariantContext ctx = r.next();
                         final String svType = ctx.getAttributeAsString("SVTYPE","");
-                        
+                        final int ctx_flanking = ctx.getAttributeAsInt("FLANKING",SV_FLANKING);
                         
                         final List<Genotype> cases = ctx.getGenotypes().stream().
                             	filter(G->sample2bam.containsKey(G.getSampleName())).
@@ -328,23 +333,23 @@ public class Minikit {
 	                        		}
 	                        	}
                         	}
-                        else if(ctx.getLengthOnReference() > SV_FLANKING*2) {
-                        	properties.put("flanking",String.valueOf(SV_FLANKING));
+                        else if(ctx.getLengthOnReference() > ctx_flanking*2) {
+                        	properties.put("flanking",String.valueOf(ctx_flanking));
                         	final Path outpath = outdir.resolve(String.format("%05d",(variant_id)) + ".bedpe");
                         	properties.put("bedpe", outpath.toAbsolutePath().toString());
                         	try(PrintWriter out= new PrintWriter(Files.newBufferedWriter(outpath))) {
                     			final int chromLen = dict.getSequence(ctx.getContig()).getSequenceLength();
                         		out.print(ctx.getContig());
                         		out.print("\t");
-                        		out.print(Math.max(0, ctx.getStart()-(SV_FLANKING+1)));
+                        		out.print(Math.max(0, ctx.getStart()-(ctx_flanking+1)));
                         		out.print("\t");
-                        		out.print(Math.min(chromLen, ctx.getStart()+SV_FLANKING));
+                        		out.print(Math.min(chromLen, ctx.getStart()+ctx_flanking));
                         		out.print("\t");
                         		out.print(ctx.getContig());
                         		out.print("\t");
-                        		out.print(Math.max(0, ctx.getEnd()-(SV_FLANKING+1)));
+                        		out.print(Math.max(0, ctx.getEnd()-(ctx_flanking+1)));
                         		out.print("\t");
-                        		out.print(Math.min(chromLen, ctx.getEnd()+SV_FLANKING));
+                        		out.print(Math.min(chromLen, ctx.getEnd()+ctx_flanking));
                         		out.print("\t");
                         		out.println(vcName);
 	                        	out.flush();

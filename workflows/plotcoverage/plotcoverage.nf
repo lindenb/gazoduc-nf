@@ -55,6 +55,12 @@ gazoduc.build("extend_bed",3.0).
 	setDouble().
 	put()
 
+gazoduc.build("max_sv_length",-1).
+	desc("max abs(SV_LENGTH) or <0 to ignore").
+	setInt().
+	put()
+
+
 params.references="NO_FILE"
 
 include {PLOT_COVERAGE_01} from '../../subworkflows/plotdepth/plot.coverage.01.nf'
