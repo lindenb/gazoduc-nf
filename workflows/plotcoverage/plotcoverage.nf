@@ -24,79 +24,63 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults()
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
 
 
-/** path to indexed fasta reference */
-//params.reference = ""
-params.references = "NO_FILE"
-params.mapq = 0
-params.bams = ""
-params.bed = "BED"
-//params.help = false
-//params.publishDir = ""
-//params.prefix = ""
+gazoduc.build("bams", "NO_FILE").
+	desc("File containing the paths to the indexed BAM/CRAM files.").
+	existingFile().
+	required().
+	put()
 
+
+gazoduc.build("bed", "NO_FILE").
+	desc("SV intervals as a BED file").
+	existingFile().
+	required().
+	put()
+
+gazoduc.build("mapq","0").
+	desc("min mapping quality").
+	setInt().
+	put()
+
+gazoduc.build("median",true).
+	desc("normalize on median").
+	setBoolean().
+	put()
+
+gazoduc.build("extend_bed",3.0).
+	desc("extend original bed by this factor").
+	setDouble().
+	put()
+
+params.references="NO_FILE"
 
 include {PLOT_COVERAGE_01} from '../../subworkflows/plotdepth/plot.coverage.01.nf'
 include {runOnComplete} from '../../modules/utils/functions.nf'
 
 
-gazoduc.reference();
-
-def helpMessage() {
-  log.info"""
-## About
-
-apply mosdepth to a set of bams.
-
-## Author
-
-Pierre Lindenbaum
-
-## Options
-
-  * --reference (fasta) The full path to the indexed fasta reference genome. It must be indexed with samtools faidx and with picard CreateSequenceDictionary or samtools dict. [REQUIRED]
-  * --bams (file) one file containing the paths to the BAM/CRAM [REQUIRED]
-  * --vcf (file) required SV indexed vcf file. default: ""
-  * --excludeids (file) optional file containing IDs of SV to ignore.
-  * --publishDir (dir) Save output in this directory
-  * --prefix (string) files prefix. default: ""
-
-## Usage
-
-```
-nextflow -C ../../confs/cluster.cfg  run -resume plotcoverage.nf \\
-	--publishDir output \\
-	--prefix "analysis." \\
-	--reference /path/to/reference.fasta \\
-	--bams /path/to/bams.list \\
-	--bed x.bed
-```
-
-## Workflow
-
-![workflow](./workflow.svg)
-  
-## See also
-
-
-"""
-}
-
-
 if( params.help ) {
-    helpMessage()
+    gazoduc.usage().
+	name("plot coverage").
+	desc("Plot coverage for a set of bams").
+	print();
     exit 0
+} else {
+   gazoduc.validate();
 }
 
-gazoduc.usage().print()
+
 
 workflow {
 	ch1 = PLOT_COVERAGE_01(params,params.reference, file(params.references),file(params.bams), file(params.bed))
 	//html = VERSION_TO_HTML(params,ch1.version)
 	//PUBLISH(ch1.version,html.html,ch1.zip)
 	}
+
+runOnComplete(workflow);
+
 
 process PUBLISH {
 publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
@@ -118,5 +102,4 @@ ln -s ${zip} ./
 """
 }
 
-runOnComplete(workflow);
 
