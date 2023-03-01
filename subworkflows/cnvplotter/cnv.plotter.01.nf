@@ -548,7 +548,7 @@ EOF
 
 awk -F '\t' -v C=blue -f TMP/jeter.awk TMP/controls.txt >> TMP/style.css
 
-java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP  -jar ${JVARKIT_DIST}/coverageplotter.jar \
+java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/coverageplotter.jar \
 	-R "${reference}" \
 	--mapq "${mapq}" \
 	--known '${known}' --ignore-known-containing \
