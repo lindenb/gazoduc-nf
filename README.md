@@ -61,6 +61,7 @@ Warning: some NF use a custom java library under `lib/`. The NF workflow should 
 
   * [Plot CNV from VCF](workflows/cnvplotter) Plot CNV as SVG+HTML.
   * [Plot CNV using bed+ samtools depth](workflows/plotcoverage) Plot CNV as PDF.
+  * [Plot CNV using jvarkit/cnvtview](workflows/cnvtview).
   * [indexcov+circos](workflows/indexcov.circos) Plot indexcov output as circos
   * [wgs coverage](workflows/wgscovplot) WGS coverage genome wide. Plot as SVG.
   * [UCSC track hub](workflows/trackhub) Generate Track Hub for ucsc from CNV VCFs
