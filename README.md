@@ -108,6 +108,7 @@ Warning: some NF use a custom java library under `lib/`. The NF workflow should 
   * [QC remapping](workflows/comparemapping). QC remapping by genotype concordance + liftover
   * [contimination](workflows/contamination). Contaminations in BAMs/FASTQs.
   * [IGV Reports](workflows/igvreport). Generate IGV static HTML reports from VCF+BAMS.
+  * [Downsample](workflows/downsample.simulation). Downsampling simulation.
 
 ### Biostars
 
