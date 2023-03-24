@@ -170,13 +170,13 @@ process DOWNSAMPLE {
 
 	if [ "\${FRAC}" != "" ] ; then
 
-   		samtools view -M -L TMP/jeter.bed --threads ${task.cpus} -q ${meta.mapq} -F 3844 -u --reference ${reference} ${bam}  |\
+   		samtools view -M -L TMP/jeter.bed --threads ${task.cpus} -q ${meta.mapq} -F 3844 -u --reference "${reference}" "${bam}"  |\
 			samtools view -s \${FRAC} -O BAM -o "TMP/_chunck.\${C}.bam"
 
 	else
 
-   		samtools view -M -L TMP/jeter.bed --threads ${task.cpus} -q ${meta.mapq} -F 3844 -u --reference ${reference} \
-			-O BAM -o "TMP/_chunck.\${C}.bam" ${bam} "\${C}" 
+   		samtools view -M -L TMP/jeter.bed --threads ${task.cpus} -q ${meta.mapq} -F 3844 -u --reference "${reference}" \
+			-O BAM -o "TMP/_chunck.\${C}.bam" "${bam}"
       
 	fi
    done
@@ -229,12 +229,18 @@ process HAPLOTYPE_CALLER01 {
    """ 
    hostname
    set -o pipefail
-   ${moduleLoad("gatk/0.0.0")}
+   ${moduleLoad("gatk/0.0.0 samtools")}
    mkdir -p TMP
 
 
+   # will force the original BAM to be filtered as the downsampled one
+   samtools view -M -L "${bed}"  -q ${meta.mapq} -F 3844  --reference ${reference} \
+			-O BAM -o "TMP/jeter.bam" ${bam.toRealPath()} 
+
+   samtools index TMP/jeter.bam
+
    gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" HaplotypeCaller \
-	     -I "${bam.toRealPath()}" \
+	     -I "TMP/jeter.bam" \
 	     -ERC GVCF \
 	     -L "${bed}" \
 	     -R "${reference}" \
@@ -319,7 +325,7 @@ process GENOTYPE_CONCORDANCE {
    tag "${sample} N=${vcf.name}"
    cache "lenient"
    memory '5g'
-   //afterScript "rm -rf TMP"
+   afterScript "rm -rf TMP"
    input:
         val(meta)
         tuple val(sample),path(vcf)
@@ -353,7 +359,7 @@ process GENOTYPE_CONCORDANCE {
    bcftools query -l "${vcf}" | while read S
    do
       bcftools view -O u --samples "\${S}" "${vcf}" |\
-	bcftools query -f '[%GQ\\n]' | awk '\$1!="."' | sort -n >> "TMP/\${S}.dist"
+	bcftools query -f '[%GQ\\n]' | sed 's/^\\.\$/-1/' | LC_ALL=C sort -n >> "TMP/\${S}.dist"
    done
 
 
@@ -364,17 +370,26 @@ find TMP -type f -name "*.dist" | sort | awk '{printf("\\"%s\\"\\n",\$0);}' |pas
 cat << '__EOF__' >> TMP/jeter.R
 )
 n <- 1
-colors <- rainbow(length(filenames))
+colors <- rainbow(length(filenames),alpha=0.8)
 pdf("${sample}.GQ.pdf")
 list1 <- list()
 list2 <- c()
+maxy <- 1E-6
+
 for(filename in filenames) {
-	X <- scan(filename, comment.char = ".")
+        X <- data.frame(table(scan(filename, comment.char = ".")))
+	maxy <- max(maxy, max(X\$Freq))
+}
+
+for(filename in filenames) {
+	T1 <- table(scan(filename, comment.char = "."))
+	X <- data.frame(T1)
 	list2 <- append(list2,gsub("${sample}.DP","",gsub(".dist","",basename(filename))))
+
 	if(n==1) {
-		plot(density(X),type='l',main="${sample} Genotype Quality",xlab="GQ",ylab="Fraction",col=colors[n])
+		plot(x=as.integer(as.character(X\$Var1)),y=X\$Freq,type='l',main="${sample} : density of Genotype Quality",xlab="Genotype Quality",ylab="Count",col=colors[n],ylim=c(0,maxy),xlim=c(0,100))
 	} else	{		
-		lines(density(X),col=colors[n])
+		lines(x=as.integer(as.character(X\$Var1)),y=X\$Freq,col=colors[n],ylim=c(0,maxy),xlim=c(0,100))
 		}
 	n <- n+1
 }

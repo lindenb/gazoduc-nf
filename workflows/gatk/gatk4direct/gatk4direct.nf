@@ -24,73 +24,56 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-/** path to indexed fasta reference */
-params.reference = ""
-/** mapq min mapping quality . If it's <=0, just use the bam index as is. Otherwise, rebuild the bai */
-params.mapq = -1
-/** one file containing the paths to the BAM/CRAM */
-params.bams = ""
-/** display help */
-params.help = false
-/** publish Directory */
-params.publishDir = ""
-/** files prefix */
-params.references=""
-params.prefix = ""
-params.dbsnp=""
-params.pedigree=""
-params.beds=""
-params.nbams=20
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
+
+gazoduc.make("bams","NO_FILE").
+        description("File containing the paths to the BAM/CRAMS files. One path per line").
+        required().
+        existingFile().
+        put()
+
+gazoduc.make("mapq",-1).
+        description("mapping quality or -1").
+        setInt().
+        put()
+
+
+gazoduc.make("nbams",20).
+        description("number of bams per HC").
+        setInt().
+        put()
+
+gazoduc.make("references","").
+        description("other references").
+        put()
+
+gazoduc.make("dbsnp","").
+        description("path to dbsnp").
+        put()
+
+gazoduc.make("pedigree","").
+        description("path to pedigree").
+        put()
+
+gazoduc.make("beds","").
+        description("path to a list of bed files").
+        put()
+
 
 include {GATK4_HAPCALLER_DIRECT_01} from '../../../subworkflows/gatk/gatk4.hapcaller.direct.01.nf'
 include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
 include {runOnComplete;moduleLoad} from '../../../modules/utils/functions.nf'
 
-def helpMessage() {
-  log.info"""
-## About
-
-
-## Author
-
-Pierre Lindenbaum
-
-## Options
-
-  * --reference (fasta) The full path to the indexed fasta reference genome. It must be indexed with samtools faidx and with picard CreateSequenceDictionary or samtools dict. [REQUIRED]
-  * --bams (file) one file containing the paths to the BAM/CRAM [REQUIRED]
-  * --beds (file) call in the following bed files. One path to bed per line.
-  * --mapq (int)  min mapping quality . If it's lower than 0 (this is the default) just use the bam index as is. Otherwise, rebuild the bai
-  * --publishDir (dir) Save output in this directory
-  * --prefix (string) files prefix. default: ""
-
-## Usage
-
-```
-nextflow -C ../../confs/cluster.cfg  run -resume gatk4direct.nf \\
-	--publishDir output \\
-	--prefix "analysis." \\
-	--reference /path/to/reference.fasta \\
-	--bams /path/to/bams.list \\
-	--beds /path/to/beds.list \\
-	--mapq 30
-```
-
-## Workflow
-
-![workflow](./workflow.svg)
-  
-## See also
-
-
-"""
-}
-
-
 if( params.help ) {
-    helpMessage()
+    gazoduc.usage().
+        name("GraphTyper CNV").
+        desc("Genotype CNV/SV using graphtyper").
+        print();
     exit 0
+} else {
+   gazoduc.validate();
 }
+
 
 
 workflow {
