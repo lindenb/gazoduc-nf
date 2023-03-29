@@ -246,6 +246,7 @@ public class Minikit extends Main{
 							if(compare(ctx1,ctx2)!=0) continue;
 							if(!ctx1.getReference().equals(ctx2.getReference())) continue;
 							ctx2.getGenotypes().stream().
+								filter(G->!(G.isHomRef() || G.isNoCall())).
 								flatMap(G->G.getAlleles().stream()).
 								forEach(A->alts.remove(A));
 							}
@@ -482,7 +483,7 @@ process PER_VCF {
 afterScript "rm -rf TMP"
 tag "${bams} / ${vcf}"
 memory "10g"
-cpus 2
+cpus 1
 input:
 	val(meta)
 	val(reference)

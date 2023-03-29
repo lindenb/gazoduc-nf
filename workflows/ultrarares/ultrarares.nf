@@ -24,18 +24,46 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-/** path to indexed fasta reference */
-params.reference = ""
-params.bams = "NO_FILE"
-params.vcf = "NO_FILE"
-/* run ultrare for each record in the BED file OR make the bed by default */
-params.bed = "NO_FILE"
-params.gnomad_max_af=0.01
+
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
+
+
+gazoduc.make("bams","NO_FILE").
+        description("File containing the paths to the BAM/CRAMS files. One path per line").
+	required().
+	existingFile().
+        put()
+
+gazoduc.make("vcf","NO_FILE").
+        description("initial vcf file or use --bams").
+        put()
+
+gazoduc.make("bed","NO_FILE").
+        description("run ultrare for each record in the BED file OR make the bed by default").
+        put()
+
+gazoduc.make("mapq",-1).
+        description("mapping quality or -1").
+        setInt().
+        put()
+
+gazoduc.make("gnomad_max_af",0.001).
+        description("gnomad max AF").
+        setDouble().
+        put()
+
+gazoduc.make("n_bams_per_hc_call",30).
+        description("number of BAMS per gatk HC call").
+        setInt().
+        put()
+
+
+gazoduc.make("vcf2interval_distance","50mb").
+        description("split VCF per region of 'x' size").
+        put()
+
+
 params.gnomad_population="AF_nfe"
-params.n_bams_per_hc_call=5
-params.help = false
-params.publishDir = ""
-params.prefix = ""
 params.extraBcftoolsView1=""
 params.extraBcftoolsView2=""
 
@@ -43,50 +71,17 @@ include {ULTRA_RARES_01} from '../../subworkflows/ultrarares/ultrarares.01.nf'
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 include {runOnComplete} from '../../modules/utils/functions.nf'
 
-def helpMessage() {
-  log.info"""
-## About
-
-search for ultra rares variants
-
-## Author
-
-Pierre Lindenbaum
-
-## Options
-
-  * --reference (fasta) The full path to the indexed fasta reference genome. It must be indexed with samtools faidx and with picard CreateSequenceDictionary or samtools dict. [REQUIRED]
-  * --vcf (file) indexed vcf file. default: ""
-  * --bams (file) controls bams
-  * --bed (file) how to split the vcf
-  * --publishDir (dir) Save output in this directory
-  * --prefix (string) files prefix. default: ""
-
-## Usage
-
-```
-nextflow -C ../../confs/cluster.cfg  run -resume workflow.nf \\
-	--publishDir output \\
-	--prefix "analysis." \\
-	--reference /path/to/reference.fasta \\
-	--vcf /path/to/in.vcf.gz \\
-	--bams /path/to/bams.list \\
-	--bed /path/input.bed
-```
-
-## Workflow
-
-![workflow](./workflow.svg)
-  
-
-"""
-}
-
 
 if( params.help ) {
-    helpMessage()
+    gazoduc.usage().
+        name("Ultrarares").
+        desc("ultrares").
+        print();
     exit 0
+} else {
+   gazoduc.validate();
 }
+
 
 
 workflow {

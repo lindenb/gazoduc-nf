@@ -260,6 +260,7 @@ process GENOTYPE_DELLY {
 
 process MERGE_GENOTYPES {
     tag "N=${bcfs.size()}"
+    afterScript "rm -rf TMP"
     label "process_high"
     cache 'lenient'
     memory "20g"
@@ -271,9 +272,12 @@ process MERGE_GENOTYPES {
 	path("version.xml"),emit:version
 	path("merged.gt.bcf.csi")
     script:
+
+   if(bcfs.size() < 1000 )
     """
     hostname 1>&2
     ${moduleLoad("bcftools")}
+    ulimit -s unlimited
 
 cat << EOF > jeter.list
 ${bcfs.join("\n")}
@@ -295,6 +299,51 @@ EOF
 	EOF
 
     """
+else
+    """
+    hostname 1>&2
+    ${moduleLoad("bcftools")}
+    ulimit -s unlimited
+    mkdir -p TMP
+
+    set -x
+
+cat << EOF > TMP/jeter.list
+${bcfs.join("\n")}
+EOF
+
+
+    SQRT=`awk 'END{X=NR;z=sqrt(X); print (z==int(z)?z:int(z)+1);}' "TMP/jeter.list"`
+    split -a 9 --additional-suffix=.list --lines=\${SQRT} "TMP/jeter.list" TMP/chunck.
+
+    i=1
+
+    find TMP/ -type f -name "chunck.*.list" | while read F
+    do
+	    bcftools merge -m id -O b -o "TMP/merged.gt.\${i}.bcf" --file-list "\${F}"
+            bcftools index --csi "TMP/merged.gt.\${i}.bcf"
+	    echo "TMP/merged.gt.\${i}.bcf" >> TMP/to.merge.list
+	    i=\$((i+1))
+    done
+
+
+
+    bcftools merge -m id -O b -o merged.gt.bcf --file-list TMP/to.merge.list
+    bcftools index --csi merged.gt.bcf 
+
+
+	#######################################################################
+	cat <<- EOF > version.xml
+	<properties id="${task.process}">
+		<entry key="name">${task.process}</entry>
+		<entry key="description">merge genotype delly</entry>
+		<entry key="versions">${getVersionCmd("bcftools")}</entry>
+		<entry key="number of files">${bcfs.size()}</entry>
+	</properties>
+	EOF
+
+    """
+
     }
 
 process FILTER_DELLY {

@@ -99,8 +99,9 @@ test ! -s jeter.c
 rm jeter.a jeter.b jeter.c
 
 mkdir BAMS
-cut -f 3 "${bams}" | split -a 9 --lines=${nbams} --additional-suffix=.bam.list - BAMS/cluster.
-find \${PWD}/BAMS -type f -name "cluster*.list" > bams.list
+# increasing number of bams per list until we reach nbams
+cut -f 3 "${bams}" |  awk 'BEGIN {MAX=${nbams};N=0;M=1;IDX=1;} {N++;OUT=sprintf("BAMS/cluster.%03d.list",IDX);print >> OUT;if(N==M){close(OUT);N=0;IDX++;M++;if(M>MAX) M=MAX;}} END{ close(OUT); }'
+find \${PWD}/BAMS -type f -name "cluster*.list" | sort -V > bams.list
 test -s bams.list
 
 #####
@@ -133,7 +134,6 @@ output:
 script:
 	def ploidy = 2
 	def dbsnp = ""
-	def mapq = 10
 	def gnomadGenome= getGnomadGenomePath(meta,reference);
 	def gnomadPop = meta.gnomad_population?:"AF_nfe"
 	def gnomadAF = meta.gnomad_max_af?:0.01
@@ -215,7 +215,7 @@ do
 	gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" HaplotypeCaller \
 		-R "${reference}" \
 		${dbsnp.isEmpty()?"":"--dbsnp \"${dbsnp}\" "} \
-		--minimum-mapping-quality "${mapq}" \
+		${meta.mapq && ((meta.mapq as int) >= 0)?"--minimum-mapping-quality ${meta.mapq}":""} \
 		--sample-ploidy "${ploidy}" \
 		--do-not-run-physical-phasing \
 		--alleles TMP/jeter.vcf.gz \

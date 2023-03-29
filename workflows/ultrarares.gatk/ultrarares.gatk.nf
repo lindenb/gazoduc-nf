@@ -102,7 +102,7 @@ main:
 	iter2_ch  = ITER_SECOND(meta.plus([split_vcf_method:" --variants-count  10000 "]), reference, iter1_ch.vcf, splitbams_ch.output2, bed)
         version_ch = version_ch.mix(iter2_ch.version)
 
-	iter3_ch  = ITER_THIRD(meta.plus([split_vcf_method:" --variants-count  1000 "]), reference, iter2_ch.vcf, splitbams_ch.output3, bed)
+	iter3_ch  = ITER_THIRD(meta.plus([split_vcf_method:" --variants-count  100 "]), reference, iter2_ch.vcf, splitbams_ch.output3, bed)
         version_ch = version_ch.mix(iter3_ch.version)
 
         version_ch = MERGE_VERSION(meta, "rare-gatk", "rare-gatk",version_ch.collect())
