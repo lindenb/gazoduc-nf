@@ -33,18 +33,29 @@ gazoduc.build("bams", "NO_FILE").
 	required().
 	put()
 
-gazoduc.make("max_cases",100_000).
+gazoduc.make("max_cases",2).
 	description("max number of cases per plot").
 	setInt().
 	put()
 
-gazoduc.make("max_controls",10).
+gazoduc.make("max_controls",2).
 	description("max number of controls per plot").
 	setInt().
 	put()
 
+gazoduc.make("vcf","NO_FILE").
+	description("input vcf").
+	existingFile().
+	required().
+	put()
 
+gazoduc.make("extraCmdWallyRegion", "--clip").
+	description("extra arguments to wally regions").
+	put()
 
+gazoduc.make("mapq", 1).
+	description("min mapping quality").
+	put()
 
 
 include {WALLY_DOWNLOAD_01} from '../../modules/wally/wally.download.01.nf'
@@ -52,11 +63,11 @@ include {runOnComplete} from '../../modules/utils/functions.nf'
 include {SAMTOOLS_SAMPLES01} from '../../modules/samtools/samtools.samples.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {moduleLoad;isBlank;isHg38;isHg19} from '../../modules/utils/functions.nf'
-include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include {DOWNLOAD_GNOMAD_SV_01} from '../../modules/gnomad/download.gnomad.sv.01.nf'
 include {DOWNLOAD_DGV_01} from '../../modules/dgv/download.dgv.01.nf'
-include {DOWNLOAD_GFF3_01} from '../../modules/gff3/download.gff3.01.nf'
-
+include {SIMPLE_ZIP_01} from '../../modules/utils/zip.simple.01.nf'
+include {SIMPLE_PUBLISH_01} from '../../modules/utils/publish.simple.01.nf'
+include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 
 if( params.help ) {
     gazoduc.usage().
@@ -71,9 +82,9 @@ if( params.help ) {
 
 
 workflow {
-
-	//html = VERSION_TO_HTML(params,ch1.version)
-	//PUBLISH(ch1.version,html.html,ch1.zip)
+	ch = WALLY_REGION_01(params, params.reference, file(params.vcf), params.bams, file("NO_FILE"), file("NO_FILE") )
+	html = VERSION_TO_HTML(params,ch.version)
+	SIMPLE_PUBLISH_01(params, Channel.empty().mix(html.html).mix(ch.version).mix(ch.zip).collect())
 	}
 
 runOnComplete(workflow);
@@ -82,21 +93,38 @@ workflow WALLY_REGION_01 {
     take:
 	    meta
 	    reference
+	    vcf
 	    bams
 	    bed
+	    excludeids
     main:
 		version_ch = Channel.empty()
+
 
 		ch1_ch = SAMTOOLS_SAMPLES01([:],reference,bams)
 		version_ch = version_ch.mix(ch1_ch.version)
 
-	    wally_ch = WALLY_DOWNLOAD_01(meta)
-        version_ch = version_ch.mix(ch1_ch.version)
+	        wally_ch = WALLY_DOWNLOAD_01(meta)
+                version_ch = version_ch.mix(wally_ch.version)
 
 		compile_ch = COMPILE_VCF_PARSER(meta,reference)
 		version_ch = version_ch.mix(compile_ch.version)
 
-        splitctx_ch = SPLIT_VARIANTS(meta,vcf,excludeids, compile_ch.jar)		
+
+		merge_ch = Channel.empty()
+		gnomad_ch = DOWNLOAD_GNOMAD_SV_01(meta,reference)
+		version_ch = version_ch.mix(gnomad_ch.version)
+		merge_ch = merge_ch.mix(gnomad_ch.bed)
+
+		dgv_ch = DOWNLOAD_DGV_01(meta,reference)
+		version_ch = version_ch.mix(dgv_ch.version)
+		merge_ch = merge_ch.mix(dgv_ch.bed)
+
+		known_ch = MERGE_KNOWN(meta,merge_ch.collect())
+		version_ch = version_ch.mix(known_ch.version)
+
+
+	        splitctx_ch = SPLIT_VARIANTS(meta,vcf,excludeids, compile_ch.jar)		
 		version_ch = version_ch.mix(splitctx_ch.version)
 
 		ch2_ch = splitctx_ch.output.splitCsv(header:true,sep:'\t').
@@ -107,11 +135,16 @@ workflow WALLY_REGION_01 {
 				"max_controls":(meta.max_controls?:10)
 				])}
 
-        plot_ch = PLOT_WALLY(meta, reference, ch2_ch)
+	        plot_ch = PLOT_WALLY(meta, reference, wally_ch.executable, known_ch.bed, ch2_ch)
 		version_ch = version_ch.mix(plot_ch.version)
+
+		zip_ch = SIMPLE_ZIP_01(params,plot_ch.output.collect())
+		version_ch = version_ch.mix(zip_ch.version)
+
 
 		version_ch = MERGE_VERSION(meta, "Wally", "Wally", version_ch.collect())
     emit:
+	    zip = zip_ch.zip
 	    version = version_ch
     }
 
@@ -155,7 +188,8 @@ private final int minLenOnReference = ${meta.minCnvLength?:"1"};
 private final int maxLenOnReference = ${meta.maxCnvLength?:"250_000_000"};
 private final String prefix="${meta.prefix?:""}";
 private final int max_controls =  ${meta.max_controls?:"50"};
-
+private final int large_length =  5_000;
+private final int image_size = 1024;
 
 private boolean hasCNV(final Genotype g) {	
 	return g.isHet() || g.isHomVar();
@@ -191,9 +225,11 @@ private void instanceMain(final String args[]) {
 			System.exit(-1);
 			}
 		PrintStream out = System.out;
-		out.print("prefix");
+		out.print("title");
 		out.print("\t");
 		out.print("interval");
+		out.print("\t");
+		out.print("command");
 		out.print("\t");
 		out.print("vcf");
 		out.print("\t");
@@ -206,10 +242,15 @@ private void instanceMain(final String args[]) {
 		try(VCFIterator r = new VCFIteratorBuilder().open(System.in)) {
 			long variant_id =0L;
 			final VCFHeader h = r.getHeader();
+			final SAMSequenceDictionary  dict = h.getSequenceDictionary();
+			if(dict==null || dict.isEmpty()) {
+				System.err.println("Missing dict.");
+				System.exit(-1);
+				}
 			while(r.hasNext()) {
 				final VariantContext ctx = r.next();
-				final String id = getVariantId(ctx);
-				if(excludeIds.contains(id)) continue;
+				final SAMSequenceRecord ssr = dict.getSequence(ctx.getContig());
+				if(ssr==null) continue;
 				int len = ctx.getLengthOnReference();
 				if(len < minLenOnReference || len > maxLenOnReference) continue;
 				final String svType = ctx.getAttributeAsString("SVTYPE","");
@@ -224,12 +265,35 @@ private void instanceMain(final String args[]) {
 					map(G->G.getSampleName()).
 					collect(Collectors.toList());
 				
+
 				Collections.shuffle(unaffected);
 				if(unaffected.size()  > max_controls)  unaffected = unaffected.subList(0,max_controls);
 				variant_id++;
-				out.print(this.prefix + ctx.getContig()+"_"+ctx.getStart()+"_"+ctx.getEnd()+"_"+svType+"_"+len+"_id"+variant_id+".");
+				out.print(this.prefix + ctx.getContig()+"_"+ctx.getStart()+"_"+ctx.getEnd()+"_"+svType+"_" + len);
 				out.print("\t");
 				out.print(ctx.getContig()+":"+ctx.getStart()+"-"+ctx.getEnd());
+				out.print("\t");
+				if(len <= large_length*2 ) {
+					final int xstart = Math.max(1, ctx.getStart() - len);
+					final int xend = Math.min(ssr.getSequenceLength() , ctx.getEnd() + len);
+					out.print("--region "+ctx.getContig()+":"+xstart+"-"+xend);
+					out.print(" --width "+(image_size));
+					}
+				else
+					{
+					final int xstart1 = Math.max(1, ctx.getStart() - large_length);
+					final int xend1 = Math.min(ssr.getSequenceLength() , ctx.getStart() + large_length);
+
+					final int xstart2 = Math.max(1, ctx.getEnd() - large_length);
+					final int xend2 = Math.min(ssr.getSequenceLength() , ctx.getEnd() + large_length);
+
+					out.print(" --split 2 --region ");
+					out.print(ctx.getContig()+":"+xstart1+"-"+xend1);
+					out.print(",");
+					out.print(ctx.getContig()+":"+xstart2+"-"+xend2);
+					out.print(" --width "+(image_size*2));				
+					}
+				out.print(" --height "+ ((affected.size()+unaffected.size())*image_size)+" ");
 				out.print("\t");
 				out.print(vcf);
 				out.print("\t");
@@ -313,25 +377,58 @@ EOF
 """
 }
 
+process MERGE_KNOWN {
+input:
+	val(meta)
+	val(L)
+output:
+	path("merged.bed.gz"),emit:bed
+	path("merged.bed.gz.tbi")
+	path("version.xml"),emit:version
+script:
+"""
+hostname 1>&2
+${moduleLoad("htslib")}
+set -o pipefail
 
+gunzip -c ${L.join(" ")} |\
+	grep -v "^#" |\
+	cut -f 1-4 |\
+	awk -F '\t' '(\$2 != \$3)' |\
+	sort -t '\t' -T . -k1,1 -k2,2n -k3,3n --unique |\
+	uniq > merged.bed
+
+bgzip merged.bed
+tabix -p bed merged.bed.gz
+
+###############################################################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">merge known files</entry>
+        <entry key="number.of.files">${L.size()}</entry>
+</properties>
+EOF
+"""
+}
 
 
 process PLOT_WALLY {
-tag "${row.prefix} ${row.interval}"
+tag "${row.interval}"
 afterScript "rm -rf TMP"
 memory "10g"
 input:
 	val(meta)
 	val(reference)
-    path(wally)
+        path(wally)
+	val(known)
 	val(row)
 output:
-	path("${row.prefix}out.html"),emit:output
+	path("${row.title}.png"),emit:output
 	path("version.xml"),emit:version
 script:
 	def num_cases = row.max_cases?:1000000
 	def num_controls = row.max_controls?:10
-	def extend = row.extend?:"5.0"
 	def mapq = row.mapq?:30
 """
 hostname 1>&2
@@ -359,6 +456,15 @@ join -t '\t' -1 1 -2 1 -o "2.2" TMP/controls.txt TMP/samples.bams.tsv | sort | u
 cat TMP/cases.bams.list TMP/controls.bams.list  | sort | uniq > TMP/all.bams.list
 
 
+${wally.toRealPath()} region ${meta.extraCmdWallyRegion} \
+	--genome "${reference}"  \
+	--bed "${known}" \
+	--map-qual ${meta.mapq} \
+	${row.command} \
+	`cat TMP/all.bams.list`
+
+mv -v *.png "${row.title}.png"
+
 ###############################################################################
 cat << EOF > version.xml
 <properties id="${task.process}">
@@ -366,8 +472,6 @@ cat << EOF > version.xml
 	<entry key="description">plot CNV</entry>
 	<entry key="interval">${row.interval}</entry>
 	<entry key="mapq">${mapq}</entry>
-	<entry key="extend">${extend}</entry>
-	<entry key="coverageplotter.version">\$(java -jar ${JVARKIT_DIST}/coverageplotter.jar --version)</entry>
 </properties>
 EOF
 """
