@@ -22,13 +22,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {SAMTOOLS_SAMPLES01} from '../../modules/samtools/samtools.samples.01.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
-include {moduleLoad;isBlank;isHg38;isHg19} from '../../modules/utils/functions.nf'
-include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
-include {DOWNLOAD_GNOMAD_SV_01} from '../../modules/gnomad/download.gnomad.sv.01.nf'
-include {DOWNLOAD_DGV_01} from '../../modules/dgv/download.dgv.01.nf'
-include {DOWNLOAD_GFF3_01} from '../../modules/gff3/download.gff3.01.nf'
 
 def gazoduc = gazoduc.Gazoduc.getInstance(params);
 
@@ -53,6 +46,13 @@ gazoduc.make("maxCnvLength",250_000_000).
         put()
 
 
+include {SAMTOOLS_SAMPLES01} from '../../modules/samtools/samtools.samples.01.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {moduleLoad;isBlank;isHg38;isHg19} from '../../modules/utils/functions.nf'
+include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
+include {DOWNLOAD_GNOMAD_SV_01} from '../../modules/gnomad/download.gnomad.sv.01.nf'
+include {DOWNLOAD_DGV_01} from '../../modules/dgv/download.dgv.01.nf'
+include {DOWNLOAD_GFF3_01} from '../../modules/gff3/download.gff3.01.nf'
 
 workflow CNV_PLOTTER_01 {
 	take:
