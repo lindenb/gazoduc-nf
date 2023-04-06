@@ -23,7 +23,6 @@ SOFTWARE.
 
 */
 
-include { getKeyValue; getModules; isHg19; isHg38} from '../../modules/utils/functions.nf'
 include { SCATTER_INTERVALS_BY_NS } from '../../modules/picard/picard.scatter.nf'
 include { INTERVAL_LIST_TO_BED }  from '../../modules/picard/picard.interval2bed.nf'
 

@@ -1,24 +1,103 @@
-include {hasFeature;parseBoolean;getKeyValue} from '../../../modules/utils/functions.nf'
+/*
+
+Copyright (c) 2023 Pierre Lindenbaum
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+The MIT License (MIT)
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
+
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
+
+
+gazoduc.make("bams","NO_FILE").
+	description("file containing the path to multiple bam files").
+	required().
+	existingFile().
+	put()
+
+gazoduc.make("references","NO_FILE").
+	description("Other references. All fasta path listed in a file. Name of chromosomes will be changed to match those of the main reference").
+	put()
+
+gazoduc.make("beds","NO_FILE").
+	description("Path to a list of bed files. if undefined, the REF will be split into parts").
+	put()
+
+gazoduc.make("dbsnp","").
+	description("Optional path to dbsnp").
+	put()
+
+gazoduc.make("pedigree","").
+	description("Optional path to a pedigree").
+	put()
+
+
+gazoduc.make("mapq",10).
+	description("mapping quality").
+	put()
+
+
+params.disableFeatures=""
+
+
+include {runOnComplete;hasFeature;parseBoolean;getKeyValue} from '../../../modules/utils/functions.nf'
 include {GATK4_HAPCALLER_GVCFS_01} from '../../../subworkflows/gatk/gatk4.hapcaller.gvcfs.01.nf'
 include {COLLECT_TO_FILE_01 as COLLECT2FILE1; COLLECT_TO_FILE_01 as COLLECT2FILE2} from '../../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_CONCAT_01} from '../../../subworkflows/bcftools/bcftools.concat.01.nf'
 include {MERGE_VERSION} from '../../../modules/version/version.merge.nf'
 include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
+include {SCATTER_TO_BED} from '../../../subworkflows/picard/picard.scatter2bed.nf'
+include {LINUX_SPLIT} from '../../../modules/utils/split.nf'
 
-params.bam=""
-params.beds=""
-params.bams=""
-params.reference=""
-params.references="NO_FILE"
-params.dbsnp=""
-params.prefix=""
-params.publishDir=""
-params.disableFeatures=""
+
+
+if( params.help ) {
+    gazoduc.usage().
+        name("HC").
+        description("Haplotype Caller").
+        print();
+    exit 0
+    }
+else
+    	{
+	gazoduc.validate()
+        }
 
 
 workflow  {
 	version_ch = Channel.empty()
-	vcfs_ch = GATK4_HAPCALLER_GVCFS_01(params,params.reference,file(params.references),file(params.bams),Channel.fromPath(params.beds))
+   
+	/* if no bed was specified, split the genome into part */
+        if(file(params.beds).name.equals("NO_FILE")) {
+		scatter_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"ACGT","MAX_TO_MERGE":"1000"], params.reference) 
+		version_ch = version_ch.mix(scatter_ch.version)
+
+		split_ch = LINUX_SPLIT([suffix:".bed","method":"--lines=1"], scatter_ch.bed)
+		version_ch = version_ch.mix(split_ch.version)
+
+		beds_ch = split_ch.output.splitText().map{it.trim()}
+	} else {
+		beds_ch = Channel.fromPath(params.beds)
+	}
+
+	vcfs_ch = GATK4_HAPCALLER_GVCFS_01(params,params.reference,file(params.references),file(params.bams), beds_ch, file(params.pedigree))
 	version_ch = version_ch.mix(vcfs_ch.version)
 
 	file_list_ch = COLLECT2FILE1([:],vcfs_ch.region_vcf.map{T->T[1]}.collect())
@@ -53,21 +132,4 @@ ln -s "${xml}" ./${params.prefix}genotyped.xml
 """
 }
 
-
-workflow.onComplete {
-
-    println ( workflow.success ? """
-        Pipeline execution summary
-        ---------------------------
-        Completed at: ${workflow.complete}
-        Duration    : ${workflow.duration}
-        Success     : ${workflow.success}
-        workDir     : ${workflow.workDir}
-        exit status : ${workflow.exitStatus}
-        """ : """
-        Failed: ${workflow.errorReport}
-        exit status : ${workflow.exitStatus}
-        """
-    )
-}
-
+runOnComplete(workflow)

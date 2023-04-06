@@ -26,6 +26,7 @@ include {isBlank;moduleLoad} from './../../modules/utils/functions.nf'
 include {SAMTOOLS_SAMPLES_01} from '../samtools/samtools.samples.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 
+
 workflow GATK4_HAPCALLER_GVCFS_01 {
         take:
                 meta
@@ -33,6 +34,7 @@ workflow GATK4_HAPCALLER_GVCFS_01 {
 		references
                 bams
                 beds
+		pedigree
         main:
                 version_ch = Channel.empty()
 
@@ -54,7 +56,7 @@ workflow GATK4_HAPCALLER_GVCFS_01 {
 			"reference": reference,
 			"dbsnp": (meta.dbsnp?:""),
 			"extraHC": (meta.extraHC?:""),
-			"pedigree": (meta.pedigree?:""),
+			"pedigree": (pedigree.name.equals("NO_FILE")?"":pedigree.toRealPath()),
 			"mapq": (meta.mapq?:"-1"),
 			"bam_reference": T[1].reference
 			]}
@@ -323,7 +325,7 @@ output:
 script:
      def region = row.interval
      def pedigree = meta.pedigree?:""
-     def optPed = (isBlank(pedigree)?"":" -A PossibleDeNovo --pedigree "+pedigree)
+     def optPed = (isBlank(pedigree) || region.contains("X") || region.contains("Y")?"":" -A PossibleDeNovo --pedigree "+pedigree) // BUG HAPLOID https://github.com/broadinstitute/gatk/issues/7304#issuecomment-1497966273
      def optDbsnp =  (isBlank(meta.dbsnp)?"":"--dbsnp "+meta.dbsnp)
      def maxAlternateAlleles = meta.maxAlternateAlleles?:6
 """
