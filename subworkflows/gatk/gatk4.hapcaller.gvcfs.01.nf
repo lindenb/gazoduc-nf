@@ -73,7 +73,7 @@ workflow GATK4_HAPCALLER_GVCFS_01 {
 		version_ch = version_ch.mix(find_gvcfs_ch.version.first())
 
 
-		genotyped_ch = GENOTYPE_GVCFS(meta,reference,find_gvcfs_ch.output.splitCsv(header:true,sep:'\t',strip:true))
+		genotyped_ch = GENOTYPE_GVCFS(meta,reference, pedigree, find_gvcfs_ch.output.splitCsv(header:true,sep:'\t',strip:true))
 		version_ch = version_ch.mix(genotyped_ch.version.first())
 
 		version_ch = MERGE_VERSION(meta, "gatk4", "call bams using gvcfs", version_ch.collect())
@@ -317,6 +317,7 @@ afterScript 'rm -rf  TMP BEDS jeter* database tmp_read_resource_*.config'
 input:
 	val(meta)
 	val(reference)
+	path(pedigree)
 	val(row)
 output:
         tuple val("${row.interval}"),path("genotyped.bcf"),emit:region_vcf
@@ -324,7 +325,7 @@ output:
 	path("version.xml"),emit:version
 script:
      def region = row.interval
-     def pedigree = meta.pedigree?:""
+     def pedigree = pedigree.name.equals("NO_FILE")?"":pedigree.toRealPath()
      def optPed = (isBlank(pedigree) || region.contains("X") || region.contains("Y")?"":" -A PossibleDeNovo --pedigree "+pedigree) // BUG HAPLOID https://github.com/broadinstitute/gatk/issues/7304#issuecomment-1497966273
      def optDbsnp =  (isBlank(meta.dbsnp)?"":"--dbsnp "+meta.dbsnp)
      def maxAlternateAlleles = meta.maxAlternateAlleles?:6

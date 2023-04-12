@@ -44,7 +44,7 @@ gazoduc.make("dbsnp","").
 	description("Optional path to dbsnp").
 	put()
 
-gazoduc.make("pedigree","").
+gazoduc.make("pedigree","NO_FILE").
 	description("Optional path to a pedigree").
 	put()
 
