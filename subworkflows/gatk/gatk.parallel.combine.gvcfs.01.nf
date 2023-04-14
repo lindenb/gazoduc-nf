@@ -39,8 +39,10 @@ workflow GATK_PARALLEL_COMBINE_GVCFS {
 	main:
 		version_ch = Channel.empty()
 
+		ch1 = EXPAND(meta,rows)		
+		version_ch = version_ch.mix(ch1.version)
 
-		level0_ch = COMBINE_LEVEL0(meta, reference, ch1.output )
+		level0_ch = COMBINE_LEVEL0(meta, reference, ch1.output.splitCsv(header:true,sep:'\t') )
 		version_ch = version_ch.mix(level0_ch.version)
 
 		level1_ch = COMBINE_LEVEL1(meta, reference, level0_ch.output.groupTuple())
@@ -57,8 +59,33 @@ workflow GATK_PARALLEL_COMBINE_GVCFS {
 	}
 
 
-process COMBINE_LEVEL0 {
+process EXPAND {
+executor "local"
 tag "${row.interval} ${row.gvcf_split}"
+input:
+	val(meta)
+	val(row)
+output:
+	path("output.tsv"),emit:output
+	path("version.xml"),emit:version
+script:
+"""
+awk 'BEGIN{printf("interval\tgvcfs\\n");} {printf("${row.interval}\t%s\\n",\$0);}' "${row.gvcf_split}" > output.tsv
+
+##################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">extract gvcf list</entry>
+        <entry key="region">${row.interval}</entry>
+	<entry key="versions">${getVersionCmd("awk")}</entry>
+</properties>
+EOF
+"""
+}
+
+process COMBINE_LEVEL0 {
+tag "${row.interval} ${row.gvcfs}"
 memory {task.attempt <2 ? "15g":"60g"}
 memory "10g"
 cpus "3"
@@ -84,7 +111,7 @@ mkdir -p TMP
 gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" CombineGVCFs \
                 ${otherOpts} \
 		-L "${row.interval}" \
-		-V "${row.gvcf_split}"  \
+		-V "${row.gvcfs}"  \
 		-O "TMP/combine0.g.vcf.gz"
 
 mv -v TMP/combine0.g.vcf.gz ./
@@ -104,7 +131,7 @@ EOF
 
 
 process COMBINE_LEVEL1 {
-tag "${row.interval} N=${L.size()}"
+tag "${region} N=${L.size()}"
 memory {task.attempt <2 ? "15g":"60g"}
 memory "10g"
 cpus "3"
@@ -116,27 +143,29 @@ input:
 	val(reference)
 	tuple val(region),val(L)
 output:
-        tuple val("${row.interval}"),path("combine0.g.vcf.gz"),emit:output
-        path("combine0.g.vcf.gz"),emit:index
+        tuple val("${region}"),path("combine1.g.vcf.gz"),emit:output
+        path("combine1.g.vcf.gz"),emit:index
 	path("version.xml"),emit:version
 script:
      def otherOpts =  gatkGetArgumentsForCombineGVCFs(meta.plus("reference":reference)) 
+if(L.size()==1)
+"""
+
+ln -s "${L[0].toRealPath()}" combine1.g.vcf.gz
+ln -s "${L[0].toRealPath()}.tbi" combine1.g.vcf.gz.tbi
+
+echo "<properties/>" > version.xml
+"""
+else
 """
 hostname 1>&2
 ${moduleLoad("gatk4")}
 mkdir -p TMP
 
-if [ "\${L.size()}" == "1" ] ; then
-
-	ln -s "${L[0].toRealPath()}" combine1.g.vcf.gz
-	ln -s "${L[0].toRealPath()}.tbi" combine1.g.vcf.gz.tbi
-
-	sleep 5
-else
-
 cat << EOF > TMP/vcfs.list
 ${L.join("\n")}
 EOF
+
 
 gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" CombineGVCFs \
         ${otherOpts} \
@@ -147,14 +176,13 @@ gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" CombineGVCFs
 mv TMP/combine1.g.vcf.gz ./
 mv TMP/combine1.g.vcf.gz.tbi ./
 
-fi
 
 ##################
 cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
         <entry key="description">combine level 1</entry>
-        <entry key="region">${row.interval}</entry>
+        <entry key="region">${region}</entry>
 	<entry key="versions">${getVersionCmd("gatk")}</entry>
 </properties>
 EOF

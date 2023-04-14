@@ -25,10 +25,19 @@ SOFTWARE.
 
 def gazoduc = gazoduc.Gazoduc.getInstance()
 
-gazoduc.make("parallel_combine_gvcf",",false).
+gazoduc.make("parallel_combine_gvcf",false).
         description("Run a different process for each step of combineGVCFs + GenotypeGVCFs. Default is to CombineGVCF+GenotypeGVCS in the same process").
 	setBoolean().
         put()
+
+gazoduc.make("blocksize","1mb").
+        description("argument for jvarkit/findgvcfsblocks block-size").
+        put()
+
+gazoduc.make("mergesize","100").
+        description("argument for jvarkit/findgvcfsblocks merge-size").
+        put()
+
 
 include {parseBoolean;isBlank;moduleLoad;getVersionCmd} from './../../modules/utils/functions.nf'
 include {gatkGetArgumentsForCombineGVCFs;gatkGetArgumentsForGenotypeGVCF} from './gatk.hc.utils.nf'
@@ -236,7 +245,6 @@ output:
 	path("version.xml"),emit:version
 script:
 	def sqrt = (L.size() < 100 ? L.size() : Math.max(1,(int)Math.sqrt(L.size())))
-	//def blocksize = meta.gvcfs_blocksize?:"1mb"
 """
 hostname 1>&2
 set -o pipefail
