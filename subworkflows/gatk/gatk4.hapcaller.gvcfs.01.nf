@@ -22,7 +22,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {isBlank;moduleLoad} from './../../modules/utils/functions.nf'
+
+def gazoduc = gazoduc.Gazoduc.getInstance()
+
+gazoduc.make("parallel_combine_gvcf",",false).
+        description("Run a different process for each step of combineGVCFs + GenotypeGVCFs. Default is to CombineGVCF+GenotypeGVCS in the same process").
+	setBoolean().
+        put()
+
+include {parseBoolean;isBlank;moduleLoad;getVersionCmd} from './../../modules/utils/functions.nf'
 include {SAMTOOLS_SAMPLES_01} from '../samtools/samtools.samples.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 
@@ -46,7 +54,7 @@ workflow GATK4_HAPCALLER_GVCFS_01 {
 		each_bed = beds.splitText().map{it.trim()}
 		each_bam = samples_bams_ch.output.splitCsv(header: true, sep : '\t')
 
-		each_bam.dump()		
+		//each_bam.dump()		
 
 		hc_input_ch = each_bed.combine(each_bam).map{T->[
 			"bed":T[0],
@@ -65,16 +73,23 @@ workflow GATK4_HAPCALLER_GVCFS_01 {
 
 		by_bed_ch = hapcaller_ch.bedvcf.map{T->[T[0].bed,T[1]]}.groupTuple()
 
-		split_gvcfs_ch = SPLIT_GVCF_BLOCKS(meta,by_bed_ch)
+		split_gvcfs_ch = SPLIT_GVCF_BLOCKS_PER_CONTIG(meta,by_bed_ch)
 		version_ch = version_ch.mix(split_gvcfs_ch.version.first())
 
 
 		find_gvcfs_ch = FIND_GVCF_BLOCKS(meta,split_gvcfs_ch.output.splitCsv(header:true,sep:'\t',strip:true))
 		version_ch = version_ch.mix(find_gvcfs_ch.version.first())
 
+		each_chunk = find_gvcfs_ch.output.splitCsv(header:true,sep:'\t',strip:true)
 
-		genotyped_ch = GENOTYPE_GVCFS(meta,reference, pedigree, find_gvcfs_ch.output.splitCsv(header:true,sep:'\t',strip:true))
-		version_ch = version_ch.mix(genotyped_ch.version.first())
+		if( parseBoolean(meta.parallel_combine_gvcf) )  {
+			genotyped_ch = GENOTYPE_GVCFS_01(meta,reference, pedigree, each_chunk)
+			version_ch = version_ch.mix(genotyped_ch.version.first())
+			}
+		else {
+			genotyped_ch = GENOTYPE_GVCFS_02(meta,reference, pedigree, each_chunk)
+			version_ch = version_ch.mix(genotyped_ch.version.first())
+			}
 
 		version_ch = MERGE_VERSION(meta, "gatk4", "call bams using gvcfs", version_ch.collect())
 	emit:
@@ -206,7 +221,7 @@ EOF
 }
 
 
-process SPLIT_GVCF_BLOCKS {
+process SPLIT_GVCF_BLOCKS_PER_CONTIG {
 executor "local"
 tag "${file(bed).name} N=${L.size()}"
 memory {task.attempt==1?"5g":(task.attempt==2?"15g":"30g")}
@@ -221,12 +236,12 @@ output:
 	path("version.xml"),emit:version
 script:
 	def sqrt = (L.size() < 100 ? L.size() : Math.max(1,(int)Math.sqrt(L.size())))
-	def blocksize = meta.gvcfs_blocksize?:"1mb"
+	//def blocksize = meta.gvcfs_blocksize?:"1mb"
 """
 hostname 1>&2
 set -o pipefail
 
-mkdir GVCFS
+mkdir -p GVCFS
 
 cat << EOF > gvcfs.list
 ${L.join("\n")}
@@ -240,6 +255,7 @@ test -s split.gvcfs.txt
 
 cut -f 1 "${bed}" | sort -T . | uniq |\
 	awk -v P=\${PWD} 'BEGIN{printf("contig\tgvcf_list\tgvcf_split\tbed\\n");} {printf("%s\t%s/gvcfs.list\t%s/split.gvcfs.txt\t${bed}\\n",\$1,P,P);}' > contig.gvcfs.bed.tsv
+
 
 # prevent timestamp problem
 sleep 10
@@ -306,7 +322,7 @@ EOF
 
 
 
-process GENOTYPE_GVCFS {
+process GENOTYPE_GVCFS_02 {
 tag "${row.interval}"
 memory {task.attempt <2 ? "15g":"60g"}
 memory "10g"
@@ -345,6 +361,8 @@ do
                 ${optDbsnp} \
 		-L "${region}" \
 		-V "\${V}"  \
+		-G StandardAnnotation \
+		-G AS_StandardAnnotation \
 		-O "TMP/combine0.\${j}.g.vcf.gz"
 
 	echo "TMP/combine0.\${j}.g.vcf.gz" >> TMP/combine0.list
@@ -365,6 +383,8 @@ gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" CombineGVCFs
 	-R "${reference}" \
         ${optDbsnp} \
         -L "${region}" \
+	-G StandardAnnotation \
+	-G AS_StandardAnnotation \
 	-V "TMP/combine0.list"  \
 	-O "TMP/combine1.g.vcf.gz"
 fi
@@ -380,7 +400,8 @@ gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" GenotypeGVCF
         ${optDbsnp} \
       --max-alternate-alleles ${maxAlternateAlleles} \
       --seconds-between-progress-updates 60 \
-      -G StandardAnnotation -G StandardHCAnnotation \
+	-G StandardAnnotation \
+	-G AS_StandardAnnotation \
       -O "TMP/jeter.vcf.gz"
 
 
@@ -396,6 +417,194 @@ cat << EOF > version.xml
 	<entry key="gatk.version">\$( gatk HaplotypCaller --version 2> /dev/null  | paste -s -d ' ')</entry>
 </properties>
 EOF
+"""
+}
 
+
+
+workflow GENOTYPE_GVCFS_01 {
+	take:
+		meta
+		reference
+		pedigree
+		rows
+	main:
+		version_ch = Channel.empty()
+
+
+		level0_ch = COMBINE_LEVEL0(meta, reference, pedigree, ch1.output )
+		version_ch = version_ch.mix(level0_ch.version)
+
+		level1_ch = COMBINE_LEVEL1(meta, reference, pedigree, level0_ch.output.groupTuple())
+		version_ch = version_ch.mix(level1_ch.version)
+
+		level2_ch = GENOTYPE_LEVEL2(meta, reference, level1_ch.output )
+		version_ch = version_ch.mix(level1_ch.version)
+
+		version_ch = MERGE_VERSION(meta, "combine_gvcfs", "combine.gvcfs", version_ch.collect())
+
+	emit:
+		output = level2_ch.output
+		versiion = version_ch
+	}
+
+
+process COMBINE_LEVEL0 {
+tag "${row.interval} ${row.gvcf_split}"
+memory {task.attempt <2 ? "15g":"60g"}
+memory "10g"
+cpus "3"
+errorStrategy  'retry'
+maxRetries 3
+afterScript 'rm -rf  TMP BEDS jeter* database tmp_read_resource_*.config'
+input:
+	val(meta)
+	val(reference)
+	path(pedigree)
+	val(row)
+output:
+        tuple val("${row.interval}"),path("combine0.g.vcf.gz"),emit:output
+        path("combine0.g.vcf.gz"),emit:index
+	path("version.xml"),emit:version
+script:
+     def region = row.interval
+     def pedigree = pedigree.name.equals("NO_FILE")?"":pedigree.toRealPath()
+     def optPed = (isBlank(pedigree) || region.contains("X") || region.contains("Y")?"":" -A PossibleDeNovo --pedigree "+pedigree) // BUG HAPLOID https://github.com/broadinstitute/gatk/issues/7304#issuecomment-1497966273
+     def optDbsnp =  (isBlank(meta.dbsnp)?"":"--dbsnp "+meta.dbsnp)
+"""
+hostname 1>&2
+${moduleLoad("gatk4")}
+
+mkdir -p TMP
+
+gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" CombineGVCFs \
+		-R "${reference}" \
+                ${optDbsnp} \
+		-L "${region}" \
+		-V "${row.gvcf_split}"  \
+		-G StandardAnnotation \
+		-G AS_StandardAnnotation \
+		-O "TMP/combine0.g.vcf.gz"
+
+mv -v TMP/combine0.g.vcf.gz ./
+mv -v TMP/combine0.g.vcf.gz.tbi ./
+
+##################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">combine level0</entry>
+        <entry key="region">${region}</entry>
+	<entry key="gatk.version">\$( gatk HaplotypCaller --version 2> /dev/null  | paste -s -d ' ')</entry>
+</properties>
+EOF
+"""
+}
+
+
+process COMBINE_LEVEL1 {
+tag "${region} N=${L.size()}"
+memory {task.attempt <2 ? "15g":"60g"}
+memory "10g"
+cpus "3"
+errorStrategy  'retry'
+maxRetries 3
+afterScript 'rm -rf  TMP'
+input:
+	val(meta)
+	val(reference)
+	path(pedigree)
+	tuple val(region),val(L)
+output:
+        tuple val("${row.interval}"),path("combine0.g.vcf.gz"),emit:output
+        path("combine0.g.vcf.gz"),emit:index
+	path("version.xml"),emit:version
+script:
+     def region = row.interval
+     def pedigree = pedigree.name.equals("NO_FILE")?"":pedigree.toRealPath()
+     def optPed = (isBlank(pedigree) || region.contains("X") || region.contains("Y")?"":" -A PossibleDeNovo --pedigree "+pedigree) // BUG HAPLOID https://github.com/broadinstitute/gatk/issues/7304#issuecomment-1497966273
+     def optDbsnp =  (isBlank(meta.dbsnp)?"":"--dbsnp "+meta.dbsnp)
+"""
+hostname 1>&2
+${moduleLoad("gatk4")}
+mkdir -p TMP
+
+cat << EOF > TMP/vcfs.list
+${L.join("\n")}
+EOF
+
+gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" CombineGVCFs \
+	-R "${reference}" \
+        ${optDbsnp} \
+        -L "${region}" \
+	-G StandardAnnotation \
+	-G AS_StandardAnnotation \
+	-V TMP/vcfs.list  \
+	-O "TMP/combine1.g.vcf.gz"
+
+mv TMP/combine1.g.vcf.gz ./
+mv TMP/combine1.g.vcf.gz.tbi ./
+
+##################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">combine and call gvcfs</entry>
+        <entry key="region">${region}</entry>
+	<entry key="gatk.version">\$( gatk HaplotypCaller --version 2> /dev/null  | paste -s -d ' ')</entry>
+</properties>
+EOF
+"""
+}
+
+process GENOTYPE_LEVEL2 {
+tag "${region}"
+memory {task.attempt <2 ? "15g":"60g"}
+memory "10g"
+cpus "3"
+errorStrategy  'retry'
+maxRetries 3
+afterScript 'rm -rf  TMP'
+input:
+        val(meta)
+        val(reference)
+        path(pedigree)
+        tuple val(region),path(gvcf)
+output:
+        tuple val("${row.interval}"),path("combine0.g.vcf.gz"),emit:output
+        path("combine0.g.vcf.gz"),emit:index
+        path("version.xml"),emit:version
+script:
+     def maxAlternateAlleles = meta.maxAlternateAlleles?:6
+"""
+hostname 1>&2
+${moduleLoad("gatk4 bcftools")}
+mkdir -p TMP
+
+gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" GenotypeGVCFs  \
+      -R "${reference}" \
+      -L "${region}" \
+      -V "${gvcf.toRealPath()}" \
+        ${optPed} \
+        ${optDbsnp} \
+      --max-alternate-alleles ${maxAlternateAlleles} \
+      --seconds-between-progress-updates 60 \
+	-G StandardAnnotation \
+	-G AS_StandardAnnotation \
+      -O "TMP/jeter.vcf.gz"
+
+
+bcftools view -O b -o genotyped.bcf TMP/jeter.vcf.gz
+bcftools index genotyped.bcf
+
+##################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">call gvcfs</entry>
+        <entry key="region">${region}</entry>
+	<entry key="gatk.version">\$( gatk HaplotypCaller --version 2> /dev/null  | paste -s -d ' ')</entry>
+</properties>
+EOF
 """
 }

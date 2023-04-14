@@ -386,6 +386,10 @@ process FILTER_DELLY {
     rm jeter.cases.txt jeter.ctrls.txt
     
 
+    bcftools  +fill-tags -O v  -o jeter2.vcf jeter1.vcf  -- -t AN,AC,AF,AC_Hom,AC_Het,AC_Hemi,NS
+    mv jeter2.vcf jeter1.vcf
+
+
     bcftools view -O b -o "${prefix}sv.bcf" jeter1.vcf
     bcftools index "${prefix}sv.bcf"
 
