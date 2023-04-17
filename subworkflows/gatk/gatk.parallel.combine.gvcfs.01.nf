@@ -88,7 +88,7 @@ process COMBINE_LEVEL0 {
 tag "${row.interval} ${row.gvcfs}"
 memory {task.attempt <2 ? "15g":"60g"}
 memory "10g"
-cpus "3"
+cpus "1"
 errorStrategy  'retry'
 maxRetries 3
 afterScript 'rm -rf  TMP'

@@ -30,6 +30,13 @@ gazoduc.make("parallel_combine_gvcf",false).
 	setBoolean().
         put()
 
+
+gazoduc.make("use_whole_block",false).
+        description("Do NOT use jvarkit/findgvcfsblocks but use the whole interval. Useful when the BED is a set of small exons (WES).").
+	setBoolean().
+        put()
+
+
 gazoduc.make("blocksize","1mb").
         description("argument for jvarkit/findgvcfsblocks block-size").
         put()
@@ -298,6 +305,26 @@ script:
 	def contig = row.contig
 	def blocksize= meta.blocksize?:"1mb"
 	def mergesize = meta.mergesize?:"100"
+
+if(parseBoolean(meta.use_whole_block))
+"""
+hostname 1>&2
+${moduleLoad("jvarkit")}
+
+mkdir -p TMP
+
+awk -F '\t' 'BEGIN{printf("interval\tgvcf_split\tbed\\n");X=-1;Y=-1;} (\$1=="${contig}") {B=int(\$2);E=int(\$3);if(X==-1) {X=B;Y=E;} if(B<X) X=B; if(E>Y) Y=E;} END {printf("${contig}:%d-%d\t${row.gvcf_split}\t${row.bed}\\n",X+1,Y);}' '${row.bed}' > bed_samplemap.tsv
+
+##################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">use whome blocks</entry>
+        <entry key="contig">${contig}</entry>
+</properties>
+EOF
+"""
+else
 """
 hostname 1>&2
 ${moduleLoad("jvarkit")}
