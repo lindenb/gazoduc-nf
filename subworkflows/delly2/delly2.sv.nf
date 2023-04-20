@@ -364,7 +364,7 @@ process FILTER_DELLY {
 	prefix = getKeyValue(meta,"prefix","")
     """
     export LC_ALL=C
-    ${moduleLoad("bcftools")}
+    ${moduleLoad("bcftools/0.0.0")}
     export PATH=\${PWD}:\${PATH}
 
     delly filter -f germline  -o jeter.bcf "${merged}" 1>&2
