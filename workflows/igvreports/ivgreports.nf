@@ -253,6 +253,10 @@ public class Minikit {
                     }
             final ToIntFunction<Genotype> countALT = G->(int)(G.getAlleles().stream().filter(A->!(A.isReference() || A.isNoCall())).count());
             final Comparator<Genotype> gtSorter = (A,B)->{
+		if(A.isNoCall() && B.isHomRef()) return 1;
+		if(A.isHomRef() && B.isNoCall()) return -1;
+		if(A.isFiltered() && !B.isFiltered()) return  1;
+		if(!A.isFiltered() && B.isFiltered()) return -1;
             	if(A.hasGQ() && B.hasGQ()) {
             		return Integer.compare(B.getGQ(), A.getGQ());
             		}
@@ -488,7 +492,7 @@ mkdir -p TMP
 create_report ${row.vcf.isEmpty()?row.bedpe:row.vcf}  ${reference} \
 	--ideogram "${cytoband}" \
 	${row.flanking.isEmpty()?"":"--flanking ${row.flanking}"} \
-	${row.info.isEmpty()?"":"--info ${row.info}"} \
+	${row.info.isEmpty()?"":"--info-columns ${row.info}"} \
 	--tracks ${vcf} ${row.bams} ${refgene} \
 	--output TMP/${row.title}.html
 
