@@ -25,7 +25,7 @@ SOFTWARE.
 
 def gazoduc = gazoduc.Gazoduc.getInstance(params);
 
-gazoduc.make("delly2_version","v1.1.5").
+gazoduc.make("delly2_version","v1.1.6").
         menu("delly").
         description("delly2 version").
 	notEmpty().
@@ -87,7 +87,15 @@ script:
 	wget -O blacklist.gz "${url}"
 	wget -O blacklist.gz.fai "${url}.fai"
 	wget -O blacklist.gz.gzi "${url}.gzi"
-	
+
+	# be sure there is no clock problem....
+	touch -c blacklist.gz
+	sleep 5
+	touch -c blacklist.gz.fai
+	sleep 5
+	touch -c blacklist.gz.gzi
+	sleep 10
+
 	##########################################################################################
 	cat <<- EOF > version.xml
 	<properties id="${task.process}">
@@ -125,9 +133,12 @@ if [ ! -z "${url1}" ] ; then
 	wget -O - "${url1}" |\
 		cut -f 1,2,3|\
 		java -jar \${JVARKIT_DIST}/bedrenamechr.jar -R "${reference}" --column 1 --convert SKIP > exclude.bed 
+
 else
 		touch exclude.bed
 fi
+
+	sleep 10
 
 	##########################################################################################
 	cat <<- EOF > version.xml
@@ -164,6 +175,7 @@ cut -f1-3 ${xclude} ${gaps} jeter2.bed | \
 
 rm jeter2.bed
 
+
 	##########################################################################################
 	cat <<- EOF > version.xml
 	<properties id="${task.process}">
@@ -172,6 +184,8 @@ rm jeter2.bed
 		<entry key="version">${getVersionCmd("bedtools")}</entry>
 	</properties>
 	EOF
+
+sleep 10
 
 """
 }
@@ -187,12 +201,14 @@ process DOWNLOAD_DELLY2 {
 		path("delly"),emit:executable
 		path("version.xml"),emit:version
 	script:
-		def version = getKeyValue(meta,"delly2_version","v1.1.5")
+		def version = getKeyValue(meta,"delly2_version","v1.1.6")
 		def url = "https://github.com/dellytools/delly/releases/download/${version}/delly_${version}_linux_x86_64bit"
 	"""
 	hostname 1>&2
 	wget -O delly "${url}"
+	touch -c delly
 	chmod a+x delly
+	sleep 10
 
 	cat <<- EOF > version.xml
 	<properties id="${task.process}">

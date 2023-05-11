@@ -111,6 +111,7 @@ Warning: some NF use a custom java library under `lib/`. The NF workflow should 
   * [contimination](workflows/contamination). Contaminations in BAMs/FASTQs.
   * [IGV Reports](workflows/igvreport). Generate IGV static HTML reports from VCF+BAMS.
   * [Downsample](workflows/downsample.simulation). Downsampling simulation.
+  * [NCBI Genes Refseq](workflows/ncbi_gene_db). Build a table containing the refseq description of the NCBI genes.
 
 ### Biostars
 
