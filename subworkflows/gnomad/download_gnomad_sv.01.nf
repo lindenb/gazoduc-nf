@@ -102,6 +102,7 @@ EOF
 
 process RENAME_CONTIGS_HG19 {
 tag "${meta.gnomad_sv_bed_url}"
+afterScript "rm -rf TMP"
 input:
 	val(meta)
 	path(bed)
@@ -143,6 +144,7 @@ EOF
 
 process LIFT_GNOMAD_SV_TO_HG38 {
 tag "${meta.gnomad_sv_bed_url}"
+afterScript "rm -rf TMP"
 input:
 	val(meta)
 	path(bed)
