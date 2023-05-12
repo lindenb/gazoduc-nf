@@ -25,6 +25,7 @@ SOFTWARE.
 
 include {moduleLoad;getVersionCmd;isHg19;isHg38} from '../../modules/utils/functions.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {GET_LIFTOVER_CHAINS_02} from '../../modules/ucsc/liftover.chains.02.nf'
 
 def gazoduc = gazoduc.Gazoduc.getInstance(params)
 
@@ -52,7 +53,10 @@ workflow DOWNLOAD_GNOMAD_SV_01 {
 		dest_idx = ch1.index
 		}
 	else if(isHg38(reference)) {
-		ch2 = LIFT_GNOMAD_SV_TO_HG38(meta, ch0.output, reference)
+		chain = GET_LIFTOVER_CHAINS_02([:],"hg19","hg38")
+		version_ch = version_ch.mix(chain.version)
+
+		ch2 = LIFT_GNOMAD_SV_TO_HG38(meta, ch0.output, chain.chain, reference)
 		version_ch = version_ch.mix(ch2.version)
 
 		dest_bed = ch2.bed
@@ -68,16 +72,16 @@ workflow DOWNLOAD_GNOMAD_SV_01 {
 		dest_idx = ch3.index
 		}
 		
-	version_ch = MERGE_VERSION(meta, "GnomadSV", "GnomadSV",version_ch.collect())
+	version_ch = MERGE_VERSION(meta, "GnomadSV", "Download GnomadSV",version_ch.collect())
 
 	emit:
-		output = dest_bed
+		bed = dest_bed
 		index = dest_idx
 		version = version_ch
 	}
 
 process DOWNLOAD_BED {
-tag "${meta.gnomad_sv_bed_url}"
+tag "${meta.gnomad_sv_grch37_bed_url}"
 input:
 	val(meta)
 output:
@@ -101,7 +105,7 @@ EOF
 }
 
 process RENAME_CONTIGS_HG19 {
-tag "${meta.gnomad_sv_bed_url}"
+tag "${meta.gnomad_sv_grch37_bed_url}"
 afterScript "rm -rf TMP"
 input:
 	val(meta)
@@ -114,7 +118,7 @@ output:
 script:
 """
 ${moduleLoad("jvarkit htslib")}
-set -o pipefail
+## set -o pipefail non gunzip...
 mkdir -p TMP
 
 gunzip -c "${bed}" | head -n1  > TMP/gnomad.37.sv.bed
@@ -143,36 +147,36 @@ EOF
 
 
 process LIFT_GNOMAD_SV_TO_HG38 {
-tag "${meta.gnomad_sv_bed_url}"
+tag "${meta.gnomad_sv_grch37_bed_url}"
 afterScript "rm -rf TMP"
 input:
 	val(meta)
 	path(bed)
+	path(chain)
 	val(reference)
 output:
 	path("gnomad.38.sv.bed.gz"),emit:bed
 	path("gnomad.38.sv.bed.gz.tbi"),emit:index
 	path("version.xml"),emit:version
 script:
-	def url1 = "https://hgdownload.cse.ucsc.edu/goldenpath/hg19/liftOver/hg19Tohg38.over.chain.gz"
 """
 ${moduleLoad("ucsc jvarkit htslib")}
-set -o pipefail
+# set -o pipefail no because gunzip
 mkdir -p TMP
-
-wget -O TMP/hg19Tohg38.over.chain.gz "${url1}"
-gunzip -f  TMP/hg19Tohg38.over.chain.gz
-
 
 gunzip -c "${bed}" | head -n1  > TMP/gnomad.38.sv.bed
 
 
 gunzip -c "${bed}" |\
-	tail -n+2 |\
+	tail -n +2 |\
 	sed 's/^/chr/' |\
-	liftover -bedPlus=3 stdin TMP/hg19Tohg38.over.chain stdout TMP/unmapped.bed |\
+	liftOver -bedPlus=3 stdin "${chain}" stdout TMP/unmapped.bed |\
 	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 1 --convert SKIP |\
-	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n >> TMP/gnomad.38.sv.bed
+	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n >> TMP/lifted.bed
+
+test -s TMP/lifted.bed
+
+cat TMP/lifted.bed >> TMP/gnomad.38.sv.bed
 
 bgzip -f TMP/gnomad.38.sv.bed
 tabix --comment '#'  -p bed -f TMP/gnomad.38.sv.bed.gz
@@ -184,7 +188,7 @@ mv TMP/gnomad.38.sv.bed.gz.tbi ./
 cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="Name">${task.process}</entry>
-        <entry key="description">Download gnomad sv and liftover 38</entry>
+        <entry key="description">liftover gnomad sv to 38</entry>
 </properties>
 EOF
 """
