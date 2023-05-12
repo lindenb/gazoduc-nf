@@ -37,6 +37,7 @@ Warning: some NF use a custom java library under `lib/`. The NF workflow should 
   * [VCF fastannot](annotation/fastannot/) quick VCF annotation
   * [GO / BED](workflows/go4bed) generate BED file from GFF3+GO+GOA
   * [CardioBED](workflows/cardiobed) generate BED file from GFF3+GO+GOA for Cardiac-related genes
+  * [SV Annotation](workflows/annotation/svannot)
 
 ### Structural variants / CNV
 
