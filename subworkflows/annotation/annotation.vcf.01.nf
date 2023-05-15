@@ -1043,7 +1043,9 @@ script:
 
 		bcftools annotate --annotations "\${DATABASE}" \
 			-h "\${HEADER}" \
-			-c "\${COLS}" -O v -o TMP/jeter2.vcf TMP/jeter1.vcf
+			-c "\${COLS}" \
+			`echo "\${COLS}" | tr "," "\\n" | awk '(\$1!="CHROM" && \$1!="FROM" && \$1!="POS" && \$1="TO" && \$1!="END" && \$1!="." && \$1!="-") {S="unique"; printf(" --merge-logic %s:%s ",\$1,S);}'  ` \
+			-O v -o TMP/jeter2.vcf TMP/jeter1.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
 
 		cat <<- EOF >> version.xml
