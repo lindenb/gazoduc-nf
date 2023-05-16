@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {getVersionCmd;moduleLoad;isHg19;getGnomadGenomePath} from '../../modules/utils/functions.nf'
+include {getVersionCmd;moduleLoad;isHg19;isHg38;getGnomadGenomePath} from '../../modules/utils/functions.nf'
 include {JVARKIT_VCF_TO_BED_01} from '../jvarkit/jvarkit.vcf2bed.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
@@ -74,7 +74,7 @@ output:
 	path("annot.bcf"),emit:vcf
 	path("version.xml"),emit:version
 script:
-	def snpeffdb = (isHg19(reference)?"GRCh37.75":"TODO")
+	def snpeffdb = (isHg19(reference)?"GRCh37.75":isHg38("GRCh38.86":"TODO"))
 	def gnomadVcf = getGnomadGenomePath(meta,reference)
 	def gnomadAF = meta.gnomadAF?:0.01
 	def gnomadPop = meta.gnomadPop?:"AF_nfe"
