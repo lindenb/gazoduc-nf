@@ -131,7 +131,10 @@ ${moduleLoad("htslib")}
 join -t '\t' -1 1 -2 1 -o '2.1,2.2' \
 	<( tabix -l "${gtf}" | sort) \
 	<( cut -f1,4 "${bed}" | sort -t '\t' -k1,1 -k2,2) |\
-	awk '{printf("%s\t${gtf}\\n",\$0);}' > join.tsv
+	awk -F '\t' '{printf("%s\t${gtf}\\n",\$0);}' > join.tsv
+
+
+test -s join.tsv
 
 cat << EOF > version.xml
 <properties id="${task.process}">
@@ -170,7 +173,8 @@ ${moduleLoad("bcftools jvarkit bedtools snpEff")}
 mkdir -p TMP
 set -x
 
-awk -F '\t' 'BEGIN {printf("Genotype f,m,c;");} {P=\$6; if((P=="case" || P=="affected") && \$3!="0" && \$4!="0") {printf("c=variant.getGenotype(\\"%s\\");f=variant.getGenotype(\\"%s\\");m=variant.getGenotype(\\"%s\\");if(!c.isHet()) return false; if(f.isHet() && m.isHet()) return false;if(!(f.isHet() || m.isHet())) return false;",\$2,\$3,\$4);} } END {printf("return variant.getGenotypes().stream().noneMatch(G->G.isHomVar());\\n");}'  '${pedigree}' > TMP/jeter.code
+awk -F '\t' 'BEGIN {printf("Genotype f,m,c;");} {P=\$6; if((P=="case" || P=="affected") && \$3!="0" && \$4!="0") {printf("c=variant.getGenotype(\\"%s\\");f=variant.getGenotype(\\"%s\\");m=variant.getGenotype(\\"%s\\");if(!c.isHet()) return false; if(f.isHet() && m.isHet()) return false;if(!(f.isHet() || m.isHet())) return false;",\$2,\$3,\$4);} if(P=="control" || P=="unaffected") {printf("if(variant.getGenotype(\\"%s\\").isHomVar()) return false;",\$2);} } END {printf("return true;");}'  '${pedigree}' > TMP/jeter.code
+
 
 tabix "${gtf}" "${contig}" |\
 	grep -wF protein_coding |\
@@ -226,6 +230,7 @@ java -Xmx${task.memory.giga}G  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarki
 	--pedigree  "${pedigree}" \
 	--report variants.report \
 	--tmpDir TMP \
+	--max-variants 30 \
 	TMP/jeter1.vcf > TMP/jeter2.vcf
 
 mv TMP/jeter2.vcf TMP/jeter1.vcf
