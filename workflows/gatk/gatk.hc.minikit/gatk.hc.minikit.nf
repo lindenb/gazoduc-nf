@@ -32,8 +32,8 @@ gazoduc.make("bams","NO_FILE").
 	existingFile().
         put()
 
-gazoduc.make("bed","NO_FILE").
-        description("call the intervals in that bed file").
+gazoduc.make("beds","NO_FILE").
+        description("a list of BED files. Variants will be called for each bed file. If not set, the whole genome will be used and split into parts").
         put()
 
 gazoduc.make("dbsnp","").
@@ -44,6 +44,18 @@ gazoduc.make("mapq",-1).
         description("mapping quality").
 	setInteger().
         put()
+
+
+gazoduc.make("makewindows_size",100_000).
+	description("if no --beds is provided, the reference is split using windows of 'x' bp").
+	setInteger().
+	put()
+
+
+gazoduc.make("makewindows_overlap",100).
+	description("if no --beds is provided, each window will overlap 'x' bp with the next one").
+	setInteger().
+	put()
 
 
 gazoduc.make("gatkjar","/LAB-DATA/BiRD/users/lindenbaum-p/packages/gatk/gatk-4.3.0.0/gatk-package-4.3.0.0-local.jar").
@@ -73,7 +85,7 @@ if( params.help ) {
 
 
 workflow {
-	ch1 = GATK_HC_MINIKIT(params, params.reference, file(params.bams), file(params.bed) )
+	ch1 = GATK_HC_MINIKIT(params, params.reference, file(params.bams), file(params.beds) )
 	html = VERSION_TO_HTML(params,ch1.version)
 	}
 
@@ -85,28 +97,26 @@ take:
 	meta
 	reference
 	bams
-	bed
+	beds
 main:
 	version_ch = Channel.empty()
 
-	if(bed.name.equals("NO_FILE")) {
+	if(beds.name.equals("NO_FILE")) {
 		scatter_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"ACGT","MAX_TO_MERGE":"1000"], reference) 
 		version_ch = version_ch.mix(scatter_ch.version)
 
 		mkwin_ch = MAKE_WINDOWS(meta, scatter_ch.bed)
 		version_ch = version_ch.mix(mkwin_ch.version)
-		each_interval  = mkwin_ch.bed.splitCsv(header:false,sep:'\t').
-				map{T->T[0]+":"+((T[1] as int)+1)+"-"+T[2]}
+		each_bed  = mkwin_ch.output.splitText().map{it.trim()}
 		}
 	else	{
-		each_interval  = Channel.fromPath(bed).splitCsv(header:false,sep:'\t').
-				map{T->T[0]+":"+((T[1] as int)+1)+"-"+T[2]}
+		each_bed  = Channel.fromPath(beds).splitText().map{it.trim()}
 		}
 
 
 	compile_ch = COMPILE(meta)
 
-	call_ch = PER_INTERVAL(meta, reference, compile_ch.jar, bams, each_interval)
+	call_ch = PER_BED(meta, reference, compile_ch.jar, bams, each_bed)
 	version_ch = version_ch.mix(call_ch.version)
 
 	ch1 = COLLECT_TO_FILE_01([:], call_ch.output.collect())
@@ -131,20 +141,28 @@ input:
 	val(meta)
 	path(bed)
 output:
-	path("windows.bed"),emit:bed
+	path("windows.beds.list"),emit:output
 	path("version.xml"),emit:version
 script:
-	def w = 100_000
-	def s = w - 100
+	def w = ((meta.makewindows_size?:100_000) as int)
+	def s = w - ((meta.makewindows_overlap?:100) as int)
 """
 hostname 1>&2
 ${moduleLoad("bedtools")}
+set -o pipefail
+
+mkdir -p BEDS
 
 bedtools makewindows -b "${bed}" -w ${w} -s ${s} |\
 	grep -vE '^(hs37d5|chrM|chrMT|MT|chrEBV)' |\
-	LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n > windows.bed
+	LC_ALL=C sort -T . -t '\t' -k1,1V -k2,2n |\
+	split -a 9  --lines=1 --additional-suffix=.bed - BEDS/window
 
-test -s windows.bed
+find \${PWD}/BEDS -type f -name "window*.bed"  > windows.beds.list
+
+test -s windows.bed.list
+
+sleep 5
 
 ##################
 cat << EOF > version.xml
@@ -195,6 +213,7 @@ import htsjdk.samtools.util.StringUtil;
 import htsjdk.tribble.index.tabix.TabixFormat;
 import htsjdk.tribble.index.tabix.TabixIndexCreator;
 import htsjdk.variant.utils.SAMSequenceDictionaryExtractor;
+import htsjdk.samtools.util.IOUtil;
 
 import org.broadinstitute.hellbender.utils.*;
 import org.broadinstitute.barclay.argparser.Argument;
@@ -208,8 +227,8 @@ import org.broadinstitute.hellbender.*;
 
 public class Minikit extends Main{
     private static final Logger LOG = LogManager.getLogger(Main.class);
-    @Argument(fullName = StandardArgumentDefinitions.INTERVALS_LONG_NAME, shortName = StandardArgumentDefinitions.INTERVALS_SHORT_NAME, doc = "interval chr:start-end", common = true, optional = false)
-	private String interval = null;
+    @Argument(fullName = StandardArgumentDefinitions.INTERVALS_LONG_NAME, shortName = StandardArgumentDefinitions.INTERVALS_SHORT_NAME, doc = "interval as BED file", common = true, optional = false)
+	private String bedPath = null;
     @Argument(fullName = StandardArgumentDefinitions.REFERENCE_LONG_NAME, shortName = StandardArgumentDefinitions.REFERENCE_SHORT_NAME, doc = "Indexed fasta reference", common = true, optional = false)
 	private String reference=null;
     @Argument(fullName = StandardArgumentDefinitions.OUTPUT_LONG_NAME, shortName = StandardArgumentDefinitions.OUTPUT_SHORT_NAME, doc = "File to which variants should be written")
@@ -246,13 +265,13 @@ public class Minikit extends Main{
 		}
 
 
-	private void fill_cmd(List<String> cmd,final Path tmpDir,final Locatable loc) {
+	private void fill_cmd(List<String> cmd,final Path tmpDir,final String bed) {
 		cmd.add("-R");
 		cmd.add(this.reference.toString());
 		//cmd.add("--verbosity");
 		//cmd.add("ERROR");
 		cmd.add("-L");
-		cmd.add(loc.getContig()+":"+loc.getStart()+"-"+loc.getEnd());
+		cmd.add(bed);
 		cmd.add("--tmp-dir");
 		cmd.add(tmpDir.toString());
 		if(!StringUtil.isBlank(this.dbsnp)) {
@@ -261,11 +280,11 @@ public class Minikit extends Main{
 			}
 		}
 
-	private Path invoke_gvcf(final Path tmpDir,int idx,final String bam,final Locatable loc) throws Exception {
+	private Path invoke_gvcf(final Path tmpDir,int idx,final String bam,final String bed) throws Exception {
 		final Path outPath = tmpDir.resolve(String.format("hc.%03d.g" + FileExtensions.COMPRESSED_VCF, idx));
 		final List<String> cmd= new ArrayList<>();
 		cmd.add("HaplotypeCaller");
-		fill_cmd(cmd,tmpDir,loc);
+		fill_cmd(cmd,tmpDir,bed);
 		cmd.add("-I");
 		cmd.add(bam);
 		cmd.add("-O");
@@ -285,11 +304,11 @@ public class Minikit extends Main{
 		return outPath;
 		}
 
-	private Path invoke_combine(final Path tmpDir,int idx,final List<Path> gvcfs,final Locatable loc) throws Exception {
+	private Path invoke_combine(final Path tmpDir,int idx,final List<Path> gvcfs,final String bed) throws Exception {
 		final Path outPath = tmpDir.resolve(String.format("combine.%03d.g" + FileExtensions.COMPRESSED_VCF, idx));
 		final List<String> cmd= new ArrayList<>();
 		cmd.add("CombineGVCFs");
-		fill_cmd(cmd,tmpDir,loc);
+		fill_cmd(cmd,tmpDir,bed);
 		for(Path gvcf:gvcfs) {
 			cmd.add("-V");
 			cmd.add(gvcf.toString());
@@ -305,10 +324,10 @@ public class Minikit extends Main{
 		return outPath;
 		}
 	
-	private void invoke_genotype(final Path tmpDir,final Path gvcf,final Locatable loc,final String outPath) throws Exception {
+	private void invoke_genotype(final Path tmpDir,final Path gvcf,final String bed,final String outPath) throws Exception {
 		final List<String> cmd= new ArrayList<>();
 		cmd.add("GenotypeGVCFs");
-		fill_cmd(cmd,tmpDir,loc);
+		fill_cmd(cmd,tmpDir,bed);
 		cmd.add("-V");
 		cmd.add(gvcf.toString());
 		cmd.add("-G");cmd.add("StandardAnnotation");
@@ -328,10 +347,11 @@ private int doWork(final String[] args) {
         	return -1;
         	}
 
+		IOUtil.assertFileIsReadable(Paths.get(this.bedPath));
 		
-		final SAMSequenceDictionary dict = SAMSequenceDictionaryExtractor.extractDictionary(Paths.get(this.reference));
-		final GenomeLocParser parser = new GenomeLocParser(dict);
-		final Locatable region  = parser.parseGenomeLoc(this.interval);
+		//final SAMSequenceDictionary dict = SAMSequenceDictionaryExtractor.extractDictionary(Paths.get(this.reference));
+		//final GenomeLocParser parser = new GenomeLocParser(dict);
+		//final Locatable region  = parser.parseGenomeLoc(this.bedPath);
 		
 		List<String> bams = Files.readAllLines(Paths.get(this.bamsList));
 		if (bams.isEmpty()) {
@@ -344,7 +364,7 @@ private int doWork(final String[] args) {
 		final List<Path> gvcfs_list = new ArrayList<>(bams.size());
 		for(int i=0;i< bams.size();i++) {
 			LOG.info("("+(i+1)+"/"+bams.size()+" "+bams.get(i));
-			final Path g_vcf_gz = invoke_gvcf(tmpDir,i,bams.get(i),region);
+			final Path g_vcf_gz = invoke_gvcf(tmpDir,i,bams.get(i),this.bedPath);
 			gvcfs_list.add(g_vcf_gz);
 			}
 			
@@ -361,7 +381,7 @@ private int doWork(final String[] args) {
 				combined0_list.add(L.get(0));
 				}
 			else {
-				final Path combined = invoke_combine(tmpDir,i,L,region);
+				final Path combined = invoke_combine(tmpDir,i,L, this.bedPath);
 				combined0_list.add(combined);
 				}
 			i++;
@@ -372,10 +392,10 @@ private int doWork(final String[] args) {
 			}
 		else
 			{
-			to_genotype = invoke_combine(tmpDir,i,combined0_list,region);
+			to_genotype = invoke_combine(tmpDir,i,combined0_list,this.bedPath);
 			i++;
 			}
-		invoke_genotype(tmpDir,to_genotype,region,this.finalVcf);
+		invoke_genotype(tmpDir,to_genotype,bedPath,this.finalVcf);
 		return 0;
 		}
 	catch(Throwable err) {
@@ -405,6 +425,8 @@ javac -d TMP -cp ${meta.gatkjar} -sourcepath . Minikit.java
 jar cvf minikit.jar -C TMP .
 rm -rf TMP
 
+sleep 5
+
 #####
 cat << EOF > version.xml
 <properties id="${task.process}">
@@ -416,43 +438,48 @@ EOF
 }
 
 
-process PER_INTERVAL {
+process PER_BED {
 afterScript "rm -rf TMP"
-tag "${interval}"
+tag "${file(bed).name}"
 memory "10g"
+cpus 3
 input:
 	val(meta)
 	val(reference)
 	path(minikit)
 	path(bams)
-	val(interval)
+	val(bed)
 output:
 	path("genotyped.bcf"),emit:output
 	path("version.xml"),emit:version
 script:
 """
 hostname 1>&2
-${moduleLoad("openjdk/11.0.8 bcftools")}
+${moduleLoad("openjdk/11.0.8 bcftools/0.0.0")}
 
 mkdir -p TMP
 
 java -Xmx${task.memory.giga}g -Dsamjdk.compression_level=1 -Djava.io.tmpdir=TMP -cp ${meta.gatkjar}:${minikit} Minikit \
                 -I "${bams}" \
-                -L "${interval}" \
+                -L "${bed}" \
                 ${meta.mapq && ((meta.mapq as int)>0)?"--minimum-mapq ${meta.mapq}":""} \
                 --output TMP/selection.vcf.gz \
                 --reference "${reference}" \
                 ${isBlank(meta.dbsnp)?"":"--dbsnp ${meta.dbsnp}"}
 
 
-bcftools view -O b -o genotyped.bcf TMP/selection.vcf.gz 
-bcftools index genotyped.bcf
+bcftools view --threads ${task.cpus} --compression-level 9 -O b -o genotyped.bcf TMP/selection.vcf.gz 
+bcftools index -f --threads ${task.cpus} genotyped.bcf
 
 #####
 cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
-        <entry key="description">call interval</entry>
+        <entry key="description">call bed</entry>
+        <entry key="bed">${bed}</entry>
+        <entry key="bams">${bams}</entry>
+        <entry key="mapq">${meta.mapq?:""}</entry>
+        <entry key="dbsnp">${meta.dbsnp}</entry>
 </properties>
 EOF
 """

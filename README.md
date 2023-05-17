@@ -32,12 +32,13 @@ Warning: some NF use a custom java library under `lib/`. The NF workflow should 
   * [bcftools](workflows/bcftools/calling) calling with bcftools/mpileup+call
   * [ultrarares](workflows/ultrarares). Call variants from a VCF for a list a BAM.
 
-### Annotation
+### Annotations
 
   * [VCF fastannot](annotation/fastannot/) quick VCF annotation
   * [GO / BED](workflows/go4bed) generate BED file from GFF3+GO+GOA
   * [CardioBED](workflows/cardiobed) generate BED file from GFF3+GO+GOA for Cardiac-related genes
   * [SV Annotation](workflows/annotation/svannot)
+  * [Het Compound](workflows/hetcomposite) search for Heterozygous composite variant in trio+vcf
 
 ### Structural variants / CNV
 
