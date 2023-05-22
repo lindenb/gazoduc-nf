@@ -23,6 +23,14 @@ SOFTWARE.
 
 */
 
+def gazoduc = gazoduc.Gazoduc.getInstance()
+
+gazoduc.make("graptyper_version","2.7.5").
+        description("graphtyper version").
+        put()
+
+
+
 /**
 
 https://github.com/DecodeGenetics/graphtyper
@@ -50,45 +58,5 @@ cat << EOF > version.xml
         <entry key="version">${v}</entry>
 </properties>
 EOF
-"""
-}
-
-
-process graphTyperGenotype01 {
-tag "${file(meta.bed).name} ${file(meta.bams)}"
-afterScript "rm -rf results TMP"
-label "graphtyper_genotype"
-input:
-	val(graphtyper)
-	val(meta)
-output:
-	tuple val(meta),path("genotyped.bcf")
-script:
-	if(!meta.reference) {exit 1,"reference missing"}
-	if(!meta.bams) {exit 1,"bams missing"}
-	if(!meta.bed) {exit 1,"bed missing"}
-"""
-hostname 1>&2
-module load bcftools/0.0.0
-mkdir TMP
-export TMPDIR=\${PWD}/TMP
-
-awk -F '\t' '{printf("%s:%d-%d\\n",\$1,int(\$2)+1,\$3);}' "${meta.bed}" > TMP/jeter.regions
-
-${graphtyper} genotype \
-	"${meta.reference}" \
-	--force_no_copy_reference \
-	--force_use_input_ref_for_cram_reading \
-	--sams=${meta.bams} \
-	--region_file=TMP/jeter.regions \
-	--threads=${task.cpus}
-
-find \${PWD}/results/ -type f -name "*.vcf.gz" | grep -v '/input_sites/' > TMP/vcf.list
-
-bcftools concat --file-list TMP/vcf.list \
-	--allow-overlaps --remove-duplicates \
-	--threads ${task.cpus} -O b -o "genotyped.bcf"
-
-bcftools index --threads ${task.cpus} "genotyped.bcf"
 """
 }

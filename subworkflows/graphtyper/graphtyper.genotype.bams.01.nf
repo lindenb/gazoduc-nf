@@ -22,17 +22,25 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+def gazoduc = gazoduc.Gazoduc.getInstance()
+
+gazoduc.make("depth_method","mosdepth").
+        description("How do we get the DEPTH ? valid are samtoolsdepth and mosdepth").
+        put()
+
+
+
 include {GRAPHTYPER_DOWNLOAD_01} from '../../modules/graphtyper/graphtyper.download.01.nf'
 include {GRAPHTYPER_GENOTYPE_01} from '../../modules/graphtyper/graphtyper.genotype.01.nf'
 include {SCATTER_TO_BED} from '../../subworkflows/picard/picard.scatter2bed.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {isBlank;moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
 include {MOSDEPTH_BAMS_01} from '../../subworkflows/mosdepth/mosdepth.01.nf'
-include {COLLECT_TO_FILE_01 as COLLECT_TO_FILE_X1; COLLECT_TO_FILE_01 as COLLECT_TO_FILE_X2} from '../../modules/utils/collect2file.01.nf'
+include {COLLECT_TO_FILE_01 as COLLECT_TO_FILE_X1} from '../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_CONCAT_01} from '../../subworkflows/bcftools/bcftools.concat.01.nf'
 include {SAMTOOLS_DEPTH_01} from '../../subworkflows/samtools/samtools.depth.01.nf'
 include {SAMTOOLS_SAMPLES_01} from '../samtools/samtools.samples.01.nf'
-
+include {CONCAT_FILES_01} from '../../modules/utils/concat.files.nf'
 
 
 workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
@@ -42,13 +50,17 @@ workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 		bams
 		beds
 		sample2depth
+		dbsnp
 	main:
 		version_ch = Channel.empty()
 		
 		
+
 		concat_bed_ch = CONCAT_BEDS(meta, beds)
 		version_ch = version_ch.mix(concat_bed_ch.version)
 		
+		// convert channel to file hack ?
+		bed0 = concat_bed_ch.bed.first()
 		
 		/** file SAMPLE <-> DEPTH provided */
 		if(!sample2depth.name.equals("NO_FILE")) {
@@ -60,7 +72,7 @@ workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 			summary = join1_ch.output
 			}
 		else if((meta.depth_method?:"mosdepth").equals("samtoolsdepth")) {
-			stdp_ch = SAMTOOLS_DEPTH_01(meta,reference,file("NO_FILE"),bams, concat_bed_ch.bed)
+			stdp_ch = SAMTOOLS_DEPTH_01(meta,reference,file("NO_FILE"),bams, bed0)
 			version_ch = version_ch.mix(stdp_ch.version)
 			
 			convert_ch = CONVERT_TO_MOSDEPTH_SUMMARY(meta,stdp_ch.output)
@@ -69,7 +81,7 @@ workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 			}
 		else 
 			{
-			mosdepth_ch = MOSDEPTH_BAMS_01(meta, reference, bams, concat_bed_ch.bed)
+			mosdepth_ch = MOSDEPTH_BAMS_01(meta, reference, bams, bed0)
 			version_ch = version_ch.mix(mosdepth_ch.version)
 			summary= mosdepth_ch.summary
 			}
@@ -88,12 +100,13 @@ workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 			"bams":T[0],
 			"avg_cov_by_readlen":T[1],
 			"bed":T[2],
-			"reference":reference
+			"reference":reference,
+			"dbsnp":dbsnp
 			]})
 
 		version_ch = version_ch.mix(x2_ch.version)
 		
-		x3_ch = COLLECT_TO_FILE_X1([:],x2_ch.output.map{T->T[1]}.collect())
+		x3_ch = CONCAT_FILES_01([:],x2_ch.output.map{T->T[1]}.collect())
 		version_ch = version_ch.mix(x3_ch.version)
 
 
@@ -124,6 +137,8 @@ xargs -a "${beds}" cut -f1,2,3 |\
 
 test -s concat.bed
 
+sleep 10
+
 cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
@@ -150,7 +165,7 @@ join -t '\t' -1 1 -2 1 -o '1.1,1.3,1.4,2.2,2.2' \
 	<(sort -t '\t' -k1,1 "${samplebam}" ) \
 	<(sort -t '\t' -k1,1 "${sample2depth}" )  >> jeter.tsv
 
-
+sleep 10
 mv jeter.tsv summary.tsv
 """
 }
@@ -168,7 +183,7 @@ script:
 echo -e "sample\tbam\tref\tcov\tcovr" > jeter.tsv
 awk -F '\t' '/^#/ {next;} {printf("%s\t%s\t%s\t%s\t%s\\n",\$1,\$2,\$3,\$6,\$6);}' '${depths}' >> jeter.tsv
 
-
+sleep 10
 mv jeter.tsv summary.tsv
 """
 }

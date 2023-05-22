@@ -50,7 +50,7 @@ workflow MOSDEPTH_BAMS_01 {
 			}
 		else
 			{
-			bed2 = Channel.fromPath(bed)
+			bed2 = Channel.fromPath(bed) // rechanged ? changed 20230517 ... for graphtyper ?? Channel.fromPath(bed)
 			}
 
 		ch1 = bams_ch.output.splitCsv(header:true,sep:'\t').combine(bed2).map{T->T[0].plus([

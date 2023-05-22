@@ -43,6 +43,7 @@ cat << EOF | xargs -L ${concat_n_files} cat ${downstream_cmd} > "concat${meta.su
 ${L.join("\n")}
 EOF
 
+sleep 5
 #############################################################
 cat << EOF > version.xml
 <properties id="${task.process}">
@@ -53,4 +54,3 @@ cat << EOF > version.xml
 EOF
 """
 }
-

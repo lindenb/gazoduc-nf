@@ -24,64 +24,43 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-/** path to indexed fasta reference */
-params.reference = ""
-params.mosdepth_extra=""
-params.mapq = 0
-params.bams = ""
-params.bed = "NO_FILE"
-params.help = false
-params.publishDir = ""
-params.prefix = ""
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
+
+gazoduc.make("mapq",1).
+	description("mapq min mapping quality . If it's <=0, just use the bam index as is. Otherwise OR IF IT's A CRAM, rebuild the bai").
+	setInteger().
+	argName("MAPQ").
+	put()
+
+gazoduc.make("bams","NO_FILE").
+	description("File containing the paths to the BAM/CRAMS files. One path per line").
+	required().
+	existingFile().
+	put()
+
+gazoduc.make("mosdepth_extra","").
+	description("Extra parameters for mosdepth").
+	put()
+
+gazoduc.make("bed","NO_FILE").
+	description("limit to that BED file").
+	put()
+
+
 
 include {MOSDEPTH_BAMS_01} from '../../subworkflows/mosdepth/mosdepth.01.nf'
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 include {runOnComplete} from '../../modules/utils/functions.nf'
 
-def helpMessage() {
-  log.info"""
-## About
-
-apply mosdepth to a set of bams.
-
-## Author
-
-Pierre Lindenbaum
-
-## Options
-
-  * --reference (fasta) The full path to the indexed fasta reference genome. It must be indexed with samtools faidx and with picard CreateSequenceDictionary or samtools dict. [REQUIRED]
-  * --bams (file) one file containing the paths to the BAM/CRAM [REQUIRED]
-  * --bed (file) optional BED file. default: ""
-  * --publishDir (dir) Save output in this directory
-  * --prefix (string) files prefix. default: ""
-
-## Usage
-
-```
-nextflow -C ../../confs/cluster.cfg  run -resume mosdepth.nf \\
-	--publishDir output \\
-	--prefix "analysis." \\
-	--reference /path/to/reference.fasta \\
-	--bams /path/to/bams.list \\
-	--bed /path/to/in.bed
-```
-
-## Workflow
-
-![workflow](./workflow.svg)
-  
-## See also
-
-
-"""
-}
-
-
 if( params.help ) {
-    helpMessage()
+    gazoduc.usage().
+		name("mosdepth").
+		description("apply mosdepth to a set of bams").
+		print();
     exit 0
-}
+    } else {
+	gazoduc.validate();
+	}
 
 
 workflow {

@@ -23,18 +23,19 @@ SOFTWARE.
 
 */
 
-include {isBlank;moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
+include {isBlank;moduleLoad;getVersionCmd;parseBoolean} from '../../modules/utils/functions.nf'
 
 process GRAPHTYPER_GENOTYPE_01 {
 tag "${row.interval?:row.bed}"
-cpus 1
-afterScript "rm -rf results TMP"
+memory "10g"
+cpus 10
+afterScript "rm -rf TMP2 TMP"
 input:
 	val(meta)
 	val(graphtyper)
 	val(row)
 output:
-	tuple val(row),path("genotyped.bcf"),emit:output
+	tuple val(row),path("genotyped.list"),emit:output
 	path("version.xml"),emit:version
 script:
 	if(!row.reference) {exit 1,"reference missing"}
@@ -42,12 +43,14 @@ script:
 	if(!row.interval && !row.bed) {exit 1,"interval/bed missing"}
 	if(row.interval && row.bed) {exit 1,"interval/bed both defined"}
 
+	def copy_bams = parseBoolean(meta.copy_bams)
 	def avg_cov_by_readlen= row.avg_cov_by_readlen?:""
 	def arg2 = isBlank(avg_cov_by_readlen)?"":"--avg_cov_by_readlen=${avg_cov_by_readlen}"
 """
 hostname 1>&2
-${moduleLoad("bcftools bedtools")}
+${moduleLoad("bcftools bedtools samtools picard/0.0.0")}
 mkdir -p TMP
+mkdir -p TMP2
 
 if ${row.containsKey("bed")} ; then
 	cut -f1,2,3 '${row.bed}' |\
@@ -59,23 +62,51 @@ fi
 
 export TMPDIR=\${PWD}/TMP
 
+if ${copy_bams} ; then
+	mkdir -p TMP/BAMS
+	i=1
+	cat "${row.bams}" | while read SAM
+	do
+		echo "\$i : \${SAM}" 1>&2
+
+		# extract reads in regions
+		samtools view --uncompressed -@ "${task.cpus}" -O BAM -o "TMP/BAMS/tmp.jeter.bam" ${row.containsKey("bed")?"-M -L ${row.bed}":""} -T "${row.reference}" "\${SAM}"   ${row.containsKey("bed")?"":"--region=${row.interval}"}
+
+		# sort on query name
+		samtools sort  -@ "${task.cpus}" --reference "${row.reference}" -u -n -T TMP/sort. -O BAM -o TMP/BAMS/tmp.jeter2.bam TMP/BAMS/tmp.jeter.bam
+
+		# fix mate info
+		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${PICARD_JAR}  FixMateInformation I=TMP/BAMS/tmp.jeter.bam O=TMP/BAMS/tmp.jeter2.bam ADD_MATE_CIGAR=true  ASSUME_SORTED=true
+
+		# sort on coordinate
+		samtools sort  -@ "${task.cpus}" --reference "${row.reference}"  -T TMP/sort. -O BAM -o TMP/BAMS/tmp.jeter.bam TMP/BAMS/tmp.jeter2.bam
+		rm TMP/BAMS/tmp.jeter2.bam
+		
+		
+		samtools index -@ "${task.cpus}" TMP/BAMS/tmp.jeter.bam
+
+		mv -v "TMP/BAMS/tmp.jeter.bam" "TMP/BAMS/tmp.\${i}.bam"
+		mv -v "TMP/BAMS/tmp.jeter.bam.bai" "TMP/BAMS/tmp.\${i}.bam.bai"
+		echo "TMP/BAMS/tmp.\${i}.bam" >> TMP/bams.list
+		i=\$((i+1))
+	done
+
+	test -s TMP/bams.list
+fi
+
 ${graphtyper} genotype \
 	"${row.reference}" \
+	--output=TMP2 \
 	--force_no_copy_reference \
 	--force_use_input_ref_for_cram_reading \
-	--sams=${row.bams} \
+	--sams=${copy_bams?"TMP/bams.list":"${row.bams}"} \
 	${row.containsKey("bed")?  "--region_file=TMP/input.intervals" : "--region=${row.interval}"} \
 	--threads=${task.cpus} \
 	${arg2}
 
-find \${PWD}/results/ -type f -name "*.vcf.gz" | grep -v '/input_sites/' > TMP/vcf.list
+mv TMP2 OUT
+find \${PWD}/OUT -type f -name "*.vcf.gz" | grep -F -v '/input_sites/' > genotyped.list
 
-bcftools concat --file-list TMP/vcf.list \
-	--allow-overlaps --remove-duplicates \
-	--threads ${task.cpus} -O u |\
-	bcftools sort -T TMP -O b -o "genotyped.bcf"
-
-bcftools index --threads ${task.cpus} "genotyped.bcf"
 
 ##################
 cat << EOF > version.xml

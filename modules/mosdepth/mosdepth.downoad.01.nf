@@ -23,6 +23,14 @@ SOFTWARE.
 
 */
 
+def gazoduc = gazoduc.Gazoduc.getInstance()
+
+gazoduc.make("mosdepth_version","0.3.3").
+        description("mosdepth version").
+        put()
+
+
+
 
 process MOSDEPTH_DOWNLOAD_01 {
 input:
