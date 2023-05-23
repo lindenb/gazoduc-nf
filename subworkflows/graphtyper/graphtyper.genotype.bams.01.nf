@@ -48,19 +48,18 @@ workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 		meta
 		reference
 		bams
-		beds
+		bed
 		sample2depth
 		dbsnp
 	main:
 		version_ch = Channel.empty()
 		
-		
 
-		concat_bed_ch = CONCAT_BEDS(meta, beds)
+		concat_bed_ch = MAKE_WINDOWS_50KB(meta, reference, bed)
 		version_ch = version_ch.mix(concat_bed_ch.version)
 		
 		// convert channel to file hack ?
-		bed0 = concat_bed_ch.bed.first()
+		bed0 = concat_bed_ch.merged
 		
 		/** file SAMPLE <-> DEPTH provided */
 		if(!sample2depth.name.equals("NO_FILE")) {
@@ -94,12 +93,13 @@ workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 		version_ch = version_ch.mix(executable_ch.version)
 
 		
-		each_bed_ch = Channel.fromPath(beds).splitText().map{it.trim()}
+		each_rgn_ch = concat_bed_ch.windows.splitCsv(header:false,sep:'\t').
+				map{T->T[0] + ":" + ((T[1] as int)+1) + "-" + T[2]}
 	
-		x2_ch = GRAPHTYPER_GENOTYPE_01(meta, executable_ch.executable,x1_ch.output.combine(each_bed_ch).map{T->[
+		x2_ch = GRAPHTYPER_GENOTYPE_01(meta, executable_ch.executable,x1_ch.output.combine(each_rgn_ch).map{T->[
 			"bams":T[0],
 			"avg_cov_by_readlen":T[1],
-			"bed":T[2],
+			"interval":T[2],
 			"reference":reference,
 			"dbsnp":dbsnp
 			]})
@@ -119,30 +119,40 @@ workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 		vcf = x4_ch.vcf
 	}
 
-process CONCAT_BEDS {
+process MAKE_WINDOWS_50KB {
 executor "local"
 input:
 	val(meta)
-	path(beds)
+	val(reference)
+	path(bed)
 output:
-	path("concat.bed"),emit:bed
+	path("concat.bed"),emit:merged
+	path("windows.bed"),emit:windows
 	path("version.xml"),emit:version
 script:
+	def w=50000
+	def s=w-10
 """
 set -o pipefail
 ${moduleLoad("bedtools")}
-xargs -a "${beds}" cut -f1,2,3 |\
+cut -f1,2,3 "${bed}"|\
 	sort -T . -t '\t' -k1,1 -k2,2n |\
 	bedtools merge > concat.bed
 
+bedtools makewindows -b concat.bed -w "${w}" -s "${s}"|\
+	awk -F '\t' '(int(\$2)<int(\$3))' |\
+	sort -T . -t '\t' -k1,1V -k2,2n > windows.bed
+
+
 test -s concat.bed
+test -s windows.bed
 
 sleep 10
 
 cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
-        <entry key="description">concatenate bed files</entry>
+        <entry key="description">concatenate bed file+merge. Make windows of 50Kb</entry>
 	<entry key="version">${getVersionCmd("bedtools")}</entry>
 </properties>
 EOF

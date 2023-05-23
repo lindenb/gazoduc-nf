@@ -32,8 +32,10 @@ gazoduc.make("bams","NO_FILE").
         existingFile().
         put()
 
-gazoduc.make("beds","NO_FILE").
-        description("a list of BED files. Variants will be called for each bed file.").
+gazoduc.make("bed","NO_FILE"). /* not bedS because graphtyper split input by 50kb */
+        description("Call in that bed file.").
+        required().
+        existingFile().
         put()
 
 gazoduc.make("sample2depth","NO_FILE").
@@ -70,7 +72,7 @@ include {runOnComplete} from '../../../modules/utils/functions.nf'
 
 
 workflow {
-	c1_ch = GRAPHTYPER_GENOTYPE_BAMS_01(params,params.reference,file(params.bams),file(params.beds), file(params.sample2depth) , file(params.dbsnp))
+	c1_ch = GRAPHTYPER_GENOTYPE_BAMS_01(params,params.reference,file(params.bams),file(params.bed), file(params.sample2depth) , file(params.dbsnp))
 	//html = VERSION_TO_HTML(params,c1_ch.version)	
 	}
 

@@ -33,6 +33,9 @@ gazoduc.build("bams", "NO_FILE").
 	required().
 	put()
 
+gazoduc.build("gtf", "NO_FILE").
+	desc("gtf file indexed with tabix").
+	put()
 
 gazoduc.build("bed", "NO_FILE").
 	desc("SV intervals as a BED file").
@@ -80,7 +83,7 @@ if( params.help ) {
 
 
 workflow {
-	ch1 = PLOT_COVERAGE_01(params,params.reference, file(params.references),file(params.bams), file(params.bed))
+	ch1 = PLOT_COVERAGE_01(params,params.reference, file(params.references),file(params.bams), file(params.bed), file(params.gtf))
 	//html = VERSION_TO_HTML(params,ch1.version)
 	//PUBLISH(ch1.version,html.html,ch1.zip)
 	}

@@ -24,7 +24,6 @@ SOFTWARE.
 */
 include {getVersionCmd;moduleLoad;parseBoolean} from '../../modules/utils/functions.nf'
 include {SAMTOOLS_SAMPLES_01} from '../../subworkflows/samtools/samtools.samples.01.nf'
-include {DOWNLOAD_GFF3_01} from '../../modules/gff3/download.gff3.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 
 
@@ -35,12 +34,10 @@ workflow PLOT_COVERAGE_01 {
 		references
 		bams
 		bed
+		gtf
 	main:
 
 		version_ch  = Channel.empty()
-
-		gff_ch = DOWNLOAD_GFF3_01(meta.plus("with_tabix":true),reference)
-		version_ch = version_ch.mix(gff_ch.version)
 
 
 		bams_ch = SAMTOOLS_SAMPLES_01(meta.plus(["with_header":true,"allow_multiple_references":false,"allow_duplicate_samples":true]),reference,references,bams)
@@ -52,7 +49,7 @@ workflow PLOT_COVERAGE_01 {
 		c1_ch = x_ch.bed.splitCsv(header: true,sep:'\t',strip:true)
 		c2_ch = bams_ch.output.splitCsv(header: true,sep:'\t',strip:true)
 
-		cov_ch = DRAW_COVERAGE(meta,gff_ch.gff3, c1_ch.combine(c2_ch).map{T->T[0].plus(T[1])})
+		cov_ch = DRAW_COVERAGE(meta,gtf, c1_ch.combine(c2_ch).map{T->T[0].plus(T[1])})
 		version_ch = version_ch.mix(cov_ch.version)
 
 		input_merge_ch = cov_ch.pdf.
@@ -141,14 +138,26 @@ process DRAW_COVERAGE {
 	${moduleLoad("samtools java r/4.2.1 tabix bedtools")}
 	mkdir -p TMP
 
+	
+	if ${gtf.name.equals("NO_FILE")} ; then
+
+		touch TMP/exons.R
+
+	else
+
 	tabix "${gtf.toRealPath()}" "${row.chrom}:${row.start}-${row.end}" |\
 		awk -F '\t' '(\$3=="${gene_type}") {printf("%s\t%d\t%s\\n",\$1,int(\$4)-1,\$5);}' |\
 		LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\
 		bedtools merge |\
 		awk -F '\t' '{printf("rect(%d, 0,%d, -1, col=\\\"green\\\")\\n",\$2,\$3);}' > TMP/exons.R
 
+	fi
+
+	# extract depth with samtools
 	samtools depth  -a -r "${row.chrom}:${row.start}-${row.end}" "${row.bam}" | cut -f 2,3 > TMP/depth.txt
 
+	# debug max and mean depth
+	awk 'BEGIN{M=0;T=0.0;} {V=int(\$2);T+=V;if(V>M) M=V;} END{printf("MAX DEPTH=%d MEAN=%f\\n",M,(T/NR));}' TMP/depth.txt  1>&2
 
 
 cat << __EOF__  > TMP/jeter.R
@@ -190,13 +199,13 @@ cat << __EOF__  > TMP/jeter.R
 	DEBUG("outer-mediany=%f",mediany)
 
 
-	yaxis <- T1\\\$cov
 	
 	if( normalize_median == TRUE ) {
 		DEBUG("normalize median: TRUE")
 		capy <- 3.0
 		if( mediany > 1 ) {
-			T1\\\$pos <- T1\\\$pos / mediany
+			T1\\\$cov <- T1\\\$cov / mediany
+			# recompute median y for capy
 			mediany <- median(T1[T1\\\$pos < ${row.delstart} | T1\\\$pos > ${row.delend},]\\\$cov)
 			DEBUG("outer-mediany=%f",mediany)
 			}
@@ -214,6 +223,7 @@ cat << __EOF__  > TMP/jeter.R
 		}
 	DEBUG("capy=%f vs median=%f", capy, mediany)
 
+	yaxis <- T1\\\$cov
 
 	DEBUG("plot")
 	pdf("TMP/jeter.pdf", 15, 5)
