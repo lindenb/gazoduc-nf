@@ -184,12 +184,6 @@ gazoduc.build("wgselect_minRatioSingleton",0.2).
         setDouble().
         put()
 
-gazoduc.build("minRatioSingleton",0.2).
-        description("remove variant if HET singleton has AD ratio out of x< AD/ratio < (1.0-x)").
-        menu("wgselect").
-        setDouble().
-        put()
-
 gazoduc.build("wgselect_annot_method","vep").
 	description("how to annotate ? 'vep' or 'snpeff'").
 	menu("wgselect").
@@ -902,7 +896,7 @@ echo "\${JAVA_HOME}"
 	    elif  [  "${annot_method.toLowerCase()}" == "snpeff" ] && [ ! -z "${snpeffDb}" ] ; then 
 
 	   	 # snpeff
-		 module load ${moduleLoad("snpEff/0.0.0")}
+		 ${moduleLoad("snpEff/0.0.0")}
 	         java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar "\${SNPEFF_JAR}" eff -config "\${SNPEFF_CONFIG}" -interval "${bed}" -nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf "${snpeffDb}" TMP/jeter1.vcf > TMP/jeter2.vcf
 	         module unload ${getModules("snpEff/0.0.0")}
 	         mv TMP/jeter2.vcf TMP/jeter1.vcf
