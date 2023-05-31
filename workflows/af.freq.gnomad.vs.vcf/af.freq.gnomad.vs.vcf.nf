@@ -223,12 +223,15 @@ do
 	join -v 1 -t ',' -1 1 -2 1 TMP/gnomad.af.csv TMP/user.af.csv | awk -F, '{printf("%s,NA,%s,0.0\\n",\$1,\$2);}'  >> TMP/join.csv
 	join -v 2 -t ',' -1 1 -2 1 TMP/gnomad.af.csv TMP/user.af.csv | awk -F, '{printf("NA,%s,0.0,%s\\n",\$1,\$2);}'  >> TMP/join.csv
 	
+	# remove '.' from data, sometimes shit happens
+	awk -F, '!(\$3=="." || \$4==".")' TMP/join.csv > TMP/join.csv.bis
+	mv TMP/join.csv.bis TMP/join.csv
+
+
 	# high differences
 	awk -F, '{T=\$1;if(T=="NA") T=\$2; split(T,a,/[\t]/); W=sprintf("%s:%d",a[1],a[2]);A=\$3*1.0;B=\$4*1.0;D=A-B; if(D<0) D=D*-1;if(D>=${max_diff}) {printf("%f\t%f\t%s\\n",\$3,\$4,W);}  }' TMP/join.csv |\
 		sort | uniq >> TMP/labels.tsv
 	
-
-
 
 	# publish if not empty
 	if [ -s "TMP/join.csv" ] ; then
@@ -255,10 +258,24 @@ head(labels)
 
 colors <-  rainbow(nrow(TT),alpha=0.6)
 
+maxXY <- 0.0
+
+# get max AF in all files
+for(i in c(1:nrow(TT))) {
+        T2<-read.table(TT[i,2],header = FALSE,sep=",",comment.char="",col.names=c("X1","X2"),colClasses=c("numeric","numeric"))
+        if(nrow(T2)==0) continue;
+	maxXY = max(T2[,1])
+	maxXY = max(T2[,2])
+}
+
+if(maxXY==0.0 || maxXY > 0.8) {
+	maxXY <- 1.0
+	}
+
 pdf("TMP/out.pdf")
 
 for(i in c(1:nrow(TT))) {
-	T2<-read.table(TT[i,2],header = FALSE,sep=",",comment.char="",col.names=c("X1","X2"))
+	T2<-read.table(TT[i,2],header = FALSE,sep=",",comment.char="",col.names=c("X1","X2"),colClasses=c("numeric","numeric"))
 	if(nrow(T2)==0) continue;
 	T2<-as.matrix(T2)
 	if(i==1) {
@@ -266,15 +283,23 @@ for(i in c(1:nrow(TT))) {
 			type = "p",
 			main="${title}",
 			sub ="INFO/${meta.af_tag}",
-			xlab="${file(meta.gnomad).name}",
-			ylab="${file(meta.vcf).name}",
+			xlab="AF ${file(meta.gnomad).name}",
+			ylab="AF ${file(meta.vcf).name}",
 			las=2,
-			xlim=c(0,1.0),
-			ylim=c(0,1.0),
+			xlim=c(0,maxXY),
+			ylim=c(0,maxXY),
 			col= colors[i],
 			pch=16
 			)
+		# diagonal
 		segments(0.,0,1.0,1.0,col="gray",lty="dotted")
+
+		# plot vertical and horizontal delim for rares frequencies
+		rareAF <- 0.01
+		abline(v = rareAF, col="gray",lty="dotted")
+		abline(h = rareAF, col="gray",lty="dotted")
+
+		# labels
 		if(nrow(labels)>0) {
 			text(x=labels[,1],y=labels[,2],labels=labels[,3], cex=0.4)
 			}
@@ -285,8 +310,8 @@ for(i in c(1:nrow(TT))) {
 			axes=FALSE,
 			ann=FALSE,
 			col= colors[i],
-			xlim=c(0,1.0),
-			ylim=c(0,1.0),
+			xlim=c(0,maxXY),
+			ylim=c(0,maxXY),
 			pch=16
 			)
 		
