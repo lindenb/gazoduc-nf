@@ -114,6 +114,7 @@ Warning: some NF use a custom java library under `lib/`. The NF workflow should 
   * [IGV Reports](workflows/igvreport). Generate IGV static HTML reports from VCF+BAMS.
   * [Downsample](workflows/downsample.simulation). Downsampling simulation.
   * [NCBI Genes Refseq](workflows/ncbi_gene_db). Build a table containing the refseq description of the NCBI genes.
+  * [VCF/AF vs gnomad/AF](workflows/af.freq.gnomad.vs.vcf). Compare VCF frequencies vs another (Gnomad) VCF
 
 ### Biostars
 
