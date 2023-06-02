@@ -47,6 +47,11 @@ gazoduc.build("bed","NO_FILE").
 	existingFile().
         put()
 
+gazoduc.build("max_af",-1).
+        desc("max displayed frequency. Ignore if <=0").
+	setDouble().
+        put()
+
 
 params.gnomadViewOpt=""
 params.userViewOpt=""
@@ -94,10 +99,10 @@ workflow AF_FREQ_GNOMAD_VS_VCF {
 		plot_ch = PLOT_INTERVAL(meta, reference, gnomad, vcf, sample2pop, interval_ch)
 		version_ch = version_ch.mix(plot_ch.version)
 
-		zip_ch = ZIP_IT(meta, plot_ch.output.collect(), plot_ch.diff.collect())
-		version_ch = version_ch.mix(zip_ch.version)
 
 		version_ch = MERGE_VERSION(meta, "vsgnomad", "vs gnomad",version_ch.collect())
+
+		zip_ch = ZIP_IT(meta, plot_ch.output.collect(), plot_ch.diff.collect(), version_ch)
 
 	emit:
 		pdf = zip_ch.pdf
@@ -158,7 +163,7 @@ bcftools query -f '%CHROM\t%POS0\t%REF\\n' --regions-file TMP/gnomad.bed "${gnom
 
 
 # extract BAD intervals for vcf
-bcftools view -O u -G -i '(FILTER!="PASS" && FILTER!=".") || TYPE!~"snp" || N_ALT>1' \
+bcftools view -O u -G -i '(FILTER!="PASS" && FILTER!=".") || TYPE!~"snp" || N_ALT>1 || F_MISSING > 0.05' \
 		--regions-file TMP/user.bed \
 		"${vcf}" |\
 	bcftools query -f '%CHROM\t%POS0\t%END\\n' > TMP/exclude.02.bed
@@ -262,14 +267,22 @@ maxXY <- 0.0
 
 # get max AF in all files
 for(i in c(1:nrow(TT))) {
-        T2<-read.table(TT[i,2],header = FALSE,sep=",",comment.char="",col.names=c("X1","X2"),colClasses=c("numeric","numeric"))
+        T2 <- read.table(TT[i,2],header = FALSE,sep=",",comment.char="",col.names=c("X1","X2"),colClasses=c("numeric","numeric"))
         if(nrow(T2)==0) continue;
 	maxXY = max(T2[,1])
 	maxXY = max(T2[,2])
-}
+	}
+
+# extend a little so see max points
+maxXY <- maxXY + maxXY*0.01
 
 if(maxXY==0.0 || maxXY > 0.8) {
-	maxXY <- 1.0
+	maxXY <- 1.001
+	}
+
+# max af was specified by user
+if(${meta.max_af} > 0) {
+	maxXY = ${meta.max_af}
 	}
 
 pdf("TMP/out.pdf")
@@ -352,29 +365,24 @@ input:
 	val(meta)
 	val(L)
 	val(L2)
-
+	path(version)
 output:
 	path("${meta.prefix}all.zip"),emit:zip
 	path("${meta.prefix}all.pdf"),emit:pdf
-	path("version.xml"),emit:version
 script:
 """
 mkdir -p TMP
 
+cat << EOF | awk -F '/' '{printf("%s\t%s\\n",\$NF,\$0);}' | sort -t '\t' -T. -k1,1 -k2,2 | cut -f 2- | uniq  > TMP/jeter.list
+${L.join("\n")}
+EOF
+
+
 cat ${L2.join(" ")} | sort -T . |uniq > TMP/${meta.prefix}differences.intervals
 
-gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -dPDFSETTINGS=/prepress -sOutputFile=${meta.prefix}all.pdf ${L.join(" ")}
+gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -dPDFSETTINGS=/prepress -sOutputFile=${meta.prefix}all.pdf @TMP/jeter.list
 
-zip -0 -j ${meta.prefix}all.zip  ${meta.prefix}differences.intervals ${meta.prefix}all.pdf
-
-
-##################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">join pdfs</entry>
-</properties>
-EOF
+zip -0 -j ${meta.prefix}all.zip  ${meta.prefix}differences.intervals ${meta.prefix}all.pdf "${version}"
 """
 }
 

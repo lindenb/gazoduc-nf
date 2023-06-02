@@ -390,7 +390,7 @@ process EXTRACT_BAM_UNMAPPED {
 		def bam = row.bam
 	"""
 	hostname 1>&2
-	${moduleLoad("samtools/1.15")}
+	${moduleLoad("samtools/1.15.1")}
         mkdir TMP
 	echo "LD_LIBRARY_PATH=\${LD_LIBRARY_PATH}"  1>&2
 
@@ -428,7 +428,7 @@ process EXTRACT_FASTQ_UNMAPPED {
 	script:
 	"""
 	hostname 1>&2
-	${moduleLoad("bwa samtools/1.15")}
+	${moduleLoad("bwa samtools/1.15.1")}
         mkdir TMP
 	echo "LD_LIBRARY_PATH=\${LD_LIBRARY_PATH}"  1>&2
 	set -o pipefail
@@ -782,7 +782,7 @@ fi
 
 # EPOST ####################################
 
-wget -O jeter.xml --post-file=jeter.http "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/epost.fcgi" 
+wget --no-check-certificate -O jeter.xml --post-file=jeter.http "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/epost.fcgi" 
 
 QUERYKEY=`xmllint --xpath '/ePostResult/QueryKey/text()' jeter.xml`
 test ! -z "\${QUERYKEY}"
@@ -791,7 +791,7 @@ test ! -z "\${WEBENV}"
 
 # ESUMMARY ##################################
 
-wget -O jeter.xml --post-file=jeter.http "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi" 
+wget --no-check-certificate -O jeter.xml --post-file=jeter.http "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi" 
 
 cat << EOF > jeter.xsl
 <?xml version='1.0' encoding="UTF-8"?>
@@ -817,7 +817,7 @@ xsltproc --novalid jeter.xsl jeter.xml > acn2taxon.tsv
 rm jeter.xml jeter.http jeter.xsl
 
 # EFETCH ###################################################
-wget -O "${meta.prefix?:""}virusdb.fa" "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nucleotide&query_key=\${QUERYKEY}&WebEnv=\${WEBENV}&rettype=fasta&retmode=text"
+wget --no-check-certificate -O "${meta.prefix?:""}virusdb.fa" "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nucleotide&query_key=\${QUERYKEY}&WebEnv=\${WEBENV}&rettype=fasta&retmode=text"
 
 
 # BWA INDEX
@@ -1084,7 +1084,7 @@ process BWA_VIRUS {
 		def with_spades = (params.with_spades as boolean)
 	"""
 	hostname 1>&2
-	${moduleLoad("samtools bwa "+(with_spades?"spades/3.15.2":""))}
+	${moduleLoad("samtools/1.15.1 bwa "+(with_spades?"spades/3.15.2":""))}
 
         mkdir TMP
 	set -x
