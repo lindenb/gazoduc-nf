@@ -31,7 +31,7 @@ output:
 	path("vg"),emit:executable
 	path("version.xml"),emit:version
 script:
-	def vg_version = meta.vg_version?:"1.46.0"
+	def vg_version = meta.vg_version?:"1.48.0"
 	def url = "https://github.com/vgteam/vg/releases/download/v${vg_version}/vg"
 """
 hostname 1>&2
