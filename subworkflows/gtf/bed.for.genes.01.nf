@@ -25,7 +25,7 @@ SOFTWARE.
 include { getKeyValue; moduleLoad; getBoolean; parseBoolean} from '../../modules/utils/functions.nf'
 include {COMPILE_GTF_TO_BED} from '../../modules/gtf/gtf2bed.compile.01.nf' 
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
-include {GTF_TO_GENES_BED_01} from '../../modules/gtf/gtf2bed.genes.01.gtf'
+include {GTF_TO_GENES_BED_01} from '../../modules/gtf/gtf2bed.genes.01.nf'
 
 workflow BED_FOR_GENES_01 {
 	take:

@@ -24,7 +24,7 @@ SOFTWARE.
 */
 include {getVersionCmd;moduleLoad;parseBoolean} from '../../modules/utils/functions.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
-include {GTF_TO_GENES_BED_02} from '../../modules/gtf/gtf2bed.genes.02.gtf'
+include {GTF_TO_GENES_BED_02} from '../../modules/gtf/gtf2bed.genes.02.nf'
 
 
 /** build a BED for bcftools annotate with jensenlab diseases */

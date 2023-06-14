@@ -52,7 +52,7 @@ script:
 
 	gunzip -c "${gtf}" |\
 			grep -v "^#" |\
-			java -Djava.io.tmpdir=TMP -jar "${JVARKIT_DIST}/jvarkit.jar" gtf2bed --columns "gtf.feature,gene_type,gene_id,gene_name" |\
+			java -Djava.io.tmpdir=TMP -jar "\${JVARKIT_DIST}/jvarkit.jar" gtf2bed --columns "gtf.feature,gene_type,gene_id,gene_name" |\
 			awk -F '\t' '(\$4=="gene")' |\
 			cut -f 1-3,5- |\
 			java -Djava.io.tmpdir=TMP -jar "\${JVARKIT_DIST}/jvarkit.jar" bedrenamechr --column 1 --convert SKIP -R "${reference}" |\
