@@ -22,37 +22,39 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {moduleLoad} from '../utils/functions.nf'
 
-process SOMALIER_DOWNLOAD_SITES {
+process MERGE_VERSION {
+tag "N=${L.size()}"
+executor "local"
+input:
+	val(name)
+	val(L)
 output:
-	path("sites.vcf.gz"), emit: vcf
-	path("sites.vcf.gz.tbi"), emit:index
-	path("version.xml"), emit:version
+	path("${params.prefix?:""}version.xml"),emit:version
 script:
-	def genome = params.genomes[params.genomeId]
-	def url = genome.somalier_sites_url
+	prefix = params.prefix?:""
 """
-hostname 1>&2
-${moduleLoad("jvarkit bcftools")}
-set -o pipefail
-set -x
+cat << EOF > jeter.xml
+<properties id="${name}">
+	<entry key="name">${name}</entry>
+	<entry key="date">\$(date)</entry>
+	<entry key="steps">
+EOF
 
-wget -O - "${url}" |\
-	gunzip -c |\
-	java -jar \${JVARKIT_DIST}/vcfsetdict.jar -R "${genome.fasta}"  --onNotFound SKIP |\
-	bcftools sort -T . -o sites.vcf.gz -O z
+for X in ${L.join(" ")}
+do
+	xmllint --nocdata --format "\${X}" | tail -n+2 >> jeter.xml
+done
 
-bcftools index -t sites.vcf.gz
-
-##################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">download VCF sites for somalier</entry>
-        <entry key="url"><a>${url}</a></entry>
-	<entry key="bcftools.version">\$( bcftools --version-only)</entry>
+cat << EOF >> jeter.xml
+	</entry>
 </properties>
 EOF
+	xmllint --format jeter.xml > "${prefix}version.xml"
+rm jeter.xml
+"""
+stub:
+"""
+echo "<properties/>" > "${prefix}version.xml"
 """
 }

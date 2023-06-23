@@ -23,29 +23,43 @@ SOFTWARE.
 
 */
 
-params.somalier_version= "0.2.16"
+params.min_file_split= -100
 
-process DOWNLOAD_SOMALIER {
-tag "${params.somalier_version}"
+
+process SQRT_FILE {
+executor "local"
+tag "${filein.name}"
+input:
+        path(filein)
 output:
-	path("somalier"),emit:executable
+        path("clusters${params.suffix?:".list"}"),emit:output
 	path("version.xml"),emit:version
 script:
-	def somalier_version = params.somalier_version?:"0.2.16"
-	def url = "https://github.com/brentp/somalier/releases/download/v${somalier_version}/somalier"
-"""
-hostname 1>&2
-wget -O somalier "${url}"
-chmod +x somalier
+	def suffix = params.suffix?:".list" 
+       	def min_file_split = params.min_file_split?:100
+        """
+	set -o pipefail
 
-##################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">download and somalier</entry>
-        <entry key="somalier.version">${somalier_version}</entry>
-        <entry key="url"><a>${url}</a></entry>
-</properties>
-EOF
-"""
-}
+        SQRT=`awk 'END{X=NR;if(${min_file_split} > 0 && X <= ${min_file_split}){print(X);} else {z=sqrt(X); print (z==int(z)?z:int(z)+1);}}' "${filein}"`
+	mkdir -p OUT
+        split -a 9 --additional-suffix=${suffix} --lines=\${SQRT} "${filein}" OUT/chunck.
+
+      	find \${PWD}/OUT -type f -name "chunck.*${suffix}" > clusters.list
+
+	# if too fast, prevent problems with timestamp ?
+	sleep 10
+	touch -c clusters.list
+
+	cat <<- EOF > version.xml
+	<properties id="${task.process}">
+		<entry key="Name">${task.process}</entry>
+		<entry key="Description">Split file into parts</entry>
+		<entry key="Input">${filein}</entry>
+		<entry key="N">\${SQRT}</entry>
+		<entry key="N-FILES">\$(wc -l < clusters.list)</entry>
+		<entry key="Output">clusters.list</entry>
+	</properties>
+	EOF
+        """
+	}
+

@@ -83,7 +83,7 @@ if( params.help ) {
 
 workflow {
 
-	somalier_ch = SOMALIER_BAMS_01(params,params.reference,
+	somalier_ch = SOMALIER_BAMS_01(
 		Channel.fromPath(params.bams),
 		file(params.pedigree.isEmpty()?"NO_FILE":params.pedigree)
 		)

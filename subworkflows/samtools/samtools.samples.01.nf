@@ -52,7 +52,7 @@ workflow SAMTOOLS_SAMPLES_01 {
 		version_ch = version_ch.mix(digest_ch.version)
 
 
-		version_ch = MERGE_VERSION(meta, "Samtools depth", "samtools depth", version_ch.collect())		
+		version_ch = MERGE_VERSION(meta, "Samtools samples", "samtools samples", version_ch.collect())		
 	emit:
 		version = version_ch
 		output = digest_ch.output

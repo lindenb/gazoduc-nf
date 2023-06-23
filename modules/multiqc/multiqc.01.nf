@@ -31,6 +31,7 @@ process MULTIQC_01 {
 		val(row)
 	output:
 		path("${row.prefix?:""}multiqc.zip"),emit:zip
+		path("${row.prefix?:""}multiqc/${row.prefix?:""}multiqc_report_data"),emit:datadir
 		path("version.xml"),emit:version
 	script:
 		def prefix = row.prefix?:""
@@ -38,13 +39,16 @@ process MULTIQC_01 {
 		hostname 1>&2
 		${moduleLoad("multiqc")}
 
+		mkdir -p "${prefix}multiqc"
 
 		export LC_ALL=en_US.utf8
 		multiqc  --filename  "${prefix}multiqc_report.html" \
 			--title "${prefix}FASTQC"  \
+			--force \
+			--outdir "${prefix}multiqc" \
 			--file-list "${row.files}"
 		
-		zip -9 -r "${prefix}multiqc.zip" "${prefix}multiqc_report.html" "${prefix}multiqc_report_data"
+		zip -9 -r "${prefix}multiqc.zip" "${prefix}multiqc"
 
 ##################################################################################
 cat <<- EOF > version.xml

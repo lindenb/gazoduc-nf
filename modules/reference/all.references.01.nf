@@ -22,36 +22,29 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {moduleLoad} from '../utils/functions.nf'
-
-process SOMALIER_DOWNLOAD_SITES {
+process ALL_REFERENCES {
+executor "local"
 output:
-	path("sites.vcf.gz"), emit: vcf
-	path("sites.vcf.gz.tbi"), emit:index
-	path("version.xml"), emit:version
+	path("references.fasta.list"),emit:output
+	path("version.xml"),emit:version
 script:
-	def genome = params.genomes[params.genomeId]
-	def url = genome.somalier_sites_url
 """
 hostname 1>&2
-${moduleLoad("jvarkit bcftools")}
-set -o pipefail
-set -x
 
-wget -O - "${url}" |\
-	gunzip -c |\
-	java -jar \${JVARKIT_DIST}/vcfsetdict.jar -R "${genome.fasta}"  --onNotFound SKIP |\
-	bcftools sort -T . -o sites.vcf.gz -O z
+cat << EOF > references.fasta.list
+${params.genomes.collect{K,V -> V.fasta}.unique().join('\n')}
+EOF
 
-bcftools index -t sites.vcf.gz
+sleep 10
+
+test -s references.fasta.list
+
 
 ##################
 cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
-        <entry key="description">download VCF sites for somalier</entry>
-        <entry key="url"><a>${url}</a></entry>
-	<entry key="bcftools.version">\$( bcftools --version-only)</entry>
+        <entry key="description">list all the available references</entry>
 </properties>
 EOF
 """

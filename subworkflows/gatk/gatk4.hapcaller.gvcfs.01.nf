@@ -45,6 +45,10 @@ gazoduc.make("mergesize","100").
         description("argument for jvarkit/findgvcfsblocks merge-size").
         put()
 
+gazoduc.make("extraHC","").
+        description("extra arguments for haplotype caller").
+        put()
+
 
 include {parseBoolean;isBlank;moduleLoad;getVersionCmd} from './../../modules/utils/functions.nf'
 include {gatkGetArgumentsForCombineGVCFs;gatkGetArgumentsForGenotypeGVCF} from './gatk.hc.utils.nf'

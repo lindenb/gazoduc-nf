@@ -22,36 +22,35 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {moduleLoad} from '../utils/functions.nf'
 
-process SOMALIER_DOWNLOAD_SITES {
+include {escapeXml} from './functions.nf'
+
+params.downstream_cmd = " false"
+
+process CONCAT_FILES_02 {
+tag "N=${L.size()}"
+executor "local"
+input:
+        val(L)
 output:
-	path("sites.vcf.gz"), emit: vcf
-	path("sites.vcf.gz.tbi"), emit:index
-	path("version.xml"), emit:version
+        path("concat${params.suffix?:".list"}"),emit:output
+	path("version.xml"),emit:version
 script:
-	def genome = params.genomes[params.genomeId]
-	def url = genome.somalier_sites_url
+	def concat_n_files = params.concat_n_files?:"50"
+	def downstream_cmd = params.downstream_cmd?:""
 """
 hostname 1>&2
-${moduleLoad("jvarkit bcftools")}
-set -o pipefail
-set -x
+cat << EOF | xargs -L ${concat_n_files} cat ${downstream_cmd} > "concat${params.suffix?:".list"}"
+${L.join("\n")}
+EOF
 
-wget -O - "${url}" |\
-	gunzip -c |\
-	java -jar \${JVARKIT_DIST}/vcfsetdict.jar -R "${genome.fasta}"  --onNotFound SKIP |\
-	bcftools sort -T . -o sites.vcf.gz -O z
-
-bcftools index -t sites.vcf.gz
-
-##################
+sleep 5
+#############################################################
 cat << EOF > version.xml
 <properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">download VCF sites for somalier</entry>
-        <entry key="url"><a>${url}</a></entry>
-	<entry key="bcftools.version">\$( bcftools --version-only)</entry>
+	<entry key="Name">${task.process}</entry>
+        <entry key="Description">Concatenate the content of N='${L.size()}' file(s)</entry>
+        <entry key="downstream.command"><pre>${escapeXml(downstream_cmd)}</pre></entry>
 </properties>
 EOF
 """

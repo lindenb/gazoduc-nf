@@ -1,38 +1,42 @@
 include {moduleLoad;assertFileExists;isBlank} from '../../modules/utils/functions.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {DOWNLOAD_SOMALIER} from '../../modules/somalier/somalier.download.nf'
 include {SOMALIER_DOWNLOAD_SITES} from '../../modules/somalier/somalier.download.sites.nf'
-include {SAMTOOLS_SAMPLES01} from '../../modules/samtools/samtools.samples.01.nf'
+include {SAMTOOLS_SAMPLES} from '../samtools/samtools.samples.02.nf' addParams(
+			allow_duplicate_samples : false,
+			allow_multiple_references : false,
+			with_header : true
+			)
+
+
+
 
 
 workflow SOMALIER_BAMS_01 {
 	take:
-		meta
-		reference
 		bams
 		pedigree
 	main:
-		assertFileExists(reference,"reference must be defined")
 		version_ch = Channel.empty()
 
-		exe_ch = DOWNLOAD_SOMALIER(meta)
+		exe_ch = DOWNLOAD_SOMALIER()
 		version_ch = version_ch.mix(exe_ch.version)
 
-		sites_ch = SOMALIER_DOWNLOAD_SITES(meta,reference)
+		sites_ch = SOMALIER_DOWNLOAD_SITES()
 		version_ch = version_ch.mix(sites_ch.version)
 		
-		ch1 = SAMTOOLS_SAMPLES01([:],reference,bams)
+		ch1 = SAMTOOLS_SAMPLES(bams)
 		version_ch = version_ch.mix(ch1.version)
 
-		ch2 = ch1.output.splitCsv(header:false,sep:'\t')		
+		ch2 = ch1.output.splitCsv(header:true,sep:'\t')
 
-		ch3 = EXTRACT_BAM(meta, reference, exe_ch.executable , sites_ch.vcf , ch2)
+		ch3 = EXTRACT_BAM(exe_ch.executable , sites_ch.vcf , ch2)
 		version_ch = version_ch.mix(ch3.version)
 
-		somalier_ch = RELATE_SOMALIER(meta,reference, exe_ch.executable,ch3.output.collect(), pedigree)
+		somalier_ch = RELATE_SOMALIER(exe_ch.executable,ch3.output.collect(), pedigree)
 		version_ch = version_ch.mix(somalier_ch.version)
 
-		version_ch = MERGE_VERSION(meta, "somalier", "somalier on bams", version_ch.collect())
+		version_ch = MERGE_VERSION( "somalier",version_ch.collect())
 	emit:
 		version = version_ch
 		zip = somalier_ch.zip
@@ -40,33 +44,31 @@ workflow SOMALIER_BAMS_01 {
 
 
 process EXTRACT_BAM {
-	tag "${sample}"
+	tag "${row.sample}"
 	memory '2g'
-
 	input:
-		val(meta)
-		val(reference)
 		val(somalier)
 		val(sites)
-		tuple val(sample),val(bam)
+		val(row)
 	output:
-		path("extracted/${sample}.somalier"),emit:output
+		path("extracted/${row.sample}.somalier"),emit:output
 		path("version.xml"),emit:version
 	script:
+		def genome = params.genomes[params.genomeId]
 	"""
 	hostname 1>&2
-	mkdir extracted
-	${somalier} extract -d extracted --sites "${sites}" -f "${reference}" "${bam}"
+	mkdir -p extracted
+	${somalier} extract -d extracted --sites "${sites}" -f "${genome.fasta}" "${row.bam}"
 	
-	test -s "extracted/${sample}.somalier"
+	test -s "extracted/${row.sample}.somalier"
 
 ##################
 cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
         <entry key="description">somalier extract</entry>
-        <entry key="sample">${sample}</entry>
-        <entry key="bam">${bam}</entry>
+        <entry key="sample">${row.sample}</entry>
+        <entry key="bam">${row.bam}</entry>
 </properties>
 EOF
 	"""
@@ -77,17 +79,15 @@ process RELATE_SOMALIER {
 tag "N=${L.size()}"
 afterScript "rm -rf extracted TMP"
 input:
-	val(meta)
-	val(reference)
 	val(somalier)
 	val(L)
 	path(pedigree)
 output:
-	path("${meta.prefix?:""}somalier.bams.zip"),emit:zip
+	path("${params.prefix?:""}somalier.bams.zip"),emit:zip
 	path("version.xml"),emit:version
 script:
-	def prefix = meta.prefix?:""
-
+	def genome = params.genomes[params.genomeId]
+	def prefix = params.prefix?:""
 """
 hostname 1>&2
 set -o pipefail
