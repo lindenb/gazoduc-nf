@@ -55,6 +55,7 @@ workflow SAMTOOLS_SAMPLES {
 
 		version_ch = MERGE_VERSION("samtools samples", version_ch.collect())		
 	emit:
+		references = all_refs_ch.output
 		version = version_ch
 		output = digest_ch.output
 	}

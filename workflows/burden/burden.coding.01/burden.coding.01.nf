@@ -93,13 +93,11 @@ else
 	}
 
 workflow {
-		BURDEN_CODING(params, params.reference, params.vcf, file(params.pedigree), file(params.bed))
+		BURDEN_CODING(params.vcf, file(params.pedigree), file(params.bed))
 		}
 
 workflow BURDEN_CODING {
 	take:
-		meta
-		reference
 		vcf
 		pedigree
 		bed

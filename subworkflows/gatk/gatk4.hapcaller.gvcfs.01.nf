@@ -52,15 +52,16 @@ gazoduc.make("extraHC","").
 
 include {parseBoolean;isBlank;moduleLoad;getVersionCmd} from './../../modules/utils/functions.nf'
 include {gatkGetArgumentsForCombineGVCFs;gatkGetArgumentsForGenotypeGVCF} from './gatk.hc.utils.nf'
-include {SAMTOOLS_SAMPLES_01} from '../samtools/samtools.samples.01.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {SAMTOOLS_SAMPLES} from '../samtools/samtools.samples.02.nf' addParams(
+		with_header : true,
+		allow_duplicate_samples : true,
+		allow_multiple_references:true
+		)
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {GATK_PARALLEL_COMBINE_GVCFS} from './gatk.parallel.combine.gvcfs.01.nf'
 
 workflow GATK4_HAPCALLER_GVCFS_01 {
         take:
-                meta
-                reference
-		references
                 bams
                 beds
 		pedigree
@@ -68,7 +69,7 @@ workflow GATK4_HAPCALLER_GVCFS_01 {
                 version_ch = Channel.empty()
 
 
-		samples_bams_ch = SAMTOOLS_SAMPLES_01(meta.plus(["with_header":true,"allow_duplicate_samples":true,"allow_multiple_references":true]), reference, references, bams)
+		samples_bams_ch = SAMTOOLS_SAMPLES(bams)
 		version_ch = version_ch.mix(samples_bams_ch.version)
 
 
@@ -82,37 +83,37 @@ workflow GATK4_HAPCALLER_GVCFS_01 {
 			"sample":T[1].sample,
 			"bam":T[1].bam,
 			"new_sample":T[1].new_sample,
-			"reference": reference,
-			"dbsnp": (meta.dbsnp?:""),
-			"extraHC": (meta.extraHC?:""),
+			"reference": params.genomes[params.genomeId].fasta,
+			"dbsnp": params.genomes[params.genomeId].dbsnp,
+			"extraHC": params.extraHC,
 			"pedigree": (pedigree.name.equals("NO_FILE")?"":pedigree.toRealPath()),
-			"mapq": (meta.mapq?:"-1"),
+			"mapq": params.mapq,
 			"bam_reference": T[1].reference
 			]}
-		hapcaller_ch = HAPCALLER_GVCF(meta, hc_input_ch)
+		hapcaller_ch = HAPCALLER_GVCF(hc_input_ch)
 		version_ch = version_ch.mix(hapcaller_ch.version.first())
 
 		by_bed_ch = hapcaller_ch.bedvcf.map{T->[T[0].bed,T[1]]}.groupTuple()
 
-		split_gvcfs_ch = SPLIT_GVCF_BLOCKS_PER_CONTIG(meta,by_bed_ch)
+		split_gvcfs_ch = SPLIT_GVCF_BLOCKS_PER_CONTIG(by_bed_ch)
 		version_ch = version_ch.mix(split_gvcfs_ch.version.first())
 
 
-		find_gvcfs_ch = FIND_GVCF_BLOCKS(meta,split_gvcfs_ch.output.splitCsv(header:true,sep:'\t',strip:true))
+		find_gvcfs_ch = FIND_GVCF_BLOCKS(split_gvcfs_ch.output.splitCsv(header:true,sep:'\t',strip:true))
 		version_ch = version_ch.mix(find_gvcfs_ch.version.first())
 
 		each_chunk = find_gvcfs_ch.output.splitCsv(header:true,sep:'\t',strip:true)
 
-		if( parseBoolean(meta.parallel_combine_gvcf) )  {
-			genotyped_ch = GATK_PARALLEL_COMBINE_GVCFS(meta,reference, pedigree, each_chunk)
+		if( parseBoolean(params.parallel_combine_gvcf) )  {
+			genotyped_ch = GATK_PARALLEL_COMBINE_GVCFS(pedigree, each_chunk)
 			version_ch = version_ch.mix(genotyped_ch.version.first())
 			}
 		else {
-			genotyped_ch = GENOTYPE_GVCFS_02(meta,reference, pedigree, each_chunk)
+			genotyped_ch = GENOTYPE_GVCFS_02(pedigree, each_chunk)
 			version_ch = version_ch.mix(genotyped_ch.version.first())
 			}
 
-		version_ch = MERGE_VERSION(meta, "gatk4", "call bams using gvcfs", version_ch.collect())
+		version_ch = MERGE_VERSION("gatk4",version_ch.collect())
 	emit:
 		version = version_ch
 		region_vcf = genotyped_ch.region_vcf
@@ -129,7 +130,6 @@ maxRetries 5
 cpus 1
 afterScript 'rm -rf TMP'
 input:
-	val(meta)
 	val(row)
 output:
         tuple val(row),path("hapcaller.g.vcf.gz"),emit:bedvcf
@@ -249,7 +249,6 @@ errorStrategy "retry"
 maxRetries 3
 afterScript "rm -r jeter.list"
 input:
-	val(meta)
 	tuple val(bed),val(L)
 output:
 	path("contig.gvcfs.bed.tsv"),emit:output
@@ -300,17 +299,17 @@ tag "${row.contig}"
 memory "10g"
 afterScript "rm -rf TMP"
 input:
-	val(meta)
 	val(row)
 output:
 	path("bed_samplemap.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
 	def contig = row.contig
-	def blocksize= meta.blocksize?:"1mb"
-	def mergesize = meta.mergesize?:"100"
+	def blocksize= params.blocksize?:"1mb"
+	def mergesize = params.mergesize?:"100"
+	def reference = params.genomes[params.genomeId].fasta
 
-if(parseBoolean(meta.use_whole_block))
+if(parseBoolean(params.use_whole_block))
 """
 hostname 1>&2
 ${moduleLoad("jvarkit")}
@@ -370,8 +369,6 @@ errorStrategy  'retry'
 maxRetries 3
 afterScript 'rm -rf  TMP BEDS jeter* database tmp_read_resource_*.config'
 input:
-	val(meta)
-	val(reference)
 	path(pedigree)
 	val(row)
 output:
@@ -379,8 +376,9 @@ output:
         path("genotyped.bcf.csi"),emit:index
 	path("version.xml"),emit:version
 script:
-	 def otherOpts1 =  gatkGetArgumentsForCombineGVCFs(meta.plus("reference":reference))
-	 def otherOpts2 =  gatkGetArgumentsForGenotypeGVCF(meta.plus("reference":reference,"pedigree":pedigree))
+	 def reference = params.genomes[params.genomeId].fasta
+	 def otherOpts1 =  gatkGetArgumentsForCombineGVCFs(params.plus("reference":reference))
+	 def otherOpts2 =  gatkGetArgumentsForGenotypeGVCF(params.plus("reference":reference,"pedigree":pedigree))
          def region = row.interval
 """
 hostname 1>&2

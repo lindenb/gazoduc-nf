@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults()
 
 
 gazoduc.make("bams","NO_FILE").
@@ -32,17 +32,11 @@ gazoduc.make("bams","NO_FILE").
 	existingFile().
 	put()
 
-gazoduc.make("references","NO_FILE").
-	description("Other references. All fasta path listed in a file. Name of chromosomes will be changed to match those of the main reference").
-	put()
 
 gazoduc.make("beds","NO_FILE").
 	description("Path to a list of bed files. if undefined, the REF will be split into parts").
 	put()
 
-gazoduc.make("dbsnp","").
-	description("Optional path to dbsnp").
-	put()
 
 gazoduc.make("pedigree","NO_FILE").
 	description("Optional path to a pedigree").
@@ -61,10 +55,16 @@ include {runOnComplete;hasFeature;parseBoolean;getKeyValue} from '../../../modul
 include {GATK4_HAPCALLER_GVCFS_01} from '../../../subworkflows/gatk/gatk4.hapcaller.gvcfs.01.nf'
 include {COLLECT_TO_FILE_01 as COLLECT2FILE1; COLLECT_TO_FILE_01 as COLLECT2FILE2} from '../../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_CONCAT_01} from '../../../subworkflows/bcftools/bcftools.concat.01.nf'
-include {MERGE_VERSION} from '../../../modules/version/version.merge.nf'
+include {MERGE_VERSION} from '../../../modules/version/version.merge.02.nf'
 include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
-include {SCATTER_TO_BED} from '../../../subworkflows/picard/picard.scatter2bed.nf'
-include {LINUX_SPLIT} from '../../../modules/utils/split.nf'
+include {SCATTER_TO_BED} from '../../../subworkflows/picard/picard.scatter2bed.nf' addParams(
+		OUTPUT_TYPE:"ACGT",
+		MAX_TO_MERGE:"1000"
+		)
+include {LINUX_SPLIT} from '../../../modules/utils/split.nf' addParams(
+	suffix:".bed",
+	method:"--lines=1"
+	)
 
 
 
@@ -86,10 +86,10 @@ workflow  {
    
 	/* if no bed was specified, split the genome into part */
         if(file(params.beds).name.equals("NO_FILE")) {
-		scatter_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"ACGT","MAX_TO_MERGE":"1000"], params.reference) 
+		scatter_ch = SCATTER_TO_BED(params.genomes[params.genomeId].fasta) 
 		version_ch = version_ch.mix(scatter_ch.version)
 
-		split_ch = LINUX_SPLIT([suffix:".bed","method":"--lines=1"], scatter_ch.bed)
+		split_ch = LINUX_SPLIT(scatter_ch.bed)
 		version_ch = version_ch.mix(split_ch.version)
 
 		beds_ch = split_ch.output.splitText().map{it.trim()}
@@ -97,14 +97,14 @@ workflow  {
 		beds_ch = Channel.fromPath(params.beds)
 	}
 
-	vcfs_ch = GATK4_HAPCALLER_GVCFS_01(params,params.reference,file(params.references),file(params.bams), beds_ch, file(params.pedigree))
+	vcfs_ch = GATK4_HAPCALLER_GVCFS_01(file(params.bams), beds_ch, file(params.pedigree))
 	version_ch = version_ch.mix(vcfs_ch.version)
 
 	file_list_ch = COLLECT2FILE1([:],vcfs_ch.region_vcf.map{T->T[1]}.collect())
 	concat_ch = BCFTOOLS_CONCAT_01([:],file_list_ch.output)
 	version_ch = version_ch.mix(concat_ch.version)
 
-	version2_ch = MERGE_VERSION(params, "Calling gatk", "Calling gatk in gvcf mode", version_ch.collect())
+	version2_ch = MERGE_VERSION("Calling gatk", version_ch.collect())
 
 	html_ch = VERSION_TO_HTML(params,version2_ch.version)
 
