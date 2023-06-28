@@ -24,28 +24,30 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-include {getKeyValue;getModules} from '../utils/functions.nf'
+log.info("parsing picard.interval2bed.nf");
 
+include {moduleLoad} from '../utils/functions.nf'
+if(!params.containsKey("SORT")) throw new IllegalArgumentException("params.SORT missing");
+if(!params.containsKey("SCORE")) throw new IllegalArgumentException("params.SCORE missing");
 
 process INTERVAL_LIST_TO_BED {
 tag "${file(interval_list).name}"
-label "process_low"
+memory "3g"
 input:
-	val(meta)
-	val(interval_list)
+	path(interval_list)
 output:
-	path("${file(interval_list).getSimpleName()}.bed"), emit:bed
+	path("${interval_list.getSimpleName()}.bed"), emit:bed
 	path("version.xml"), emit:version
 script:
-	def SORT = getKeyValue(meta,"SORT","true")
-	def SCORE = getKeyValue(meta,"SCORE","500")
+	def SORT = params.SORT
+	def SCORE = params.SCORE
 """
 	hostname 1>&2
-	module load ${getModules("picard")}
+	${moduleLoad("picard")}
 
 	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=. -jar \${PICARD_JAR} IntervalListToBed \
 		--INPUT "${interval_list}" \
-		--OUTPUT "${file(interval_list).getSimpleName()}.bed"  \
+		--OUTPUT "${interval_list.getSimpleName()}.bed"  \
 		--SCORE ${SCORE} \
 		--SORT ${SORT}
 		

@@ -23,14 +23,15 @@ SOFTWARE.
 
 */
 include {getVersionCmd;moduleLoad;parseBoolean} from '../../modules/utils/functions.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
+
+if(!params.containsKey("with_tabix")) throw new IllegalArgumentException("params.with_tabix missing")
 
 /**
 	motivation: convert VCF to bed using bedtools query -f '%CHROM\t%POS0\t%END' after split per vcf / split per contig
 */
 workflow BCFTOOLS_VCFS_TO_BED_01 {
 	take:
-		meta
 		vcf
 		bed //restrict to that bed or NO_FILE
 	main:
@@ -38,24 +39,24 @@ workflow BCFTOOLS_VCFS_TO_BED_01 {
 
 		if(vcf.name.endsWith(".list")) {			
 			each_vcf = vcf_ch.splitText().map{file(it.trim())}
-			rgn_ch = INTERVAL_FOR_VCF(meta,bed,each_vcf)
+			rgn_ch = INTERVAL_FOR_VCF(bed,each_vcf)
 			}
 		else
 			{
-			rgn_ch = INTERVAL_FOR_VCF(meta,bed,vcf)
+			rgn_ch = INTERVAL_FOR_VCF(bed,vcf)
 			}
 		version_ch = version_ch.mix(rgn_ch.version)
 
 		
 		each_rgn = rgn_ch.output.splitCsv(header:false,sep:'\t')
 
-		vcfstat_ch = VCF2BED(meta,each_rgn)
+		vcfstat_ch = VCF2BED(each_rgn)
 		version_ch = version_ch.mix(vcfstat_ch.version)
 
-		beds_ch = MERGE_BEDS(meta,vcfstat_ch.bed.collect())
+		beds_ch = MERGE_BEDS(vcfstat_ch.bed.collect())
 		version_ch = version_ch.mix(beds_ch.version)
 
-		version_ch = MERGE_VERSION(meta, "VCF to BED", "Variants as BED", version_ch.collect())
+		version_ch = MERGE_VERSION("VCF to BED",version_ch.collect())
 	emit:
 		version = version_ch
 		bed = beds_ch.bed
@@ -67,7 +68,6 @@ tag "${vcf.name}"
 executor "local"
 maxForks 5
 input:
-	val(meta)
 	path(bed)
 	path(vcf)
 output:

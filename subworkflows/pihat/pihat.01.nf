@@ -25,37 +25,35 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 
-include {moduleLoad;getGnomadExomePath;getGnomadGenomePath} from '../../modules/utils/functions.nf'
-include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
-
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putGnomad()
+include {moduleLoad} from '../../modules/utils/functions.nf'
+include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf' addParams(with_header:false)
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 
 
 workflow PIHAT01 {
 	take:
-		meta
-		reference
+		genome
 		vcf
 		samples
 	main:
 		version_ch = Channel.empty();
 		to_zip = Channel.empty();
-		vcf2contig_ch = VCF_TO_BED(meta,vcf)
+		vcf2contig_ch = VCF_TO_BED(vcf)
 		version_ch = version_ch.mix(vcf2contig_ch.version)
 
 		ctgvcf_ch = vcf2contig_ch.bed.splitCsv(header: false,sep:'\t',strip:true).
-                               map{T->[T[0],file(T[3])]}.combine(samples)
+                               map{T->[T[0],file(T[3])]}.
+				combine(samples)
 
 
-		perCtg = PLINK_PER_CONTIG(meta,reference, ctgvcf_ch)
+		perCtg = PLINK_PER_CONTIG(genome, ctgvcf_ch)
 		version_ch = version_ch.mix(perCtg.version.collect())
 
 
-		pihat_ch = MERGE_PIHAT_VCF(meta.plus(["title":"${vcf.name}"]), perCtg.vcf.map{T->T.join("\t")}.collect())
+		pihat_ch = MERGE_PIHAT_VCF(vcf, perCtg.vcf.map{T->T.join("\t")}.collect())
 		version_ch = version_ch.mix(pihat_ch.version)
 
-		version_ch = MERGE_VERSION(meta, "pihat", "pihat on ${vcf}", version_ch.collect())
+		version_ch = MERGE_VERSION("pihat",version_ch.collect())
 
 	emit:
 		version = version_ch
@@ -66,47 +64,6 @@ workflow PIHAT01 {
 	}
 
 
-gazoduc.build("pihat_filters", " --apply-filters '.,PASS' ").
-	description("pihat filter").
-	menu("pihat").
-	put()
-
-gazoduc.build("pihat_MAF", 0.1).
-	description("pihat MAF").
-	menu("pihat").
-    setDouble().
-	put()
-
-gazoduc.build("pihat_min_GQ", 20).
-	description("pihat min GQ").
-	menu("pihat").
-    setInt().
-	put()
-
-gazoduc.build("pihat_f_missing", 0.05).
-	description("pihat fraction of missing genotypes").
-	menu("pihat").
-    setDouble().
-	put()
-
-gazoduc.build("pihat_min_DP", 10).
-	description("min Depth").
-	menu("pihat").
-    setInt().
-	put()
-
-gazoduc.build("pihat_max_DP", 300).
-	description("max Depth").
-	menu("pihat").
-    setInt().
-	put()
-
-
-gazoduc.build("pihat_max", 0.05).
-	description("max pihat ").
-	menu("pihat").
-    setDouble().
-	put()
 
 
 process PLINK_PER_CONTIG {
@@ -114,25 +71,25 @@ tag "${vcf.name}/${contig}"
 afterScript "rm -rf TMP"
 memory "3g"
 input:
-	val(meta)
-	val(reference)
+	val(genome)
         tuple val(contig),path(vcf),path(samples)
 output:
 	tuple val(contig),path("${contig}.bcf"),emit:vcf
 	path("version.xml"),emit:version
 when:
-	contig.matches(meta.pihat_contig_regex?:"(chr)?[0-9XY]+")
+	contig.matches(params.pihat.contig_regex)
 script:
 
-	def filters = meta.pihat_filters
-	def blacklisted = meta.blacklisted?:""	
-	def pihatmaf = (meta.pihat_MAF as double)
-	def pihatMinGQ = (meta.pihat_min_GQ as int)
-	def f_missing= (meta.pihat_f_missing as double)
-	def minDP= (meta.pihat_min_DP as int)
-	def maxDP= (meta.pihat_max_DP as int)
-	def gnomad_genome_path = getGnomadExomePath(meta,reference)
-	def gnomad_exome_path =   getGnomadGenomePath(meta,reference)
+	def reference = genome.fasta
+	def filters = params.pihat.filters
+	def pihatmaf = (params.pihat.MAF as double)
+	def pihatMinGQ = (params.pihat.min_GQ as int)
+	def blacklisted = params.pihat.blacklisted
+	def f_missing= (params.pihat.f_missing as double)
+	def minDP= (params.pihat.min_DP as int)
+	def maxDP= (params.pihat.max_DP as int)
+	def gnomad_genome_path = genome.gnomad_genome
+	def gnomad_exome_path =  genome.gnomad_exome
 
 if(contig.matches("(chr)?[0-9]+"))
 
@@ -218,7 +175,7 @@ bcftools view -m2 -M2 ${filters} --types snps -O u \
 #
 # Dans le fichier hardyweinberg.hwe enlever les variants dont la colonne P < 0.00001
 #
-plink --bcf TMP/jeter.bcf --allow-extra-chr --hardy --allow-no-sex --out "TMP/hardyweinberg.txt"
+plink --double-id --bcf TMP/jeter.bcf --allow-extra-chr --hardy --allow-no-sex --out "TMP/hardyweinberg.txt"
 
 awk '(\$9 <  0.00001) {print \$2}' "TMP/hardyweinberg.txt.hwe" > TMP/xclude_ids.txt
 
@@ -231,18 +188,18 @@ fi
 #
 # sélection de SNP indépendants 
 #
-plink --bcf  TMP/jeter.bcf --allow-extra-chr  --indep-pairwise 50 10 0.2 --out TMP/plink
+plink --double-id --bcf  TMP/jeter.bcf --allow-extra-chr  --indep-pairwise 50 10 0.2 --out TMP/plink
 
 
-plink --bcf  TMP/jeter.bcf --allow-extra-chr  --extract TMP/plink.prune.in --recode vcf --out TMP/pruned_data
+plink --double-id --bcf  TMP/jeter.bcf --allow-extra-chr  --extract TMP/plink.prune.in --recode vcf --out TMP/pruned_data
 test -f TMP/pruned_data.vcf
 
-plink --bcf  TMP/jeter.bcf --allow-extra-chr --r2 --ld-window 50 --ld-window-kb 5000 --ld-window-r2 0.2 --out TMP/ld
+plink --double-id --bcf  TMP/jeter.bcf --allow-extra-chr --r2 --ld-window 50 --ld-window-kb 5000 --ld-window-r2 0.2 --out TMP/ld
 test -f TMP/ld.ld
 
 awk '{print \$3;}'  TMP/ld.ld  | uniq  | sort -T . | uniq > TMP/snpInLD.txt
 
-plink --vcf TMP/pruned_data.vcf --exclude TMP/snpInLD.txt --recode vcf --out TMP/indepSNP_data
+plink --double-id --vcf TMP/pruned_data.vcf --exclude TMP/snpInLD.txt --recode vcf --out TMP/indepSNP_data
 
 bcftools view -O b -o "${contig}.bcf" TMP/indepSNP_data.vcf
 bcftools index "${contig}.bcf"
@@ -327,7 +284,7 @@ tag "N=${L.size()}"
 cache "lenient"
 afterScript ""
 input:
-	val(meta)
+	path(vcf)
 	val(L)
 output:
 	path("${prefix}pihat.png"),emit:pihat_png
@@ -336,8 +293,8 @@ output:
 	path("${prefix}plink.genome.txt.gz"),emit:plink_genome
 	path("version.xml"),emit:version
 script:
-	prefix = meta.prefix?:""
-	maxPiHat = (meta.pihat_max as double)
+	prefix = params.prefix?:""
+	maxPiHat = (params.pihat.pihat_max as double)
 
 if(!L.isEmpty())
 """
@@ -354,13 +311,13 @@ EOF
 awk -F '\t' '(\$1 ~ /^(chr)?[0-9]+\$/ ) {print \$2}' TMP/jeter.list > TMP/autosomes.list 
 
 bcftools concat --allow-overlaps  -O b --file-list TMP/autosomes.list -o "TMP/jeter.bcf"
-plink --bcf TMP/jeter.bcf  --allow-extra-chr --genome --out TMP/plink
+plink --double-id --bcf TMP/jeter.bcf  --allow-extra-chr --genome --out TMP/plink
 
 awk -F '\t' '(\$1 ~ /^(chr)?[XY]+\$/ ) {print \$2}' TMP/jeter.list > TMP/sex.list
 
 if [ -s "TMP/sex.list" ] ; then
 	bcftools concat --allow-overlaps  -O b --file-list TMP/sex.list -o "TMP/jeter.bcf"
-	plink --bcf TMP/jeter.bcf  --allow-extra-chr --make-bed --impute-sex --out TMP/impute-sex
+	plink --double-id --bcf TMP/jeter.bcf  --allow-extra-chr --make-bed --impute-sex --out TMP/impute-sex
 fi
 
 ## plot it
@@ -389,7 +346,7 @@ dev.off()
 T1<-read.table("${prefix}sample2avg.pihat.tsv",sep="\\t",header=FALSE,col.names=c("S","X"),colClasses=c("character","numeric"))
 head(T1)
 pdf("${prefix}sample2avg.pihat.pdf")
-boxplot(T1\\\$X ,ylim=c(0,max(T1\\\$X)),main="${prefix}AVG(PIHAT)/SAMPLE",sub="${meta.title}",xlab="Sample",ylab="pihat")
+boxplot(T1\\\$X ,ylim=c(0,max(T1\\\$X)),main="${prefix}AVG(PIHAT)/SAMPLE",sub="${vcf.name}",xlab="Sample",ylab="pihat")
 abline(h=${maxPiHat},col="blue");
 dev.off()
 

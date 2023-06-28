@@ -22,11 +22,13 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+log.info("parsing subworkflows/jvarkit/jvarkit.vcf2intervals.nf ....")
+
 include {moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
 include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf'
-include {JVARKIT_VCF_TO_INTERVALS_01 as VCF2RGN} from '../../modules/jvarkit/jvarkit.vcf2intervals.01.nf'
-include {CONCAT_FILES_01} from '../../modules/utils/concat.files.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {JVARKIT_VCF_TO_INTERVALS_01 as VCF2RGN} from '../../modules/jvarkit/jvarkit.vcf2intervals.01.nf' addParams(with_header:false)
+include {CONCAT_FILES_01} from '../../modules/utils/concat.files.nf' addParams(suffix:".bed")
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 
 
 
@@ -36,28 +38,26 @@ include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
  */
 workflow JVARKIT_VCF_TO_INTERVALS_01 {
 	take:
-		meta
-		reference /* not used, just in case.. */
 		vcf /* path to vcf, or file with .list suffix */
 		bed /* limit to that BED or NO_FILE */
 	main:
 		version_ch = Channel.empty()
-		bed_ch = VCF_TO_BED(meta, vcf)
+		bed_ch = VCF_TO_BED(vcf)
 		version_ch = version_ch.mix(bed_ch.version)
 	
-		bed2ch = INTERSECT_BED(meta, bed_ch.bed, bed)
+		bed2ch = INTERSECT_BED(bed_ch.bed, bed)
 		version_ch = version_ch.mix(bed2ch.version)
 
 		interval_vcf = bed2ch.bed.splitCsv(header:false,sep:'\t').
 			map{T->[vcf:file(T[3]),interval:T[0]+":"+((T[1] as int)+1)+"-"+T[2]]}
 
-		rch = VCF2RGN(meta.plus("with_header":false), interval_vcf)
+		rch = VCF2RGN(interval_vcf)
 		version_ch = version_ch.mix(rch.version)
 
-		concat_ch = CONCAT_FILES_01(meta.plus("suffix":".bed"), rch.bed.collect())
+		concat_ch = CONCAT_FILES_01(rch.bed.collect())
 		version_ch = version_ch.mix(concat_ch.version)
 
-		version_ch = MERGE_VERSION(meta,"jvarkit2intervals","VCF to intervals",version_ch.collect())
+		version_ch = MERGE_VERSION("jvarkit2intervals",version_ch.collect())
 
 	emit:
 		bed = concat_ch.output
@@ -69,7 +69,6 @@ tag "${vcfbed.name} / ${userbed.name}"
 executor "local"
 afterScript "rm -rf TMP"
 input:
-	val(meta)
 	path(vcfbed)
 	path(userbed)
 output:

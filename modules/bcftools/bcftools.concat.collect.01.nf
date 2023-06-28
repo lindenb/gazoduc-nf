@@ -24,25 +24,27 @@ SOFTWARE.
 */
 include {moduleLoad} from '../../modules/utils/functions.nf'
 
+for(String key : ["concat_bed","contig","interval"] ) {
+if(!params.containsKey(key)) throw new IllegalArgumentException("params."+key+" missing:"+params.keySet())
+}
+
 process BCFTOOL_CONCAT_COLLECT_01 {
 tag "N=${L.size()}"
 cpus 1
 input:
-        val(meta)
         val(L)
 output:
         path("concatenated.bcf"),emit:vcf
         path("concatenated.bcf.csi"),emit:index
 	path("version.xml"),emit:version
 script:
-	def bed = meta.concat_bed?:""
-	def contig = meta.concat_contig?:""
-	def interval = meta.concat_interval?:contig
+	def bed = params.concat_bed?:""
+	def contig = params.concat_contig?:""
+	def interval = params.concat_interval?:contig
 	
 	optR= (bed.isEmpty()?(interval.isEmpty()?"":" --regions \""+interval+"\""):" --regions-file \""+bed+"\"")
 
 """
-
 	hostname 1>&2
 	${moduleLoad("bcftools")}
 

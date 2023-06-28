@@ -25,22 +25,23 @@ SOFTWARE.
 
 include {moduleLoad;getKeyValue;assertFileExists;assertNotEmpty} from '../utils/functions.nf'
 
+if(!params.containsKey("prefix")) throw new IllegalArgumentException("params.prefix missing");
+
 process VCF_INTER_SAMPLES_01 {
 executor "local"
 tag "${vcf.name} ${samples.name}"
 afterScript "rm -rf TMP"
 
 input:
-	val(meta)
 	path(vcf)
 	path(samples)
 output:
-	path("${meta.prefix?:""}common.samples.txt"),emit:common
-	path("${meta.prefix?:""}vcf_only.txt"),emit:vcf_only
-	path("${meta.prefix?:""}samples_only.txt"),emit:samples_only
+	path("${params.prefix?:""}common.samples.txt"),emit:common
+	path("${params.prefix?:""}vcf_only.txt"),emit:vcf_only
+	path("${params.prefix?:""}samples_only.txt"),emit:samples_only
 	path("version.xml"),emit:version
 script:
-	def prefix = meta.prefix?:""
+	def prefix = params.prefix?:""
 """
 hostname 1>&2
 ${moduleLoad("bcftools")}

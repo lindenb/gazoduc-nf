@@ -22,20 +22,21 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-
+log.info("picard.scatter2bed.nf")
 include { SCATTER_INTERVALS_BY_NS } from '../../modules/picard/picard.scatter.nf'
-include { INTERVAL_LIST_TO_BED }  from '../../modules/picard/picard.interval2bed.nf'
+log.info("x2")
+include { INTERVAL_LIST_TO_BED }  from '../../modules/picard/picard.interval2bed.nf' addParams(SORT:true, SCORE:500)
+log.info("x3")
 
 workflow SCATTER_TO_BED {
 	take:
-		meta
-		reference
+		genome
 	main:
 		version_ch = Channel.empty()
-		scatter_ch = SCATTER_INTERVALS_BY_NS(meta,reference)
+		scatter_ch = SCATTER_INTERVALS_BY_NS(genome)
 		version_ch = version_ch.mix(scatter_ch.version)
 
-		bed_ch = INTERVAL_LIST_TO_BED([:],scatter_ch.interval_list)
+		bed_ch = INTERVAL_LIST_TO_BED(scatter_ch.output)
 	emit:
 		bed = bed_ch.bed
 		version = version_ch

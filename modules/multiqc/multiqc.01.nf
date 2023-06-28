@@ -24,17 +24,19 @@ SOFTWARE.
 */
 include {moduleLoad;} from '../utils/functions.nf'
 
+
 process MULTIQC_01 {
-	tag "${row.files}"
+	tag "${files.name}"
 	input:
 		val(meta)
-		val(row)
+		path(files)
 	output:
-		path("${row.prefix?:""}multiqc.zip"),emit:zip
-		path("${row.prefix?:""}multiqc/${row.prefix?:""}multiqc_report_data"),emit:datadir
+		path("${params.prefix?:""}multiqc.zip"),emit:zip
+		path("${params.prefix?:""}multiqc/${params.prefix?:""}multiqc_report_data"),emit:datadir
 		path("version.xml"),emit:version
 	script:
-		def prefix = row.prefix?:""
+		def prefix = params.prefix?:""
+		def extra = meta.exta?:""
 	"""
 		hostname 1>&2
 		${moduleLoad("multiqc")}
@@ -42,11 +44,12 @@ process MULTIQC_01 {
 		mkdir -p "${prefix}multiqc"
 
 		export LC_ALL=en_US.utf8
-		multiqc  --filename  "${prefix}multiqc_report.html" \
+		multiqc  --filename  "${prefix}multiqc_report.html" --no-ansi \
 			--title "${prefix}FASTQC"  \
 			--force \
+			${extra} \
 			--outdir "${prefix}multiqc" \
-			--file-list "${row.files}"
+			--file-list "${files}"
 		
 		zip -9 -r "${prefix}multiqc.zip" "${prefix}multiqc"
 
@@ -58,7 +61,6 @@ cat <<- EOF > version.xml
 	<entry key="wget.version">\$( multiqc --version )</entry>
 </properties>
 EOF
-
 
 	"""
 

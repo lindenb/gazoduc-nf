@@ -23,7 +23,11 @@ SOFTWARE.
 
 */
 
+if(!params.containsKey("vcf2interval_distance")) throw new RuntimeException("params.vcf2interval_distance missing")
+if(!params.containsKey("vcf2interval_min_distance")) throw new RuntimeException("params.vcf2interval_min_distance missing")
 include {moduleLoad;getVersionCmd;parseBoolean} from '../utils/functions.nf'
+
+
 
 process JVARKIT_VCF_TO_INTERVALS_01 {
 	tag "${row.vcf.name} ${row.contig?:""} ${row.interval?:""}"
@@ -54,7 +58,7 @@ process JVARKIT_VCF_TO_INTERVALS_01 {
 
 
 	bcftools view -G "${vcf.toRealPath()}" ${interval.isEmpty()?"":"\"${interval}\""}  ${contig.isEmpty()?"":"\"${contig}\""} |\
-	java -jar \${JVARKIT_DIST}/vcf2intervals.jar \
+	java -jar \${JVARKIT_DIST}/jvarkit.jar vcf2intervals \
 		--bed \
 		--distance "${distance}" \
 		--min-distance "${min_distance}" |\

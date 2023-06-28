@@ -24,7 +24,7 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults()
 
 gazoduc.build("vcf","NO_FILE").
 	desc("file containing the SV variants to genotype").
@@ -54,7 +54,7 @@ gazoduc.make("split_vcf_method","--vcf-count 1000").
 
 
 include {GRAPHTYPER_DOWNLOAD_01} from '../../../modules/graphtyper/graphtyper.download.01.nf'
-include {MERGE_VERSION} from '../../../modules/version/version.merge.nf'
+include {MERGE_VERSION} from '../../../modules/version/version.merge.02.nf'
 include {COLLECT_TO_FILE_01} from '../../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_CONCAT_01} from '../../../subworkflows/bcftools/bcftools.concat.01.nf'
 include {JVARKIT_VCF_SPLIT_N_VARIANTS_01} from '../../../subworkflows/jvarkit/jvarkit.vcfsplitnvariants.nf'
@@ -74,7 +74,7 @@ if( params.help ) {
 
 
 workflow {
-	c1_ch = GRAPHTYPER_CNV_01(params,params.reference,file(params.bams),file(params.vcf), file(params.bed))
+	c1_ch = GRAPHTYPER_CNV_01(file(params.bams),file(params.vcf), file(params.bed))
 	html = VERSION_TO_HTML(params,c1_ch.version)	
 	}
 
@@ -84,7 +84,6 @@ runOnComplete(workflow);
 process PUBLISH {
 publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
 input:
-	val(meta)
 	path(html)
 	path(version)
 output:
@@ -102,25 +101,21 @@ echo "publishing ${zip}"
 
 workflow GRAPHTYPER_CNV_01 {
 	take:
-		meta
-		reference
 		bams
 		vcf
 		bed
 	main:
 		version_ch = Channel.empty()
 				
-		executable_ch = GRAPHTYPER_DOWNLOAD_01(meta)
+		executable_ch = GRAPHTYPER_DOWNLOAD_01()
 		version_ch = version_ch.mix(executable_ch.version)
 
-		splitvcf_ch = JVARKIT_VCF_SPLIT_N_VARIANTS_01(meta, reference, vcf, bed)
+		splitvcf_ch = JVARKIT_VCF_SPLIT_N_VARIANTS_01(vcf, bed)
 		version_ch = version_ch.mix(splitvcf_ch.version)
 
 		each_vcf = splitvcf_ch.output.splitText().map{it.trim()}
 
 		x2_ch = GENOTYPE_CNV(
-			meta,
-			reference,
 			executable_ch.executable, 
 			bams,
 			each_vcf
@@ -129,10 +124,10 @@ workflow GRAPHTYPER_CNV_01 {
 		x3_ch = COLLECT_TO_FILE_01([:],x2_ch.output.map{T->T[1]}.collect())
 		version_ch = version_ch.mix(x3_ch.version)
 
-		x4_ch = BCFTOOLS_CONCAT_01(meta,x3_ch.output)
+		x4_ch = BCFTOOLS_CONCAT_01(x3_ch.output)
 		version_ch = version_ch.mix(x4_ch.version)
 
-		version_ch = MERGE_VERSION(meta, "graptyper", "genotype CNVs with graphtyper", version_ch.collect())
+		version_ch = MERGE_VERSION("graptyper",version_ch.collect())
 	emit:
 		version = version_ch
 		vcf = x4_ch.vcf
@@ -143,9 +138,9 @@ process GENOTYPE_CNV {
 tag "${file(vcf).name}"
 cpus 5
 afterScript "rm -rf results TMP sv_results"
+errorStrategy 'retry'
+maxRetries 3
 input:
-	val(meta)
-	val(reference)
 	val(graphtyper)
 	path(bams)
 	val(vcf)
@@ -153,6 +148,7 @@ output:
 	path("genotyped.bcf"),emit:output
 	path("version.xml"),emit:version
 script:
+	def reference = params.genomes[params.genomeId].fasta
 """
 hostname 1>&2
 ${moduleLoad("bcftools bedtools")}

@@ -22,28 +22,34 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {VCF_INTER_SAMPLES_01 as INTER_CASES; VCF_INTER_SAMPLES_01 as INTER_CONTROLS} from '../../modules/bcftools/vcf.inter.samples.01.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {VCF_INTER_SAMPLES_01 as INTER_CASES}   from '../../modules/bcftools/vcf.inter.samples.01.nf' addParams(prefix : "cases")
+include {VCF_INTER_SAMPLES_01 as INTER_CONTROLS} from '../../modules/bcftools/vcf.inter.samples.01.nf' addParams(prefix : "controls")
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 
+/**
 
+find common samples in a case|control file and a pdf.
+Check there is no overlap
+check no file is empty 
+
+*/
 workflow VCF_INTER_CASES_CONTROLS_01 {
 	take:
-		meta
 		vcf
 		cases_file
 		controls_file
 	main:
 		version_ch = Channel.empty()
-		cases_ch = INTER_CASES(meta.plus("prefix":"cases"),vcf,cases_file)
+		cases_ch = INTER_CASES(vcf,cases_file)
 		version_ch = version_ch.mix(cases_ch.version)
 
-		ctrls_ch = INTER_CONTROLS(meta.plus("prefix":"controls"),vcf,controls_file)
+		ctrls_ch = INTER_CONTROLS(vcf,controls_file)
 		version_ch = version_ch.mix(ctrls_ch.version)
 		
 
 		
 		
-		uniq_ch = UNIQ(meta,
+		uniq_ch = UNIQ(
 				cases_ch.common,
 				cases_ch.vcf_only,
 				ctrls_ch.common,
@@ -51,7 +57,7 @@ workflow VCF_INTER_CASES_CONTROLS_01 {
 				)
 		version_ch = version_ch.mix(uniq_ch.version)
 
-		version_ch = MERGE_VERSION(meta, "vcf inter cases/ctrls", "intersection samples in VCF cases and controls", version_ch.collect())
+		version_ch = MERGE_VERSION("intersection samples in VCF cases and controls", version_ch.collect())
 	emit:
 		version = version_ch
 		cases = cases_ch.common
@@ -66,7 +72,6 @@ tag "${common_cases} ${common_controls}"
 executor "local"
 afterScript "rm -f a.txt b.txt c.txt"
 input:
-        val(meta)
         val(common_cases)
        	val(vcfonly_cases)
         val(common_controls)

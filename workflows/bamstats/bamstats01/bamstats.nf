@@ -24,65 +24,35 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
+
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults()
+
+
+gazoduc.build("bams","NO_FILE").
+        desc("list of BAM/CRAM files").
+        required().
+        existingFile().
+        put()
+
+
 include {isBlank;runOnComplete} from '../../../modules/utils/functions.nf'
 include {SAMTOOLS_STATS_01} from '../../../subworkflows/samtools/samtools.stats.01.nf'
 
-params.reference=""
-params.references="NO_FILE"
-params.bams="NO_FILE"
-params.bed="NO_FILE"
-params.prefix=""
-params.publishDir=""
-params.help=false
-
-
-def helpMessage() {
-  log.info"""
-## About
-
-samtools stats on mulitple files
-
-## Author
-
-Pierre Lindenbaum
-
-## Options
-
-  * --reference (fasta) The full path to the indexed fasta reference genome. It must be indexed with samtools faidx and with picard CreateSequenceDictionary or samtools dict. [REQUIRED]
-  * --bams (file) one file containing the paths to the BAMs [REQUIRED]
-  * --publishDir (dir) Save output in this directory
-  * --prefix (string) files prefix. default: ""
-
-## Usage
-
-```
-nextflow -C ../../confs/cluster.cfg  run -resume bamstats.nf \\
-	--publishDir output \\
-	--prefix "analysis." \\
-	--reference /path/to/reference.fasta \\
-	--bams /path/to/bams.list
-```
-
-## Workflow
-
-![workflow](./workflow.svg)
-  
-## See also
-
-
-"""
-}
-
 
 if( params.help ) {
-    helpMessage()
+    gazoduc.usage().
+	name("SAMTOOLS stats").
+	desc("samtools stats").
+	print();
     exit 0
+} else {
+   gazoduc.validate();
 }
 
 
 
 workflow {
-	ch1 = SAMTOOLS_STATS_01(params, params.reference, file(params.references), file(params.bams))
+	ch1 = SAMTOOLS_STATS_01(file(params.bams))
 	//PUBLISH(ch1.zip)
 	}
 

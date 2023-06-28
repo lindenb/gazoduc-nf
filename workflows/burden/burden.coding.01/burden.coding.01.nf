@@ -30,7 +30,6 @@ def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
 include {getVersionCmd;runOnComplete;moduleLoad;parseBoolean} from '../../../modules/utils/functions.nf'
 include {VALIDATE_CASE_CONTROL_PED_01} from '../../../modules/pedigree/validate.case.ctrl.pedigree.01.nf'
 include {VCF_INTER_CASES_CONTROLS_01} from '../../../subworkflows/bcftools/vcf.inter.cases.controls.01.nf'
-include {DOWNLOAD_GTF_01} from '../../../modules/gtf/download.gtf.01.nf'
 include {BED_CLUSTER_01} from '../../../modules/jvarkit/jvarkit.bedcluster.01.nf'
 include {SQRT_FILE} from '../../../modules/utils/sqrt.nf'
 include {COLLECT_TO_FILE_01} from '../../../modules/utils/collect2file.01.nf'
@@ -105,7 +104,7 @@ workflow BURDEN_CODING {
 		to_zip = Channel.empty()
 		version_ch = Channel.empty()
 		
-		ped_ch = VALIDATE_CASE_CONTROL_PED_01(meta,pedigree)
+		ped_ch = VALIDATE_CASE_CONTROL_PED_01(pedigree)
 		version_ch = version_ch.mix(ped_ch.version)
 
 		vcf_inter_ch = VCF_INTER_CASES_CONTROLS_01(meta.plus(["with_tabix":true]),vcf,
@@ -120,24 +119,22 @@ workflow BURDEN_CODING {
 			to_zip = to_zip.mix(pihat.removed_samples)
 			to_zip = to_zip.mix(pihat.plink_genome)
 
-			rebuild_ch = REBUILD_PEDIGREE(meta,pedigree,pihat.cases,pihat.controls)
+			rebuild_ch = REBUILD_PEDIGREE(pedigree,pihat.cases,pihat.controls)
 			version_ch = version_ch.mix(rebuild_ch.version)
 
 			new_ped_ch = rebuild_ch.pedigree
 			}
 		else
 			{
-			rebuild_ch = REBUILD_PEDIGREE(meta,pedigree,ped_ch.cases_list,ped_ch.controls_list)
+			rebuild_ch = REBUILD_PEDIGREE(pedigree,ped_ch.cases_list,ped_ch.controls_list)
 			version_ch = version_ch.mix(rebuild_ch.version)
 
 			new_ped_ch = rebuild_ch.pedigree
 			}
 
 
-		gtf_ch = DOWNLOAD_GTF_01(meta,reference)
-		version_ch = version_ch.mix(gtf_ch.version)
 
-		genes_ch = EXTRACT_GENES(meta,reference,gtf_ch.gtf,bed)
+		genes_ch = EXTRACT_GENES(bed)
 		version_ch = version_ch.mix(genes_ch.version)
 
                 cluster_ch = BED_CLUSTER_01(
@@ -181,19 +178,18 @@ workflow BURDEN_CODING {
 	}
 
 process EXTRACT_GENES {
-tag "${gtf.name}"
 memory "2g"
 input:
-	val(meta)
-	val(reference)
-	path(gtf)
 	path(bed)
 output:
 	path("genes.bed"),emit:genes_bed
 	path("exons.bed"),emit:exons_bed
 	path("version.xml"),emit:version
 script:
-	def slop= meta.genes_slop
+	def genome = params.genomes[params.genomeId]
+	def reference = genome.fasta
+	def gtf = genome.gtf
+	def slop= params.genes_slop
 """
 hostname 1>&2
 ${moduleLoad("jvarkit bedtools")}
@@ -251,7 +247,6 @@ EOF
 process REMOVE_INTRONS {
 tag "${beds.name}"
 input:
-	val(meta)
 	tuple path(beds),path(exons)
 output:
 	path("exons.bed.list"),emit:bed
@@ -291,7 +286,6 @@ EOF
 process REBUILD_PEDIGREE {
 executor "local"
 input:
-	val(meta)
 	path(pedigree)
 	path(cases)
 	path(controls)

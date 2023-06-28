@@ -23,29 +23,28 @@ SOFTWARE.
 
 */
 include {moduleLoad} from '../../modules/utils/functions.nf'
-include {BCFTOOL_CONCAT_FILE_LIST_01} from '../../modules/bcftools/bcftools.concat.file.list.01.nf'
-include {BCFTOOL_CONCAT_COLLECT_01} from '../../modules/bcftools/bcftools.concat.collect.01.nf'
-include {SQRT_FILE} from '../../modules/utils/sqrt.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {BCFTOOL_CONCAT_FILE_LIST_01} from '../../modules/bcftools/bcftools.concat.file.list.01.nf'  addParams("concat_bed":"" , "contig": "", "interval":"")
+include {BCFTOOL_CONCAT_COLLECT_01} from '../../modules/bcftools/bcftools.concat.collect.01.nf' addParams("concat_bed":"" , "contig": "", "interval":"")
+include {SQRT_FILE} from '../../modules/utils/sqrt.02.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 
 
 workflow BCFTOOLS_CONCAT_01 {
 take:
-	meta
 	vcfs
 main:
 	version_ch = Channel.empty()
-	d1_ch = SQRT_FILE(meta, vcfs)
+	d1_ch = SQRT_FILE(vcfs)
 
-	d2_ch = d1_ch.clusters.splitText().map{it.trim()}
+	d2_ch = d1_ch.output.splitText().map{it.trim()}
 
-	d3_ch = BCFTOOL_CONCAT_FILE_LIST_01(meta, d2_ch)
+	d3_ch = BCFTOOL_CONCAT_FILE_LIST_01(d2_ch)
 	version_ch = version_ch.mix(d3_ch.version)
 
-	d4_ch = BCFTOOL_CONCAT_COLLECT_01(meta, d3_ch.vcf.collect() )
+	d4_ch = BCFTOOL_CONCAT_COLLECT_01(d3_ch.vcf.collect() )
 	version_ch = version_ch.mix(d4_ch.version)
 
-	 version_ch = MERGE_VERSION(meta, "concat", "concat vcfs", version_ch.collect())
+	 version_ch = MERGE_VERSION("concat vcfs", version_ch.collect())
 emit:
 	vcf = d4_ch.vcf
 	index = d4_ch.index

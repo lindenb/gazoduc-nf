@@ -23,17 +23,18 @@ SOFTWARE.
 
 */
 
+if(!params.containsKey("compression_level")) throw new IllegalArgumentException("compression_level missing");
+
 process SIMPLE_ZIP_01 {
 tag "N=${L.size()}"
 input:
-	val(meta)
 	val(L)
 output:
-	path("${prefix}archive.zip"),emit:zip
+	path("${params.prefix?:""}archive.zip"),emit:zip
 	path("version.xml"),emit:version
 script:
-	prefix = meta.prefix?:""
-	def compression_level = meta.level?:"5"
+	def prefix = params.prefix?:""
+	def compression_level = params.compression_level?:"5"
 """
 hostname 1>&2
 set -o pipefail

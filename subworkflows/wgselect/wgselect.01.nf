@@ -24,71 +24,18 @@ SOFTWARE.
 */
 def gazoduc = gazoduc.Gazoduc.getInstance(params).putGnomad()
 
+log.info("parsing wgselect.01.nf")
 
-include {getModules;getGnomadExomePath;getGnomadGenomePath;isHg19;isHg38;moduleLoad} from '../../modules/utils/functions.nf'
+include {getModules;moduleLoad} from '../../modules/utils/functions.nf'
+log.info("x1")
 include {WGSELECT_EXCLUDE_BED_01 } from './wgselect.exclude.bed.01.nf'
+log.info("x2")
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+log.info("x3")
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
-include {BCFTOOLS_CONCAT_PER_CONTIG_01} from '../bcftools/bcftools.concat.contigs.01.nf'
-
-
-
-
-gazoduc.build("wgselect_mapability_hg19_bigwig","/LAB-DATA/BiRD/resources/species/human/ucsc/hg19/encodeDCC/wgEncodeDukeMapabilityUniqueness35bp.bigWig").
-	description("Mapability for hg19. bigwig file with the number of time a region is repeated in the genome. 1=uniq . discard if !=1").
-	menu("wgselect").
-	existingFile().
-	put()
-
-gazoduc.build("wgselect_mapability_hg38_bigwig","/LAB-DATA/BiRD/resources/species/human/ucsc/hg38/hoffmanMappability/k24.Umap.MultiTrackMappability.bw").
-	description("Mapability for hg38. bigwig file with the number of time a region is repeated in the genome. 1=uniq . discard if !=1").
-	menu("wgselect").
-	existingFile().
-	put()
-
-gazoduc.build("wgselect_max_alleles_count",3).
-	description("select variants on min/max number of alleles (diallelic is 2)").
-	menu("wgselect").
-	setInteger().
-	put()
-
-gazoduc.build("wgselect_polyx",10).
-	description("remove variant near a poly-x with size > value").
-	menu("wgselect").
-	setInteger().
-	argName("size").
-	put()
-
-gazoduc.build("wgselect_gnomadPop","AF_nfe").
-	description("Allele frequency(AF) to consider in GNOMAD VCF").
-	argName("population").
-	menu("wgselect").
-	put()
-
-gazoduc.build("wgselect_gnomadAF",0.01).
-	description("Allele frequency(AF) treshold in GNOMAD VCF. Discard variants with INFO/AF> value").
-	setDouble().
-	argName("0.0 - 1.0").
-	menu("wgselect").
-	put()
-
-gazoduc.build("wgselect_soacn","SO:0001574,SO:0001575,SO:0001818").
-	description("Accesion number for consequences to keep after the functional annotation. Multiple are comma separated").
-	menu("wgselect").
-	put()
-
-
-gazoduc.build("wgselect_exclude_soacn","").
-	description("Accesion number for consequences to keep after the functional annotation. If not empty, variant with the following SO will be removed after the standard selection on --wgselect_soacn .Multiple are comma separated").
-	menu("wgselect").
-	put()
-
-
-gazoduc.build("wgselect_f_missing",0.05).
-	description("Discard variants where the proportion of NO_CALL (./.) genotypes is grater than is value").
-	menu("wgselect").
-	setDouble().
-	put()
+log.info("x4")
+include {BCFTOOLS_CONCAT_PER_CONTIG_01} from '../bcftools/bcftools.concat.contigs.01.nf' addParams(with_header:false)
+log.info("x5")
 
 
 gazoduc.build("wgselect_ReadPosRankSum",4).
@@ -204,8 +151,7 @@ gazoduc.build("wgselect_cadd_phred",-1.0).
 
 workflow WGSELECT_01 {
 	take:
-		meta
-		reference
+		genome
 		vcf
 		pedigree
 		each_bed
@@ -213,10 +159,10 @@ workflow WGSELECT_01 {
 		version_ch = Channel.empty()
 		
 		
-		exclude_ch = WGSELECT_EXCLUDE_BED_01(meta,reference)
+		exclude_ch = WGSELECT_EXCLUDE_BED_01(genome)
 		version_ch = version_ch.mix(exclude_ch.version)
 
-		//pedjvarkit_ch = PED4JVARKIT(meta,cases,controls)
+		//pedjvarkit_ch = PED4JVARKIT(cases,controls)
 		//version_ch = version_ch.mix(pedjvarkit_ch.version)
 
 		annotate_ch = ANNOTATE(meta,reference,vcf,each_bed,exclude_ch.bed,pedigree)
@@ -228,11 +174,11 @@ workflow WGSELECT_01 {
 		concat_ch = BCFTOOLS_CONCAT_PER_CONTIG_01(meta, c2_ch)
 		version_ch = version_ch.mix(concat_ch.first())
 
-		digest_ch = DIGEST_VARIANT_LIST(meta, annotate_ch.variants_list.collect())
+		digest_ch = DIGEST_VARIANT_LIST(annotate_ch.variants_list.collect())
 		version_ch = version_ch.mix(digest_ch.first())
 
 
-		version_ch = MERGE_VERSION(meta, "wgselect", "wgselect", version_ch.collect())
+		version_ch = MERGE_VERSION("wgselect", version_ch.collect())
 	emit:
 		version = version_ch /** version */
 		variants_list = digest_ch.output /** file containing count of variants at each step */
@@ -251,8 +197,6 @@ maxRetries 5
 memory "5g"
 afterScript "rm -rf TMP"
 input:
-	val(meta)
-	val(reference)
 	val(vcf)
 	val(bed)
 	val(blacklisted)
@@ -263,7 +207,9 @@ output:
 	path("version.xml"),emit:version
 script:
 
-	def gnomadgenome= getGnomadGenomePath(meta,reference);
+	def genome = params.genomes[params.genomeId]
+	def reference = genome.fasta	
+	def gnomadgenome = genome.gnomad_genome
 	def gnomadgenomefilterexpr = (isHg19(reference)?"FILTER~\"GNOMAD_GENOME_AC0\"|| FILTER~\"GNOMAD_GENOME_BAD_AF\"|| FILTER~\"GNOMAD_GENOME_InbreedingCoeff\"|| FILTER~\"GNOMAD_GENOME_RF\"":
 			(isHg38(reference)?"FILTER~\"GNOMAD_GENOME_AC0\"|| FILTER~\"GNOMAD_GENOME_BAD_AF\"|| FILTER~\"GNOMAD_GENOME_InbreedingCoeff\"|| FILTER~\"GNOMAD_GENOME_AS_VQSR\"":
 			""))

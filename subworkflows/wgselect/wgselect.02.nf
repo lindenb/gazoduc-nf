@@ -22,39 +22,43 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+log.info("parsing wgselect.02.nf")
+
 include {moduleLoad} from '../../modules/utils/functions.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
-include {BCFTOOLS_CONCAT_PER_CONTIG_01} from '../bcftools/bcftools.concat.contigs.01.nf'
-include {JVARKIT_VCF_TO_INTERVALS_01} from '../jvarkit/jvarkit.vcf2intervals.nf'
+log.info("x1")
+include {BCFTOOLS_CONCAT_PER_CONTIG_01} from '../bcftools/bcftools.concat.contigs.01.nf'  addParams(with_header:false)
+log.info("x2")
+include {JVARKIT_VCF_TO_INTERVALS_01} from '../jvarkit/jvarkit.vcf2intervals.nf' addParams(with_header:false)
+log.info("x3")
 include {WGSELECT_01} from './wgselect.01.nf'
+log.info("x4")
 include {LINUX_SPLIT} from '../../modules/utils/split.nf'
+log.info("x5")
+
 
 workflow WGSELECT_02 {
 	take:
-		meta
-		reference
+		genome
 		vcf
 		pedigree
 		bed /* limit to that bed */
 	main:
 		version_ch = Channel.empty()
-		
-		vcfs_ch = list_ch.output.splitText().map{"vcf":it.trim()}
-		
-		tobed_ch = JVARKIT_VCF_TO_INTERVALS_01(meta, reference, vcf, bed)
+				
+		tobed_ch = JVARKIT_VCF_TO_INTERVALS_01(vcf, bed)
 		version_ch = version_ch.mix(tobed_ch.version)
 
-		bed2beds_ch = BED2BEDS(meta, tobed_ch.bed)
+		bed2beds_ch = BED2BEDS(tobed_ch.bed)
 		version_ch = version_ch.mix(bed2beds_ch.version)
 
-		each_bed = bed2beds_ch.output.splitCsv(header:false,sep:'\t').
-			map{it.trim()}
+		each_bed = bed2beds_ch.output.splitCsv(header:false,sep:'\t').map{it.trim()}
 
-		wch1_ch = WGSELECT_01(meta, reference, vcf, pedigree, each_bed)
+		wch1_ch = WGSELECT_01(genome, vcf, pedigree, each_bed)
 		version_ch = version_ch.mix(wch1_ch.version)
 		
-		version_ch = MERGE_VERSION(meta, "WGSelect", "WG Select", version_ch.collect())
+		version_ch = MERGE_VERSION("WGSelect", version_ch.collect())
 
 	emit:
 		version = version_ch /** version */
@@ -69,7 +73,6 @@ workflow WGSELECT_02 {
 process BED2BEDS {
 executor "local"
 input:
-	val(meta)
 	path(bed)
 output:
 	path("beds.list"),emit:output

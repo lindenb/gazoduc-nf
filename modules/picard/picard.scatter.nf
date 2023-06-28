@@ -24,47 +24,46 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-include {getKeyValue;getModules} from '../utils/functions.nf'
+log.info("parsing picard.scatter.nf ....")
+
+include {moduleLoad} from '../utils/functions.nf'
+
+if(!params.containsKey("OUTPUT_TYPE")) throw new IllegalArgumentException("params.OUTPUT_TYPE is missing");
+if(!params.containsKey("MAX_TO_MERGE")) throw new IllegalArgumentException("params.MAX_TO_MERGE is missing");
 
 process SCATTER_INTERVALS_BY_NS {
-tag "${file(reference).name}"
-label "process_low"
+tag "${genome.fasta}"
+memory "3g"
 input:
-	val(meta)
-	val(reference)
+	val(genome)
 output:
-	path("${file(reference).getSimpleName()}.${type}.${maxToMerge}.interval_list"), emit:interval_list
+	path("${genome.name}.${params.OUTPUT_TYPE}.${params.MAX_TO_MERGE}.interval_list"), emit:output
 	path("version.xml"), emit:version
 
 script:
-	type = getKeyValue(meta,"OUTPUT_TYPE","N")
-	maxToMerge = getKeyValue(meta,"MAX_TO_MERGE","1")
+	type = params.OUTPUT_TYPE
+	maxToMerge = params.MAX_TO_MERGE
 
 	"""
 	hostname 1>&2
-	module load ${getModules("picard")}
+	${moduleLoad("picard")}
 
 	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=. -jar \${PICARD_JAR} ScatterIntervalsByNs \
-	    -R "${reference}" \
+	    -R "${genome.fasta}" \
 	    --MAX_TO_MERGE "${maxToMerge}" \
-	    -O "${file(reference).getSimpleName()}.${type}.${maxToMerge}.interval_list" \
+	    -O "${genome.name}.${type}.${maxToMerge}.interval_list" \
 	    -OUTPUT_TYPE "${type}"
 
 	cat << EOF > version.xml
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
 		<entry key="description">call ScatterIntervalsByNs to get a list of intervals</entry>
-		<entry key="reference">${reference}</entry>
+		<entry key="reference">${genome.fasta}</entry>
 		<entry key="type">${type}</entry>
 		<entry key="maxToMerge">${maxToMerge}</entry>
 		<entry key="picard">\$(java -jar \${PICARD_JAR} ScatterIntervalsByNs --version 2>&1)</entry>
 	</properties>
 	EOF
-	"""
-	stub:
-	"""
-	touch "${file(reference).getSimpleName()}.${type}.${maxToMerge}.interval_list"
-       	echo "<properties/>" > version.xml
 	"""
 	}
 

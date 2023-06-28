@@ -24,10 +24,11 @@ SOFTWARE.
 */
 include {moduleLoad;parseBoolean;getVersionCmd} from '../../modules/utils/functions.nf'
 
+if(!params.containsKey("with_header")) throw new IllegalArgumentException("with_header was not specified")
+
 process VCF_TO_BED {
 tag "${vcf.name}"
 input:
-	val(meta)
 	path(vcf)
 output:
 	path("vcf2bed.bed"),emit:bed /* chrom start end vcf */
@@ -60,7 +61,7 @@ script:
 
 
 	# add header
-	if ${parseBoolean(meta.with_header)} ; then
+	if ${parseBoolean(params.with_header)} ; then
 
 		echo -e 'contig\tstart\tend\tvcf' > jeter.tmp
 		cat vcf2bed.bed >> jeter.tmp

@@ -23,11 +23,13 @@ SOFTWARE.
 
 */
 include {moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
-include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf'
+include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf' addParams(with_header:false)
 include {CONCAT_FILES_01} from '../../modules/utils/concat.files.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 
 
+if(!params.containsKey("split_vcf_method")) throw new IllegalArgumentException("split_vcf_method missing")
+if(!params.containsKey("extraBcfTools")) throw new IllegalArgumentException("extraBcfTools missing")
 
 /**
  * call jvarkit vcfsplitnvariants one or more vcf
@@ -35,25 +37,23 @@ include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
  */
 workflow JVARKIT_VCF_SPLIT_N_VARIANTS_01 {
 	take:
-		meta
-		reference /* not used, just in case.. */
 		vcf /* path to vcf, or file with .list suffix */
 		bed /* limit to that BED or NO_FILE */
 	main:
 		version_ch = Channel.empty()
-		bed_ch = VCF_TO_BED(meta, vcf)
+		bed_ch = VCF_TO_BED(vcf)
 		version_ch = version_ch.mix(bed_ch.version)
 
 		contig_vcf_ch = bed_ch.bed.splitCsv(sep:'\t',header:false).
 			map{T->[T[0],T[3]]}
 
-		rch = SPLIT_VCF(meta, bed, contig_vcf_ch)
+		rch = SPLIT_VCF(bed, contig_vcf_ch)
 		version_ch = version_ch.mix(rch.version)
 
 		concat_ch = CONCAT_FILES_01([:],rch.output.collect())
 		version_ch = version_ch.mix(concat_ch.version)
 
-		version_ch = MERGE_VERSION(meta,"jvarkit2intervals","VCF to intervals",version_ch.collect())
+		version_ch = MERGE_VERSION("jvarkit2intervals",version_ch.collect())
 
 	emit:
 		output = concat_ch.output
@@ -66,14 +66,13 @@ process SPLIT_VCF {
 tag "${contig} ${file(vcf).name}"
 afterScript "rm -rf TMP"
 input:
-	val(meta)
 	path(userbed)
 	tuple val(contig),val(vcf)
 output:
 	path("vcfs.list"),emit:output
 	path("version.xml"),emit:version
 script:
-	def method = meta.split_vcf_method ?:" --vcf-count  1000"
+	def method = params.split_vcf_method ?:" --vcf-count  1000"
 """
 hostname 1>&2
 ${moduleLoad("bcftools jvarkit bedtools")}
@@ -92,7 +91,7 @@ if ${!userbed.name.equals("NO_FILE")} ; then
 	fi
 fi
 
-bcftools view ${meta.extraBcfTools?:""} ${userbed.name.equals("NO_FILE")?"":" --regions-file TMP/jeter.bed "} "${vcf}"  ${userbed.name.equals("NO_FILE")?"\"${contig}\"":""} |\
+bcftools view ${params.extraBcfTools?:""} ${userbed.name.equals("NO_FILE")?"":" --regions-file TMP/jeter.bed "} "${vcf}"  ${userbed.name.equals("NO_FILE")?"\"${contig}\"":""} |\
 	java -jar \${JVARKIT_DIST}/vcfsplitnvariants.jar ${method} -o \${PWD}/OUT/split.${contig}
 
 find OUT/ -type f -name "*.vcf.gz" | while read F

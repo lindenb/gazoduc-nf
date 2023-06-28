@@ -22,22 +22,24 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+if(!params.containsKey("gzip")) throw new IllegalArgumentException("params.gzip is missing");
 
 include {parseBoolean;moduleLoad;isBlank} from '../../modules/utils/functions.nf'
+
+
 
 process SAMTOOLS_STATS_01 {
 tag "${row.sample}"
 afterScript "rm -rf TMP"
 cpus 1
 input:
-	val(meta)
 	val(row)
 output:
 	tuple val(row),path("*.stats.txt*"),emit:output
 	path("version.xml"),emit:version
 script:
-	def prefix = row.prefix?:(meta.prefix?:"")
-	def extra = meta.extraSamtoolsStats?:""
+	def prefix = row.prefix?:(params.prefix?:"")
+	def extra = row.extraSamtoolsStats?:"--remove-dups "
 """
 hostname 1>&2
 ${moduleLoad("samtools")}
@@ -46,7 +48,7 @@ set -o pipefail
 samtools stats ${extra}  --ref-seq "${row.reference}" --reference "${row.reference}" "${row.bam}" |\
 	awk '/^# The command line/ {printf("# sample : ${row.sample}\\n");} {print}' > "${prefix}${row.sample}.stats.txt"
 
-if ${parseBoolean(meta.gzip)} ; then
+if ${parseBoolean(params.gzip)} ; then
 gzip --best "${prefix}${row.sample}.stats.txt"
 fi
 

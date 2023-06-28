@@ -23,38 +23,45 @@ SOFTWARE.
 
 */
 
-include {SAMTOOLS_SAMPLES_01} from '../../subworkflows/samtools/samtools.samples.01.nf'
+include {SAMTOOLS_SAMPLES} from '../../subworkflows/samtools/samtools.samples.02.nf' addParams(
+	with_header:true,
+	allow_multiple_references: true,
+	allow_duplicate_samples : true
+	)
 include {assertFileExists;isBlank} from '../../modules/utils/functions.nf'
-include {SAMTOOLS_STATS_01 as ST_STATS} from '../../modules/samtools/samtools.stats.01.nf'
+include {SAMTOOLS_STATS_01 as ST_STATS} from '../../modules/samtools/samtools.stats.01.nf' addParams(gzip:false)
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
-include {MULTIQC_01} from '../../modules/multiqc/multiqc.01.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {MULTIQC_01} from '../../modules/multiqc/multiqc.01.nf' 
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
+include {SIMPLE_ZIP_01} from '../../modules/utils/zip.simple.01.nf' addParams(compression_level:9)
 
 workflow SAMTOOLS_STATS_01 {
 	take:
-		meta
-		reference
-		references
 		bams
 	main:
 		version_ch = Channel.empty()
 		
-		samples_ch = SAMTOOLS_SAMPLES_01(["with_header":"true"],reference,references,bams)
+		samples_ch = SAMTOOLS_SAMPLES(bams)
 		version_ch = version_ch.mix(samples_ch.version)
 
-		stats_ch = ST_STATS(meta,samples_ch.output.splitCsv(header:true,sep:"\t").map{T->T.plus("sample":T.new_sample)})
+		stats_ch = ST_STATS(samples_ch.output.splitCsv(header:true,sep:"\t").map{T->T.plus("sample":T.new_sample)})
 		version_ch = version_ch.mix(stats_ch.version)
 
-                file_list_ch = COLLECT_TO_FILE_01([:], stats_ch.output.map{T->T[1]}.collect())
+
+		st_stats_outputs_ch = stats_ch.output.map{T->T[1]}
+
+                file_list_ch = COLLECT_TO_FILE_01([:], st_stats_outputs_ch.collect())
                 version_ch = version_ch.mix(file_list_ch.version)
 
-		ch1_ch = ZIPIT(meta,file_list_ch.output)
 
-                multiqc_ch = MULTIQC_01(meta,file_list_ch.output.map{T->["files":T,"prefix":(meta.prefix?:"")]})
+                multiqc_ch = MULTIQC_01([extra:" --fullnames "],file_list_ch.output)
                 version_ch = version_ch.mix(multiqc_ch.version)
 
+		to_zip = Channel.empty().mix(st_stats_outputs_ch).mix(multiqc_ch.zip)
 		
-		version_ch = MERGE_VERSION(meta, "ST stats", "samtools stats", version_ch.collect())
+		ch1_ch = SIMPLE_ZIP_01(to_zip.collect())
+		
+		version_ch = MERGE_VERSION("Samtools stats",version_ch.collect())
 	emit:
 		version = version_ch
 		multiqc_zip = multiqc_ch.zip
@@ -62,18 +69,3 @@ workflow SAMTOOLS_STATS_01 {
 		zip = ch1_ch.zip
 	}
 
-process ZIPIT {
-executor "local"
-input:
-	val(meta)
-	path(files)
-output:
-	path("${meta.prefix?:""}st.stats.zip"),emit:zip
-script:
-"""
-hostname 1>&2
-set -o pipefail
-
-cat "${files}" | zip -9 -@ -j "${meta.prefix?:""}st.stats.zip"
-"""
-}

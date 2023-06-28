@@ -24,11 +24,15 @@ SOFTWARE.
 */
 include {moduleLoad} from '../../modules/utils/functions.nf'
 
+for(String key : ["concat_bed","contig","interval"] ) {
+if(!params.containsKey(key)) throw new IllegalArgumentException("params."+key+" missing:"+params.keySet())
+}
+
+
 process BCFTOOL_CONCAT_FILE_LIST_01 {
 tag "${vcfs.name}"
 cpus 1
 input:
-        val(meta)
         path(vcfs)
 output:
         path("concatenated.bcf"),emit:vcf
