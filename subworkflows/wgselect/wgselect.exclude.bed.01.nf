@@ -28,44 +28,44 @@ log.info("parsing wgselect.exclude.bed.01.nf");
 include {moduleLoad} from '../../modules/utils/functions.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 log.info("scatter_to_bed")
-include { SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.nf'  addParams("OUTPUT_TYPE":"N","MAX_TO_MERGE":"1")
+include { SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.nf'
 log.info("xA")
 
 workflow WGSELECT_EXCLUDE_BED_01 {
 	take:
-		genome
+		genomeId
 	main:
 		version_ch = Channel.empty()
 		to_merge_ch = Channel.empty()
 
-		gaps_ch = SCATTER_TO_BED(genome)
+		gaps_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"N","MAX_TO_MERGE":"1"], params.genomes[genomeId].fasta)
 		to_merge_ch = to_merge_ch.mix(gaps_ch.bed)
 
-		if(meta.wgselect_with_rmsk as boolean) {
+		if(params.wgselect.with_rmsk as boolean) {
 			rmsk_ch = RMSK(genome)
 			version_ch = version_ch.mix(rmsk_ch.version)
 			to_merge_ch = to_merge_ch.mix(rmsk_ch.bed)
 			}
 
-		if(meta.wgselect_with_encode_exclude as boolean) {
-			x2_ch = EXCLUDE_ENCODE(genome)
+		if(params.wgselect.with_encode_exclude as boolean) {
+			x2_ch = EXCLUDE_ENCODE(genomeId)
 			version_ch = version_ch.mix(x2_ch.version)
 			to_merge_ch = to_merge_ch.mix(x2_ch.bed)
 			}
 
 
-		if(meta.wgselect_with_lcr as boolean) {
-			x3_ch = LOW_COMPLEXITY_REGIONS(genome)
+		if(params.wgselect.with_lcr as boolean) {
+			x3_ch = LOW_COMPLEXITY_REGIONS(genomeId)
 			version_ch = version_ch.mix(x3_ch.version)
 			to_merge_ch = to_merge_ch.mix(x3_ch.bed)
 			}
 
-		if(meta.wgselect_with_simple_repeats as boolean) {
-			x4_ch = SIMPLE_REPEATS(genome)
+		if(params.wgselect.with_simple_repeats as boolean) {
+			x4_ch = SIMPLE_REPEATS(genomeId)
 			version_ch = version_ch.mix(x4_ch.version)
 			to_merge_ch = to_merge_ch.mix(x4_ch.bed)
 			}
-		all_x_ch = MERGE_REGIONS(meta,to_merge_ch.collect())
+		all_x_ch = MERGE_REGIONS(to_merge_ch.collect())
 		version_ch = version_ch.mix(all_x_ch.version)
 
 		version_ch = MERGE_VERSION("blacklisted",version_ch.collect())
@@ -79,11 +79,12 @@ workflow WGSELECT_EXCLUDE_BED_01 {
 
 process RMSK {
 input:
-	val(genome)
+	val(genomeId)
 output:
 	path("rmsk.bed"), emit:bed
 	path("version.xml"), emit:version
 script:
+	def genome = params.genomes[genomeId]
 	def reference = genome.fasta
 	def url = genome.rmsk_url
 	if(url.isEmpty()) throw new IllegalArgumentException("undefined rmsk.url for ${genome.name}");
@@ -115,11 +116,12 @@ EOF
 
 process EXCLUDE_ENCODE {
 input:
-	val(genome)
+	val(genomeId)
 output:
 	path("excude.encode.bed"),emit:bed
 	path("version.xml"),emit:version
 script:
+	def genome = params.genomes[genomeId]
 	def reference = genome.fasta
 	// https://www.biostars.org/p/171354/
 	def url = genome.encode_exclude_url
@@ -154,7 +156,7 @@ EOF
 
 process LOW_COMPLEXITY_REGIONS {
 input:
-	val(genome)
+	val(genomeId)
 output:
 	path("lcr.bed"), emit:bed
 	path("version.xml"), emit:version
@@ -191,7 +193,7 @@ EOF
 
 process SIMPLE_REPEATS {
 input:
-	val(genome)
+	val(genomeId)
 output:
 	path("simple_repeats.bed"), emit:bed
 	path("version.xml"), emit:version

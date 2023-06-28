@@ -27,35 +27,48 @@ log.info("parsing wgselect.02.nf")
 include {moduleLoad} from '../../modules/utils/functions.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
-log.info("x1")
-include {BCFTOOLS_CONCAT_PER_CONTIG_01} from '../bcftools/bcftools.concat.contigs.01.nf'  addParams(with_header:false)
-log.info("x2")
-include {JVARKIT_VCF_TO_INTERVALS_01} from '../jvarkit/jvarkit.vcf2intervals.nf' addParams(with_header:false)
-log.info("x3")
 include {WGSELECT_01} from './wgselect.01.nf'
-log.info("x4")
 include {LINUX_SPLIT} from '../../modules/utils/split.nf'
-log.info("x5")
-
+include {JVARKIT_GATK_HARD_FILTERING_01} from '../jvarkit/jvarkit.gatk_hard_filtering.01.nf'
+include {JVARKIT_VCF_TO_INTERVALS_01} from '../jvarkit/jvarkit.vcf2intervals.nf'
+include {VCF_TO_BED} from '../..//modules/bcftools/vcf2bed.01.nf'
 
 workflow WGSELECT_02 {
 	take:
-		genome
+		genomeId
 		vcf
 		pedigree
 		bed /* limit to that bed */
 	main:
 		version_ch = Channel.empty()
-				
-		tobed_ch = JVARKIT_VCF_TO_INTERVALS_01(vcf, bed)
+		
+		if( (params.wgselect.gatk_hardfiltering_percentile as double) > 0 ) {
+			vcf2bed_ch = VCF_TO_BED([with_header: false],vcf)
+			version_ch = version_ch.mix(vcf2bed_ch.version)
+		
+			in_ch = vcf2bed_ch.bed.splitCsv(header:false,sep:'\t').map{T->[
+					interval: T[0]+":"+((T[1] as int)+1)+"-"+T[2],
+					vcf: T[3],
+					percentile: params.wgselect.gatk_hardfiltering_percentile 
+					]}
+		
+			hard_filters_ch = JVARKIT_GATK_HARD_FILTERING_01(in_ch)
+			
+			version_ch = version_ch.mix(hard_filters_ch.version)
+			
+			}
+		
+		tobed_ch = JVARKIT_VCF_TO_INTERVALS_01([with_header:false,distance: params.wgselect.distance ,min_distance: params.wgselect.min_distance], vcf, bed)
 		version_ch = version_ch.mix(tobed_ch.version)
+			
+
 
 		bed2beds_ch = BED2BEDS(tobed_ch.bed)
 		version_ch = version_ch.mix(bed2beds_ch.version)
 
 		each_bed = bed2beds_ch.output.splitCsv(header:false,sep:'\t').map{it.trim()}
 
-		wch1_ch = WGSELECT_01(genome, vcf, pedigree, each_bed)
+		wch1_ch = WGSELECT_01([:],genomeId, vcf, pedigree, each_bed, file("NO_FILE"))
 		version_ch = version_ch.mix(wch1_ch.version)
 		
 		version_ch = MERGE_VERSION("WGSelect", version_ch.collect())

@@ -24,11 +24,11 @@ SOFTWARE.
 */
 include {moduleLoad;parseBoolean;getVersionCmd} from '../../modules/utils/functions.nf'
 
-if(!params.containsKey("with_header")) throw new IllegalArgumentException("with_header was not specified")
 
 process VCF_TO_BED {
 tag "${vcf.name}"
 input:
+	val(meta)
 	path(vcf)
 output:
 	path("vcf2bed.bed"),emit:bed /* chrom start end vcf */
@@ -36,6 +36,8 @@ output:
 	path("contigs.bed"),emit:chromsbed /* uniq chromosome names as BED */
 	path("version.xml"),emit:version
 script:
+	if(!meta.containsKey("with_header")) throw new IllegalArgumentException("with_header was not specified")
+	if(!(vcf.name.endsWith(".list") || vcf.name.endsWith(".vcf.gz") || vcf.name.endsWith(".bcf")))  throw new IllegalArgumentException("bad extension for vcf file:"+vcf);
 	"""
 	hostname 1>&2
 	set -o pipefail
@@ -61,7 +63,7 @@ script:
 
 
 	# add header
-	if ${parseBoolean(params.with_header)} ; then
+	if ${parseBoolean(meta.with_header)} ; then
 
 		echo -e 'contig\tstart\tend\tvcf' > jeter.tmp
 		cat vcf2bed.bed >> jeter.tmp

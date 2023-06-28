@@ -25,153 +25,42 @@ SOFTWARE.
 def gazoduc = gazoduc.Gazoduc.getInstance(params).putGnomad()
 
 log.info("parsing wgselect.01.nf")
-
 include {getModules;moduleLoad} from '../../modules/utils/functions.nf'
-log.info("x1")
+log.info("include wgselect.01:exclude.bed")
 include {WGSELECT_EXCLUDE_BED_01 } from './wgselect.exclude.bed.01.nf'
-log.info("x2")
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
-log.info("x3")
+log.info("include wgselect.01:merge-version")
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
+log.info("include wgselect.01:collect2file")
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
-log.info("x4")
-include {BCFTOOLS_CONCAT_PER_CONTIG_01} from '../bcftools/bcftools.concat.contigs.01.nf' addParams(with_header:false)
-log.info("x5")
+log.info("include wgselect.01:bcftools.concat.contigs.01.nf")
+include {BCFTOOLS_CONCAT_PER_CONTIG_01} from '../bcftools/bcftools.concat.contigs.01.nf' 
+log.info("include wgselect.end")
 
-
-gazoduc.build("wgselect_ReadPosRankSum",4).
-        description("INFO/ReadPosRankSum compares whether the positions of the reference and alternate alleles are different within the reads. See https://gatk.broadinstitute.org/hc/en-us/articles/360035890471-Hard-filtering-germline-short-variants. Dicard variant with -x<ReadPosRankSum<x. Ignore if value is 0.").
-        menu("wgselect").
-        setDouble().
-        put()
-
-gazoduc.build("wgselect_MQ",10).
-        description("INFO/RMSMappingQuality (MQ) It is meant to include the standard deviation of the mapping qualities. Including the standard deviation allows us to include the variation in the dataset. See https://gatk.broadinstitute.org/hc/en-us/articles/360035890471-Hard-filtering-germline-short-variants. Dicard variant with MQ<x. Ignore if value is <= 0.").
-        menu("wgselect").
-        setDouble().
-        put()
-
-gazoduc.build("wgselect_MQRankSum",-10).
-        description("This is the u-based z-approximation from the Rank Sum Test for mapping qualities. It compares the mapping qualities of the reads supporting the reference allele and the alternate allele. A positive value means the mapping qualities of the reads supporting the alternate allele are higher than those supporting the reference allele; a negative value indicates the mapping qualities of the reference allele are higher than those supporting the alternate allele. A value close to zero is best and indicates little difference between the mapping qualities See https://gatk.broadinstitute.org/hc/en-us/articles/360035890471-Hard-filtering-germline-short-variants.Dicard variant with MQRankSum<x Ignore if value is >0.").
-        menu("wgselect").
-        setDouble().
-        put()
-
-
-gazoduc.build("wgselect_minDP",10).
-        description("remove variant mean called genotype depth is tool low.").
-        menu("wgselect").
-        setDouble().
-        put()
-
-gazoduc.build("wgselect_maxDP",300).
-        description("remove variant mean called genotype depth is tool high.").
-        menu("wgselect").
-        setDouble().
-        put()
-
-gazoduc.build("wgselect_lowGQ",70).
-        description("ALL genotypes carrying a ALT must have a Genotype Quality GQ >= x. Ignore if x <=0 ").
-        menu("wgselect").
-        setInt().
-        put()
-
-gazoduc.build("wgselect_with_count",true).
-        description("Count variants at each step of wgselect").
-        menu("wgselect").
-        setBoolean().
-        put()
-
-gazoduc.build("wgselect_with_homvar",true).
-        description("remove variant on autosome if no HET and found at least one HOM_VAR").
-        menu("wgselect").
-        setBoolean().
-        put()
-
-gazoduc.build("wgselect_maxmaf",0.05).
-        description("remove variant if internal MAF is too high. Disable if < 0").
-        menu("wgselect").
-        setDouble().
-        put()
-
-gazoduc.build("wgselect_fisherh",0.05).
-        description("remove variant if fisher test per variant is lower than 'x'. Disable if <0.").
-        menu("wgselect").
-        setDouble().
-        put()
-
-gazoduc.build("wgselect_hwe",0.000000000000001).
-        description("remove variants with HW test. Ask Floriane :-P . Disable if <0.").
-        menu("wgselect").
-        setDouble().
-        put()
-
-gazoduc.build("wgselect_with_contrast",true).
-        description("Apply bcftools contrast on VCF").
-        menu("wgselect").
-        setBoolean().
-        put()
-
-gazoduc.build("wgselect_inverse_so",false).
-        description("Inverse SO").
-        menu("wgselect").
-        hidden().
-        setBoolean().
-        put()
-
-
-gazoduc.build("wgselect_minGQsingleton",99).
-        description("remove variant if singleton has bad GQ < x").
-        menu("wgselect").
-        setInt().
-        put()
-
-gazoduc.build("wgselect_minRatioSingleton",0.2).
-        description("remove variant if HET singleton has AD ratio out of x< AD/ratio < (1.0-x)").
-        menu("wgselect").
-        setDouble().
-        put()
-
-gazoduc.build("wgselect_annot_method","vep").
-	description("how to annotate ? 'vep' or 'snpeff'").
-	menu("wgselect").
-	put()
-
-
-gazoduc.build("wgselect_cadd_tabix","").
-        description("path to tabix-indexed fill containing CADD data. (like ... CADD/v1.6/whole_genome_SNVs.tsv.gz )").
-        menu("wgselect").
-        put()
-
-gazoduc.build("wgselect_cadd_phred",-1.0).
-        description("Discard variants having CADD phred treshold < 'x'. Ignore if 'x' < 0.0 or --wgselect_cadd_tabix is not defined.").
-        menu("wgselect").
-        setDouble().
-        put()
 
 
 workflow WGSELECT_01 {
 	take:
-		genome
+		meta
+		genomeId
 		vcf
 		pedigree
 		each_bed
+		apply_hard_filters_arguments /* or NO_FILE */
 	main:
 		version_ch = Channel.empty()
 		
 		
-		exclude_ch = WGSELECT_EXCLUDE_BED_01(genome)
+		exclude_ch = WGSELECT_EXCLUDE_BED_01(genomeId)
 		version_ch = version_ch.mix(exclude_ch.version)
 
-		//pedjvarkit_ch = PED4JVARKIT(cases,controls)
-		//version_ch = version_ch.mix(pedjvarkit_ch.version)
 
-		annotate_ch = ANNOTATE(meta,reference,vcf,each_bed,exclude_ch.bed,pedigree)
+		annotate_ch = ANNOTATE(meta,genomeId,vcf,each_bed,exclude_ch.bed,pedigree)
 		version_ch = version_ch.mix(annotate_ch.version.first())
 		
 		cat_files_ch = COLLECT_TO_FILE_01(meta, annotate_ch.bed_vcf.map{T->T[1]}.collect())
 
 		c2_ch = cat_files_ch.output.map{T->["vcfs":T]}
-		concat_ch = BCFTOOLS_CONCAT_PER_CONTIG_01(meta, c2_ch)
+		concat_ch = BCFTOOLS_CONCAT_PER_CONTIG_01([suffix:".bcf"],c2_ch)
 		version_ch = version_ch.mix(concat_ch.first())
 
 		digest_ch = DIGEST_VARIANT_LIST(annotate_ch.variants_list.collect())
@@ -197,6 +86,8 @@ maxRetries 5
 memory "5g"
 afterScript "rm -rf TMP"
 input:
+	val(meta)
+	val(genomeId)
 	val(vcf)
 	val(bed)
 	val(blacklisted)
@@ -1023,13 +914,12 @@ process DIGEST_VARIANT_LIST {
 	tag "N=${L.size()}"
 	
 	input:
-		val(meta)
         	val(L)
         output:
-                path("${prefix}wgselect.count.tsv"),emit:output
+                path("${params.prefix?:""}wgselect.count.tsv"),emit:output
                 path("version.xml"),emit:version
         script:
-        	prefix = meta.prefix?:""
+        	prefix = params.prefix?:""
         """
         hostname 1>&2
         ${moduleLoad("datamash")}

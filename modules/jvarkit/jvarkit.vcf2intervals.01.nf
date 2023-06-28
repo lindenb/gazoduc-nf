@@ -23,8 +23,7 @@ SOFTWARE.
 
 */
 
-if(!params.containsKey("vcf2interval_distance")) throw new RuntimeException("params.vcf2interval_distance missing")
-if(!params.containsKey("vcf2interval_min_distance")) throw new RuntimeException("params.vcf2interval_min_distance missing")
+
 include {moduleLoad;getVersionCmd;parseBoolean} from '../utils/functions.nf'
 
 
@@ -39,12 +38,16 @@ process JVARKIT_VCF_TO_INTERVALS_01 {
 		path("intervals.bed"),emit:bed /* chrom/start/end/vcf */
 		path("version.xml"),emit:version
 	script:
+		if(!meta.containsKey("distance")) throw new RuntimeException("meta.vcf2interval_distance missing")
+		if(!meta.containsKey("min_distance")) throw new RuntimeException("meta.vcf2interval_min_distance missing")
+	
+	
 		def contig = row.contig?:""
 		def interval = row.interval?:""
 		def vcf = row.vcf
 		def with_header = parseBoolean(row.with_header)
-		def distance = meta.vcf2interval_distance?:"10mb"
-		def min_distance = meta.vcf2interval_min_distance?:"1kb"
+		def distance = meta.distance?:"10mb"
+		def min_distance = meta.min_distance?:"1kb"
 	"""
 	hostname 1>&2
 	${moduleLoad("jvarkit bcftools")}
@@ -58,7 +61,7 @@ process JVARKIT_VCF_TO_INTERVALS_01 {
 
 
 	bcftools view -G "${vcf.toRealPath()}" ${interval.isEmpty()?"":"\"${interval}\""}  ${contig.isEmpty()?"":"\"${contig}\""} |\
-	java -jar \${JVARKIT_DIST}/jvarkit.jar vcf2intervals \
+	java -Xmx=${} -jar \${JVARKIT_DIST}/jvarkit.jar vcf2intervals \
 		--bed \
 		--distance "${distance}" \
 		--min-distance "${min_distance}" |\

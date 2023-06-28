@@ -28,37 +28,40 @@ log.info("parsing picard.scatter.nf ....")
 
 include {moduleLoad} from '../utils/functions.nf'
 
-if(!params.containsKey("OUTPUT_TYPE")) throw new IllegalArgumentException("params.OUTPUT_TYPE is missing");
-if(!params.containsKey("MAX_TO_MERGE")) throw new IllegalArgumentException("params.MAX_TO_MERGE is missing");
 
 process SCATTER_INTERVALS_BY_NS {
-tag "${genome.fasta}"
+tag "${fasta.name}"
 memory "3g"
 input:
-	val(genome)
+	val(meta)
+	path(fasta)
 output:
-	path("${genome.name}.${params.OUTPUT_TYPE}.${params.MAX_TO_MERGE}.interval_list"), emit:output
+	path("${fasta.getSimpleName()}.${meta.OUTPUT_TYPE}.${meta.MAX_TO_MERGE}.interval_list"), emit:output
 	path("version.xml"), emit:version
 
 script:
-	type = params.OUTPUT_TYPE
-	maxToMerge = params.MAX_TO_MERGE
+	if(!meta.containsKey("OUTPUT_TYPE")) throw new IllegalArgumentException("meta.OUTPUT_TYPE is missing");
+	if(!meta.containsKey("MAX_TO_MERGE")) throw new IllegalArgumentException("meta.MAX_TO_MERGE is missing");
+
+
+	type = meta.OUTPUT_TYPE
+	maxToMerge = meta.MAX_TO_MERGE
 
 	"""
 	hostname 1>&2
 	${moduleLoad("picard")}
 
 	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=. -jar \${PICARD_JAR} ScatterIntervalsByNs \
-	    -R "${genome.fasta}" \
+	    -R "${fasta}" \
 	    --MAX_TO_MERGE "${maxToMerge}" \
-	    -O "${genome.name}.${type}.${maxToMerge}.interval_list" \
+	    -O "${fasta.getSimpleName()}.${type}.${maxToMerge}.interval_list" \
 	    -OUTPUT_TYPE "${type}"
 
 	cat << EOF > version.xml
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
 		<entry key="description">call ScatterIntervalsByNs to get a list of intervals</entry>
-		<entry key="reference">${genome.fasta}</entry>
+		<entry key="reference">${fasta}</entry>
 		<entry key="type">${type}</entry>
 		<entry key="maxToMerge">${maxToMerge}</entry>
 		<entry key="picard">\$(java -jar \${PICARD_JAR} ScatterIntervalsByNs --version 2>&1)</entry>

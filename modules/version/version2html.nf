@@ -27,12 +27,11 @@ process VERSION_TO_HTML {
 executor "local"
 tag "${xml.name}"
 input:
-	val(meta)
 	path(xml)
 output:
-	path("${prefix}version.html"),emit:html
+	path("${params.prefix?:""}version.html"),emit:html
 script:
-	prefix = meta.getOrDefault("prefix","")
+	def prefix =params.prefix?:""
 """
 
 cat << __EOF__ > jeter.xsl

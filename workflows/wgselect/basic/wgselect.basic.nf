@@ -58,7 +58,7 @@ else
 
 
 workflow {
-		ch1 = WGSELECT_02(params.genomes[params.genomeId], file(params.vcf), file(params.pedigree), file(params.bed))
+		ch1 = WGSELECT_02(params.genomeId, file(params.vcf), file(params.pedigree), file(params.bed))
 		html = VERSION_TO_HTML(ch1.version)
 		PUBLISH(params, ch1.contig_vcfs, ch1.variants_list , ch1.version, html.html)
 		}
