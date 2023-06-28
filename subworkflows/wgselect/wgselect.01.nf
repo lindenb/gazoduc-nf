@@ -42,10 +42,7 @@ workflow WGSELECT_01 {
 	take:
 		meta
 		genomeId
-		vcf
-		pedigree
-		each_bed
-		apply_hard_filters_arguments /* or NO_FILE */
+		rows 
 	main:
 		version_ch = Channel.empty()
 		
@@ -54,10 +51,11 @@ workflow WGSELECT_01 {
 		version_ch = version_ch.mix(exclude_ch.version)
 
 
-		annotate_ch = ANNOTATE(meta,genomeId,vcf,each_bed,exclude_ch.bed,pedigree)
+		annotate_ch = ANNOTATE(meta, genomeId, rows.combine(exclude_ch.bed).map{T->T[0].plus(blacklisted:T[1])})
+
 		version_ch = version_ch.mix(annotate_ch.version.first())
 		
-		cat_files_ch = COLLECT_TO_FILE_01(meta, annotate_ch.bed_vcf.map{T->T[1]}.collect())
+		cat_files_ch = COLLECT_TO_FILE_01([:], annotate_ch.bed_vcf.map{T->T[1]}.collect())
 
 		c2_ch = cat_files_ch.output.map{T->["vcfs":T]}
 		concat_ch = BCFTOOLS_CONCAT_PER_CONTIG_01([suffix:".bcf"],c2_ch)
@@ -78,7 +76,7 @@ workflow WGSELECT_01 {
 
 
 process ANNOTATE {
-tag "${file(vcf).name} ${file(bed).name}"
+tag "${file(row.vcf).name} ${row.bed?:row.interval}"
 cache "lenient"
 cpus {task.attempt}
 errorStrategy 'retry'
@@ -88,57 +86,54 @@ afterScript "rm -rf TMP"
 input:
 	val(meta)
 	val(genomeId)
-	val(vcf)
-	val(bed)
-	val(blacklisted)
-	path(jvarkitped)
+	val(row)
 output:
-	tuple val(bed),path("contig.bcf"), emit: bed_vcf
+	tuple path("contig.bed"),path("contig.bcf"), emit: bed_vcf
 	path("variant_list.txt.gz"), emit:variants_list
 	path("version.xml"),emit:version
 script:
-
-	def genome = params.genomes[params.genomeId]
+	if(!row.containsKey("pedigree")) throw new IllegalArgumentException("row.pedigree is missing");
+	if(!row.containsKey("vcf")) throw new IllegalArgumentException("row.vcf is missing");
+	if(!(row.containsKey("bed") || row.containsKey("interval"))) throw new IllegalArgumentException("row.bed/interval is missing");
+	if(!row.containsKey("hard_filters")) throw new IllegalArgumentException("row.hard_filters is missing");
+	//
+	def vcf = row.vcf
+	def jvarkitped = row.pedigree
+	def genome = params.genomes[genomeId]
 	def reference = genome.fasta	
+	def blacklisted = row.blacklisted
 	def gnomadgenome = genome.gnomad_genome
-	def gnomadgenomefilterexpr = (isHg19(reference)?"FILTER~\"GNOMAD_GENOME_AC0\"|| FILTER~\"GNOMAD_GENOME_BAD_AF\"|| FILTER~\"GNOMAD_GENOME_InbreedingCoeff\"|| FILTER~\"GNOMAD_GENOME_RF\"":
-			(isHg38(reference)?"FILTER~\"GNOMAD_GENOME_AC0\"|| FILTER~\"GNOMAD_GENOME_BAD_AF\"|| FILTER~\"GNOMAD_GENOME_InbreedingCoeff\"|| FILTER~\"GNOMAD_GENOME_AS_VQSR\"":
-			""))
-	def mapability= (isHg19(reference)?(meta.wgselect_mapability_hg19_bigwig):
-			(isHg38(reference)?(meta.wgselect_mapability_hg38_bigwig):
-			""))
-	def snpeffDb = (isHg19(reference)?"GRCh37.75":(isHg38(reference)?"GRCh38.86":""))
-	def vep_module = (isHg19(reference)?"ensembl-vep/104.3":"")
-	def vep_invocation = isHg19(reference)?" vep --cache --format vcf --force_overwrite --no_stats --offline  --dir_cache /LAB-DATA/BiRD/resources/apps/vep  --species homo_sapiens --cache_version 91    --assembly GRCh37  --fasta ${reference} --use_given_ref --vcf ":""
-	
-	def max_alleles_count = (meta.wgselect_max_alleles_count as int)
-	def polyx = (meta.wgselect_polyx as int)
-	def gnomadPop = (meta.wgselect_gnomadPop)
-	def gnomadAF = (meta.wgselect_gnomadAF as double)
-	def soacn = meta.wgselect_soacn
-	def exclude_soacn = meta.wgselect_exclude_soacn
-	def inverse_so = (meta.wgselect_inverse_so as boolean)
-	def f_missing = (meta.wgselect_f_missing as double)
+	def gnomadgenomefilterexpr = genome.ucsc_name.equals("hg19")? params.wgselect.gnomadgenomefilterexpr_hg19 : ( genome.ucsc_name.equals("hg38")? params.wgselect.gnomadgenomefilterexpr_hg38 : "")
+	def mapability= genome.mapability_bigwig
+	def snpeffDb = genome.snpeff_database_name
+	def vep_module = genome.vep_module?:""
+	def vep_invocation = genome.vep_invocation?:""
+	def max_alleles_count = (params.wgselect.max_alleles_count as int)
+	def polyx = (params.wgselect.polyx as int)
+	def gnomadPop = (params.wgselect.gnomadPop)
+	def gnomadAF = (params.wgselect.gnomadAF as double)
+	def soacn = params.wgselect.soacn
+	def exclude_soacn = params.wgselect.exclude_soacn?:""
+	def inverse_so = (params.wgselect.inverse_so as boolean)
+	def f_missing = (params.wgselect.f_missing as double)
+	def maxmaf = (params.wgselect.maxmaf as double)
+	def fisherh = (params.wgselect.fisherh as double)
+	def minDP= (params.wgselect.minDP as int)
+	def maxDP= (params.wgselect.maxDP as int)
+	def lowGQ =( params.wgselect.lowGQ as int)
+	def hwe = (params.wgselect.hwe as double)
+	def minGQsingleton = (params.wgselect.minGQsingleton as int)
+	def minRatioSingleton  = (params.wgselect.minRatioSingleton as double)
+	def annot_method = (params.wgselect.annot_method)
+	def cadd_phred = (params.wgselect.cadd_phred as double)
+	def cadd_tabix = genome.cadd_tabix
+	def apply_hard_filters_arguments = row.hard_filters
 
-	def ReadPosRankSum = (meta.wgselect_ReadPosRankSum as double)
-	def MQ = (meta.wgselect_MQ as double)
-	def MQRankSum =(meta.wgselect_MQRankSum as double)
-	def maxmaf = (meta.wgselect_maxmaf as double)
-	def fisherh = (meta.wgselect_fisherh as double)
-	def minDP= (meta.wgselect_minDP as int)
-	def maxDP= (meta.wgselect_maxDP as int)
-	def lowGQ =( meta.wgselect_lowGQ as int)
-	def hwe = (meta.wgselect_hwe as double)
-	def minGQsingleton = (meta.wgselect_minGQsingleton as int)
-	def minRatioSingleton  = (meta.wgselect_minRatioSingleton as double)
-	def annot_method = (meta.wgselect_annot_method)
-	def cadd_phred = (meta.wgselect_cadd_phred as double)
-	def cadd_tabix = (meta.wgselect_cadd_tabix)
 """
 hostname 1>&2
-${moduleLoad("jvarkit bcftools bedtools java-jdk/8.0.112")}
+${moduleLoad("jvarkit bcftools bedtools")}
 set -x
-mkdir TMP
+mkdir -p TMP
 touch TMP/variant_list.txt
 which java 1>&2
 which javac 1>&2
@@ -146,8 +141,18 @@ javac -version 1>&2
 echo "\${JAVA_HOME}"
 
 
+	if ${row.containsKey("bed")} ; then
+		ln -s '${row.bed}' contig.bed
+	elif ${row.containsKey("interval")} ; then
+		echo '${row.interval}' | awk -F '[:-]' '{printf("%s\t%s\t%s\\n",\$1,int(\$2)-1,\$3);}' > contig.bed
+	else
+		echo "No interval or bed defined" 1>&2
+		exit -1
+	fi
+
+
 	function countIt {
-		if ${meta.wgselect_with_count as boolean} ; then
+		if ${params.wgselect.with_count as boolean} ; then
 			echo -n "\$1\t" >> TMP/variant_list.txt
 			bcftools query -f '%CHROM:%POS:%REF:%ALT\\n' "\$2" | sed 's/^chr//' | LC_ALL=C sort -T . | uniq  > TMP/tmp.A.txt
 			bcftools query -f '%CHROM:%POS:%REF:%ALT\\n' "\$3" | sed 's/^chr//' | LC_ALL=C sort -T . | uniq  > TMP/tmp.B.txt
@@ -164,7 +169,6 @@ echo "\${JAVA_HOME}"
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
 		<entry key="description">wgselect for one bed</entry>
-		<entry key="bed">${bed}</entry>
 		<entry key="vcf">${vcf}</entry>
 		<entry key="ped">${jvarkitped}</entry>
 		<entry key="steps">
@@ -194,7 +198,7 @@ echo "\${JAVA_HOME}"
 	fi
 
 	# blacklisted region overlapping #####################################################################"
-	bedtools intersect -a "${bed}" -b "${blacklisted}" > TMP/jeter.blacklisted.bed
+	bedtools intersect -a "contig.bed" -b "${blacklisted}" > TMP/jeter.blacklisted.bed
 	# prevent empty file
 	if [ ! -s TMP/jeter.blacklisted.bed ] ; then
 		tail -1 "${reference}.fai" | awk '{printf("%s\t0\t1\\n",\$1);}' > TMP/jeter.blacklisted.bed
@@ -202,7 +206,6 @@ echo "\${JAVA_HOME}"
 	cat <<-EOF >> version.xml
 	<properties>
 		<entry key="description">excluded regions are reduced by overlap over bed file using bedtools</entry>
-		<entry key="bed">${bed}</entry>
 		<entry key="vcf">${vcf}</entry>
 	</properties>
 	EOF
@@ -211,23 +214,57 @@ echo "\${JAVA_HOME}"
 
 	# extract variants ######################################################################################
 	if ${vcf.endsWith(".list")} ; then
-		bcftools concat --file-list "${vcf}" --regions-file "${bed}" -O u  --allow-overlaps --remove-duplicates -o TMP/jeter1.bcf
+		bcftools concat --file-list "${vcf}" --regions-file "contig.bed" -O u  --allow-overlaps --remove-duplicates -o TMP/jeter1.bcf
 	else
-		bcftools view  --regions-file "${bed}" -O u -o TMP/jeter1.bcf "${vcf}"
+		bcftools view  --regions-file "contig.bed" -O u -o TMP/jeter1.bcf "${vcf}"
 	fi	
 
 	cat <<- EOF >> version.xml
 	<properties>
 		<entry key="description">extract variants from main vcf in bed region</entry>
 		<entry key="vcf">${vcf}</entry>
-		<entry key="bed">${bed}</entry>
 	</properties>
 	EOF
 
 
-	if ${meta.wgselect_with_count as boolean} ; then
+	if ${params.wgselect.with_count as boolean} ; then
 		bcftools query -f '.\\n' TMP/jeter1.bcf | awk 'END{printf("initial\t%s\t0\t0\t\\n",NR);}' >> TMP/variant_list.txt
 	fi
+
+
+
+	# gatk hard filtering #############################################################
+	if ${!file(apply_hard_filters_arguments).name.equals("NO_FILE") } ; then
+		## conflic betwwen java for jvarkit and gatk "Duplicate cpuset controllers detected" on stdout
+		module unload jvarkit
+		module load gatk/0.0.0
+		bcftools view -O z -o TMP/jeter1.vcf.gz TMP/jeter1.bcf
+		bcftools index -f -t TMP/jeter1.vcf.gz
+
+		gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" VariantFiltration \
+	        	-L "contig.bed" \
+		        -V 'TMP/jeter1.vcf.gz' \
+	        	-R '${reference}' \
+		        -O TMP/jeter2.vcf.gz \
+        		--arguments_file ${apply_hard_filters_arguments}
+
+		bcftools view --apply-filters 'PASS,.'  -O b -o TMP/jeter1.bcf TMP/jeter2.vcf.gz
+		countIt "gatkHardFilters" TMP/jeter1.vcf.gz TMP/jeter2.vcf.gz
+
+		rm TMP/jeter2.vcf.gz TMP/jeter2.vcf.gz.tbi TMP/jeter1.vcf.gz TMP/jeter1.vcf.gz.tbi
+
+		module unload gatk/0.0.0
+		module load jvarkit
+
+
+		cat <<- EOF >> version.xml
+		<properties>
+			<entry key="description">remove variant failing gatk hard filters</entry>
+		</properties>
+		EOF
+		
+	fi
+
 
 	# min max alleles  ############################################################################
 	bcftools view  -m2 -M ${max_alleles_count} -O u -o TMP/jeter2.bcf  TMP/jeter1.bcf
@@ -319,9 +356,9 @@ echo "\${JAVA_HOME}"
                 <entry key="description">remove variant on autosome if no HET and found at least one HOM_VAR.</entry>
 	EOF
 
-	if ${meta.wgselect_with_homvar as boolean} ; then
+	if ${params.wgselect.with_homvar as boolean} ; then
 		bcftools view -O v -o TMP/jeter2.vcf TMP/jeter1.bcf
-		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcfpar.jar TMP/jeter2.vcf > TMP/jeter1.vcf
+		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfpar TMP/jeter2.vcf > TMP/jeter1.vcf
 		bcftools view -e 'INFO/SEX=0 &&  COUNT(GT="RA")==0 && COUNT(GT="AA")>0' -O u -o TMP/jeter2.bcf TMP/jeter1.vcf
 		countIt "homvar" TMP/jeter1.bcf TMP/jeter2.bcf
 		mv TMP/jeter2.bcf TMP/jeter1.bcf
@@ -401,8 +438,11 @@ echo "\${JAVA_HOME}"
 		<entry key="poly-x">${polyx}</entry>
 	EOF
 
-	if [ "${polyx}" -gt 1 ] ; then
-		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/vcfpolyx.jar -R "${reference}" --tag POLYX -n "${polyx}" TMP/jeter1.vcf |\
+	if ${ (polyx as int) > 1 } ; then
+		echo "##show me vcf" 1>&2
+		cat TMP/jeter1.vcf | head 1>&2
+
+		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfpolyx -R "${reference}" --tag POLYX -n "${polyx}" TMP/jeter1.vcf |\
 		bcftools view -e 'FILTER~"POLYX_ge_${polyx}"' > TMP/jeter2.vcf
 		countIt "polyx${polyx}" TMP/jeter1.vcf TMP/jeter2.vcf
 
@@ -422,7 +462,7 @@ echo "\${JAVA_HOME}"
 	EOF
 
 	if ${!cadd_tabix.isEmpty() && (cadd_phred as double) > 0}  ; then
-        	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/vcfcadd.jar \
+        	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfcadd \
 			--tabix "${cadd_tabix}" TMP/jeter1.vcf > TMP/jeter2.vcf
 	      	mv TMP/jeter2.vcf TMP/jeter1.vcf
 		
@@ -448,72 +488,6 @@ echo "\${JAVA_HOME}"
 
 
 
-	## ReadPosRankSum Test for site position within reads. It compares whether the positions of the reference and alternate alleles are different within the reads. 
-	## A value close to zero is best because it indicates there is little difference between the positions of the reference and alternate alleles in the reads.
-	cat <<- EOF >> version.xml
-	<properties>
-		<entry key="ReadPosRankSum">compares whether the positions of the reference and alternate alleles are different within the reads</entry>
-		<entry key="min">-${ReadPosRankSum}</entry>
-		<entry key="max">${ReadPosRankSum}</entry>
-	EOF
-	
-	if ${(ReadPosRankSum as int) != 0 } ; then
-		java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcffilterjdk.jar --nocode   \
-				-e 'final String tag= "ReadPosRankSum"; if(!variant.hasAttribute(tag)) return true; final double v = variant.getAttributeAsDouble(tag,0.0); return Math.abs(v) < ${ReadPosRankSum} ;' TMP/jeter1.vcf > TMP/jeter2.vcf
-		countIt "ReadPosRankSum" TMP/jeter1.vcf TMP/jeter2.vcf
-
-	
-		echo '<entry key="enabled">true</entry></properties>' >> version.xml
-
-		mv TMP/jeter2.vcf TMP/jeter1.vcf
-	else
-
-		echo '<entry key="enabled">false</entry></properties>' >> version.xml
-	fi
-
-	## MQRankSum ##########################################################################################
-	cat <<- EOF >> version.xml 
-	<properties>
-		<entry key="name">MQRankSum</entry>
-		<entry key="description">It compares the mapping qualities of the reads supporting the reference allele and the alternate allele. A positive value means the mapping qualities of the reads supporting the alternate allele are higher than those supporting the reference allele; a negative value indicates the mapping qualities of the reference allele are higher than those supporting the alternate allele. A value close to zero is best and indicates little difference between the mapping qualities.</entry>
-		<entry key="min">${MQRankSum}</entry>
-	EOF
-
-	if ${(MQRankSum as double) < 0} ; then
-		java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcffilterjdk.jar --nocode   \
-				-e 'final String tag= "MQRankSum"; if(!variant.hasAttribute(tag)) return true; final double v = variant.getAttributeAsDouble(tag,0.0); return v >= ${MQRankSum} ;' TMP/jeter1.vcf > TMP/jeter2.vcf
-		countIt "MQRankSum" TMP/jeter1.vcf TMP/jeter2.vcf
-		mv TMP/jeter2.vcf TMP/jeter1.vcf
-	
-		echo '<entry key="enabled">true</entry></properties>' >> version.xml
-
-	else
-
-		echo '<entry key="enabled">false</entry></properties>' >> version.xml
-	fi
-
-	## MQ ######################################################################################
-	cat <<- EOF >> version.xml 
-	<properties>
-		<entry key="name">MQ</entry>
-		<entry key="description">Instead of the average mapping quality of the site, this annotation gives the square root of the average of the squares of the mapping qualities at the site. It is meant to include the standard deviation of the mapping qualities. Including the standard deviation allows us to include the variation in the dataset. A low standard deviation means the values are all close to the mean, whereas a high standard deviation means the values are all far from the mean.When the mapping qualities are good at a site, the MQ will be around 60</entry>
-		<entry key="min">${MQ}</entry>
-	EOF
-
-
-	if ${(MQ as double) > 0} ; then
-		java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcffilterjdk.jar --nocode   \
-				-e 'final String tag= "MQ"; if(!variant.hasAttribute(tag)) return true; final double v = variant.getAttributeAsDouble(tag,0.0); return v >= ${MQ} ;' TMP/jeter1.vcf > TMP/jeter2.vcf
-		countIt "MQ" TMP/jeter1.vcf TMP/jeter2.vcf
-		mv TMP/jeter2.vcf TMP/jeter1.vcf
-
-		echo '<entry key="enabled">true</entry></properties>' >> version.xml
-	else
-
-		echo '<entry key="enabled">false</entry></properties>' >> version.xml
-
-	fi
-
 
 	# test MAF
 
@@ -525,7 +499,7 @@ echo "\${JAVA_HOME}"
 	EOF
 	
 	if ${maxmaf>=0} && test -s TMP/cases.txt && test -s TMP/controls.txt ; then
-		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcfburdenmaf.jar \
+		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfburdenmaf \
 			--pedigree "${jvarkitped}" --prefix "" --min-maf 0  --max-maf "${maxmaf}"  TMP/jeter1.vcf   > TMP/jeter2.vcf
 		countIt "MAF" TMP/jeter1.vcf TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
@@ -547,7 +521,7 @@ echo "\${JAVA_HOME}"
 	EOF
 	
 	if ${fisherh >= 0.0} && test -s TMP/cases.txt && test -s TMP/controls.txt ; then
-		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcfburdenfisherh.jar --filter '' --pedigree "${jvarkitped}" --min-fisher "${fisherh}"  TMP/jeter1.vcf   > TMP/jeter2.vcf
+		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfburdenfisherh --filter '' --pedigree "${jvarkitped}" --min-fisher "${fisherh}"  TMP/jeter1.vcf   > TMP/jeter2.vcf
 		countIt "fisherH" TMP/jeter1.vcf TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
 		bcftools annotate -x 'FILTER/CTRL_CASE_RATIO' TMP/jeter1.vcf > TMP/jeter2.vcf
@@ -563,7 +537,7 @@ echo "\${JAVA_HOME}"
 
 	# low or high DP
 
-	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcffilterjdk.jar --nocode  -e 'final double dp= variant.getGenotypes().stream().filter(G->G.isCalled() && G.hasDP()).mapToInt(G->G.getDP()).average().orElse(${minDP}); return dp>=${minDP} && dp<=${maxDP};'  TMP/jeter1.vcf > TMP/jeter2.vcf
+	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterjdk --nocode  -e 'final double dp= variant.getGenotypes().stream().filter(G->G.isCalled() && G.hasDP()).mapToInt(G->G.getDP()).average().orElse(${minDP}); return dp>=${minDP} && dp<=${maxDP};'  TMP/jeter1.vcf > TMP/jeter2.vcf
 	countIt "lowDP" TMP/jeter1.vcf TMP/jeter2.vcf
 	mv TMP/jeter2.vcf TMP/jeter1.vcf
 
@@ -589,7 +563,7 @@ echo "\${JAVA_HOME}"
 
 	if [ "${lowGQ}" -gt 0 ] ; then
 		## low GQ all genotypes carrying a ALT must be GQ > 'x'
-		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcffilterjdk.jar --nocode  -e 'return variant.getGenotypes().stream().filter(g->g.isCalled() && !g.isHomRef() && g.hasGQ()).allMatch(g->g.getGQ()>=${lowGQ});' TMP/jeter1.vcf > TMP/jeter2.vcf
+		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterjdk --nocode  -e 'return variant.getGenotypes().stream().filter(g->g.isCalled() && !g.isHomRef() && g.hasGQ()).allMatch(g->g.getGQ()>=${lowGQ});' TMP/jeter1.vcf > TMP/jeter2.vcf
 		countIt "lowGQ${lowGQ}" TMP/jeter1.vcf TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
 
@@ -602,7 +576,7 @@ echo "\${JAVA_HOME}"
 	fi
 
 	## singleton
-	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcffilterjdk.jar --nocode  -e 'Genotype singleton=null; for(final Genotype g: variant.getGenotypes()) {if(g.isCalled() && !g.isHomRef()) { if(singleton!=null) return true;singleton=g;}} if(singleton!=null && singleton.isFiltered()) return false; if(singleton!=null && singleton.isHet() && singleton.hasGQ() && singleton.getGQ()<${minGQsingleton}) return false; if(singleton !=null && singleton.hasAD() && singleton.isHet() && singleton.getAD().length==2) {int array[]=singleton.getAD();double r= array[1]/(double)(array[0]+array[1]);if(r< ${minRatioSingleton} || r>(1.0 - ${minRatioSingleton})) return false;} return true; ' TMP/jeter1.vcf > TMP/jeter2.vcf
+	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterjdk --nocode  -e 'Genotype singleton=null; for(final Genotype g: variant.getGenotypes()) {if(g.isCalled() && !g.isHomRef()) { if(singleton!=null) return true;singleton=g;}} if(singleton!=null && singleton.isFiltered()) return false; if(singleton!=null && singleton.isHet() && singleton.hasGQ() && singleton.getGQ()<${minGQsingleton}) return false; if(singleton !=null && singleton.hasAD() && singleton.isHet() && singleton.getAD().length==2) {int array[]=singleton.getAD();double r= array[1]/(double)(array[0]+array[1]);if(r< ${minRatioSingleton} || r>(1.0 - ${minRatioSingleton})) return false;} return true; ' TMP/jeter1.vcf > TMP/jeter2.vcf
 	countIt "singleton" TMP/jeter1.vcf TMP/jeter2.vcf
 	mv TMP/jeter2.vcf TMP/jeter1.vcf
 
@@ -630,11 +604,11 @@ echo "\${JAVA_HOME}"
 	EOF
 
 		# DukeMapability
-		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/vcfbigwig.jar --aggregate avg -tag mapability \
+		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfbigwig --aggregate avg -tag mapability \
 			-B "${mapability}" TMP/jeter1.vcf > TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
 
-		java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcffilterjdk.jar --nocode   \
+		java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterjdk --nocode   \
 				-e 'final String tag= "mapability"; return !variant.hasAttribute(tag) ||  (variant.getAttributeAsDouble(tag,0.0)==1.0);' TMP/jeter1.vcf > TMP/jeter2.vcf
 		countIt "mapability" TMP/jeter1.vcf TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
@@ -652,18 +626,17 @@ echo "\${JAVA_HOME}"
         <properties>
                 <entry key="name">gnomad genome variant</entry>
 		<entry key="description">remove variant if frequent in gnomad genome</entry>
-		<entry key="file">${getGnomadGenomePath(meta,reference)}</entry>
 		<entry key="population">${gnomadPop}</entry>
 		<entry key="AF">${gnomadAF}</entry>
 	EOF
 
-	if [ ! -z "${getGnomadGenomePath(meta,reference)}"  ] ; then
+	if [ ! -z "${genome.gnomad_genome}"  ] ; then
 
-		test -f "${getGnomadGenomePath(meta,reference)}"
+		test -f "${genome.gnomad_genome}"
 
         	# gnomad genome
-        	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcfgnomad.jar --bufferSize 1000 -F '${gnomadPop}' \
-                	-g "${getGnomadGenomePath(meta,reference)}" --max-af "${gnomadAF}" TMP/jeter1.vcf   > TMP/jeter2.vcf
+        	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfgnomad --bufferSize 1000 -F '${gnomadPop}' \
+                	-g "${genome.gnomad_genome}" --max-af "${gnomadAF}" TMP/jeter1.vcf   > TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
 		bcftools view -e '${gnomadgenomefilterexpr}' -O v -o TMP/jeter2.vcf TMP/jeter1.vcf
 		countIt "gnomadgenome.${gnomadPop}" TMP/jeter1.vcf TMP/jeter2.vcf
@@ -684,18 +657,17 @@ echo "\${JAVA_HOME}"
         <properties>
                 <entry key="name">gnomad exome variant</entry>
 		<entry key="description">remove variant if frequent in gnomad exome</entry>
-		<entry key="file">${getGnomadExomePath(meta,reference)}</entry>
 		<entry key="population">${gnomadPop}</entry>
 		<entry key="AF">${gnomadAF}</entry>
 	EOF
 
-	if [ ! -z "${getGnomadExomePath(meta,reference)}"  ] ; then
+	if [ ! -z "${genome.gnomad_exome}"  ] ; then
 
-		test -f "${getGnomadExomePath(meta,reference)}"
+		test -f "${genome.gnomad_exome}"
 
         	# gnomad exome
-        	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcfgnomad.jar   --bufferSize 1000 -F '${gnomadPop}' \
-                	-g "${getGnomadExomePath(meta,reference)}" --max-af "${gnomadAF}" TMP/jeter1.vcf   > TMP/jeter2.vcf
+        	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfgnomad   --bufferSize 1000 -F '${gnomadPop}' \
+                	-g "${genome.gnomad_exome}" --max-af "${gnomadAF}" TMP/jeter1.vcf   > TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
 		bcftools view -e 'FILTER~"GNOMAD_EXOME_AC0"|| FILTER~"GNOMAD_EXOME_BAD_AF"|| FILTER~"GNOMAD_EXOME_InbreedingCoeff"|| FILTER~"GNOMAD_EXOME_RF"' -O v -o TMP/jeter2.vcf TMP/jeter1.vcf
 		countIt "gnomadexome.${gnomadPop}" TMP/jeter1.vcf TMP/jeter2.vcf
@@ -734,7 +706,7 @@ echo "\${JAVA_HOME}"
 
 	   	 # snpeff
 		 ${moduleLoad("snpEff/0.0.0")}
-	         java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar "\${SNPEFF_JAR}" eff -config "\${SNPEFF_CONFIG}" -interval "${bed}" -nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf "${snpeffDb}" TMP/jeter1.vcf > TMP/jeter2.vcf
+	         java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar "\${SNPEFF_JAR}" eff -config "\${SNPEFF_CONFIG}" -interval "contig.bed" -nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf "${snpeffDb}" TMP/jeter1.vcf > TMP/jeter2.vcf
 	         module unload ${getModules("snpEff/0.0.0")}
 	         mv TMP/jeter2.vcf TMP/jeter1.vcf
 
@@ -742,7 +714,7 @@ echo "\${JAVA_HOME}"
 
 
 	    else
-		echo "undefined annotation method" 1>&2
+		echo "undefined annotation method ${annot_method}:${snpeffDb}" 1>&2
 		exit -1
 	    fi
 	
@@ -751,7 +723,7 @@ echo "\${JAVA_HOME}"
 	    if ${!soacn.isEmpty()} ; then
 	    
 	    	# filter prediction
-		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcffilterso.jar \
+		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterso \
 			${inverse_so?"--invert":""} \
 			--remove-attribute  --rmnoatt \
 			--acn "${soacn}" \
@@ -773,7 +745,7 @@ echo "\${JAVA_HOME}"
 	    if ${!exclude_soacn.isEmpty()} ; then
 	    
 	    	# filter prediction
-		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/vcffilterso.jar \
+		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterso \
 			--remove-attribute  --rmnoatt \
 			--invert \
 			--acn "${exclude_soacn}" \
@@ -810,8 +782,8 @@ echo "\${JAVA_HOME}"
 	module load ${getModules("vcftools")}
 	
 	#set -x 
-	awk '!(\$1 ~ /^(chr)?[XY]\$/ )' "${bed}" > TMP/autosomes.bed
-	awk '(\$1 ~ /^(chr)?[XY]\$/ )' "${bed}" > TMP/sex.bed
+	awk '!(\$1 ~ /^(chr)?[XY]\$/ )' "contig.bed" > TMP/autosomes.bed
+	awk '(\$1 ~ /^(chr)?[XY]\$/ )' "contig.bed" > TMP/sex.bed
 	
 	# save variants on sexual chromosomes
 	if test -s TMP/sex.bed ; then
@@ -859,7 +831,7 @@ echo "\${JAVA_HOME}"
 	
 
 
-	if ${(meta.wgselect_with_contrast as boolean)}  && test -s TMP/cases.txt && test -s TMP/controls.txt ; then
+	if ${(params.wgselect.with_contrast as boolean)}  && test -s TMP/cases.txt && test -s TMP/controls.txt ; then
 		bcftools +contrast \
 			-0 "TMP/controls.txt" \
 			-1 "TMP/cases.txt" \

@@ -34,14 +34,18 @@ include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
  */
 workflow JVARKIT_GATK_HARD_FILTERING_01 {
 	take:
+		meta
 		row /* contains vcf,percentile, interval */
 	main:
+		if(!meta.containsKey("percentile")) throw new IllegalArgumentException("percentile undefined");
+		if((meta.percentile as double) <= 0 ) throw new IllegalArgumentException("meta.percentil <= 0");
+
 		version_ch = Channel.empty()
 		
-		rch = FOR_EACH_INTERVAL(row)
+		rch = FOR_EACH_INTERVAL(meta, row)
 		version_ch = version_ch.mix(rch.version)
 
-		concat_ch = CONCAT_TABLES(rch.output.collect())
+		concat_ch = CONCAT_TABLES(meta,rch.output.collect())
 		version_ch = version_ch.mix(concat_ch.version)
 
 		version_ch = MERGE_VERSION("gatk eval hard filtering",version_ch.collect())
@@ -56,27 +60,26 @@ tag "${row.interval} ${file(row.vcf).name}"
 afterScript "rm -rf TMP"
 memory '2g'
 input:
+	val(meta)
 	val(row)
 output:
 	path("OUT/gatk.eval.output.table.txt"),emit:output
 	path("version.xml"),emit:version
 script:
-	if(!row.containsKey("percentile")) throw new IllegalArgumentException("percentile undefined");
+	if(!meta.containsKey("percentile")) throw new IllegalArgumentException("percentile undefined");
 	if(!row.containsKey("vcf")) throw new IllegalArgumentException("vcf undefined");
 	if(!row.containsKey("interval")) throw new IllegalArgumentException("interval undefined");
-	if((row.percentile as double) <= 0 ) throw new IllegalArgumentException("row.percentil <= 0");
+	if((meta.percentile as double) <= 0 ) throw new IllegalArgumentException("meta.percentil <= 0");
 """
 hostname 1>&2
 ${moduleLoad("jvarkit bcftools")}
 set -o pipefail
-mkdir -p TMP
+mkdir -p TMP OUT
 
-echo '${chrom}\t${start}\t${end}' > TMP/jeter.bed
 
-bcftools view -G --regions '${row.interval}' '${vcf}' |\
-	java -jar -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP \${JVARKIT_DIST}/jvarkit.jar vcfgatkeval --percentile ${row.percentile} --input-type vcf -o TMP/gatk.eval
+bcftools view -G --regions '${row.interval}' '${row.vcf}' |\
+	java -jar -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP \${JVARKIT_DIST}/jvarkit.jar vcfgatkeval --percentile ${meta.percentile} --input-type vcf -o OUT/gatk.eval
 	
-mv TMP OUT
 	
 ###############################################################################
 cat << EOF > version.xml
@@ -93,12 +96,16 @@ tag "N=${L.size()}"
 afterScript "rm -rf TMP"
 memory '2g'
 input:
+	val(meta)
 	val(L)
 output:
 	path("OUT/gatk.eval.output.filters.txt"),emit:output
 	path("OUT/gatk.eval.output.pdf"),emit:pdf
 	path("version.xml"),emit:version	
 script:
+	if(!meta.containsKey("percentile")) throw new IllegalArgumentException("percentile undefined");
+	if((meta.percentile as double) <= 0 ) throw new IllegalArgumentException("meta.percentil <= 0");
+
 """
 hostname 1>&2
 ${moduleLoad("jvarkit R")}

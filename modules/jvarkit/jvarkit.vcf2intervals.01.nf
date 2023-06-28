@@ -61,7 +61,7 @@ process JVARKIT_VCF_TO_INTERVALS_01 {
 
 
 	bcftools view -G "${vcf.toRealPath()}" ${interval.isEmpty()?"":"\"${interval}\""}  ${contig.isEmpty()?"":"\"${contig}\""} |\
-	java -Xmx=${} -jar \${JVARKIT_DIST}/jvarkit.jar vcf2intervals \
+	java -Xmx${task.memory.giga}G -jar \${JVARKIT_DIST}/vcf2intervals.jar  \
 		--bed \
 		--distance "${distance}" \
 		--min-distance "${min_distance}" |\

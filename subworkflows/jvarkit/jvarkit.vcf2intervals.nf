@@ -27,7 +27,7 @@ log.info("parsing subworkflows/jvarkit/jvarkit.vcf2intervals.nf ....")
 include {moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
 include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf'
 include {JVARKIT_VCF_TO_INTERVALS_01 as VCF_TO_INTERVALS} from '../../modules/jvarkit/jvarkit.vcf2intervals.01.nf'
-include {CONCAT_FILES_01} from '../../modules/utils/concat.files.nf' addParams(suffix:".bed")
+include {CONCAT_FILES_01} from '../../modules/utils/concat.files.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 
 
@@ -42,11 +42,12 @@ workflow JVARKIT_VCF_TO_INTERVALS_01 {
 		vcf /* path to vcf, or file with .list suffix */
 		bed /* limit to that BED or NO_FILE */
 	main:
+		if(!meta.containsKey("with_header")) throw new RuntimeException("meta.width_header missing")
 		if(!meta.containsKey("distance")) throw new RuntimeException("meta.distance missing")
 		if(!meta.containsKey("min_distance")) throw new RuntimeException("meta.min_distance missing")
 	
 		version_ch = Channel.empty()
-		bed_ch = VCF_TO_BED([:],vcf)
+		bed_ch = VCF_TO_BED([with_header:meta.with_header],vcf)
 		version_ch = version_ch.mix(bed_ch.version)
 	
 		bed2ch = INTERSECT_BED(bed_ch.bed, bed)
@@ -58,7 +59,7 @@ workflow JVARKIT_VCF_TO_INTERVALS_01 {
 		rch = VCF_TO_INTERVALS(meta,interval_vcf)
 		version_ch = version_ch.mix(rch.version)
 
-		concat_ch = CONCAT_FILES_01(suffix:".bed", rch.bed.collect())
+		concat_ch = CONCAT_FILES_01([suffix:".bed", concat_n_files:50,downstream_cmd:""] , rch.bed.collect())
 		version_ch = version_ch.mix(concat_ch.version)
 
 		version_ch = MERGE_VERSION("jvarkit2intervals",version_ch.collect())

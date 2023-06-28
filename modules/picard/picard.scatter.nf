@@ -52,7 +52,7 @@ script:
 	${moduleLoad("picard")}
 
 	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=. -jar \${PICARD_JAR} ScatterIntervalsByNs \
-	    -R "${fasta}" \
+	    -R "${fasta.toRealPath()}" \
 	    --MAX_TO_MERGE "${maxToMerge}" \
 	    -O "${fasta.getSimpleName()}.${type}.${maxToMerge}.interval_list" \
 	    -OUTPUT_TYPE "${type}"

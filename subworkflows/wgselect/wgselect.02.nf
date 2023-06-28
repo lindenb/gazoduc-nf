@@ -48,29 +48,38 @@ workflow WGSELECT_02 {
 		
 			in_ch = vcf2bed_ch.bed.splitCsv(header:false,sep:'\t').map{T->[
 					interval: T[0]+":"+((T[1] as int)+1)+"-"+T[2],
-					vcf: T[3],
-					percentile: params.wgselect.gatk_hardfiltering_percentile 
+					vcf: T[3]
 					]}
 		
-			hard_filters_ch = JVARKIT_GATK_HARD_FILTERING_01(in_ch)
+			hard_filters_ch = JVARKIT_GATK_HARD_FILTERING_01([percentile: params.wgselect.gatk_hardfiltering_percentile], in_ch)
 			
 			version_ch = version_ch.mix(hard_filters_ch.version)
 			
+			hard_filters = hard_filters_ch.output
+			}
+		else
+			{
+			hard_filters = file("NO_FILE")
 			}
 		
 		tobed_ch = JVARKIT_VCF_TO_INTERVALS_01([with_header:false,distance: params.wgselect.distance ,min_distance: params.wgselect.min_distance], vcf, bed)
 		version_ch = version_ch.mix(tobed_ch.version)
-			
 
+		wch1_ch = WGSELECT_01(
+			[:],
+			genomeId,
+			tobed_ch.bed.splitCsv(header:false,sep:'\t').
+				map{T->[
+					interval: T[0]+":"+((T[1] as int)+1)+":"+T[2],
+					vcf: T[3],
+					pedigree: pedigree,
+					]}.
+				combine(hard_filters).
+				map{T->T[0].plus(hard_filters:T[1])}
+				
+			)
 
-		bed2beds_ch = BED2BEDS(tobed_ch.bed)
-		version_ch = version_ch.mix(bed2beds_ch.version)
-
-		each_bed = bed2beds_ch.output.splitCsv(header:false,sep:'\t').map{it.trim()}
-
-		wch1_ch = WGSELECT_01([:],genomeId, vcf, pedigree, each_bed, file("NO_FILE"))
-		version_ch = version_ch.mix(wch1_ch.version)
-		
+		version_ch = version_ch.mix(wch1_ch.version)		
 		version_ch = MERGE_VERSION("WGSelect", version_ch.collect())
 
 	emit:
@@ -83,33 +92,3 @@ workflow WGSELECT_02 {
 	}
 
 
-process BED2BEDS {
-executor "local"
-input:
-	path(bed)
-output:
-	path("beds.list"),emit:output
-	path("version.xml"),emit:version
-script:
-"""
-hostname 1>&2
-${moduleLoad("bedtools")}
-set -o pipefail
-mkdir BEDS
-sort -T . -t '\t' -k1,1 -k2,2n "${bed}" |\
-	bedtools merge |\
-	split -a 9 --additional-suffix=.bed --lines=1 - "TMP/one."
-
-find \${PWD}/BEDS -type f -name "one.*bed" > beds.list
-
-####
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="Name">${task.process}</entry>
-	<entry key="Description">Split BED into parts</entry>
-	<entry key="Input">${bed}</entry>
-</properties>
-EOF
-
-"""
-}

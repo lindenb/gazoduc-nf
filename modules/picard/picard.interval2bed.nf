@@ -41,8 +41,8 @@ output:
 script:
 	if(!meta.containsKey("SORT")) throw new IllegalArgumentException("meta.SORT missing");
 	if(!meta.containsKey("SCORE")) throw new IllegalArgumentException("meta.SCORE missing");
-	def SORT = params.SORT
-	def SCORE = params.SCORE
+	def SORT = meta.SORT
+	def SCORE = meta.SCORE
 """
 	hostname 1>&2
 	${moduleLoad("picard")}
