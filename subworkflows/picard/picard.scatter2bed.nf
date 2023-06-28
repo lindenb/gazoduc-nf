@@ -22,21 +22,22 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-log.info("picard.scatter2bed.nf")
 include { SCATTER_INTERVALS_BY_NS } from '../../modules/picard/picard.scatter.nf'
-log.info("x2")
-include { INTERVAL_LIST_TO_BED }  from '../../modules/picard/picard.interval2bed.nf' addParams(SORT:true, SCORE:500)
-log.info("x3")
+include { INTERVAL_LIST_TO_BED }  from '../../modules/picard/picard.interval2bed.nf'
 
 workflow SCATTER_TO_BED {
 	take:
-		genome
+		meta
+		fasta
 	main:
+		if(!meta.containsKey("OUTPUT_TYPE")) throw new IllegalArgumentException("meta.OUTPUT_TYPE is missing");
+		if(!meta.containsKey("MAX_TO_MERGE")) throw new IllegalArgumentException("meta.MAX_TO_MERGE is missing");
+		
 		version_ch = Channel.empty()
-		scatter_ch = SCATTER_INTERVALS_BY_NS(genome)
+		scatter_ch = SCATTER_INTERVALS_BY_NS(meta,fasta)
 		version_ch = version_ch.mix(scatter_ch.version)
 
-		bed_ch = INTERVAL_LIST_TO_BED(scatter_ch.output)
+		bed_ch = INTERVAL_LIST_TO_BED([SORT:true, SCORE:500],scatter_ch.output)
 	emit:
 		bed = bed_ch.bed
 		version = version_ch

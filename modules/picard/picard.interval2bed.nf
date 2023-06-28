@@ -27,18 +27,20 @@ nextflow.enable.dsl=2
 log.info("parsing picard.interval2bed.nf");
 
 include {moduleLoad} from '../utils/functions.nf'
-if(!params.containsKey("SORT")) throw new IllegalArgumentException("params.SORT missing");
-if(!params.containsKey("SCORE")) throw new IllegalArgumentException("params.SCORE missing");
+
 
 process INTERVAL_LIST_TO_BED {
 tag "${file(interval_list).name}"
 memory "3g"
 input:
+	val(meta)
 	path(interval_list)
 output:
 	path("${interval_list.getSimpleName()}.bed"), emit:bed
 	path("version.xml"), emit:version
 script:
+	if(!meta.containsKey("SORT")) throw new IllegalArgumentException("meta.SORT missing");
+	if(!meta.containsKey("SCORE")) throw new IllegalArgumentException("meta.SCORE missing");
 	def SORT = params.SORT
 	def SCORE = params.SCORE
 """

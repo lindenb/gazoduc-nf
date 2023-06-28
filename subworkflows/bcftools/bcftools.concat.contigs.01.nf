@@ -35,6 +35,9 @@ workflow BCFTOOLS_CONCAT_PER_CONTIG_01 {
 		/* row.vcfs a FILE containing the path to the indexed VCF */
 		row
 	main:
+		if(!meta.containsKey("suffix")) throw new IllegalArgumentException("meta.suffix is missing");
+		if(!(meta.suffix.equals(".vcf.gz") || meta.suffix.equals(".bcf"))) throw new IllegalArgumentException("bad VCF suffix ${suffix}");
+		
 		version_ch = Channel.empty()
 
 		c1_ch = VCF_PER_CONTIG(meta,row.vcfs)
@@ -111,12 +114,12 @@ input:
         val(meta)
         val(row)
 output:
-        path("${prefix}${row.contig}.concat${suffix}"),emit:vcf
-        path("${prefix}${row.contig}.concat${suffix}${suffix.contains("b")?".csi":".tbi"}"),emit:index
+        path("${meta.prefix?:""}${row.contig}.concat${meta.suffix}"),emit:vcf
+        path("${meta.prefix?:""}${row.contig}.concat${meta.suffix}${meta.suffix.contains("b")?".csi":".tbi"}"),emit:index
 	path("version.xml"),emit:version
 script:
-	prefix = meta.prefix?:""
-	suffix = meta.suffix?:".bcf"
+	def prefix = meta.prefix?:""
+	def suffix = meta.suffix?:".bcf"
 	def contig = row.contig
 	def vcfs = row.vcfs
 	if(!(suffix.equals(".vcf.gz") || suffix.equals(".bcf"))) throw new IllegalArgumentException("bad VCF suffix ${suffix}");

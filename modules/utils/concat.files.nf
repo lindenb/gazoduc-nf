@@ -27,6 +27,7 @@ include {escapeXml} from './functions.nf'
 
 process CONCAT_FILES_01 {
 tag "N=${L.size()}"
+afterScript "rm -rf TMP"
 executor "local"
 input:
         val(meta)
@@ -35,13 +36,25 @@ output:
         path("concat${meta.suffix?:".list"}"),emit:output
 	path("version.xml"),emit:version
 script:
+	if(!meta.containsKey("suffix")) throw new IllegalArgumentException("CONCAT_FILES_01: meta.suffix undefined");
+	if(!meta.containsKey("concat_n_files")) throw new IllegalArgumentException("CONCAT_FILES_01: meta.concat_n_files undefined");
+	if(!meta.containsKey("downstream_cmd")) throw new IllegalArgumentException("CONCAT_FILES_01: meta.downstream_cmd undefined");
+	
+	def suffix = meta.suffix?:".list"
 	def concat_n_files = meta.concat_n_files?:"50"
 	def downstream_cmd = meta.downstream_cmd?:""
 """
 hostname 1>&2
-cat << EOF | xargs -L ${concat_n_files} cat ${downstream_cmd} > "concat${meta.suffix?:".list"}"
+
+mkdir -p TMP
+
+cat << EOF > TMP/jeter.txt
 ${L.join("\n")}
 EOF
+
+xargs -a TMP/jeter.txt -L ${concat_n_files} cat ${downstream_cmd} > TMP/concat.data
+
+mv TMP/concat.data "concat${suffix}"
 
 sleep 5
 #############################################################
