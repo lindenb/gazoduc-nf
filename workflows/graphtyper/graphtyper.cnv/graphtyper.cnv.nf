@@ -75,7 +75,7 @@ if( params.help ) {
 
 workflow {
 	c1_ch = GRAPHTYPER_CNV_01(file(params.bams),file(params.vcf), file(params.bed))
-	html = VERSION_TO_HTML(params,c1_ch.version)	
+	html = VERSION_TO_HTML(c1_ch.version)	
 	}
 
 runOnComplete(workflow);

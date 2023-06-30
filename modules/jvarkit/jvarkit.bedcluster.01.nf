@@ -23,24 +23,27 @@ SOFTWARE.
 
 */
 
-include {moduleLoad;getBoolean;assertNotEmpty;getKeyValue;parseBoolean} from '../utils/functions.nf'
+include {moduleLoad;parseBoolean;assertNotEmpty;getKeyValue} from '../utils/functions.nf'
 
 process BED_CLUSTER_01 {
 	tag "${bed.name} method:${meta.bed_cluster_method}"
+	afterScript "rm -rf TMP"
 	memory "2g"
 	input:
 		val(meta)
-		val(reference)
+		val(genomeId)
 		path(bed)
 	output:
 		path("clusters.list"),emit:output
 		path("version.xml"),emit:version
 	script:
-		def method = getKeyValue(meta,"bed_cluster_method","")
+		if(!meta.containsKey("bed_cluster_method")) throw new IllegalArgumentException("bed_cluster_method undefined");
+		def method = meta.bed_cluster_method
 		assertNotEmpty(method,"method for bedcluter must be defined")
-		def by_chrom = getBoolean(meta,"by_chromosome")
+		def by_chrom = parseBoolean(meta.by_chromosome?:false)
 		def chrom_arg = (by_chrom?"--chromosome":"")
-		def names_arg = (parseBoolean(meta.with_names)?"--names":"")
+		def names_arg = (parseBoolean(meta.with_names?:false)?"--names":"")
+		def reference = params.genomes[genomeId].fasta
 	"""
 	hostname 1>&2
 	set -o pipefail
@@ -48,13 +51,15 @@ process BED_CLUSTER_01 {
 
 	test ! -z "${method}"
 
-	mkdir BEDS
-	java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=. -jar \${JVARKIT_DIST}/bedcluster.jar \
+	mkdir -p TMP
+	java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar bedcluster \
 		-R "${reference}" \
 		${chrom_arg} \
 		${method} \
 		${names_arg} \
-		-o BEDS "${bed}"
+		-o TMP "${bed}"
+
+	mv TMP BEDS
 
 	find \${PWD}/BEDS -type f -name "*.bed" > clusters.list
 	test -s clusters.list
@@ -68,7 +73,7 @@ process BED_CLUSTER_01 {
 		<entry key="bed">${bed}</entry>
 		<entry key="reference">${reference}</entry>
 		<entry key="method">${method}</entry>
-		<entry key="jvarkit.version">\$(java -jar \${JVARKIT_DIST}/bedcluster.jar --version)</entry>
+		<entry key="jvarkit.version">\$(java -jar \${JVARKIT_DIST}/jvarkit.jar --version)</entry>
 	</properties>
 	EOF
 	"""

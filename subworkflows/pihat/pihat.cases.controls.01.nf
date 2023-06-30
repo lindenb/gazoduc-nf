@@ -25,33 +25,32 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 
-include {moduleLoad;getKeyValue;getGnomadExomePath;getGnomadGenomePath} from '../../modules/utils/functions.nf'
+include {moduleLoad} from '../../modules/utils/functions.nf'
 include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {PIHAT01} from './pihat.01.nf'
 include	{VCF_INTER_CASES_CONTROLS_01} from '../bcftools/vcf.inter.cases.controls.01.nf'
 
 workflow PIHAT_CASES_CONTROLS_01 {
 	take:
-		meta
-		reference
+		genomeId
 		vcf
 		cases
 		controls
 	main:
 		version_ch = Channel.empty();
 		
-		inter_ch = VCF_INTER_CASES_CONTROLS_01(meta, vcf, cases, controls)
+		inter_ch = VCF_INTER_CASES_CONTROLS_01([:], vcf, cases, controls)
 		version_ch = version_ch.mix(inter_ch.version)
 
-		pihat_ch = PIHAT01(meta,reference,vcf,inter_ch.all_samples)
+		pihat_ch = PIHAT01(genomeId,vcf,inter_ch.all_samples)
 		version_ch = version_ch.mix(pihat_ch.version)
 
 
-		remove_ch= REMOVE_SAMPLES(meta,pihat_ch.pihat_removed_samples ,cases,controls)
+		remove_ch= REMOVE_SAMPLES(pihat_ch.pihat_removed_samples ,cases,controls)
 		version_ch = version_ch.mix(remove_ch.version)
 
-		version_ch = MERGE_VERSION(meta, "pihat", "pihat on ${vcf} with cases and controls.", version_ch.collect())
+		version_ch = MERGE_VERSION("pihat",version_ch.collect())
 
 	emit:
 		version = version_ch
@@ -66,7 +65,6 @@ workflow PIHAT_CASES_CONTROLS_01 {
 process REMOVE_SAMPLES {
 executor "local"
 input:
-	val(meta)
 	val(removed_samples)
 	val(cases)
 	val(controls)

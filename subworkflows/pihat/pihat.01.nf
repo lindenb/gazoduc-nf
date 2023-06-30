@@ -32,13 +32,13 @@ include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 
 workflow PIHAT01 {
 	take:
-		genome
+		genomeId
 		vcf
 		samples
 	main:
 		version_ch = Channel.empty();
 		to_zip = Channel.empty();
-		vcf2contig_ch = VCF_TO_BED(vcf)
+		vcf2contig_ch = VCF_TO_BED([with_header:false],vcf)
 		version_ch = version_ch.mix(vcf2contig_ch.version)
 
 		ctgvcf_ch = vcf2contig_ch.bed.splitCsv(header: false,sep:'\t',strip:true).
@@ -46,7 +46,7 @@ workflow PIHAT01 {
 				combine(samples)
 
 
-		perCtg = PLINK_PER_CONTIG(genome, ctgvcf_ch)
+		perCtg = PLINK_PER_CONTIG(genomeId, ctgvcf_ch)
 		version_ch = version_ch.mix(perCtg.version.collect())
 
 
@@ -71,7 +71,7 @@ tag "${vcf.name}/${contig}"
 afterScript "rm -rf TMP"
 memory "3g"
 input:
-	val(genome)
+	val(genomeId)
         tuple val(contig),path(vcf),path(samples)
 output:
 	tuple val(contig),path("${contig}.bcf"),emit:vcf
@@ -79,7 +79,8 @@ output:
 when:
 	contig.matches(params.pihat.contig_regex)
 script:
-
+	def genome = params.genomes[genomeId]
+	if(genome==null) throw new IllegalArgumentException("cannot get genome[${genomeId}]")
 	def reference = genome.fasta
 	def filters = params.pihat.filters
 	def pihatmaf = (params.pihat.MAF as double)

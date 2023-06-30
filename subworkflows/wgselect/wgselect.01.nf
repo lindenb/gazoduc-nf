@@ -24,17 +24,11 @@ SOFTWARE.
 */
 def gazoduc = gazoduc.Gazoduc.getInstance(params).putGnomad()
 
-log.info("parsing wgselect.01.nf")
 include {getModules;moduleLoad} from '../../modules/utils/functions.nf'
-log.info("include wgselect.01:exclude.bed")
 include {WGSELECT_EXCLUDE_BED_01 } from './wgselect.exclude.bed.01.nf'
-log.info("include wgselect.01:merge-version")
 include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
-log.info("include wgselect.01:collect2file")
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
-log.info("include wgselect.01:bcftools.concat.contigs.01.nf")
 include {BCFTOOLS_CONCAT_PER_CONTIG_01} from '../bcftools/bcftools.concat.contigs.01.nf' 
-log.info("include wgselect.end")
 
 
 
@@ -57,9 +51,10 @@ workflow WGSELECT_01 {
 		
 		cat_files_ch = COLLECT_TO_FILE_01([:], annotate_ch.bed_vcf.map{T->T[1]}.collect())
 
-		c2_ch = cat_files_ch.output.map{T->["vcfs":T]}
-		concat_ch = BCFTOOLS_CONCAT_PER_CONTIG_01([suffix:".bcf"],c2_ch)
-		version_ch = version_ch.mix(concat_ch.first())
+		concat_ch = BCFTOOLS_CONCAT_PER_CONTIG_01([suffix:".bcf"],  cat_files_ch.output)
+		version_ch = version_ch.mix(concat_ch.version)
+
+
 
 		digest_ch = DIGEST_VARIANT_LIST(annotate_ch.variants_list.collect())
 		version_ch = version_ch.mix(digest_ch.first())
@@ -70,6 +65,7 @@ workflow WGSELECT_01 {
 		version = version_ch /** version */
 		variants_list = digest_ch.output /** file containing count of variants at each step */
 		contig_vcfs = concat_ch.vcfs /** path to all vcf concatenated per contigs */
+		bed = concat_ch.bed /** path to all VCFs as bed */
 		vcfs = cat_files_ch.output /** path to all chunks of vcf */
 	}
 
@@ -142,9 +138,9 @@ echo "\${JAVA_HOME}"
 
 
 	if ${row.containsKey("bed")} ; then
-		ln -s '${row.bed}' contig.bed
+		ln -s '${row.bed}' TMP/contig.bed
 	elif ${row.containsKey("interval")} ; then
-		echo '${row.interval}' | awk -F '[:-]' '{printf("%s\t%s\t%s\\n",\$1,int(\$2)-1,\$3);}' > contig.bed
+		echo '${row.interval}' | awk -F '[:-]' '{printf("%s\t%s\t%s\\n",\$1,int(\$2)-1,\$3);}' > TMP/contig.bed
 	else
 		echo "No interval or bed defined" 1>&2
 		exit -1
@@ -198,7 +194,7 @@ echo "\${JAVA_HOME}"
 	fi
 
 	# blacklisted region overlapping #####################################################################"
-	bedtools intersect -a "contig.bed" -b "${blacklisted}" > TMP/jeter.blacklisted.bed
+	bedtools intersect -a "TMP/contig.bed" -b "${blacklisted}" > TMP/jeter.blacklisted.bed
 	# prevent empty file
 	if [ ! -s TMP/jeter.blacklisted.bed ] ; then
 		tail -1 "${reference}.fai" | awk '{printf("%s\t0\t1\\n",\$1);}' > TMP/jeter.blacklisted.bed
@@ -214,9 +210,9 @@ echo "\${JAVA_HOME}"
 
 	# extract variants ######################################################################################
 	if ${vcf.endsWith(".list")} ; then
-		bcftools concat --file-list "${vcf}" --regions-file "contig.bed" -O u  --allow-overlaps --remove-duplicates -o TMP/jeter1.bcf
+		bcftools concat --file-list "${vcf}" --regions-file "TMP/contig.bed" -O u  --allow-overlaps --remove-duplicates -o TMP/jeter1.bcf
 	else
-		bcftools view  --regions-file "contig.bed" -O u -o TMP/jeter1.bcf "${vcf}"
+		bcftools view  --regions-file "TMP/contig.bed" -O u -o TMP/jeter1.bcf "${vcf}"
 	fi	
 
 	cat <<- EOF >> version.xml
@@ -242,7 +238,7 @@ echo "\${JAVA_HOME}"
 		bcftools index -f -t TMP/jeter1.vcf.gz
 
 		gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" VariantFiltration \
-	        	-L "contig.bed" \
+	        	-L "TMP/contig.bed" \
 		        -V 'TMP/jeter1.vcf.gz' \
 	        	-R '${reference}' \
 		        -O TMP/jeter2.vcf.gz \
@@ -706,7 +702,7 @@ echo "\${JAVA_HOME}"
 
 	   	 # snpeff
 		 ${moduleLoad("snpEff/0.0.0")}
-	         java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar "\${SNPEFF_JAR}" eff -config "\${SNPEFF_CONFIG}" -interval "contig.bed" -nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf "${snpeffDb}" TMP/jeter1.vcf > TMP/jeter2.vcf
+	         java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar "\${SNPEFF_JAR}" eff -config "\${SNPEFF_CONFIG}" -interval "TMP/contig.bed" -nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf "${snpeffDb}" TMP/jeter1.vcf > TMP/jeter2.vcf
 	         module unload ${getModules("snpEff/0.0.0")}
 	         mv TMP/jeter2.vcf TMP/jeter1.vcf
 
@@ -782,8 +778,8 @@ echo "\${JAVA_HOME}"
 	module load ${getModules("vcftools")}
 	
 	#set -x 
-	awk '!(\$1 ~ /^(chr)?[XY]\$/ )' "contig.bed" > TMP/autosomes.bed
-	awk '(\$1 ~ /^(chr)?[XY]\$/ )' "contig.bed" > TMP/sex.bed
+	awk '!(\$1 ~ /^(chr)?[XY]\$/ )' "TMP/contig.bed" > TMP/autosomes.bed
+	awk '(\$1 ~ /^(chr)?[XY]\$/ )' "TMP/contig.bed" > TMP/sex.bed
 	
 	# save variants on sexual chromosomes
 	if test -s TMP/sex.bed ; then
@@ -852,6 +848,8 @@ bcftools view  -O u TMP/jeter1.vcf |\
 bcftools sort -T TMP --max-mem "${task.memory.giga}G" -O b -o "contig.bcf" 
 bcftools index  contig.bcf
 
+
+mv TMP/contig.bed ./
 
 echo '</entry></properties>' >> version.xml
 

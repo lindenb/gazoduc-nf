@@ -41,7 +41,7 @@ workflow JVARKIT_VCF_SPLIT_N_VARIANTS_01 {
 		bed /* limit to that BED or NO_FILE */
 	main:
 		version_ch = Channel.empty()
-		bed_ch = VCF_TO_BED(vcf)
+		bed_ch = VCF_TO_BED([with_header:false],vcf)
 		version_ch = version_ch.mix(bed_ch.version)
 
 		contig_vcf_ch = bed_ch.bed.splitCsv(sep:'\t',header:false).
@@ -50,7 +50,7 @@ workflow JVARKIT_VCF_SPLIT_N_VARIANTS_01 {
 		rch = SPLIT_VCF(bed, contig_vcf_ch)
 		version_ch = version_ch.mix(rch.version)
 
-		concat_ch = CONCAT_FILES_01([:],rch.output.collect())
+		concat_ch = CONCAT_FILES_01([suffix:".list",concat_n_files:50,downstream_cmd:""],rch.output.collect())
 		version_ch = version_ch.mix(concat_ch.version)
 
 		version_ch = MERGE_VERSION("jvarkit2intervals",version_ch.collect())

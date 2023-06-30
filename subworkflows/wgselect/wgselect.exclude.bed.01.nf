@@ -42,7 +42,7 @@ workflow WGSELECT_EXCLUDE_BED_01 {
 		to_merge_ch = to_merge_ch.mix(gaps_ch.bed)
 
 		if(params.wgselect.with_rmsk as boolean) {
-			rmsk_ch = RMSK(genome)
+			rmsk_ch = RMSK(genomeId)
 			version_ch = version_ch.mix(rmsk_ch.version)
 			to_merge_ch = to_merge_ch.mix(rmsk_ch.bed)
 			}

@@ -56,7 +56,7 @@ else
 workflow {
 
 	pihat_ch = PIHAT01(
-		params.genomes[params.genomeId],
+		params.genomeId,
 		file(params.vcf),
 		Channel.fromPath(params.samples)
 		)

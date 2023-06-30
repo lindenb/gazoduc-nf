@@ -31,7 +31,7 @@ include {WGSELECT_01} from './wgselect.01.nf'
 include {LINUX_SPLIT} from '../../modules/utils/split.nf'
 include {JVARKIT_GATK_HARD_FILTERING_01} from '../jvarkit/jvarkit.gatk_hard_filtering.01.nf'
 include {JVARKIT_VCF_TO_INTERVALS_01} from '../jvarkit/jvarkit.vcf2intervals.nf'
-include {VCF_TO_BED} from '../..//modules/bcftools/vcf2bed.01.nf'
+include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf'
 
 workflow WGSELECT_02 {
 	take:

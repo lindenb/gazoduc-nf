@@ -24,7 +24,7 @@ SOFTWARE.
 */
 include {moduleLoad;getKeyValue;getModules;getVersionCmd} from '../../modules/utils/functions.nf'
 include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 
 
@@ -33,14 +33,14 @@ workflow BCFTOOLS_CONCAT_PER_CONTIG_01 {
 		/* params */
 		meta
 		/* row.vcfs a FILE containing the path to the indexed VCF */
-		row
+		vcfs
 	main:
 		if(!meta.containsKey("suffix")) throw new IllegalArgumentException("meta.suffix is missing");
 		if(!(meta.suffix.equals(".vcf.gz") || meta.suffix.equals(".bcf"))) throw new IllegalArgumentException("bad VCF suffix ${suffix}");
 		
 		version_ch = Channel.empty()
 
-		c1_ch = VCF_PER_CONTIG(meta,row.vcfs)
+		c1_ch = VCF_PER_CONTIG(meta,vcfs)
 		version_ch = version_ch.mix(c1_ch.version)
 
 		
@@ -51,11 +51,15 @@ workflow BCFTOOLS_CONCAT_PER_CONTIG_01 {
 
 		file_list_ch = COLLECT_TO_FILE_01([:],c3_ch.vcf.map{T->T.toRealPath()}.collect())
 
-                version_ch = MERGE_VERSION(meta, "concat / contig", "concat vcf per contig", version_ch.collect())
+		c4_ch = VCF_TO_BED([with_header:false],file_list_ch.output)
+		version_ch = version_ch.mix(c4_ch.version)
+
+                version_ch = MERGE_VERSION("concat / contig", version_ch.collect())
 
 	emit:
 		version = version_ch
-		vcfs = file_list_ch.output		
+		vcfs = file_list_ch.output
+		bed = c4_ch.bed		
 	}
 
 

@@ -33,7 +33,7 @@ output:
         path("rvtests.pedigree.ped"),emit:pedigree
         path("version.xml"),emit:version
 script:
-	def p=meta.rvtests_phenotype_name?:"y1"
+	def p= params.burden.rvtests_phenotype_name
 """
 hostname 1>&2
 set -o pipefail
