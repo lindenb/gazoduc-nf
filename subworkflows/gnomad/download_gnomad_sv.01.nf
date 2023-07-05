@@ -101,7 +101,7 @@ EOF
 }
 
 process RENAME_CONTIGS_HG19 {
-tag "${meta.gnomad_sv_grch37_bed_url}"
+tag "${genomeId}"
 afterScript "rm -rf TMP"
 input:
 	val(meta)

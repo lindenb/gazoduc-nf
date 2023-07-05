@@ -497,7 +497,7 @@ output:
 	path("version.xml"),emit:version
 script:
 	def genome = params.genomes[genomeId]
-	def fasta = genoe.fasta
+	def reference = genome.fasta
 	def gff3 = genome.gff3
 	def num_cases = row.max_cases?:1000000
 	def num_controls = row.max_controls?:10
@@ -522,8 +522,8 @@ join -t '\t' -1 1 -2 1 -o "2.1" TMP/controls.txt TMP/samples.bams.tsv | shuf | h
 mv TMP/controls2.txt TMP/controls.txt
 
 
-join -t '\t' -1 1 -2 1 -o "2.2" TMP/cases.txt TMP/samples.bams.tsv | sort | uniq > TMP/cases.bams.list
-join -t '\t' -1 1 -2 1 -o "2.2" TMP/controls.txt TMP/samples.bams.tsv | sort | uniq > TMP/controls.bams.list
+join -t '\t' -1 1 -2 1 -o "2.3" TMP/cases.txt TMP/samples.bams.tsv | sort | uniq > TMP/cases.bams.list
+join -t '\t' -1 1 -2 1 -o "2.3" TMP/controls.txt TMP/samples.bams.tsv | sort | uniq > TMP/controls.bams.list
 
 
 cat TMP/cases.bams.list TMP/controls.bams.list  | sort | uniq > TMP/all.bams.list

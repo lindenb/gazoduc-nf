@@ -100,7 +100,7 @@ executor "local"
 tag "N=${L.size()}"
 input:
 	val(meta)
-	val(gemomeId)
+	val(genomeId)
 	val(L)
 output:
 	path("sample2bam.tsv"),emit:output
@@ -112,11 +112,23 @@ script:
 hostname 1>&2
 set -o pipefail
 
-cat ${L.join( " ") } |\
-	${allow_multiple_references || isBlank(fasta)?"":" awk -F '\t' '(\$3 == "${fasta}")' |"} \
-	sort -T . -t '\t' -k1,1  |\
+cat ${L.join( " ") } > jeter.tsv
+
+if ${allow_multiple_references || isBlank(fasta)  } ; then
+
+	mv jeter.tsv jeter2.tsv 
+
+else
+
+	awk -F '\t' '(\$3 == "${fasta}")'  jeter.tsv > jeter2.tsv
+
+fi
+
+
+sort -T . -t '\t' -k1,1  jeter2.tsv |\
 	uniq |\
 	awk -F '\t' 'function uniq(S) {P=S;i=1; while(P in U) {i++;P=sprintf("%s.%d",S,i);} U[P]++; return P;} {printf("%s\t%s\t%s\t%s\\n",\$1,uniq(\$1),\$2,\$3);}' > jeter.tsv
+rm jeter2.tsv
 
 # no empty samples
 awk -F '\t' '(\$1==".")' jeter.tsv > jeter.txt 
