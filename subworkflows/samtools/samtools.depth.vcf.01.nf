@@ -60,7 +60,7 @@ workflow SAMTOOLS_DEPTH_VCF_01 {
 		sqrt_ch = SQRT_FILE(meta.plus(["min_file_split":100]), to_file_ch.output)
 		version_ch= version_ch.mix(sqrt_ch.version)
 
-		each_cluster = sqrt_ch.clusters.splitText().map{T->file(T.trim())}
+		each_cluster = sqrt_ch.output.splitText().map{T->file(T.trim())}
 
 		merge0_ch = MERGE_BCFS0(meta,each_cluster)
 		version_ch = version_ch.mix(merge0_ch.version)

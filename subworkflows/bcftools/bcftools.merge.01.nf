@@ -39,7 +39,7 @@ main:
 	version_ch = Channel.empty()
 	d1_ch = SQRT_FILE(meta, vcfs)
 
-	d2_ch = d1_ch.clusters.splitText().map{it.trim()}
+	d2_ch = d1_ch.output.splitText().map{it.trim()}
 	
 	if(bed.name.equals("NO_FILE")) {
 		vcf2bed_ch = VCF_TO_BED(meta,vcfs)

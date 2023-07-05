@@ -23,18 +23,21 @@ SOFTWARE.
 
 */
 
-include {isBlank;moduleLoad;isHg38;isHg19} from '../utils/functions.nf'
+include {isBlank;moduleLoad} from '../utils/functions.nf'
 
 process DOWNLOAD_DGV_01 {
+tag "${genomeId}"
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 output:
        	path("dgv.bed.gz"),emit:bed
        	path("dgv.bed.gz.tbi"),emit:index
         path("version.xml"),emit:version
 script:
-	def url=isHg19(reference)?"http://dgv.tcag.ca/dgv/docs/GRCh37_hg19_variants_2020-02-25.txt":(isHg38(reference)?"http://dgv.tcag.ca/dgv/docs/GRCh38_hg38_variants_2020-02-25.txt":"")
+	def genome = params.genomes[genomeId]
+	def reference = genome.fasta
+	def url= genome.dgv_url
 	def whatis ="DGV (Database of Genomic Variants) as BED file from ${url}"
 if(!isBlank(url))
 """

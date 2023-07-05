@@ -46,77 +46,74 @@ gazoduc.make("maxCnvLength",250_000_000).
         put()
 
 
-include {SAMTOOLS_SAMPLES01} from '../../modules/samtools/samtools.samples.01.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
-include {moduleLoad;isBlank;isHg38;isHg19} from '../../modules/utils/functions.nf'
+include {SAMTOOLS_SAMPLES02} from '..//samtools/samtools.samples.02.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
+include {moduleLoad;isBlank} from '../../modules/utils/functions.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
-include {DOWNLOAD_GNOMAD_SV_01} from '../gnomad/download.gnomad.sv.01.nf'
+include {DOWNLOAD_GNOMAD_SV_01} from '../gnomad/download_gnomad_sv.01.nf'
 include {DOWNLOAD_DGV_01} from '../../modules/dgv/download.dgv.01.nf'
-include {DOWNLOAD_GFF3_01} from '../../modules/gff3/download.gff3.01.nf'
 
 workflow CNV_PLOTTER_01 {
 	take:
-		meta	
-		reference
+		genomeId
 		vcf
 		bams
 		excludeids
 	main:
+		if(!params.containsKey("max_cases")) throw new IllegalArgumentException("params.max_cases missing");
+		if(!params.containsKey("max_controls")) throw new IllegalArgumentException("params.max_controls missing");
 		version_ch = Channel.empty()
 
-		ch1_ch = SAMTOOLS_SAMPLES01([:],reference,bams)
+		ch1_ch = SAMTOOLS_SAMPLES02([allow_multiple_references:false,with_header:false,allow_duplicate_samples:false],genomeId,bams)
 		version_ch = version_ch.mix(ch1_ch.version)
 
 
 		merge_ch = Channel.empty()
-		gnomad_ch = DOWNLOAD_GNOMAD_SV_01(meta,reference)
+		gnomad_ch = DOWNLOAD_GNOMAD_SV_01([:],genomeId)
 		version_ch = version_ch.mix(gnomad_ch.version)
 		merge_ch = merge_ch.mix(gnomad_ch.bed)
 
-		dgv_ch = DOWNLOAD_DGV_01(meta,reference)
+		dgv_ch = DOWNLOAD_DGV_01([:], genomeId)
 		version_ch = version_ch.mix(dgv_ch.version)
 		merge_ch = merge_ch.mix(dgv_ch.bed)
 
-		known_ch = MERGE_KNOWN(meta,merge_ch.collect())
+		known_ch = MERGE_KNOWN([:],merge_ch.collect())
 		version_ch = version_ch.mix(known_ch.version)
 
-		gff3_ch = DOWNLOAD_GFF3_01(meta.plus(with_tabix:"true"),reference)
-		version_ch = version_ch.mix(gff3_ch.version)
-
-		compile_ch = COMPILE_VCF_PARSER(meta,reference)
+		compile_ch = COMPILE_VCF_PARSER([:],genomeId)
 		version_ch = version_ch.mix(compile_ch.version)
 		
-		splitctx_ch = SPLIT_VARIANTS(meta,vcf,excludeids, compile_ch.jar)		
+		splitctx_ch = SPLIT_VARIANTS([:],vcf,excludeids, compile_ch.jar)		
 		version_ch = version_ch.mix(splitctx_ch.version)
 
 		ch2_ch = splitctx_ch.output.splitCsv(header:true,sep:'\t').
 			combine(ch1_ch.output).
 			map{T->T[0].plus([
 				"bams":T[1],
-				"max_cases":(meta.max_cases?:1000000),
-				"max_controls":(meta.max_controls?:10)
+				"max_cases":(params.max_cases?:1000000),
+				"max_controls":(params.max_controls?:10)
 				])}
 
 		ch3_ch = ch2_ch.filter{T->!T.svtype.equals("INV")}
 		ch4_ch = ch2_ch.filter{T->T.svtype.equals("INV")}
 	
-		plot_ch = PLOT_CNV(meta, reference, known_ch.bed, gff3_ch.gff3 , ch3_ch)
+		plot_ch = PLOT_CNV([:], genomeId, known_ch.bed , ch3_ch)
 		version_ch = version_ch.mix(plot_ch.version)
 
 
-		plotinv_ch = PLOT_INV(meta, reference, known_ch.bed, gff3_ch.gff3 , ch4_ch)
+		plotinv_ch = PLOT_INV([:], genomeId, known_ch.bed, ch4_ch)
 		version_ch = version_ch.mix(plotinv_ch.version)
 
 
 		all_html = plot_ch.output.concat(plotinv_ch.output).collect()
 
-		merge_ch = MERGE_PLOTS(meta,splitctx_ch.output,all_html)
+		merge_ch = MERGE_PLOTS([:],splitctx_ch.output,all_html)
 		version_ch = version_ch.mix(merge_ch.version)
 
-		gifch = MAKEGIF(meta,all_html)
+		gifch = MAKEGIF([:],all_html)
 		version_ch = version_ch.mix(gifch.version)
 
-		version_ch = MERGE_VERSION(meta, "CNVPlot", "CNV Plotter", version_ch.collect())
+		version_ch = MERGE_VERSION("CNVPlot",version_ch.collect())
 	emit:
 		version = version_ch
 		zip = merge_ch.zip
@@ -128,12 +125,13 @@ executor "local"
 afterScript "rm -rf TMP"
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 output:
 	path("minikit.jar"),emit:jar
 	path("version.xml"),emit:version
-
 script:
+	def genome = params.genomes[genomeId]
+	def reference = genome.fasta
 """
 ${moduleLoad("jvarkit")}
 
@@ -395,7 +393,7 @@ Main-Class: Minikit
 EOF
 
 
-javac -cp \${JVARKIT_DIST}/coverageplotter.jar -d TMP -sourcepath TMP TMP/Minikit.java
+javac -cp \${JVARKIT_DIST}/jvarkit.jar -d TMP -sourcepath TMP TMP/Minikit.java
 jar cfm minikit.jar TMP/tmp.mf -C TMP .
 
 ###############################################################################
@@ -469,7 +467,7 @@ set -o pipefail
 
 bcftools view "${vcf}" |\
 	${isBlank(extra_filter)?"":"${extra_filter} |"} \
-	java -cp  \${JVARKIT_DIST}/coverageplotter.jar:${minikit} Minikit --vcf "${vcf}" \
+	java -cp  \${JVARKIT_DIST}/jvarkit.jar:${minikit} Minikit --vcf "${vcf}" \
 		${excludeids.name.equals("NO_FILE")?"":"--excludeids \"${excludeids}\""} > "${meta.prefix?:""}variants.tsv"
 
 
@@ -491,14 +489,16 @@ afterScript "rm -rf TMP"
 memory "10g"
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	val(known)
-	val(gff3)
 	val(row)
 output:
 	path("${row.prefix}out.html"),emit:output
 	path("version.xml"),emit:version
 script:
+	def genome = params.genomes[genomeId]
+	def fasta = genoe.fasta
+	def gff3 = genome.gff3
 	def num_cases = row.max_cases?:1000000
 	def num_controls = row.max_controls?:10
 	def extend = row.extend?:"5.0"
@@ -548,7 +548,7 @@ EOF
 
 awk -F '\t' -v C=blue -f TMP/jeter.awk TMP/controls.txt >> TMP/style.css
 
-java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/coverageplotter.jar \
+java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar coverageplotter \
 	-R "${reference}" \
 	--mapq "${mapq}" \
 	--known '${known}' --ignore-known-containing \
@@ -608,14 +608,16 @@ afterScript "rm -rf TMP"
 memory "3g"
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	val(known)
-	val(gff3)
 	val(row)
 output:
 	path("${row.prefix}out.html"),emit:output
 	path("version.xml"),emit:version
 script:
+	def genome = params.genomes[genomeId]
+	def reference = genome.fasta
+	def gff3 = genome.gff3
 	def mapq = row.mapq?:30
 	def colon = row.interval.indexOf(":")
 	def hyphen = row.interval.indexOf("-",colon+1)

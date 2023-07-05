@@ -24,37 +24,30 @@ SOFTWARE.
 */
 include {moduleLoad} from '../../modules/utils/functions.nf'
 
-for(String key : ["concat_bed","contig","interval"] ) {
-if(!params.containsKey(key)) throw new IllegalArgumentException("params."+key+" missing:"+params.keySet())
-}
-
 
 process BCFTOOL_CONCAT_FILE_LIST_01 {
 tag "${vcfs.name}"
 cpus 1
 input:
+	val(meta)
         path(vcfs)
+	path(bed) // or NO_FILE
 output:
-        path("concatenated.bcf"),emit:vcf
-        path("concatenated.bcf.csi"),emit:index
+        path("${params.prefix?:""}concatenated.bcf"),emit:vcf
+        path("${params.prefix?:""}concatenated.bcf.csi"),emit:index
 	path("version.xml"),emit:version
 script:
-	def bed = meta.concat_bed?:""
-	def contig = meta.concat_contig?:""
-	def interval = meta.concat_interval?:contig
-	
-	optR= (bed.isEmpty()?(interval.isEmpty()?"":" --regions \""+interval+"\""):" --regions-file \""+bed+"\"")
 """
 
 	hostname 1>&2
 	${moduleLoad("bcftools")}
 
-	bcftools concat --threads ${task.cpus} ${optR} \
+	bcftools concat --threads ${task.cpus} ${bed.name.equals("NO_FILE")?"":"--regions-file \"${bed}\""} \
 		--no-version --allow-overlaps --remove-duplicates \
-		-O b -o "concatenated.bcf" --file-list "${vcfs}"
+		-O b -o "${params.prefix?:""}concatenated.bcf" --file-list "${vcfs}"
 
 
-	bcftools index --threads ${task.cpus}  "concatenated.bcf"
+	bcftools index --threads ${task.cpus}  "${params.prefix?:""}concatenated.bcf"
 
 	##################################################################################
 	cat <<- EOF > version.xml
@@ -63,8 +56,6 @@ script:
 		<entry key="description">concat vcf(s) using bcftools</entry>
 		<entry key="vcfs">${vcfs}</entry>
 		<entry key="count(vcfs)">\$(wc -l < ${vcfs})</entry>
-		<entry key="bed">${bed}</entry>
-		<entry key="interval">${contig}</entry>
 		<entry key="bcftools">\$( bcftools --version-only)</entry>
 	</properties>
 	EOF

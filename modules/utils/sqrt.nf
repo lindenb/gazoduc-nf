@@ -24,21 +24,24 @@ SOFTWARE.
 */
 include { getKeyValue; getClassTaxonomy } from './functions.nf'
 
+/** break a file into set of SQRT(count-lines(file)) files */
 process SQRT_FILE {
+tag "${filein.name}"
 executor "local"
-tag "${filein} is a ${getClassTaxonomy(filein)}"
 input:
       	val(meta)
-        val(filein)
+        path(filein)
 output:
-        path("clusters${meta.suffix?:".list"}"),emit:clusters
+        path("clusters${meta.suffix?:".list"}"),emit:output
 	path("version.xml"),emit:version
 script:
-	def suffix = getKeyValue(meta,"suffix",".list") 
-       	def min_file_split = getKeyValue(meta,"min_file_split","-1")
+	if(!meta.containsKey("suffix")) throw new IllegalArgumentException("suffix missing");
+	if(!meta.containsKey("min_file_split")) throw new IllegalArgumentException("min_file_split missing");
+	def suffix = meta.suffix?:".list"
+       	def min_file_split = meta.min_file_split?:-1
         """
         SQRT=`awk 'END{X=NR;if(${min_file_split} > 0 && X <= ${min_file_split}){print(X);} else {z=sqrt(X); print (z==int(z)?z:int(z)+1);}}' "${filein}"`
-	mkdir OUT
+	mkdir -p OUT
         split -a 9 --additional-suffix=${suffix} --lines=\${SQRT} "${filein}" OUT/chunck.
 
       	find \${PWD}/OUT -type f -name "chunck.*${suffix}" > clusters.list
@@ -58,13 +61,5 @@ script:
 	</properties>
 	EOF
         """
-
-	stub:
-	"""
-	touch chunck.list
-	echo "\${PWD}/chunck.list" > clusters.list
-
-	echo "<properties>" > version.xml
-	"""
 	}
 

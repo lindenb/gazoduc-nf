@@ -78,7 +78,7 @@ workflow SMOOVE_SV_POPULATION_01 {
 		sqrt_ch = SQRT_FILE(meta.plus(["min_file_split":100]), to_file_ch.output)
 		version_ch= version_ch.mix(sqrt_ch.version)
 
-		each_cluster = sqrt_ch.clusters.splitCsv(header: false,sep:',',strip:true).map{T->T[0]}
+		each_cluster = sqrt_ch.output.splitCsv(header: false,sep:',',strip:true).map{T->T[0]}
 		
 		paste01_ch = PASTE01(meta, reference, img_ch.smoove_img, each_cluster)
 		version_ch= version_ch.mix(paste01_ch.version)

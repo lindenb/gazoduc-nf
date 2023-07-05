@@ -24,22 +24,26 @@ SOFTWARE.
 */
 
 
-for(String s : ["allow_multiple_references","with_header","allow_duplicate_samples"]) {
-if(!params.containsKey(s)) throw new IllegalArgumentException("params."+s+" undefined");
-}
 
-include {SQRT_FILE} from '../../modules/utils/sqrt.02.nf' addParams(min_file_split:100)
+include {SQRT_FILE} from '../../modules/utils/sqrt.nf'
 include {assertFileExists;isBlank;moduleLoad;parseBoolean} from '../../modules/utils/functions.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {ALL_REFERENCES} from '../../modules/reference/all.references.01.nf'
 
-workflow SAMTOOLS_SAMPLES {
+workflow SAMTOOLS_SAMPLES02 {
 	take:
+		meta
+		genomeId /* or empty string */
 		bams
 	main:
+
+		for(String s : ["allow_multiple_references","with_header","allow_duplicate_samples"]) {
+			if(!meta.containsKey(s)) throw new IllegalArgumentException("meta."+s+" undefined");
+			}
+
 		version_ch = Channel.empty()
 		
-		sqrt_ch = SQRT_FILE(bams)
+		sqrt_ch = SQRT_FILE([min_file_split:100, suffix:".list"],bams)
 		version_ch = version_ch.mix(sqrt_ch.version)
 
 		all_refs_ch = ALL_REFERENCES()
@@ -50,7 +54,7 @@ workflow SAMTOOLS_SAMPLES {
 		sn_ch = ST_SAMPLE(all_refs_ch.output,chunk_ch)
 		version_ch = version_ch.mix(sn_ch.version)
 	
-		digest_ch = DIGEST(sn_ch.output.collect())
+		digest_ch = DIGEST(meta, genomeId, sn_ch.output.collect())
 		version_ch = version_ch.mix(digest_ch.version)
 
 		version_ch = MERGE_VERSION("samtools samples", version_ch.collect())		
@@ -95,16 +99,21 @@ process DIGEST {
 executor "local"
 tag "N=${L.size()}"
 input:
+	val(meta)
+	val(gemomeId)
 	val(L)
 output:
 	path("sample2bam.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
+	def fasta = isBlank(genomeId) || genomeId.equals(".") ? "" : params.genomes[genomeId].fasta
+	def allow_multiple_references = (meta.allow_multiple_references as boolean)
 """
 hostname 1>&2
 set -o pipefail
 
 cat ${L.join( " ") } |\
+	${allow_multiple_references || isBlank(fasta)?"":" awk -F '\t' '(\$3 == "${fasta}")' |"} \
 	sort -T . -t '\t' -k1,1  |\
 	uniq |\
 	awk -F '\t' 'function uniq(S) {P=S;i=1; while(P in U) {i++;P=sprintf("%s.%d",S,i);} U[P]++; return P;} {printf("%s\t%s\t%s\t%s\\n",\$1,uniq(\$1),\$2,\$3);}' > jeter.tsv
@@ -118,13 +127,13 @@ awk -F '\t' '(\$4==".")' jeter.tsv > jeter.txt
 test ! -s jeter.txt
 
 # no dup samples
-if  ${parseBoolean(params.allow_duplicate_samples)?"false":"true"}  ; then
+if  ${!parseBoolean(meta.allow_duplicate_samples)}  ; then
 	cut -f 1 jeter.tsv | sort -T . | uniq -d > jeter.txt
 	test ! -s jeter.txt
 fi
 
 # no mulitple refs
-if  ${parseBoolean(params.allow_multiple_references)?"false":"true"}  ; then
+if  ${!allow_multiple_references}  ; then
 	test `cut -f 4 jeter.tsv | sort -T . | uniq  | wc -l ` == 1
 fi
 
@@ -136,7 +145,7 @@ test ! -s jeter.txt
 awk -F '\t'  '(\$1!=\$2)' jeter.tsv > duplicate.names.txt
 
 
-if  ${parseBoolean(params.with_header)} ; then
+if  ${parseBoolean(meta.with_header)} ; then
 	echo "sample\tnew_sample\tbam\treference" > sample2bam.tsv
 fi
 

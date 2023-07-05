@@ -191,11 +191,11 @@ workflow BURDEN_CODING {
 		version_ch = version_ch.mix(per_gene_ch.version)
 
 
-		concat_ch = CONCAT_FILES_01([:], per_gene_ch.output.collect())
+		concat_ch = CONCAT_FILES_01([suffix:".list",concat_n_files:50,downstream_cmd:""], per_gene_ch.output.collect())
 		version_ch = version_ch.mix(concat_ch.version)
 
 
-		digest_ch = RVTESTS_POST_PROCESS([:],genomeId, "title" ,concat_ch.output)
+		digest_ch = RVTESTS_POST_PROCESS([:],genomeId, "${params.prefix?:""}BurdenCoding" ,concat_ch.output)
                 version_ch = version_ch.mix(digest_ch.version)
 		to_zip = to_zip.mix(digest_ch.zip)
 

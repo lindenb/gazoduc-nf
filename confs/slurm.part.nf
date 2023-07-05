@@ -1,3 +1,4 @@
+// --exclude=bigmem001
 process {
 executor="slurm"
 clusterOptions = "--partition=Bird "

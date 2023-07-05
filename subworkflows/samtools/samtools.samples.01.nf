@@ -43,7 +43,7 @@ workflow SAMTOOLS_SAMPLES_01 {
 			)
 		version_ch = version_ch.mix(sqrt_ch.version)
 
-		chunk_ch = sqrt_ch.clusters.splitText().map{it.trim()}
+		chunk_ch = sqrt_ch.output.splitText().map{it.trim()}
 
 		sn_ch = ST_SAMPLE(meta,reference,references,chunk_ch)
 		version_ch = version_ch.mix(sn_ch.version)

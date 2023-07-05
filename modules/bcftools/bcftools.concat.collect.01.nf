@@ -32,27 +32,23 @@ process BCFTOOL_CONCAT_COLLECT_01 {
 tag "N=${L.size()}"
 cpus 1
 input:
+	val(meta)
         val(L)
+	path(bed)
 output:
         path("concatenated.bcf"),emit:vcf
         path("concatenated.bcf.csi"),emit:index
 	path("version.xml"),emit:version
 script:
-	def bed = params.concat_bed?:""
-	def contig = params.concat_contig?:""
-	def interval = params.concat_interval?:contig
-	
-	optR= (bed.isEmpty()?(interval.isEmpty()?"":" --regions \""+interval+"\""):" --regions-file \""+bed+"\"")
-
 """
-	hostname 1>&2
-	${moduleLoad("bcftools")}
+hostname 1>&2
+${moduleLoad("bcftools")}
 
 cat << EOF > jeter.list
 ${L.join("\n")}
 EOF
 
-	bcftools concat --threads ${task.cpus} ${optR} \
+	bcftools concat --threads ${task.cpus} ${bed.name.equals("NO_FILE")?"":"--regions-file \"${bed}\""} \
 		--no-version --allow-overlaps --remove-duplicates \
 		-O b -o "concatenated.bcf" --file-list jeter.list
 

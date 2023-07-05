@@ -24,7 +24,7 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults()
 
 gazoduc.make("vcf","NO_FILE").
 	description("path to an indexed VCF or BCF file").
@@ -67,8 +67,8 @@ else
 
 
 workflow {
-	ch1 = CNV_PLOTTER_01(params,params.reference, params.vcf , params.bams, file(params.excludeids))
-	html = VERSION_TO_HTML(params,ch1.version)
+	ch1 = CNV_PLOTTER_01(params.genomeId, params.vcf , params.bams, file(params.excludeids))
+	html = VERSION_TO_HTML(ch1.version)
 	PUBLISH(ch1.version,html.html,ch1.zip)
 	}
 
