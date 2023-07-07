@@ -45,8 +45,7 @@ import java.util.stream.Collectors;
 public class Gazoduc {
 
 	private static final Logger LOG = Logger.getLogger(Gazoduc.class.getSimpleName());
-	private static final String PARAM_GENOMES ="genomesFile";
-	private static final String PARAM_GENOME ="genomeId";
+	private static final String PARAM_GENOMEID ="genomeId";
 	private static final String PARAM_REFERENCE="reference";
 	private static final String MAIN_MENU="Main options";
 	private static final String DEFAULT_VALUE= "value";
@@ -68,7 +67,6 @@ public class Gazoduc {
 	private static Gazoduc INSTANCE = null;
 	private final Map<String,Object> params;
 	private final List<Parameter> parameters = new Vector<>();
-	private Genomes genomes = null;
 	
 	/**
 	 * 
@@ -533,16 +531,9 @@ public class Gazoduc {
 	 * put the parameters PARAM_GENOMES and PARAM_GENOME in the context.
 	 * @return this
 	 */
-	public Gazoduc putGenomes() {
-		make(PARAM_GENOMES,false).
-			desc("Path to a XML file describing all the available genomes on your server. See doc").
-			menu("Genomes").
-			existingFile().
-			required().
-			put();
-		
-		make(PARAM_GENOME,false).
-			desc( "The main genome used. This is the genome id in the XML file (see option --"+ PARAM_GENOMES+")").
+	public Gazoduc putGenomeId() {
+		make(PARAM_GENOMEID,false).
+			desc( "The main genome used. This is the genome id in the genoes config file <gazoduc-dir>/confs/genomes.config.)").
 			menu("Genomes").
 			notEmpty().
 			required().
@@ -574,13 +565,6 @@ public class Gazoduc {
 	 */
 	public Gazoduc putReference() {
 		reference().put();
-		return this;
-		}
-
-    public Gazoduc putGnomad() {
-		make("gnomad_exome_hg19","/LAB-DATA/BiRD/resources/species/human/broadinstitute.org/gnomad/release-181127/2.1/vcf/exomes/gnomad.exomes.r2.1.sites.vcf.gz").desc("gnomad exome path for hg19").menu("Gnomad").put();
-        make("gnomad_genome_hg19","/LAB-DATA/BiRD/resources/species/human/broadinstitute.org/gnomad/release-181127/2.1/vcf/genomes/gnomad.genomes.r2.1.sites.vcf.gz").desc("gnomad genome path for hg19").menu("Gnomad").put();
-        make("gnomad_genome_hg38","/LAB-DATA/BiRD/resources/species/human/broadinstitute.org/gnomad/3.0/gnomad.genomes.r3.0.sites.vcf.gz").desc("gnomad genome path for hg38").menu("Gnomad").put();
 		return this;
 		}
 
@@ -762,33 +746,10 @@ public class Gazoduc {
 			}
 		for(String key : getParams().keySet()) {
 			if( this.findParameterByName(key).isPresent() ) continue;
+			if( getParams().ge(key) instanceof java.util.Map) continue;
+			if( getParams().ge(key) instanceof java.util.Array) continue;
 			System.err.println("key \"--"+key+"\" was defined in params but was not declared ["+yellow("WARNING")+"].");
 			}
-		if(getParams().containsKey(PARAM_GENOMES)) {
-			try {
-				@SuppressWarnings("unused")
-				final Genomes genomes  = this.getGenomes();
-				 if(getParams().containsKey(PARAM_GENOME)) {
-					try {
-						if(!this.getGenome().validate()) {
-							is_valid = false;
-							}
-						}
-					 catch(final Throwable err2) {
-                            System.err.println("Cannot load genome ["+red("ERROR")+"]." + err2.getMessage());
-    		                is_valid = false;
-                    		}
-					}
-				}
-			catch(Throwable err) {
-				System.err.println("Cannot load XML file for genomes ["+red("ERROR")+"]." + err.getMessage());
-				is_valid = false;
-				}
-			}
-		else if(getParams().containsKey(PARAM_GENOME)) {
-			System.err.println("--"+PARAM_GENOME+" is defined but not --"+PARAM_GENOMES+" ["+yellow("WARNING")+"].");
-			}
-
 
 		if(!is_valid) {
 			throw new IllegalArgumentException("Validation of parameters failed");

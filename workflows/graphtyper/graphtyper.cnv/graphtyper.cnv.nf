@@ -124,7 +124,7 @@ workflow GRAPHTYPER_CNV_01 {
 		x3_ch = COLLECT_TO_FILE_01([:],x2_ch.output.map{T->T[1]}.collect())
 		version_ch = version_ch.mix(x3_ch.version)
 
-		x4_ch = BCFTOOLS_CONCAT_01(x3_ch.output)
+		x4_ch = BCFTOOLS_CONCAT_01([:],x3_ch.output,file("NO_FILE"))
 		version_ch = version_ch.mix(x4_ch.version)
 
 		version_ch = MERGE_VERSION("graptyper",version_ch.collect())
