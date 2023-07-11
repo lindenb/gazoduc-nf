@@ -34,7 +34,7 @@ output:
 	path("version.xml"),emit:version
 script:
 	def version = params.shapeit.version
-	def url = "https://github.com/odelaneau/shapeit5/releases/download/v${version}/ligate_static"
+	def url = "https://github.com/odelaneau/shapeit5/releases/download/v${version}"
 """
 for S in ligate_static phase_common_static phase_rare_static
 do

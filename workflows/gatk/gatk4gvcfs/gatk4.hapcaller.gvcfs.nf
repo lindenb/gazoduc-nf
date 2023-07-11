@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults()
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putGenomeId()
 
 
 gazoduc.make("bams","NO_FILE").
@@ -97,16 +97,16 @@ workflow  {
 		beds_ch = Channel.fromPath(params.beds)
 	}
 
-	vcfs_ch = GATK4_HAPCALLER_GVCFS_01(file(params.bams), beds_ch, file(params.pedigree))
+	vcfs_ch = GATK4_HAPCALLER_GVCFS_01([:], params.genomeId, file(params.bams), beds_ch, file(params.pedigree))
 	version_ch = version_ch.mix(vcfs_ch.version)
 
 	file_list_ch = COLLECT2FILE1([:],vcfs_ch.region_vcf.map{T->T[1]}.collect())
-	concat_ch = BCFTOOLS_CONCAT_01([:],file_list_ch.output)
+	concat_ch = BCFTOOLS_CONCAT_01([:],file_list_ch.output, file("NO_FILE") )
 	version_ch = version_ch.mix(concat_ch.version)
 
 	version2_ch = MERGE_VERSION("Calling gatk", version_ch.collect())
 
-	html_ch = VERSION_TO_HTML(params,version2_ch.version)
+	html_ch = VERSION_TO_HTML(version2_ch.version)
 
 	PUBLISH(params,concat_ch.vcf,html_ch.html,version2_ch.version)
 	}

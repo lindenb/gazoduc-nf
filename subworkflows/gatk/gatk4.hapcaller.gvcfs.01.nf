@@ -31,11 +31,6 @@ gazoduc.make("parallel_combine_gvcf",false).
         put()
 
 
-gazoduc.make("use_whole_block",false).
-        description("Do NOT use jvarkit/findgvcfsblocks but use the whole interval. Useful when the BED is a set of small exons (WES).").
-	setBoolean().
-        put()
-
 
 gazoduc.make("blocksize","1mb").
         description("argument for jvarkit/findgvcfsblocks block-size").
@@ -45,23 +40,18 @@ gazoduc.make("mergesize","100").
         description("argument for jvarkit/findgvcfsblocks merge-size").
         put()
 
-gazoduc.make("extraHC","").
-        description("extra arguments for haplotype caller").
-        put()
 
 
 include {parseBoolean;isBlank;moduleLoad;getVersionCmd} from './../../modules/utils/functions.nf'
 include {gatkGetArgumentsForCombineGVCFs;gatkGetArgumentsForGenotypeGVCF} from './gatk.hc.utils.nf'
-include {SAMTOOLS_SAMPLES} from '../samtools/samtools.samples.02.nf' addParams(
-		with_header : true,
-		allow_duplicate_samples : true,
-		allow_multiple_references:true
-		)
+include {SAMTOOLS_SAMPLES02} from '../samtools/samtools.samples.02.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {GATK_PARALLEL_COMBINE_GVCFS} from './gatk.parallel.combine.gvcfs.01.nf'
 
 workflow GATK4_HAPCALLER_GVCFS_01 {
         take:
+		meta
+		genomeId
                 bams
                 beds
 		pedigree
@@ -69,7 +59,11 @@ workflow GATK4_HAPCALLER_GVCFS_01 {
                 version_ch = Channel.empty()
 
 
-		samples_bams_ch = SAMTOOLS_SAMPLES(bams)
+		samples_bams_ch = SAMTOOLS_SAMPLES02(
+			[allow_multiple_references:true, with_header:true, allow_duplicate_samples:true],
+			genomeId,
+			bams
+			)
 		version_ch = version_ch.mix(samples_bams_ch.version)
 
 
@@ -83,7 +77,7 @@ workflow GATK4_HAPCALLER_GVCFS_01 {
 			"sample":T[1].sample,
 			"bam":T[1].bam,
 			"new_sample":T[1].new_sample,
-			"reference": params.genomes[params.genomeId].fasta,
+			"reference": params.genomes[genomeId].fasta,
 			"dbsnp": params.genomes[params.genomeId].dbsnp,
 			"extraHC": params.extraHC,
 			"pedigree": (pedigree.name.equals("NO_FILE")?"":pedigree.toRealPath()),
