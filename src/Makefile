@@ -8,10 +8,15 @@ endif
 	mkdir -p $(dir $@)
 	javadoc -notimestamp -d $(dir $@) -sourcepath main/java gazoduc
 
-../lib/gazoduc.jar : $(addsuffix .java,$(addprefix ./main/java/gazoduc/,Gazoduc Genome SAMSequenceDictionary Genomes SAMSequenceRecord))
+../lib/gazoduc.jar : $(addsuffix .java,$(addprefix ./main/java/gazoduc/,Gazoduc SAMSequenceDictionary SAMSequenceRecord config/NFConfigParser)) 
 	mkdir -p $(dir $@)
 	rm -rf TMP
 	mkdir TMP
-	$(JAVAC) -d TMP -sourcepath main/java $<
+	$(JAVAC) -d TMP -sourcepath main/java $< main/java/gazoduc/config/NFConfigParser.java
 	jar cvf $@ -C TMP .
 	rm -rf TMP
+
+main/java/gazoduc/config/NFConfigParser.java : ./main/jj/ConfigParser.jj
+	mkdir -p $(dir $@)
+	java  -cp /LAB-DATA/BiRD/users/lindenbaum-p/packages/javacc/javacc.jar javacc -OUTPUT_DIRECTORY:$(dir $@) -JDK_VERSION:1.8 $<
+	
