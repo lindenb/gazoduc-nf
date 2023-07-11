@@ -34,8 +34,8 @@ include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
  */
 workflow JVARKIT_GATK_HARD_FILTERING_01 {
 	take:
-		meta
-		row /* contains vcf  interval */
+		meta /* contains: percentile */
+		row /* contains: vcf  interval */
 	main:
 		if(!meta.containsKey("percentile")) throw new IllegalArgumentException("percentile undefined");
 		if((meta.percentile as double) <= 0 ) throw new IllegalArgumentException("meta.percentil <= 0");

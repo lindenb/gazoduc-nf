@@ -47,7 +47,7 @@ workflow JVARKIT_VCF_TO_INTERVALS_01 {
 		if(!meta.containsKey("min_distance")) throw new RuntimeException("meta.min_distance missing")
 	
 		version_ch = Channel.empty()
-		bed_ch = VCF_TO_BED([with_header:meta.with_header],vcf)
+		bed_ch = VCF_TO_BED([with_header:false],vcf)
 		version_ch = version_ch.mix(bed_ch.version)
 	
 		bed2ch = INTERSECT_BED(bed_ch.bed, bed)

@@ -528,7 +528,7 @@ public class Gazoduc {
 		return this.parameters.stream().filter(P->P.hasKey(key) ).findFirst();
 		}
 	/**
-	 * put the parameters PARAM_GENOMES and PARAM_GENOME in the context.
+	 * put the parameters PARAM_GENOMEID in the context.
 	 * @return this
 	 */
 	public Gazoduc putGenomeId() {
@@ -746,8 +746,8 @@ public class Gazoduc {
 			}
 		for(String key : getParams().keySet()) {
 			if( this.findParameterByName(key).isPresent() ) continue;
-			if( getParams().ge(key) instanceof java.util.Map) continue;
-			if( getParams().ge(key) instanceof java.util.Array) continue;
+			if( getParams().get(key) instanceof java.util.Map) continue;
+			if( getParams().get(key) instanceof java.util.List) continue;
 			System.err.println("key \"--"+key+"\" was defined in params but was not declared ["+yellow("WARNING")+"].");
 			}
 
@@ -756,39 +756,7 @@ public class Gazoduc {
 			}
 		}
 
-	/**
-	 * if <code>PARAM_GENOMES</code> has been defined as a {@link Parameter}, it returns the current {@link Genomes} object.
-	 * @return the instance of Genomes
-	 * @throws IllegalArgumentException if the <code>PARAM_GENOMES</code> was not defined or the XML file was not found.
-	 */
-	public synchronized Genomes getGenomes() {
-		if(this.genomes == null) {
-			if(!findParameterByName(PARAM_GENOMES).isPresent()) {
-				throw new IllegalArgumentException("Asking for genomes but --"+PARAM_GENOMES+" was not defined");
-				}
-			final String filename = getParams().getOrDefault(PARAM_GENOMES, "NO_FILE").toString();
-			try {
-				this.genomes = Genomes.load(filename);
-			} catch (final Exception e) {
-				LOG.log(Level.SEVERE,"Cannot load genomes from "+ filename, e);
-				throw new RuntimeException("Cannot load genomes --"+PARAM_GENOMES+"="+filename, e);
-				}
-			}
-		return this.genomes;
-		}
 	
-	public Genome getGenome() {
-		final Genomes genomes = getGenomes();
-		Optional<Parameter> opt= findParameterByName(PARAM_GENOME);
-		if(opt.isPresent()) {
-			return genomes.getById(getParams().getOrDefault(PARAM_GENOME,"").toString());
-			}
-		 opt= findParameterByName(PARAM_REFERENCE);
-		 if(opt.isPresent()) {
-			return genomes.getByReference(getParams().getOrDefault(PARAM_REFERENCE,"").toString());
-			}
-		throw new RuntimeException("Cannot load current genome. No parameter  --"+PARAM_GENOME +" or --"+PARAM_REFERENCE+" is defined.");
-		}
 	
 	private static String pen(final int pen,final String s) {
 		final String ANSI_ESCAPE = "\u001B[";

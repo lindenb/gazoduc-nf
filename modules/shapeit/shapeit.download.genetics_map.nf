@@ -38,7 +38,7 @@ script:
 	def url = genome.shapeit_genetic_map
 """
 hostname 1>&2
-test !-z "${url}"
+test ! -z "${url}"
 
 wget -O jeter.tar.gz "${url}"
 tar xvfz jeter.tar.gz

@@ -1,0 +1,289 @@
+options {
+STATIC=false;
+}
+
+
+PARSER_BEGIN(NFConfigParser)
+
+package gazoduc.config;
+import java.util.*;
+import java.io.*;
+import java.nio.file.*;
+import javax.xml.*;
+import javax.xml.stream.*;
+
+
+public class NFConfigParser {
+private static abstract class Param {
+	Token doc=null;
+	void print(XMLStreamWriter out,int depth,String title) throws XMLStreamException{
+		out.writeStartElement("dt");
+		out.writeCharacters(title);
+		
+		if(doc!=null) {
+			String c="";
+			Token t = doc;
+			while(t!=null) {
+				c+=t.image;
+				t=t.next;
+				}
+			if(c.startsWith("/*")) {
+				c=c.substring(1);
+				while(c.startsWith("*")) c=c.substring(1);
+				}
+			while(c.endsWith("*/")) {
+				c=c.substring(0,c.length()-1);
+				while(c.endsWith("*"))c=c.substring(0,c.length()-1);
+				}
+			c=c.trim();
+			if(!c.isEmpty()) {
+				out.writeCharacters(" ");
+				out.writeStartElement("q");
+				out.writeCharacters(c);
+				out.writeEndElement();//qiote
+				}
+			}
+		else
+			{
+			}
+		
+		out.writeEndElement();//dt
+		}
+	}
+
+private static class ObjectParam extends Param {
+	Map<String,Param> map = new LinkedHashMap<>();
+	@Override
+	public String toString() {
+		return comment(doc) +" "+map.toString();
+		}
+	@Override 
+	void print(XMLStreamWriter out,int depth,String title) throws XMLStreamException {
+		
+		super.print(out,depth,title);
+		out.writeStartElement("dd");
+		out.writeStartElement("dl");
+		for(final String k: keySet()) {
+			if(map.get(k)==null) {
+				System.err.println("NULLL?? "+k);
+				continue;
+				}
+			map.get(k).print(out,depth+1,k);
+			}
+		out.writeEndElement();//dl
+		out.writeEndElement();//dd
+		}
+		
+	Set<String> keySet() { return map.keySet();}
+	
+	void put(String t,Param p) {
+		if(p instanceof ValueParam) {
+			this.map.put(t,p);
+			}
+		else
+			{
+			ObjectParam x = (ObjectParam)this.map.get(t);
+			if(x==null) {
+				x=new ObjectParam();
+				this.map.put(t,x);
+				}
+			
+			final ObjectParam o  = ObjectParam.class.cast(p);
+			for(final String t2:o.keySet()) {
+				x.put(t2,o.map.get(t2));
+				}
+			}
+		}
+	
+	}
+
+private static class ValueParam extends Param {
+	final String value;
+	ValueParam(final String s) {
+		this.value = s;
+		}
+	@Override
+	public String toString() {
+		return value;
+		}
+	@Override  void print(XMLStreamWriter out,int depth,String title) throws XMLStreamException {
+		super.print(out,depth,title);
+		out.writeStartElement("dd");
+		out.writeStartElement("pre");
+		out.writeCharacters(title+" = "+ value);
+		out.writeEndElement();
+		out.writeEndElement();
+		}
+	}
+
+private Path path;
+private ObjectParam params;
+NFConfigParser(final ObjectParam params, final Path path) throws IOException {
+	this(Files.newInputStream(path));
+	System.err.println("parsing "+path);
+	this.params= params;
+	this.path = path;
+	}
+static String unescape(final String s) {
+	if(s.startsWith("'") && s.endsWith("'")) return s.substring(1,s.length()-1);
+	if(s.startsWith("\"") && s.endsWith("\"")) return s.substring(1,s.length()-1);
+	return s;
+	}
+
+
+private static String comment(Token t) {
+	List<String> L= new ArrayList<>();
+	while(t!=null) {
+		L.add(t.image);
+		t=t.next;
+		}
+	return String.join(" ",L);
+	}
+
+public static void main(final String[] args) {
+	try {
+		final ObjectParam root=new ObjectParam();
+		for(final String f: args) {
+			System.err.println(f);
+				final NFConfigParser p = new NFConfigParser(root,Paths.get(f));
+			p.input();
+			System.err.println(f+"="+root);
+			}
+
+		
+		if(root!=null) {
+			final XMLOutputFactory xof = XMLOutputFactory.newFactory();
+		 	final XMLStreamWriter w = xof.createXMLStreamWriter(System.out,"UTF-8");
+			w.writeStartElement("html");
+			w.writeStartElement("head");
+			w.writeStartElement("style");
+			w.writeCharacters("pre {background:lightgray;}\n");
+			w.writeCharacters("dt {color:blue;font-style: bold;}\n");
+			w.writeCharacters("q {color:blue;font-style: italic; color:black;}\n");
+			w.writeEndElement();
+			w.writeEndElement();
+			w.writeStartElement("body");
+			w.writeStartElement("dl");
+			root.print(w,0,"params");
+			w.writeEndElement();
+			w.writeEndElement();
+			w.writeEndElement();
+			w.close();
+			}
+		} catch(Throwable err) {
+		err.printStackTrace();
+		System.exit(-1);		
+		}
+	}
+}
+
+PARSER_END(NFConfigParser)
+
+SKIP :
+{
+" "
+| "\t"
+| "\n"
+| "\r"
+}
+
+SPECIAL_TOKEN : {
+< COMMENT : "/*" (~["*"])* "*" ("*" | (~["*","/"] (~["*"])* "*"))* "/">
+}
+
+
+
+
+TOKEN : /* LITERALS */
+{
+  <SINGLE_QUOTE_LITERAL: "\'" (~["\'"]|"\\" ~[])*"\'" >
+| <DOUBLE_QUOTE_LITERAL: "\"" (~["\""]|"\\" ~[])*"\"" >
+| <OBRACKET:"{">
+| <CBRACKET:"}">
+| <DOT:".">
+| <EQ:"=">
+| <#DIGIT: ["0"-"9"] >
+| <INT: <DIGIT> (<DIGIT>)*>
+| <#SIGN: ["-","+"]>
+| <#EXPONENT: ("E"|"e") (<SIGN>)? (<DIGIT>)+ >
+| <DOUBLE: (<SIGN>)? (<DIGIT>)* "." (<DIGIT>)* (<EXPONENT>)?>
+| <BOOLEAN: ("true"|"false")>
+| <#LETTER: ["_","a"-"z","A"-"Z"] >
+| <INCLUDE_CONFIG: "includeConfig">
+| <IDENTIFIER: <LETTER> (<LETTER>|<DIGIT>)* >
+}
+
+public void input():{}
+    {
+    (any())*<EOF> {
+    	System.err.println("DONE "+path+" "+this.params.keySet());
+    	}
+    }
+
+private void any(): {Map.Entry<String,ObjectParam> h;}
+	{
+	h=map() {
+		System.err.println("XXXXXXX adding "+h+" to params");
+		for(final String k: h.getValue().keySet()) {
+			this.params.put(k,h.getValue().map.get(k));
+		}
+		}|includeConfig()
+	}
+
+private void includeConfig(): {String f;}
+	{
+	<INCLUDE_CONFIG> f=string() {
+		Path p = this.path.getParent().resolve(f);
+		try {
+			final NFConfigParser c = new NFConfigParser(this.params,p);
+			c.input();
+			System.err.println("done "+p+" "+this.params+" ############### "+c.params);
+			}
+		catch(IOException err) {
+			err.printStackTrace();
+			System.exit(-1);
+			}
+		}
+	}
+
+private Map.Entry<String,ObjectParam> map(): {String title;Token t;Param v;final ObjectParam h=new ObjectParam();Map.Entry<String,ObjectParam> h2=null;List<String> chain = new ArrayList<>();} 
+	{
+	t=<IDENTIFIER> {title=t.image;h.doc = t.specialToken; } 
+		 <OBRACKET> 
+			(
+			LOOKAHEAD(2) h2=map() {
+				h.put(h2.getKey(),h2.getValue());
+				}
+			
+			| t=<IDENTIFIER>  <EQ> v=value() {
+					v.doc = t.specialToken;
+					h.put(t.image,v);
+					}
+			)*
+		
+		
+		<CBRACKET>  {	return new AbstractMap.SimpleEntry<String,ObjectParam>(title,h); }
+	}
+
+
+private Param value():{String s; Token t; ObjectParam m;} {
+	(
+	s=string() { return new ValueParam(s);}
+	| t=<BOOLEAN> { return new ValueParam(t.image);}
+	| t=<INT> { return new ValueParam(t.image);}
+	| t=<DOUBLE> { return new ValueParam(t.image);}
+	| t= <IDENTIFIER> (<DOT> <IDENTIFIER>)* { return new ValueParam("${"+t.image+"}");}
+	)
+	}
+private String string() : {Token t;}
+	{
+	(
+	t=<SINGLE_QUOTE_LITERAL> { return unescape(t.image);}
+	| t=<DOUBLE_QUOTE_LITERAL> { return unescape(t.image);}
+	)
+	}
+
+
+
+
+

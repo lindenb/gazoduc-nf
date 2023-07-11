@@ -17,7 +17,7 @@
     catch(err) {
     }
 //-->
-var methods = {"i0":10,"i1":10,"i2":10,"i3":10,"i4":10,"i5":9,"i6":9,"i7":10,"i8":10,"i9":10,"i10":10,"i11":10,"i12":10,"i13":10,"i14":10,"i15":10,"i16":10,"i17":10,"i18":10};
+var methods = {"i0":10,"i1":10,"i2":10,"i3":9,"i4":9,"i5":10,"i6":10,"i7":10,"i8":10,"i9":10,"i10":10,"i11":10,"i12":10,"i13":10,"i14":10,"i15":10};
 var tabs = {65535:["t0","All Methods"],1:["t1","Static Methods"],2:["t2","Instance Methods"],8:["t4","Concrete Methods"]};
 var altColor = "altColor";
 var rowColor = "rowColor";
@@ -108,6 +108,11 @@ var activeTableTab = "activeTableTab";
 <br>
 <pre>public class <span class="typeNameLabel">Gazoduc</span>
 extends java.lang.Object</pre>
+<div class="block">Gazoduc : a helper object for nextflow.
+ Get the singleton instance <b>before including any sub-nextflow file</b> the following way:
+ <pre>
+ def gazoduc = gazoduc.Gazoduc.getInstance(params);
+ </pre></div>
 </li>
 </ul>
 </div>
@@ -134,7 +139,9 @@ extends java.lang.Object</pre>
 </tr>
 <tr class="rowColor">
 <td class="colFirst"><code>class&nbsp;</code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.UsageBuilder.html" title="class in gazoduc">Gazoduc.UsageBuilder</a></span></code>&nbsp;</td>
+<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.UsageBuilder.html" title="class in gazoduc">Gazoduc.UsageBuilder</a></span></code>
+<div class="block">Utility to create the usage for this instance of Gazoduc</div>
+</td>
 </tr>
 </table>
 </li>
@@ -153,39 +160,45 @@ extends java.lang.Object</pre>
 </tr>
 <tr class="altColor">
 <td class="colFirst"><code>static java.lang.String</code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#ANSI_ESCAPE">ANSI_ESCAPE</a></span></code>&nbsp;</td>
+<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#DESC_BAM_OR_CRAM_LIST">DESC_BAM_OR_CRAM_LIST</a></span></code>
+<div class="block">describe what is a list of BAMS</div>
+</td>
 </tr>
 <tr class="rowColor">
 <td class="colFirst"><code>static java.lang.String</code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#ANSI_RESET">ANSI_RESET</a></span></code>&nbsp;</td>
+<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#DESC_INDEXED_BAM">DESC_INDEXED_BAM</a></span></code>
+<div class="block">describe what is an indexed BAM</div>
+</td>
 </tr>
 <tr class="altColor">
 <td class="colFirst"><code>static java.lang.String</code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#DESC_BAM_OR_CRAM_LIST">DESC_BAM_OR_CRAM_LIST</a></span></code>&nbsp;</td>
+<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#DESC_INDEXED_FASTA">DESC_INDEXED_FASTA</a></span></code>
+<div class="block">describe what is an indexed FASTA</div>
+</td>
 </tr>
 <tr class="rowColor">
 <td class="colFirst"><code>static java.lang.String</code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#DESC_INDEXED_BAM">DESC_INDEXED_BAM</a></span></code>&nbsp;</td>
+<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#DESC_INDEXED_VCF">DESC_INDEXED_VCF</a></span></code>
+<div class="block">describe what is an indexed VCF</div>
+</td>
 </tr>
 <tr class="altColor">
 <td class="colFirst"><code>static java.lang.String</code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#DESC_INDEXED_FASTA">DESC_INDEXED_FASTA</a></span></code>&nbsp;</td>
+<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#DESC_JVARKIT_PEDIGREE">DESC_JVARKIT_PEDIGREE</a></span></code>
+<div class="block">describe what is a pedigree in jvarkit</div>
+</td>
 </tr>
 <tr class="rowColor">
 <td class="colFirst"><code>static java.lang.String</code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#DESC_INDEXED_VCF">DESC_INDEXED_VCF</a></span></code>&nbsp;</td>
+<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#DESC_VCF_LIST">DESC_VCF_LIST</a></span></code>
+<div class="block">describe what is a list of VCFs</div>
+</td>
 </tr>
 <tr class="altColor">
 <td class="colFirst"><code>static java.lang.String</code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#DESC_JVARKIT_PEDIGREE">DESC_JVARKIT_PEDIGREE</a></span></code>&nbsp;</td>
-</tr>
-<tr class="rowColor">
-<td class="colFirst"><code>static java.lang.String</code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#DESC_VCF_LIST">DESC_VCF_LIST</a></span></code>&nbsp;</td>
-</tr>
-<tr class="altColor">
-<td class="colFirst"><code>static java.lang.String</code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#DESC_VCF_OR_VCF_LIST">DESC_VCF_OR_VCF_LIST</a></span></code>&nbsp;</td>
+<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#DESC_VCF_OR_VCF_LIST">DESC_VCF_OR_VCF_LIST</a></span></code>
+<div class="block">describe what is a list of VCFs or BCFs</div>
+</td>
 </tr>
 </table>
 </li>
@@ -222,84 +235,80 @@ extends java.lang.Object</pre>
 </td>
 </tr>
 <tr id="i3" class="rowColor">
-<td class="colFirst"><code><a href="../gazoduc/Genome.html" title="class in gazoduc">Genome</a></code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#getGenome--">getGenome</a></span>()</code>&nbsp;</td>
+<td class="colFirst"><code>static <a href="../gazoduc/Gazoduc.html" title="class in gazoduc">Gazoduc</a></code></td>
+<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#getInstance--">getInstance</a></span>()</code>&nbsp;</td>
 </tr>
 <tr id="i4" class="altColor">
-<td class="colFirst"><code><a href="../gazoduc/Genomes.html" title="class in gazoduc">Genomes</a></code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#getGenomes--">getGenomes</a></span>()</code>&nbsp;</td>
-</tr>
-<tr id="i5" class="rowColor">
 <td class="colFirst"><code>static <a href="../gazoduc/Gazoduc.html" title="class in gazoduc">Gazoduc</a></code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#getInstance--">getInstance</a></span>()</code>
-<div class="block">return current singleton instance</div>
+<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#getInstance-java.util.Map-">getInstance</a></span>(java.util.Map&lt;java.lang.String,java.lang.Object&gt;&nbsp;params)</code>
+<div class="block">create the current singleton instance of Gazoduc or return the current if it was already defined.</div>
 </td>
 </tr>
-<tr id="i6" class="altColor">
-<td class="colFirst"><code>static <a href="../gazoduc/Gazoduc.html" title="class in gazoduc">Gazoduc</a></code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#getInstance-java.util.Map-">getInstance</a></span>(java.util.Map&lt;java.lang.String,java.lang.Object&gt;&nbsp;params)</code>&nbsp;</td>
-</tr>
-<tr id="i7" class="rowColor">
+<tr id="i5" class="rowColor">
 <td class="colFirst"><code><a href="../gazoduc/Gazoduc.Parameter.html" title="class in gazoduc">Gazoduc.Parameter</a></code></td>
 <td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#make-java.lang.String-">make</a></span>(java.lang.String&nbsp;key)</code>
 <div class="block">alias of make with null value</div>
 </td>
 </tr>
-<tr id="i8" class="altColor">
+<tr id="i6" class="altColor">
 <td class="colFirst"><code><a href="../gazoduc/Gazoduc.Parameter.html" title="class in gazoduc">Gazoduc.Parameter</a></code></td>
 <td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#make-java.lang.String-java.lang.Object-">make</a></span>(java.lang.String&nbsp;key,
-    java.lang.Object&nbsp;value)</code>&nbsp;</td>
+    java.lang.Object&nbsp;value)</code>
+<div class="block">creates a new entry for a Parameter but don't insert it in the  <code>params</code> object.</div>
+</td>
 </tr>
-<tr id="i9" class="rowColor">
+<tr id="i7" class="rowColor">
 <td class="colFirst"><code><a href="../gazoduc/Gazoduc.Parameter.html" title="class in gazoduc">Gazoduc.Parameter</a></code></td>
 <td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#param-java.lang.String-">param</a></span>(java.lang.String&nbsp;key)</code>
 <div class="block">alias of make</div>
 </td>
 </tr>
-<tr id="i10" class="altColor">
+<tr id="i8" class="altColor">
 <td class="colFirst"><code><a href="../gazoduc/Gazoduc.Parameter.html" title="class in gazoduc">Gazoduc.Parameter</a></code></td>
 <td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#param-java.lang.String-java.lang.Object-">param</a></span>(java.lang.String&nbsp;key,
      java.lang.Object&nbsp;value)</code>
-<div class="block">creates a new entry for a Parameter but don't insert it in the  <code>params</code> object.</div>
+<div class="block">alias of make</div>
 </td>
 </tr>
-<tr id="i11" class="rowColor">
+<tr id="i9" class="rowColor">
 <td class="colFirst"><code><a href="../gazoduc/Gazoduc.html" title="class in gazoduc">Gazoduc</a></code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#putCondaEnv--">putCondaEnv</a></span>()</code>&nbsp;</td>
+<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#putCondaEnv--">putCondaEnv</a></span>()</code>
+<div class="block">Specific to my lab.</div>
+</td>
 </tr>
-<tr id="i12" class="altColor">
+<tr id="i10" class="altColor">
 <td class="colFirst"><code><a href="../gazoduc/Gazoduc.html" title="class in gazoduc">Gazoduc</a></code></td>
 <td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#putDefaults--">putDefaults</a></span>()</code>
 <div class="block">put the default parameters in the context.</div>
 </td>
 </tr>
-<tr id="i13" class="rowColor">
+<tr id="i11" class="rowColor">
 <td class="colFirst"><code><a href="../gazoduc/Gazoduc.html" title="class in gazoduc">Gazoduc</a></code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#putGenomes--">putGenomes</a></span>()</code>&nbsp;</td>
+<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#putGenomeId--">putGenomeId</a></span>()</code>
+<div class="block">put the parameters PARAM_GENOMEID in the context.</div>
+</td>
 </tr>
-<tr id="i14" class="altColor">
-<td class="colFirst"><code><a href="../gazoduc/Gazoduc.html" title="class in gazoduc">Gazoduc</a></code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#putGnomad--">putGnomad</a></span>()</code>&nbsp;</td>
-</tr>
-<tr id="i15" class="rowColor">
+<tr id="i12" class="altColor">
 <td class="colFirst"><code><a href="../gazoduc/Gazoduc.html" title="class in gazoduc">Gazoduc</a></code></td>
 <td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#putReference--">putReference</a></span>()</code>
 <div class="block">put the default parameter  <code>--reference</code> in the context</div>
 </td>
 </tr>
-<tr id="i16" class="altColor">
+<tr id="i13" class="rowColor">
 <td class="colFirst"><code><a href="../gazoduc/Gazoduc.Parameter.html" title="class in gazoduc">Gazoduc.Parameter</a></code></td>
 <td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#reference--">reference</a></span>()</code>
 <div class="block">creates a parameter for <code>--reference</code> but doesn't put in the context</div>
 </td>
 </tr>
-<tr id="i17" class="rowColor">
+<tr id="i14" class="altColor">
 <td class="colFirst"><code><a href="../gazoduc/Gazoduc.UsageBuilder.html" title="class in gazoduc">Gazoduc.UsageBuilder</a></code></td>
 <td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#usage--">usage</a></span>()</code>&nbsp;</td>
 </tr>
-<tr id="i18" class="altColor">
+<tr id="i15" class="rowColor">
 <td class="colFirst"><code>void</code></td>
-<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#validate--">validate</a></span>()</code>&nbsp;</td>
+<td class="colLast"><code><span class="memberNameLink"><a href="../gazoduc/Gazoduc.html#validate--">validate</a></span>()</code>
+<div class="block">call validate for each <a href="../gazoduc/Gazoduc.Parameter.html" title="class in gazoduc"><code>Gazoduc.Parameter</code></a>.</div>
+</td>
 </tr>
 </table>
 <ul class="blockList">
@@ -323,32 +332,6 @@ extends java.lang.Object</pre>
 <!--   -->
 </a>
 <h3>Field Detail</h3>
-<a name="ANSI_ESCAPE">
-<!--   -->
-</a>
-<ul class="blockList">
-<li class="blockList">
-<h4>ANSI_ESCAPE</h4>
-<pre>public static final&nbsp;java.lang.String ANSI_ESCAPE</pre>
-<dl>
-<dt><span class="seeLabel">See Also:</span></dt>
-<dd><a href="../constant-values.html#gazoduc.Gazoduc.ANSI_ESCAPE">Constant Field Values</a></dd>
-</dl>
-</li>
-</ul>
-<a name="ANSI_RESET">
-<!--   -->
-</a>
-<ul class="blockList">
-<li class="blockList">
-<h4>ANSI_RESET</h4>
-<pre>public static final&nbsp;java.lang.String ANSI_RESET</pre>
-<dl>
-<dt><span class="seeLabel">See Also:</span></dt>
-<dd><a href="../constant-values.html#gazoduc.Gazoduc.ANSI_RESET">Constant Field Values</a></dd>
-</dl>
-</li>
-</ul>
 <a name="DESC_INDEXED_FASTA">
 <!--   -->
 </a>
@@ -356,6 +339,7 @@ extends java.lang.Object</pre>
 <li class="blockList">
 <h4>DESC_INDEXED_FASTA</h4>
 <pre>public static final&nbsp;java.lang.String DESC_INDEXED_FASTA</pre>
+<div class="block">describe what is an indexed FASTA</div>
 <dl>
 <dt><span class="seeLabel">See Also:</span></dt>
 <dd><a href="../constant-values.html#gazoduc.Gazoduc.DESC_INDEXED_FASTA">Constant Field Values</a></dd>
@@ -369,6 +353,7 @@ extends java.lang.Object</pre>
 <li class="blockList">
 <h4>DESC_INDEXED_BAM</h4>
 <pre>public static final&nbsp;java.lang.String DESC_INDEXED_BAM</pre>
+<div class="block">describe what is an indexed BAM</div>
 <dl>
 <dt><span class="seeLabel">See Also:</span></dt>
 <dd><a href="../constant-values.html#gazoduc.Gazoduc.DESC_INDEXED_BAM">Constant Field Values</a></dd>
@@ -382,6 +367,7 @@ extends java.lang.Object</pre>
 <li class="blockList">
 <h4>DESC_INDEXED_VCF</h4>
 <pre>public static final&nbsp;java.lang.String DESC_INDEXED_VCF</pre>
+<div class="block">describe what is an indexed VCF</div>
 <dl>
 <dt><span class="seeLabel">See Also:</span></dt>
 <dd><a href="../constant-values.html#gazoduc.Gazoduc.DESC_INDEXED_VCF">Constant Field Values</a></dd>
@@ -395,6 +381,7 @@ extends java.lang.Object</pre>
 <li class="blockList">
 <h4>DESC_VCF_OR_VCF_LIST</h4>
 <pre>public static final&nbsp;java.lang.String DESC_VCF_OR_VCF_LIST</pre>
+<div class="block">describe what is a list of VCFs or BCFs</div>
 <dl>
 <dt><span class="seeLabel">See Also:</span></dt>
 <dd><a href="../constant-values.html#gazoduc.Gazoduc.DESC_VCF_OR_VCF_LIST">Constant Field Values</a></dd>
@@ -408,6 +395,7 @@ extends java.lang.Object</pre>
 <li class="blockList">
 <h4>DESC_VCF_LIST</h4>
 <pre>public static final&nbsp;java.lang.String DESC_VCF_LIST</pre>
+<div class="block">describe what is a list of VCFs</div>
 <dl>
 <dt><span class="seeLabel">See Also:</span></dt>
 <dd><a href="../constant-values.html#gazoduc.Gazoduc.DESC_VCF_LIST">Constant Field Values</a></dd>
@@ -421,6 +409,7 @@ extends java.lang.Object</pre>
 <li class="blockList">
 <h4>DESC_BAM_OR_CRAM_LIST</h4>
 <pre>public static final&nbsp;java.lang.String DESC_BAM_OR_CRAM_LIST</pre>
+<div class="block">describe what is a list of BAMS</div>
 <dl>
 <dt><span class="seeLabel">See Also:</span></dt>
 <dd><a href="../constant-values.html#gazoduc.Gazoduc.DESC_BAM_OR_CRAM_LIST">Constant Field Values</a></dd>
@@ -434,6 +423,7 @@ extends java.lang.Object</pre>
 <li class="blockList">
 <h4>DESC_JVARKIT_PEDIGREE</h4>
 <pre>public static final&nbsp;java.lang.String DESC_JVARKIT_PEDIGREE</pre>
+<div class="block">describe what is a pedigree in jvarkit</div>
 <dl>
 <dt><span class="seeLabel">See Also:</span></dt>
 <dd><a href="../constant-values.html#gazoduc.Gazoduc.DESC_JVARKIT_PEDIGREE">Constant Field Values</a></dd>
@@ -456,6 +446,14 @@ extends java.lang.Object</pre>
 <h4>make</h4>
 <pre>public&nbsp;<a href="../gazoduc/Gazoduc.Parameter.html" title="class in gazoduc">Gazoduc.Parameter</a>&nbsp;make(java.lang.String&nbsp;key,
                               java.lang.Object&nbsp;value)</pre>
+<div class="block">creates a new entry for a Parameter but don't insert it in the  <code>params</code> object.</div>
+<dl>
+<dt><span class="paramLabel">Parameters:</span></dt>
+<dd><code>key</code> - name for this parameter</dd>
+<dd><code>value</code> - value for this parameter</dd>
+<dt><span class="returnLabel">Returns:</span></dt>
+<dd>the new parameter</dd>
+</dl>
 </li>
 </ul>
 <a name="build-java.lang.String-java.lang.Object-">
@@ -467,6 +465,10 @@ extends java.lang.Object</pre>
 <pre>public final&nbsp;<a href="../gazoduc/Gazoduc.Parameter.html" title="class in gazoduc">Gazoduc.Parameter</a>&nbsp;build(java.lang.String&nbsp;key,
                                      java.lang.Object&nbsp;value)</pre>
 <div class="block">alias of make</div>
+<dl>
+<dt><span class="returnLabel">Returns:</span></dt>
+<dd>the new parameter</dd>
+</dl>
 </li>
 </ul>
 <a name="param-java.lang.String-java.lang.Object-">
@@ -477,11 +479,8 @@ extends java.lang.Object</pre>
 <h4>param</h4>
 <pre>public final&nbsp;<a href="../gazoduc/Gazoduc.Parameter.html" title="class in gazoduc">Gazoduc.Parameter</a>&nbsp;param(java.lang.String&nbsp;key,
                                      java.lang.Object&nbsp;value)</pre>
-<div class="block">creates a new entry for a Parameter but don't insert it in the  <code>params</code> object.</div>
+<div class="block">alias of make</div>
 <dl>
-<dt><span class="paramLabel">Parameters:</span></dt>
-<dd><code>key</code> - name for this parameter</dd>
-<dd><code>value</code> - value for this parameter</dd>
 <dt><span class="returnLabel">Returns:</span></dt>
 <dd>the new parameter</dd>
 </dl>
@@ -545,13 +544,18 @@ extends java.lang.Object</pre>
 </dl>
 </li>
 </ul>
-<a name="putGenomes--">
+<a name="putGenomeId--">
 <!--   -->
 </a>
 <ul class="blockList">
 <li class="blockList">
-<h4>putGenomes</h4>
-<pre>public&nbsp;<a href="../gazoduc/Gazoduc.html" title="class in gazoduc">Gazoduc</a>&nbsp;putGenomes()</pre>
+<h4>putGenomeId</h4>
+<pre>public&nbsp;<a href="../gazoduc/Gazoduc.html" title="class in gazoduc">Gazoduc</a>&nbsp;putGenomeId()</pre>
+<div class="block">put the parameters PARAM_GENOMEID in the context.</div>
+<dl>
+<dt><span class="returnLabel">Returns:</span></dt>
+<dd>this</dd>
+</dl>
 </li>
 </ul>
 <a name="putDefaults--">
@@ -582,15 +586,6 @@ extends java.lang.Object</pre>
 </dl>
 </li>
 </ul>
-<a name="putGnomad--">
-<!--   -->
-</a>
-<ul class="blockList">
-<li class="blockList">
-<h4>putGnomad</h4>
-<pre>public&nbsp;<a href="../gazoduc/Gazoduc.html" title="class in gazoduc">Gazoduc</a>&nbsp;putGnomad()</pre>
-</li>
-</ul>
 <a name="reference--">
 <!--   -->
 </a>
@@ -612,6 +607,11 @@ extends java.lang.Object</pre>
 <li class="blockList">
 <h4>putCondaEnv</h4>
 <pre>public&nbsp;<a href="../gazoduc/Gazoduc.html" title="class in gazoduc">Gazoduc</a>&nbsp;putCondaEnv()</pre>
+<div class="block">Specific to my lab. Conda env are defined using the env variable <code>CONDA_ENVS_PATH</code></div>
+<dl>
+<dt><span class="returnLabel">Returns:</span></dt>
+<dd>this</dd>
+</dl>
 </li>
 </ul>
 <a name="usage--">
@@ -621,6 +621,10 @@ extends java.lang.Object</pre>
 <li class="blockList">
 <h4>usage</h4>
 <pre>public&nbsp;<a href="../gazoduc/Gazoduc.UsageBuilder.html" title="class in gazoduc">Gazoduc.UsageBuilder</a>&nbsp;usage()</pre>
+<dl>
+<dt><span class="returnLabel">Returns:</span></dt>
+<dd>create a new <a href="../gazoduc/Gazoduc.UsageBuilder.html" title="class in gazoduc"><code>Gazoduc.UsageBuilder</code></a></dd>
+</dl>
 </li>
 </ul>
 <a name="validate--">
@@ -630,24 +634,11 @@ extends java.lang.Object</pre>
 <li class="blockList">
 <h4>validate</h4>
 <pre>public&nbsp;void&nbsp;validate()</pre>
-</li>
-</ul>
-<a name="getGenomes--">
-<!--   -->
-</a>
-<ul class="blockList">
-<li class="blockList">
-<h4>getGenomes</h4>
-<pre>public&nbsp;<a href="../gazoduc/Genomes.html" title="class in gazoduc">Genomes</a>&nbsp;getGenomes()</pre>
-</li>
-</ul>
-<a name="getGenome--">
-<!--   -->
-</a>
-<ul class="blockList">
-<li class="blockList">
-<h4>getGenome</h4>
-<pre>public&nbsp;<a href="../gazoduc/Genome.html" title="class in gazoduc">Genome</a>&nbsp;getGenome()</pre>
+<div class="block">call validate for each <a href="../gazoduc/Gazoduc.Parameter.html" title="class in gazoduc"><code>Gazoduc.Parameter</code></a>. Checks Genomes and Genome can be loaded.</div>
+<dl>
+<dt><span class="throwsLabel">Throws:</span></dt>
+<dd><code>java.lang.IllegalArgumentException</code> - is this instance cannot be validated.</dd>
+</dl>
 </li>
 </ul>
 <a name="getInstance-java.util.Map-">
@@ -657,6 +648,13 @@ extends java.lang.Object</pre>
 <li class="blockList">
 <h4>getInstance</h4>
 <pre>public static&nbsp;<a href="../gazoduc/Gazoduc.html" title="class in gazoduc">Gazoduc</a>&nbsp;getInstance(java.util.Map&lt;java.lang.String,java.lang.Object&gt;&nbsp;params)</pre>
+<div class="block">create the current singleton instance of Gazoduc or return the current if it was already defined.
+        This function <b>MUST</b> be called before including any other sub-nextflow file.
+        <pre>def gazoduc = gazoduc.Gazoduc.getInstance(params);</pre></div>
+<dl>
+<dt><span class="returnLabel">Returns:</span></dt>
+<dd>current singleton instance of Gazoduc</dd>
+</dl>
 </li>
 </ul>
 <a name="getInstance--">
@@ -666,7 +664,10 @@ extends java.lang.Object</pre>
 <li class="blockList">
 <h4>getInstance</h4>
 <pre>public static&nbsp;<a href="../gazoduc/Gazoduc.html" title="class in gazoduc">Gazoduc</a>&nbsp;getInstance()</pre>
-<div class="block">return current singleton instance</div>
+<dl>
+<dt><span class="returnLabel">Returns:</span></dt>
+<dd>current singleton instance previously generated with <code>getInstance(params)</code></dd>
+</dl>
 </li>
 </ul>
 </li>

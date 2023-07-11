@@ -93,7 +93,7 @@ script:
 	if(!(row.containsKey("bed") || row.containsKey("interval"))) throw new IllegalArgumentException("row.bed/interval is missing");
 	if(!row.containsKey("hard_filters")) throw new IllegalArgumentException("row.hard_filters is missing");
 	//
-	def vcf = row.vcf
+	def vcf = row.vcf.toString()
 	def jvarkitped = row.pedigree
 	def genome = params.genomes[genomeId]
 	def reference = genome.fasta	
@@ -194,7 +194,7 @@ echo "\${JAVA_HOME}"
 	fi
 
 	# blacklisted region overlapping #####################################################################"
-	bedtools intersect -a "TMP/contig.bed" -b "${blacklisted}" > TMP/jeter.blacklisted.bed
+	bedtools intersect -a "TMP/contig.bed" -b "${blacklisted}" -nonamecheck > TMP/jeter.blacklisted.bed
 	# prevent empty file
 	if [ ! -s TMP/jeter.blacklisted.bed ] ; then
 		tail -1 "${reference}.fai" | awk '{printf("%s\t0\t1\\n",\$1);}' > TMP/jeter.blacklisted.bed
@@ -208,7 +208,7 @@ echo "\${JAVA_HOME}"
 	
 	
 
-	# extract variants ######################################################################################
+	# extract variants  ######################################################################################
 	if ${vcf.endsWith(".list")} ; then
 		bcftools concat --file-list "${vcf}" --regions-file "TMP/contig.bed" -O u  --allow-overlaps --remove-duplicates -o TMP/jeter1.bcf
 	else
