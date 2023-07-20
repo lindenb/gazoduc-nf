@@ -38,10 +38,8 @@ output:
         path("${row.sample}.bqsr.bai"),emit:index
         path("version.xml"),emit:version
 script:
-	def ks = (row.recalibration_vcfs?:"").split("[, ]+").
-			findAll{T->!T.isEmpty()}.collect{V->" --known-sites "+V}.
-			join(" ")
-	def bed = (row.bed?"-L \"${row.bed}\"":"")
+	def genome = params.genomes[genomeId]
+        def reference =	genome.fasta
 """
 hostname 1>&2
 ${moduleLoad("gatk4")}

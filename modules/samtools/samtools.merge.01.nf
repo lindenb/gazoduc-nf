@@ -32,12 +32,14 @@ memory "5g"
 cpus 5
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	tuple val(sample),val(L)
 output:
 	tuple val(sample),path("${sample}.merged.bam"),emit:bam
 	path("version.xml"),emit:version
 script:
+	def genome = params.genomes[genomeId]
+        def reference =	genome.fasta
 	def with_index = parseBoolean(meta.with_index)
 	def contig = (meta.contig?" -R \"${meta.contig}\" ":"")
 	def interval = (meta.interval?" -R \"${meta.interval}\" ":"")
@@ -47,7 +49,7 @@ ${moduleLoad("samtools")}
 set -o pipefail
 mkdir TMP
 
-if [ "${L.size()}" -eq 1 ] ; then
+if ${L.size()==1} ; then
 	ln -s "${L[0]}" TMP/jeter.bam
 
 	if [ ! -z "${with_index?"Y":""}"  ] ; then

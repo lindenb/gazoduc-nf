@@ -121,7 +121,7 @@ workflow GRAPHTYPER_CNV_01 {
 			each_vcf
 			)
 		
-		x3_ch = COLLECT_TO_FILE_01([:],x2_ch.output.map{T->T[1]}.collect())
+		x3_ch = COLLECT_TO_FILE_01([:],x2_ch.output.collect())
 		version_ch = version_ch.mix(x3_ch.version)
 
 		x4_ch = BCFTOOLS_CONCAT_01([:],x3_ch.output,file("NO_FILE"))
@@ -146,6 +146,7 @@ input:
 	val(vcf)
 output:
 	path("genotyped.bcf"),emit:output
+	path("genotyped.bcf.csi"),emit:index
 	path("version.xml"),emit:version
 script:
 	def reference = params.genomes[params.genomeId].fasta
@@ -182,6 +183,11 @@ bcftools concat --file-list TMP/vcf.list \
 	bcftools sort -T TMP -O b -o "genotyped.bcf"
 
 bcftools index --threads ${task.cpus} "genotyped.bcf"
+
+sleep 10
+touch genotyped.bcf
+sleep 10
+touch genotyped.bcf.csi
 
 
 ##################

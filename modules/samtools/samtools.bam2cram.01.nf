@@ -31,13 +31,15 @@ afterScript "rm -rf TMP"
 cpus 5
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	tuple val(sample),val(bam)
 output:
 	tuple val(sample),path("${meta.prefix?:""}${sample}.cram"),emit:cram
 	path("${meta.prefix?:""}${sample}.cram.crai"),emit:index
 	path("version.xml"),emit:version
 script:
+	def genome = params.genomes[genomeId]
+        def reference =	genome.fasta
 """
 hostname 1>&2
 ${moduleLoad("samtools")}

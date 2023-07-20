@@ -36,7 +36,9 @@ output:
         tuple val(row),path("${row.sample}.recal.table"),emit:output
         path("version.xml"),emit:version
 script:
-	def ks0 = (row.recalibration_vcfs?:"").split("[, ]+").
+	def genome = params.genomes[row.genomeId]
+        def reference =	genome.fasta
+	def ks0 = (genome.bqsr_vcfs?:"").split("[, ]+").
 			findAll{T->!T.isEmpty()}.collect{V->" --known-sites "+V}.
 			join(" ")
 	def ks = isBlank(ks0) && !isBlank(meta.dbsnp) ? "--known-sites \"${meta.dbsnp}\"":ks0

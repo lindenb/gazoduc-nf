@@ -23,54 +23,43 @@ SOFTWARE.
 
 */
 
-def gazoduc = gazoduc.Gazoduc.getInstance()
-
-gazoduc.build("with_bqsr", true).
-	desc("run gatk BQSR on bam").
-	setBoolean().
-	menu("mapping").
-	put()
-
-gazoduc.build("bqsr_cluster_method","--size 50mb ").
-	desc("How to group contigs with jvarkit bedcluster for applying GATK BQSR").
-	menu("mapping").
-	notEmpty().
-	put()
-
-
 include {BWA_MEM_01} from '../../modules/bwa/bwa.mem.01.nf'
 include {SAMBAMBA_MARKDUP_01} from '../../modules/sambamba/sambamba.markdup.01.nf'
 include {SAMTOOLS_MERGE_01} from '../../modules/samtools/samtools.merge.01.nf'
 include {SAMTOOLS_BAM_TO_CRAM_01} from '../../modules/samtools/samtools.bam2cram.01.nf'
-include {MERGE_VERSION as MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {MERGE_VERSION as MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {GATK4_BASE_RECALIBRATOR_01} from '../../modules/gatk/gatk4.base.recalibration.01.nf'
 include {GATK4_GATHER_BQSR_01} from '../../modules/gatk/gatk4.gather.bqsr.01.nf'
 include {GATK4_APPLY_BQSR_01} from '../../modules/gatk/gatk4.apply.bqsr.01.nf'
 include {moduleLoad;isBlank;parseBoolean;getVersionCmd} from '../../modules/utils/functions.nf'
+include {SEQTK_SPLITFASTQ} from '../fastq/split.fastq.nf'
 
 workflow MAP_BWA_01 {
 	take:
 		meta
-		reference
+		genomeId
 		fastq_ch
 	main:
 		version_ch = Channel.empty()
 	
-		r1r2_ch= fastq_ch.map{T->T.plus([
-			"reference":reference
+		fastq_ch2 =  SEQTK_SPLITFASTQ([:], fastq_ch)
+		version_ch = version_ch.mix(fastq_ch2.version)
+
+		r1r2_ch= fastq_ch2.output.map{T->T.plus([
+			"genomeId":genomeId
 			])}
 	
-		bam1_ch = BWA_MEM_01(meta,r1r2_ch)
+		bam1_ch = BWA_MEM_01([:], r1r2_ch)
 		version_ch = version_ch.mix(bam1_ch.version)
 	
-		merge_ch = SAMTOOLS_MERGE_01(meta, reference, bam1_ch.bam.groupTuple())
+		merge_ch = SAMTOOLS_MERGE_01([:], genomeId, bam1_ch.bam.groupTuple())
 		version_ch = version_ch.mix(merge_ch.version)
 
-		markdup_ch = SAMBAMBA_MARKDUP_01(meta,merge_ch.bam)
+		markdup_ch = SAMBAMBA_MARKDUP_01([:],merge_ch.bam)
 		version_ch = version_ch.mix(markdup_ch.version)
 
 		if( parseBoolean(meta.with_bqsr) ) {
-			beds_ch = CONTIGS_IN_BAM(meta,reference,markdup_ch.bam)
+			beds_ch = CONTIGS_IN_BAM([:], genomeId, markdup_ch.bam)
 			version_ch = version_ch.mix(beds_ch.version)
 
 			brecal_ch = GATK4_BASE_RECALIBRATOR_01(meta, beds_ch.output.splitCsv(header:true,sep:'\t'))
@@ -88,16 +77,16 @@ workflow MAP_BWA_01 {
 				})
 			version_ch = version_ch.mix(applybqsr_ch.version)
 		
-			cram_ch = SAMTOOLS_BAM_TO_CRAM_01(meta,reference,applybqsr_ch.bam.map{T->[T[0].sample,T[1]]})
+			cram_ch = SAMTOOLS_BAM_TO_CRAM_01(meta,genomeId,applybqsr_ch.bam.map{T->[T[0].sample,T[1]]})
 			version_ch = version_ch.mix(cram_ch.version)
 			}
 		else
 			{
-			cram_ch = SAMTOOLS_BAM_TO_CRAM_01(meta,reference, markdup_ch.bam)
+			cram_ch = SAMTOOLS_BAM_TO_CRAM_01(meta, genomeId, markdup_ch.bam)
 			version_ch = version_ch.mix(cram_ch.version)		
 			}
 
-		version_ch = MERGE_VERSION(meta, "Remap", "Remap bam on another reference", version_ch.collect())
+		version_ch = MERGE_VERSION("bwa", version_ch.collect())
 	emit:
 		version= version_ch.version
 		bams = cram_ch.cram
@@ -108,13 +97,14 @@ tag "${sample} ${bam.name}"
 executor "local"
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	tuple val(sample),val(bam)
 output:
 	path("bam.contigs.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
-
+	def genome = params.genomes[genomeId]
+	def reference = genome.fasta
 """
 hostname 1>&2
 ${moduleLoad("samtools jvarkit")}
@@ -125,9 +115,9 @@ samtools idxstats "${bam}" |\
 	 awk -F '\t' '(\$3!=0 && \$1!="*") {printf("%s\t0\t%s\\n",\$1,\$2);}' |\
 	 java -jar \${JVARKIT_DIST}/bedcluster.jar --reference "${reference}" -o TMP  ${meta.bqsr_cluster_method?:""}
 	 
-	 echo -e 'sample\tbam\tbed\trecalibration_vcfs\treference' > bam.contigs.tsv
+	 echo -e 'sample\tbam\tbed\tgenomeId' > bam.contigs.tsv
 	 find \${PWD}/TMP -type f -name "*.bed" |\
-                awk -F '\t' '{printf("${sample}\\t${bam}\\t%s\\t${meta.recalibration_vcfs?:""}\\t${reference}\\n",\$0);}' >> bam.contigs.tsv
+                awk -F '\t' '{printf("${sample}\\t${bam}\\t%s\\t${genomeId}\\n",\$0);}' >> bam.contigs.tsv
 
 ###########################################################################################
 cat << EOF > version.xml

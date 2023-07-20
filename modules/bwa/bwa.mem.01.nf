@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 
-include {parseBoolean;isBlank;assertNotEmpty;getKeyValue;moduleLoad} from '../../modules/utils/functions.nf'
+include {parseBoolean;isBlank;moduleLoad} from '../../modules/utils/functions.nf'
 
 process BWA_MEM_01 {
 tag "${row.sample} ${row.R1} ${row.R2?:""}"
@@ -38,8 +38,12 @@ output:
 	path("${row.sample}.sorted.bam.bai"),emit:bai
 	path("version.xml"),emit:version
 script:
+	if(!row.containsKey("R1")) throw new IllegalArgumentException("R1 missing");
+	if(!row.containsKey("sample")) throw new IllegalArgumentException("sample missing");
+	if(!row.containsKey("genomeId")) throw new IllegalArgumentException("genomeId missing");
 	def sample = row.sample
-	def reference = row.reference
+	def genome = params.genomes[row.genomeId]
+	def reference = genome.fasta
 	def R1 = row.R1
 	def R2 = row.R2?:""
 	def is_interleaved = parseBoolean(row.interleaved?:"false")

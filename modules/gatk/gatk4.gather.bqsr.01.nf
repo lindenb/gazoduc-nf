@@ -41,7 +41,7 @@ script:
 hostname 1>&2
 ${moduleLoad("gatk4")}
 
-mkdir TMP
+mkdir -p TMP
 
 # allele specific annotation are not supported in non-gvcf mode
 gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" GatherBQSRReports \

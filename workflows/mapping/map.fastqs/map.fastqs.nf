@@ -24,66 +24,36 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-/** path to indexed fasta reference */
-params.reference = ""
-params.fastqs = -1
-params.bams = ""
-params.help = false
-params.publishDir = ""
-params.prefix = ""
-params.with_bqsr = true
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putGenomeId()
+
+gazoduc.build("fastqs", "NO_FILE").
+	desc("TSV file with the path to fastqs with the following header sample,R1,R2").
+	existingFile().
+	required().
+	put()
+
+
+
 
 include {MAP_BWA_01} from '../../../subworkflows/mapping/map.bwa.01.nf'
 include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
 include {runOnComplete} from '../../../modules/utils/functions.nf'
 
-def helpMessage() {
-  log.info"""
-## About
-
-map fastqs on a reference genome
-
-## Author
-
-Pierre Lindenbaum
-
-## Options
-
-  * --reference (fasta) The full path to the indexed fasta reference genome. It must be indexed with samtools faidx and with picard CreateSequenceDictionary or samtools dict. [REQUIRED]
-  * --fastqs (file) one file containing the paths to the BAM/CRAM. Header: 'sample(tab)R1(tab)R2' [REQUIRED]
-  * --publishDir (dir) Save output in this directory
-  * --prefix (string) files prefix. default: ""
-
-## Usage
-
-```
-nextflow -C ../../confs/cluster.cfg  run -resume map.fastqs.nf \\
-	--publishDir output \\
-	--prefix "analysis." \\
-	--reference /path/to/referenceX.fasta \\
-	--fastqs /path/to/input.tsv
-```
-
-## Workflow
-
-![workflow](./workflow.svg)
-  
-## See also
-
-"""
-}
-
 
 if( params.help ) {
-    helpMessage()
+    gazoduc.usage().
+	name("Map bwa").
+	desc("map fastqs on a reference genome").
+	print();
     exit 0
+} else {
+   gazoduc.validate();
 }
-
 
 workflow {
 	fastqs_ch = Channel.fromPath(params.fastqs).splitCsv(header:true,sep:'\t')
-	remap_ch = MAP_BWA_01(params,params.reference,fastqs_ch)
-	html = VERSION_TO_HTML(params,remap_ch.version)	
+	remap_ch = MAP_BWA_01([:], params.genomeId, fastqs_ch)
+	html = VERSION_TO_HTML(remap_ch.version)	
 	}
 
 
