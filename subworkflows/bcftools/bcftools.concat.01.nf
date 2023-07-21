@@ -34,7 +34,7 @@ workflow BCFTOOLS_CONCAT_01 {
 take:
 	meta
 	vcfs /* path containing the path to a set of indexed vcf files */
-	bed /* or no file */
+	bed /* or NO_FILE */
 main:
 	version_ch = Channel.empty()
 	d1_ch = SQRT_FILE(min_file_split:meta.min_file_split?:20, suffix:".list", vcfs)

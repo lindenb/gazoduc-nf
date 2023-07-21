@@ -24,7 +24,7 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
+def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putGenomeId()
 
 gazoduc.make("bams","NO_FILE").
         description("File containing the paths to the BAM/CRAMS files. One path per line").
@@ -41,14 +41,6 @@ gazoduc.make("mapq",-1).
 gazoduc.make("nbams",20).
         description("number of bams per HC").
         setInt().
-        put()
-
-gazoduc.make("references","").
-        description("other references").
-        put()
-
-gazoduc.make("dbsnp","").
-        description("path to dbsnp").
         put()
 
 gazoduc.make("pedigree","").
@@ -80,12 +72,12 @@ workflow {
 	publish_ch = Channel.empty()
 
 	gatk_ch= GATK4_HAPCALLER_DIRECT_01(
-			params,
-			params.reference,
+			[:],
+			params.genomeId,
 			params.bams,
 			file(params.beds)
 			)
-	html_ch = VERSION_TO_HTML(params,gatk_ch.version)
+	html_ch = VERSION_TO_HTML(gatk_ch.version)
 
 	publish_ch = publish_ch.mix(gatk_ch.version)
 	publish_ch = publish_ch.mix(html_ch.html)

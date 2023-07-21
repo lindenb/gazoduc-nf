@@ -25,7 +25,7 @@ SOFTWARE.
 include {moduleLoad} from './../utils/functions.nf'
 
 process GATK4_HAPCALLER_DIRECT {
-tag "bed:${file(row.bed).name} ref:${file(row.reference).name} bams:${file(row.bams).name}"
+tag "bed:${file(row.bed).name} ref:${row.genomeId} bams:${file(row.bams).name}"
 cache 'lenient'
 memory {task.attempt==1?'10G':'20G'}
 errorStrategy 'retry'
@@ -44,10 +44,11 @@ script:
 	def mapq = row.mapq?:"-1"
 	def pedigree = row.pedigree?:""
 	def bams = row.bams?:""
-	def reference = row.reference?:""
+	def genome = params.genomes[row.genomeId]
+	def reference = genome.fasta
 	def bams_reference = row.bams_reference?:reference
 	def bed = row.bed?:""
-	def dbsnp = row.dbsnp?:""
+	def dbsnp =  genome.dbsnp?:""
 """
 hostname 1>&2
 ${moduleLoad("gatk4 bcftools jvarkit")}

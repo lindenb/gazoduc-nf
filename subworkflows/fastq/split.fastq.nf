@@ -58,8 +58,8 @@ workflow SEQTK_SPLITFASTQ {
 
 process SEQTK_SPLIT {
 tag "${row.sample} ${row.R1} ${row.R2?:""}"
-afterScript "rm -rf TMP"
-cpus 4
+afterScript "rm -rf TMP OUT/fastq.tsv"
+// cpus 4 set in config file
 input:
 	val(meta)
 	val(row)
@@ -77,21 +77,26 @@ if(row.containsKey("R2") && !row.R2.isEmpty() && !row.R2.equals("."))
 """
 hostname 1>&2
 ${moduleLoad("seqkit")}
+set -o pipefail
 
 mkdir -p TMP
 
-seqkit split2 -O TMP --force -j ${task.cpus} ${seqtk} -1 ${row.R1} -2 ${row.R2}
+seqkit split2 -O TMP --force -j ${task.cpus} ${seqtk} -1 '${row.R1}' -2 '${row.R2}'
 mv -v TMP OUT
 
 
-find \${PWD}/OUT/ -type f -name "*.fq.gz" |\
-	awk -F '/' '{f=\$NF; N=split(f,a,/\\./);printf("%s\t%s\\n",a[N-2],\$0);}' |\
+find \${PWD}/OUT/ -type f -name "*q.gz" |\
+	awk -F '.' '{printf("%s\t%s\\n",\$(NF-2),\$0);}' |\
 	sort -T . -t '\t' -k1,1V |\
 	paste - - |\
 	cut -f 2,4 |\
-	awk -F '\t' 'BEGIN {printf("${COL}\tR1\tR2\\n");} {printf("${ROW}\t%s\\n",\$0);}' > fastq.tsv
+	awk -F '\t' '{printf("${ROW}\t%s\\n",\$0);}' > OUT/fastq.tsv
 
-test -s fastq.tsv
+test -s OUT/fastq.tsv
+
+echo "${COL}\tR1\tR2" > fastq.tsv
+cat OUT/fastq.tsv >> fastq.tsv
+
 
 
 ##################
@@ -113,6 +118,7 @@ else
 """
 hostname 1>&2
 ${moduleLoad("seqkit")}
+set -o pipefail
 
 mkdir -p TMP
 
@@ -120,12 +126,14 @@ seqkit split2 -O TMP --force -j ${task.cpus} ${seqtk} ${row.R1}
 mv -v TMP OUT
 
 
-find \${PWD}/OUT/ -type f -name "*.fq.gz" |\
+find \${PWD}/OUT/ -type f -name "*q.gz" |\
 	sort -T . |\
-	awk -F '\t' 'BEGIN {print("${COL}\tR1\\n");} {printf("${ROW}\t%s\\n",\$0);}' > fastq.tsv
+	awk  '{printf("${ROW}\t%s\\n",\$0);}' > OUT/fastq.tsv
 
-test -s fastq.tsv
+test -s OUT/fastq.tsv
 
+echo "${COL}\tR1" > fastq.tsv
+cat OUT/fastq.tsv >> fastq.tsv
 
 ##################
 cat << EOF > version.xml
