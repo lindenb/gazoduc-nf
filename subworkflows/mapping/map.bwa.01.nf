@@ -33,6 +33,7 @@ include {GATK4_GATHER_BQSR_01} from '../../modules/gatk/gatk4.gather.bqsr.01.nf'
 include {GATK4_APPLY_BQSR_01} from '../../modules/gatk/gatk4.apply.bqsr.01.nf'
 include {moduleLoad;isBlank;parseBoolean;getVersionCmd} from '../../modules/utils/functions.nf'
 include {SEQTK_SPLITFASTQ} from '../fastq/split.fastq.nf'
+include {ORA_TO_FASTQ}  from '../subworkflows/ora/ora2fastq.nf'
 
 workflow MAP_BWA_01 {
 	take:
@@ -41,8 +42,12 @@ workflow MAP_BWA_01 {
 		fastq_ch
 	main:
 		version_ch = Channel.empty()
+
+		fastq_ch1 =  ORA_TO_FASTQ([:], fastq_ch)
+		version_ch = version_ch.mix(fastq_ch1.version)
+
 	
-		fastq_ch2 =  SEQTK_SPLITFASTQ([:], fastq_ch)
+		fastq_ch2 =  SEQTK_SPLITFASTQ([:], fastq1_ch)
 		version_ch = version_ch.mix(fastq_ch2.version)
 
 		r1r2_ch= fastq_ch2.output.map{T->T.plus([

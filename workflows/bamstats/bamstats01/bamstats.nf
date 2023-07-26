@@ -34,6 +34,10 @@ gazoduc.build("bams","NO_FILE").
         existingFile().
         put()
 
+gazoduc.build("sample2pop","NO_FILE").
+        desc("optional path to TSV : sample(TAB)pop to plot boxplot").
+        put()
+
 
 include {isBlank;runOnComplete} from '../../../modules/utils/functions.nf'
 include {SAMTOOLS_STATS_01} from '../../../subworkflows/samtools/samtools.stats.01.nf'
@@ -52,7 +56,7 @@ if( params.help ) {
 
 
 workflow {
-	ch1 = SAMTOOLS_STATS_01(file(params.bams))
+	ch1 = SAMTOOLS_STATS_01([:],file(params.bams), file(params.sample2pop) )
 	//PUBLISH(ch1.zip)
 	}
 

@@ -52,20 +52,22 @@ script:
 	def CN = row.CN?:"Nantes"
 	def PL = row.PL?:"ILLUMINA"
 	def LB = row.LB?:sample
+	def cpus1 = ((task.cpus?:2) as int)
+	def cpus2 = cpus1 -1
 """
 hostname 1>&2
 ${moduleLoad("samtools bwa")}
 set -o pipefail
 mkdir -p TMP
 
-bwa mem ${is_interleaved?"-p":""} -t ${task.cpus} -R '@RG\\tID:${ID}\\tSM:${sample}\\tLB:${LB}.R0\\tCN:${CN}\\tPL:${PL}' "${reference}" "${R1}" ${isBlank(R2)?"":"\"${R2}\""} |\
-	samtools view -O BAM -o TMP/jeter.bam
+bwa mem ${is_interleaved?"-p":""} -t ${cpus2} -R '@RG\\tID:${ID}\\tSM:${sample}\\tLB:${LB}.R0\\tCN:${CN}\\tPL:${PL}' "${reference}" "${R1}" ${isBlank(R2)?"":"\"${R2}\""} |\
+	samtools ${isBlank(R2)?"view":"fixmate -m"} -O BAM -o TMP/jeter.bam -
 
 
-samtools sort --threads ${task.cpus} -o TMP/jeter2.bam -O BAM -T TMP/tmp TMP/jeter.bam
+samtools sort --threads ${cpus1} -o TMP/jeter2.bam -O BAM -T TMP/tmp TMP/jeter.bam
 mv TMP/jeter2.bam TMP/jeter.bam
 
-samtools index  -@ ${task.cpus} TMP/jeter.bam
+samtools index  -@ ${cpus1} TMP/jeter.bam
 
 mv "TMP/jeter.bam" "${sample}.sorted.bam"
 mv "TMP/jeter.bam.bai" "${sample}.sorted.bam.bai"

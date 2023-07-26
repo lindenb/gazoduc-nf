@@ -72,12 +72,21 @@ main:
 		ch1_ch = DOWNLOAD_REF_HG38_MANIFEST([:])
 		version_ch = version_ch.mix(ch1_ch.version)
 
-		ch2_ch = DOWNLOAD_REF_HG38_VCF([:], genomeId, ch1_ch.output.splitCsv(sep:'\t',header:false) )
+		contigs2_ch = rows.map{T->T.contig}.unique()
+
+		ch2_ch = DOWNLOAD_REF_HG38_VCF(
+			[:], 
+			genomeId,
+			ch1_ch.output.splitCsv(sep:'\t',header:false).
+				combine(contigs2_ch).
+				filter{T->normChr(T[2]).equals(normChr(T[3]))}.
+				map{T->[T[0],T[1]]}
+			)
 		version_ch = version_ch.mix(ch2_ch.version)
 
 		rows3_ch = rows2_ch.combine( ch2_ch.output.splitCsv(sep:'\t',header:false) ).
-			filter{T->T[0].contig.equals(T[1][0])}.
-			map{T->T[0].plus(ref:T[1][1])}
+			filter{T->T[0].contig.equals(T[1])}.
+			map{T->T[0].plus(ref:T[2])}
 		}
 	else
 		{
@@ -136,7 +145,16 @@ def base="http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000G_2504_
 wget -O - "${base}/phased-manifest_July2021.tsv" |\
 	cut -f 1 |\
 	grep '.vcf.gz\$' |\
-	awk '{printf("${base}\t%s\\n",\$0);}' > urls.tsv
+	awk -F '[_.]' '{printf("${base}\t%s\t%s\\n",\$0,\$7);}' > urls.tsv
+
+##################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description"></entry>
+        <entry key="url">${base}</entry>
+</properties>
+EOF
 """
 }
 
@@ -201,6 +219,9 @@ EOF
 
 process DOWNLOAD_REF_HG38_VCF {
 tag "${vcf}"
+afterScript "rm -rf TMP"
+memory "3g"
+cpus 5
 maxForks 5
 input:
 	val(meta)
@@ -210,13 +231,35 @@ output:
 	path("chrom2vcf.txt"),emit:output
 	path("version.xml"),emit:version
 script:
+        def genome = params.genomes[genomeId]
+        def reference = genome.fasta
 """
 hostname 1>&2
-${moduleLoad("bcftools")}
-wget -O "${vcf}" "${base}/${vcf}"
-wget -O "${vcf}.tbi" "${base}/${vcf}.tbi"
+${moduleLoad("bcftools jvarkit")}
+mkdir -p TMP
+wget -O "TMP/jeter.vcf.gz" "${base}/${vcf}"
 
-bcftools index -s "${vcf}" | tr "\\n" "\\t" > chrom2vcf.txt
+
+bcftools query  -f '%CHROM\\n'  TMP/jeter.vcf.gz | head -n 1 > TMP/jeter.a
+cat TMP/jeter.a | java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr  --convert  RETURN_ORIGINAL -R "${reference}" > TMP/jeter.b
+
+if cmp --silent TMP/jeter.a TMP/jeter.b ; then
+
+	# no need to convert the chromosomes
+	mv -v  TMP/jeter.vcf.gz "${vcf}"
+
+else
+
+	paste TMP/jeter.a TMP/jeter.b > TMP/jeter.c
+	# rename chr wants index
+	bcftools index --threads ${task.cpus}  TMP/jeter.vcf.gz
+	bcftools annotate --threads ${task.cpus} -O z -o "${vcf}" --rename-chrs TMP/jeter.c  TMP/jeter.vcf.gz
+
+fi
+
+
+bcftools index  --threads ${task.cpus}  -f  -t "${vcf}" 
+bcftools index  --threads ${task.cpus}   -s "${vcf}" | cut -f1 | tr "\\n" "\\t" > chrom2vcf.txt
 echo "\${PWD}/${vcf}" >> chrom2vcf.txt
 
 ##################
@@ -306,11 +349,14 @@ hostname 1>&2
 ${moduleLoad("jvarkit")}
 mkdir -p TMP
 
-java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 1 --convert SKIP '${mapFile}' > TMP/${fname}
+
+tr " " "\t" < '${mapFile}'|\
+java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -R "${reference}" --column 1 --convert SKIP > TMP/${fname}
+test -s TMP/${fname}
 mv  TMP/${fname} ./
 
 echo "\${PWD}/${fname}"	| awk -F '.' '{printf("%s\t%s\\n",\$(NF-2),\$0);}' |\
-	java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=.  -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 1 --convert SKIP > chrom2map.tsv
+	java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=.  -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -R "${reference}" --column 1 --convert SKIP > chrom2map.tsv
 
 
 ##################
