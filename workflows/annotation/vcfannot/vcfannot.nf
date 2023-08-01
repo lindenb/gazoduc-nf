@@ -24,113 +24,72 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-
-/** path to indexed fasta reference */
-params.reference = ""
-/** mapq min mapping quality . If it's <=0, just use the bam index as is. Otherwise, rebuild the bai */
-params.mapq = -1
-/** one file containing the paths to the BAM/CRAM */
-params.bams = ""
-/** display help */
-params.help = false
-/** publish Directory */
-params.publishDir = ""
-/** files prefix */
-params.prefix = ""
-params.genes =""
-params.dbsnp =""
-params.pedigree =""
-params.references=""
-params.vcf=""
-
-
-params.disableFeatures = "tommo"
-params.select = ""
-params.soacn = "SO:0001574,SO:0001575,SO:0001818"
-params.norm  =  false
-params.maxalt =  -1
-params.description = "no description"
-params.gnomadGenome  = ""
-params.gnomadExome  = "" 
-params.gnomadPop = "AF_nfe"
-params.gnomadAF = 0.001
-params.vcfid = ""
-params.mergevcf = "NO_FILE"
-params.joinvcf = ""
-params.joinsuffix = "_EXTERNAL"
-params.extraBcfTools = ""
-params.extension = ".vcf.gz"
-params.hardfilters = ""
-params.lowDP = 10
-params.lowGQ = 70
-params.captures = ""
-params.gnomadSVAF = 0.1
-params.goTerms = "GO:0006936,GO:0022857,GO:0060047,GO:0003179,GO:0008016"
-params.lowMQ = 30
-params.mqRankSum = 5
-params.readPosRankSum = 5
-params.sor = 5
-params.polyx = 10
-/** limit to this bed */
-params.bed = "NO_FILE"
-
 include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
 include {moduleLoad;runOnComplete} from '../../../modules/utils/functions.nf'
-include {ANNOTATE_VCF_02} from '../../../subworkflows/annotation/annotation.vcf.02.nf'
+include {ANNOTATE_VCF_01} from '../../../subworkflows/annotation/annotation.vcf.01.nf'
 include {MERGE_VERSION} from '../../../modules/version/version.merge.nf'
-
-def helpMessage() {
-  log.info"""
-## About
-
-
-## Author
-
-Pierre Lindenbaum
-
-## Options
-
-  * --reference (fasta) The full path to the indexed fasta reference genome. It must be indexed with samtools faidx and with picard CreateSequenceDictionary or samtools dict. [REQUIRED]
-  * --bams (file) one file containing the paths to the BAM/CRAM [REQUIRED]
-  * --publishDir (dir) Save output in this directory
-  * --prefix (string) files prefix. default: ""
-
-## Usage
-
-```
-nextflow -C ../../confs/cluster.cfg  run -resume workflow.nf \\
-	--publishDir output \\
-	--prefix "analysis." \\
-	--reference /path/to/reference.fasta \\
-	--vcf path/to/vcf
-```
-
-## Workflow
-
-![workflow](./workflow.svg)
-  
-## See also
-
-
-"""
-}
-
-
-if( params.help ) {
-    helpMessage()
-    exit 0
-}
-
+include {JVARKIT_VCF_TO_INTERVALS_01} from '../../../subworkflows/jvarkit/jvarkit.vcf2intervals.nf'
 
 workflow {
-	ann_ch = ANNOTATE_VCF_02(params, params.reference, file(params.vcf), file(params.bed))
+	ann_ch = ANNOTATE_VCF([:], params.genomeId, file(params.vcf), file(params.bed), file(params.pedigree) )
 
-	html = VERSION_TO_HTML(params, ann_ch.version)
+	// html = VERSION_TO_HTML(params, ann_ch.version)
 	
 	//publish_ch = Channel.empty().mix(html.html).mix(version_ch).mix(concat_ch.vcf).mix(concat_ch.index)
 	
 	//PUBLISH(publish_ch.collect())
 	}
+
+
+workflow ANNOTATE_VCF {
+	take:
+		meta
+		genomeId
+		vcf
+		bed
+		pedigree
+	main:
+		version_ch = Channel.empty()
+
+		if(bed.name.equals("NO_FILE")) {
+			vcf2intervals_ch = JVARKIT_VCF_TO_INTERVALS_01([with_header:false,distance:"1mb",min_distance:200], vcf,file("NO_FILE"))
+			version_ch = version_ch.mix(vcf2intervals_ch.version)
+
+			row_ch = vcf2intervals_ch.bed.splitCsv(sep:'\t',header:false).map{T->[
+				vcf: T[3],
+				contig: T[0],
+				interval : T[0]+":"+((T[1] as int)+1)+"-"+T[2]
+				]}
+			}
+		else
+			{
+			vcf2bed_ch = VCF_TO_BED([:], vcf)
+			version_ch = version_ch.mix(vcf2bed_ch.version)
+			ch1_ch =  vcf2bed_ch.bed.splitCsv(sep:'\t',header:false).map{T->{
+                                contig: T[0],
+				vcf: T[3]
+                                }}
+
+			
+			intervals_ch =Channel.fromPath(bed).splitCsv(sep:'\t',header:false).map{T->{
+				contig: T[0],
+				interval : T[0]+":"+((T[1] as int)+1)+"-"+T[2]
+				}}
+			row_ch = ch1_ch.combine(intervals_ch).
+				filter{T->T[0].contig.equals(T[1].contig)}.
+				map{T->T[0].plus(T[1])}
+			}
+		row_ch = row_ch.map{T->T.plus([pedigree:pedigree,genomeId:genomeId])}
+
+		ann_ch = ANNOTATE_VCF_01([:], genomeId, row_ch)
+		version_ch = version_ch.mix(ann_ch.version)
+
+	emit:
+		version = version_ch
+	}
+
+runOnComplete(workflow);
+
 
 
 process PUBLISH {
@@ -156,4 +115,3 @@ done
 """
 }
 
-runOnComplete(workflow);

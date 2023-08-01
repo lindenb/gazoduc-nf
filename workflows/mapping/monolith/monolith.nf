@@ -161,12 +161,12 @@ do
 		-R "@RG\\\\tID:\${ID}\\\\tSM:${sample}\\\\tLB:\${LB}\\\\tCN:\${CN}\\\\tPL:\${PL}" \
 		"${bwa_reference}" \
 		`find TMP  -name "*q.gz"| sort -V  ` |\
-		samtools fixmate -m -c -u -O BAM - TMP/jeter.bam
+		samtools fixmate -m -c -O BAM - TMP/jeter.bam
 
 	rm -vf TMP/*q.gz 1>&2
 	du -hs TMP 1>&2
 
-	samtools sort -u -m '${task.memory.giga}G' --threads '${task.cpus}' -o TMP/jeter2.bam -O BAM -T TMP/tmp TMP/jeter.bam
+	samtools sort  -m '${task.memory.giga}G' --threads '${task.cpus}' -o TMP/jeter2.bam -O BAM -T TMP/tmp TMP/jeter.bam
 	mv -v TMP/jeter2.bam TMP/jeter.bam 1>&2
 	du -hs TMP 1>&2
 
@@ -176,9 +176,9 @@ do
 	i=\$((i + 1))
 done
 
-if [[ \$(wc -l < TMP/bams.list) -ge 1  ]] ; then
+if [[ \$(wc -l < TMP/bams.list) -gt 1  ]] ; then
 
-	samtools merge --threads ${task.cpus} -u -O BAM -f -o TMP/jeter.bam -b TMP/bams.list
+	samtools merge --threads ${task.cpus} -O BAM -f -o TMP/jeter.bam -b TMP/bams.list
 	rm -v TMP/chunck.*.bam 1>&2
 	du -hs TMP 1>&2
 else
@@ -192,6 +192,7 @@ du -hs TMP 1>&2
 
 mv -v "TMP/jeter2.cram" "${params.prefix?:""}${sample}.${genomeId}.cram" 1>&2
 mv -v "TMP/jeter2.cram.crai" "${params.prefix?:""}${sample}.${genomeId}.cram.crai" 1>&2
+du -hs TMP 1>&2
 
 ##################
 cat << EOF > version.xml

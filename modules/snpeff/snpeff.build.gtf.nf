@@ -5,6 +5,7 @@ include {getKeyValue;getModules} from '../utils/functions.nf'
  */
 process SNPEFF_BUILD_GTF {
 tag "${file(gtf).name} ${file(fasta).name}"
+afterScript "rm -f snpeff.errors"
 memory "10g"
 input:
     val(meta)

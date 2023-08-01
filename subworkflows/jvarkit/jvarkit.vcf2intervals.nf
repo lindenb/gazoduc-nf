@@ -42,7 +42,7 @@ workflow JVARKIT_VCF_TO_INTERVALS_01 {
 		vcf /* path to vcf, or file with .list suffix */
 		bed /* limit to that BED or NO_FILE */
 	main:
-		if(!meta.containsKey("with_header")) throw new RuntimeException("meta.width_header missing")
+		if(!meta.containsKey("with_header")) throw new RuntimeException("meta.with_header missing")
 		if(!meta.containsKey("distance")) throw new RuntimeException("meta.distance missing")
 		if(!meta.containsKey("min_distance")) throw new RuntimeException("meta.min_distance missing")
 	
@@ -56,7 +56,7 @@ workflow JVARKIT_VCF_TO_INTERVALS_01 {
 		interval_vcf = bed2ch.bed.splitCsv(header:false,sep:'\t').
 			map{T->[vcf:file(T[3]),interval:T[0]+":"+((T[1] as int)+1)+"-"+T[2]]}
 
-		rch = VCF_TO_INTERVALS(meta,interval_vcf)
+		rch = VCF_TO_INTERVALS(meta, interval_vcf)
 		version_ch = version_ch.mix(rch.version)
 
 		concat_ch = CONCAT_FILES_01([suffix:".bed", concat_n_files:50,downstream_cmd:""] , rch.bed.collect())
