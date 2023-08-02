@@ -23,19 +23,41 @@ SOFTWARE.
 
 */
 
-include {getVersionCmd;isBlank;moduleLoad} from '../../modules/utils/functions.nf'
+include {getVersionCmd;moduleLoad} from '../../modules/utils/functions.nf'
 include {CONCAT_FILES_01} from '../../modules/utils/concat.files.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_ANNOTATE_SOURCES} from './bcftools.annotate.sources.01.nf'
+include {UTR_ANNOTATOR_DOWNLOAD_01} from '../../modules/vep/utrannotator.download.01.nf'
+
+boolean isBlank(hash,key) {
+	if(hash==null) throw new IllegalArgumentException("[isBlank] hash is null");
+	if(!hash.containsKey(key)) return true;
+	def v  = hash.get(key);
+	if(v==null || v.toString().trim().isEmpty()) return true;
+	return false;
+	}
 
 boolean hasFeature(key) {
 	def with = "with_"+key
 	if(!params.containsKey("annotations")) return false;
 	if(!params.annotations.containsKey(with)) {
-		log.warn("undefined params.annotations."+with);
+		log.warn("params.annotations."+with+" missing. return false;");
+		return false;
 		}
+	if(isBlank(params.annotations,with)) return false;
 	return (params.annotations[with] as boolean)
+	}
+
+boolean isSoftFilter(key) {
+	def f = "softfilter_"+key
+	if(!params.containsKey("annotations")) return true;
+	if(!params.annotations.containsKey(f)) {
+		log.warn("params.annotations."+f+" missing. return true;");
+		return true;
+		}
+	if(isBlank(params.annotations,f)) return true;
+	return (params.annotations[f] as boolean)
 	}
 
 workflow ANNOTATE_VCF_01 {
@@ -48,22 +70,29 @@ workflow ANNOTATE_VCF_01 {
 
 
 		annotate_src_ch = BCFTOOLS_ANNOTATE_SOURCES([:], genomeId, file("NO_FILE"))
-		
-		rows = rows.combine(annotate_src_ch.annotations_ch.toList().map{T->[annotate:T]}).
+		version_ch = version_ch.mix(annotate_src_ch.version)
+
+
+		rows = rows.combine(annotate_src_ch.annotations_ch.toSortedList(/* PREDICTIVE ORDER = PREVENT CACHE INVALIDATION */{a,b -> a.toString().compareTo(b.toString())}).map{T->[annotate:T]}).
 			map{T->T[0].plus(T[1])}
 		
 	
-		version_ch = version_ch.mix(annotate_src_ch.version)
 
-		if(params.genomes[genomeId].containsKey("gtf")) {
+		if(hasFeature("snpeff") && !hasFeature("native_snpeff") && !isBlank(params.genomes[genomeId],"gtf")) {
+			snpeff_db = BUILD_SNPEFF([:],genomeId)
+        		version_ch = version_ch.mix(snpeff_db.version)
 
-			if(hasFeature("snpeff") && !hasFeature("native_snpeff") && params.genomes[genomeId].containsKey("gtf")) {
-				snpeff_db = BUILD_SNPEFF([:],genomeId)
-        		        version_ch = version_ch.mix(snpeff_db.version)
-
-				rows_ch = rows.combine(snpeff_db.output).
+			rows = rows.combine(snpeff_db.output).
 					map{T->T[0].plus("snpeff_data":T[1])}
-				}
+			}
+		
+		if(hasFeature("vep_utr") && !isBlank(params.genomes[genomeId],"ucsc_name") && ( params.genomes[genomeId].ucsc_name.equals("hg19") || params.genomes[genomeId].ucsc_name.equals("hg38"))) {
+			veputr_ch = UTR_ANNOTATOR_DOWNLOAD_01([:], genomeId)
+        		version_ch = version_ch.mix(veputr_ch.version)
+
+			rows = rows.combine(veputr_ch.output).
+					map{T->T[0].plus("vep_utr":T[1])}
+
 			}
 
 		annot_vcf_ch = APPLY_ANNOTATION(
@@ -72,20 +101,14 @@ workflow ANNOTATE_VCF_01 {
 			rows
 			)
 
-/*
 
+		rows = annot_vcf_ch.output.map{T->T[0].plus("annot_vcf":T[1])}
+		version_ch = version_ch.mix(annot_vcf_ch.version)
 
-
-		version_ch = version_ch.mix(annot_vcf_ch.version.first())
-
-		to_file_ch = COLLECT_TO_FILE_01([:],annot_vcf_ch.bedvcf.map{T->T[0]+"\t"+T[1].toRealPath()}.collect())
-		version_ch = version_ch.mix(to_file_ch.version)
-
-*/
-		version_ch = MERGE_VERSION(meta, "annotation", "VCF annotation", version_ch.collect())
+		version_ch = MERGE_VERSION("VCF annotation", version_ch.collect())
 	emit:
 		version= version_ch
-		//bedvcf = to_file_ch.output
+		output = rows
 	}
 
 
@@ -96,7 +119,7 @@ input:
 output:
 	path("norm.captures.tsv"),emit:output
 script:
-if(isBlank(meta.captures))
+if(isBlank(meta,captures))
 """
 touch norm.captures.tsv
 """
@@ -135,13 +158,13 @@ rm jeter.genome
 
 /** build snpeff Database from gtf */
 process BUILD_SNPEFF {
-afterScript "rm -f org.tsv genes.tsv"
+afterScript "rm -f org.tsv genes.tsv snpeff.errors"
 memory "10g"
 input:
         val(meta)
         val(genomeId)
 output:
-	path("data"),emit:output
+	path("snpEff.config"),emit:output
 	path("version.xml"),emit:version
 script:
 	def genome = params.genomes[genomeId]
@@ -239,7 +262,7 @@ input:
 	val(genomeId)
 	val(row)
 output:
-	tuple val(row),path("contig.bcf"),emit:bedvcf
+	tuple val(row),path("contig.bcf"),emit:output
 	path("contig.bcf.csi"),emit:index
 	path("version.xml"),emit:version
 script:
@@ -255,16 +278,6 @@ script:
 	set -x
 	mkdir -p TMP
 	
-	cat <<- EOF > version.xml
-	<properties id="${task.process}">
-		<entry key="name">${task.process}</entry>
-		<entry key="description">Annotation of a VCF file</entry>
-		<entry key="bed">${row.bed?:""}</entry>
-		<entry key="interval">${row.interval?:""}</entry>
-		<entry key="vcf">${vcf}</entry>
-		<entry key="bcftools.version">\$(bcftools --version | head -n 2 | paste -sd ' ')</entry>
-		<entry key="steps">
-	EOF
 
 	# save bed or interval
 	if ${row.containsKey("bed")} ; then
@@ -303,7 +316,7 @@ script:
 	fi
 
 	# bcftools CSQ
-        if ${hasFeature("bcftools_csq") && genome.gff3}  ; then
+        if ${hasFeature("bcftools_csq") && !isBlank(genome,"gff3")}  ; then
 
   		bcftools csq -O v --force --local-csq --ncsq 10000 --fasta-ref "${reference}" --gff-annot "${genome.gff3}" TMP/jeter1.vcf > TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
@@ -317,9 +330,139 @@ script:
 	fi
 
 
+	# polyx
+	if ${hasFeature("polyx") && (params.annotations.polyx as int)>0} ; then
+		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfpolyx \
+			-n '${params.annotations.polyx}' \
+			--reference '${reference}' \
+			--tag POLYX TMP/jeter1.vcf > TMP/jeter2.vcf
+
+		mv -v TMP/jeter2.vcf TMP/jeter1.vcf
+	fi
+	
+
+	# allelic ratio
+	if ${hasFeature("allelic_ratio") && (params.annotations.allelic_ratio as double as double)>=0} ; then
+		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar  \${JVARKIT_DIST}/jvarkit.jar vcffilterjdk \
+			--nocode \
+			${isSoftFilter("allelic_ratio")?"--filter HET_BAD_AD_RATIO ":""} \
+			-e 'return variant.getGenotypes().stream().filter(G->G.isHet() && G.hasAD() && G.getAD().length==2).allMatch(G->{int array[]=G.getAD();double r= array[1]/(double)(array[0]+array[1]);final double x=${params.annotations.allelic_ratio as double}; return (r>=x && r<=(1.0 - x)) ;});' TMP/jeter1.vcf > TMP/jeter2.vcf
+		
+		mv -v TMP/jeter2.vcf TMP/jeter1.vcf
+	fi
+
+
+	# LOW DP
+	if ${hasFeature("DP") && (params.annotations.low_DP as int)>=0} ; then
+		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar   \${JVARKIT_DIST}/jvarkit.jar vcffilterjdk \
+			--nocode \
+			${isSoftFilter("DP")?"--filter LOW_DEPTH_params.annotations.low_DP ":""} \
+			-e 'return variant.getGenotypes().stream().filter(G->G.hasDP() && G.getAlleles().stream().anyMatch(A->!(A.isNoCall() || A.isReference())) ).mapToInt(G->G.getDP()).average().orElse(1.0+${params.annotations.low_DP}) > ${params.annotations.low_DP} ;' TMP/jeter1.vcf > TMP/jeter2.vcf
+	
+		mv -v TMP/jeter2.vcf TMP/jeter1.vcf
+	fi
+
+	# HIGH DP
+	if ${hasFeature("DP") && (params.annotations.high_DP as int)>=0} ; then
+		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar   \${JVARKIT_DIST}/jvarkit.jar vcffilterjdk \
+			--nocode \
+			${isSoftFilter("DP")?"--filter HIGH_DEPTH_${params.annotations.high_DP} ":""} \
+			-e 'return variant.getGenotypes().stream().filter(G->G.hasDP() && G.getAlleles().stream().anyMatch(A->!(A.isNoCall() || A.isReference())) ).mapToInt(G->G.getDP()).average().orElse(-1.0) < ${params.annotations.high_DP} ;' TMP/jeter1.vcf > TMP/jeter2.vcf
+	
+		mv -v TMP/jeter2.vcf TMP/jeter1.vcf
+	fi
+
+	#
+	# GQ
+	#
+	if ${hasFeature("GQ") && (params.annotations.low_GQ as int ) >=0 } ; then
+		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterjdk \
+			--nocode \
+			${isSoftFilter("GQ")?"--filter LOW_GQ_${params.annotations.low_GQ} ":""} \
+			-e 'return variant.getGenotypes().stream().filter(G->G.hasGQ() && G.getAlleles().stream().anyMatch(A->!(A.isNoCall() || A.isReference())) ).allMatch(G->G.getGQ()>=${params.annotations.low_GQ});' TMP/jeter1.vcf > TMP/jeter2.vcf
+		mv TMP/jeter2.vcf TMP/jeter1.vcf
+	fi
+
+
+	#
+	# SNPEFF
+	#
+	if ${hasFeature("snpeff")} ; then
+		if ${hasFeature("native_snpeff") && !isBlank(genome,"snpeff_database_name") } ; then
+			module load snpEff
+			java -Djava.io.tmpdir=TMP -jar "\${SNPEFF_JAR}" eff -config "\${SNPEFF_CONFIG}" \
+				-nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf '${genome.snpeff_database_name}' < TMP/jeter1.vcf > TMP/jeter2.vcf
+			mv -v TMP/jeter2.vcf TMP/jeter1.vcf
+		elif ${row.containsKey("snpeff_data")} ; then
+			module load snpEff
+			java -Djava.io.tmpdir=TMP -jar "\${SNPEFF_JAR}" eff -config '${row.snpeff_data}' \
+				-nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf '${genomeId}' < TMP/jeter1.vcf > TMP/jeter2.vcf
+			mv -v TMP/jeter2.vcf TMP/jeter1.vcf
+		fi
+	fi
+
+	#
+	# VEP
+	#
+        if ${hasFeature("vep") && genome.containsKey("vep_module") && !isBlank(genome,"vep_invocation") }  ; then
+		module load ${genome.vep_module}
+
+		${row.containsKey("vep_utr")?
+			"set +u; export PERL5LIB=\${PERL5LIB}:${row.vep_utr.getParent()}":
+			""
+		}
+
+		${!isBlank(row,"vep_utr") && !isBlank(genome,"vep_invocation") ?
+			genome.vep_invocation.replace("--cache", "--plugin UTRannotator,${row.vep_utr.toRealPath()} --cache") :
+			genome.vep_invocation
+			} < TMP/jeter1.vcf > TMP/jeter2.vcf
+
+		mv -v TMP/jeter2.vcf TMP/jeter1.vcf
+		module unload ${genome.vep_module}
+	fi
+
+	#
+	# VCFFILTERSO
+	#
+        if ${hasFeature("vcffilterso") && !isBlank(params.annotations,"soacn")} && bcftools view --header-only TMP/jeter1.vcf | grep -m 1 -E '^##INFO=<ID=(BCSQ|CSQ|ANN),'  ; then
+		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterso \
+			${isSoftFilter("vcffilterso")?"--filterout  BAD_SO":""} \
+			--acn "${params.annotations.soacn}" TMP/jeter1.vcf > TMP/jeter2.vcf
+		mv TMP/jeter2.vcf TMP/jeter1.vcf
+
+	fi
+
+
+	#
+	# GNOMAD GENOME
+	#
+	if ${hasFeature("gnomad_genome") && !isBlank(genome,"gnomad_genome")} ; then
+
+		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfgnomad \
+			--bufferSize 10000 \
+			--max-af ${params.annotations.gnomad_max_AF} \
+			--gnomad "${genome.gnomad_genome}" --fields "${params.annotations.gnomad_population}" TMP/jeter1.vcf > TMP/jeter2.vcf
+                mv TMP/jeter2.vcf TMP/jeter1.vcf
+	fi
+
+	#
+	# GNOMAD EXOME
+	#
+	if ${hasFeature("gnomad_exome") && !isBlank(genome,"gnomad_exome")} ; then
+
+		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfgnomad \
+			--bufferSize 10000 \
+			--max-af ${params.annotations.gnomad_max_AF} \
+			--gnomad "${genome.gnomad_exome}" --fields "${params.annotations.gnomad_population}" TMP/jeter1.vcf > TMP/jeter2.vcf
+                mv TMP/jeter2.vcf TMP/jeter1.vcf
+	fi
+
+
+
+
+
 bcftools sort --max-mem "${task.memory.giga}g" -T TMP  -O b -o contig.bcf TMP/jeter1.vcf
 bcftools index contig.bcf
-
 
 cat <<- EOF > version.xml
 <properties id="${task.process}">
@@ -330,7 +473,10 @@ EOF
 """
 }
 
-// 		
+/*
+
+
+*/ 		
 
 
 process TODOO {
@@ -347,39 +493,8 @@ script:
 	
 
 
-	# polyx
-	if [ ! -z "${hasFeature("polyx") && (meta.polyx as Integer)>0 ?"Y":""}" ] ; then
-	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar ${jvarkit("vcfpolyx")} --filter ${meta.polyx} --reference ${reference} --tag POLYX TMP/jeter1.vcf > TMP/jeter2.vcf
-	mv TMP/jeter2.vcf TMP/jeter1.vcf
-	fi
-	
 
-	# allelic ratio
-	if [ ! -z "${hasFeature("AD")?"Y":""}" ] ; then
-	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar ${jvarkit("vcffilterjdk")} \
-		--nocode \
-		${isSoftFilter(meta,"AD_RATIO")?"--filter HET_BAD_AD_RATIO ":""} \
-		-e 'return variant.getGenotypes().stream().filter(G->G.isHet() && G.hasAD() && G.getAD().length==2).allMatch(G->{int array[]=G.getAD();double r= array[1]/(double)(array[0]+array[1]);return (r>=0.2 && r<=0.8) ;});' TMP/jeter1.vcf > TMP/jeter2.vcf
-		mv TMP/jeter2.vcf TMP/jeter1.vcf
-	fi
 
-	# GQ
-	if [ ! -z "${hasFeature("GQ")?"Y":""}" ] ; then
-	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar ${jvarkit("vcffilterjdk")} \
-		--nocode \
-		${isSoftFilter(meta,"LOW_GQ")?"--filter LOW_GQ${meta.lowGQ} ":""} \
-		-e 'return variant.getGenotypes().stream().filter(G->(G.isHet() || G.isHomVar()) && G.hasGQ()).allMatch(G->G.getGQ()>=${meta.lowGQ});' TMP/jeter1.vcf > TMP/jeter2.vcf
-	mv TMP/jeter2.vcf TMP/jeter1.vcf
-	fi
-
-	# DP
-	if [ ! -z "${hasFeature("DP")?"Y":""}" ] ; then
-	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar ${jvarkit("vcffilterjdk")} \
-		--nocode \
-		${isSoftFilter(meta,"LOW_DP")?"--filter LOW_DP${meta.lowDP} ":""} \
-		-e 'return variant.getGenotypes().stream().filter(G->(G.isHet() || G.isHomVar()) && G.hasDP()).allMatch(G->G.getDP()>= ${meta.lowDP} );' TMP/jeter1.vcf > TMP/jeter2.vcf
-	mv TMP/jeter2.vcf TMP/jeter1.vcf
-	fi
 
 	# MQ
 	if [ ! -z "${hasFeature("MQ")?"Y":""}" ] ; then
@@ -419,84 +534,9 @@ script:
 	fi
 
 
-	# ANNOTATIONS
-	cat "${annotations_files}" | while read DATABASE COLS HEADER
-	do
-		echo "#ANNOT \${DATABASE}" 1>&2
-		test -f "\${DATABASE}"
-		test -f "\${HEADER}"
-		test -f "\${DATABASE}.tbi"
-
-		bcftools annotate --annotations "\${DATABASE}" \
-			-h "\${HEADER}" \
-			-c "\${COLS}" \
-			`echo "\${COLS}" | tr "," "\\n" | awk '(\$1!="CHROM" && \$1!="FROM" && \$1!="POS" && \$1="TO" && \$1!="END" && \$1!="." && \$1!="-") {S="unique"; printf(" --merge-logic %s:%s ",\$1,S);}'  ` \
-			-O v -o TMP/jeter2.vcf TMP/jeter1.vcf
-		mv TMP/jeter2.vcf TMP/jeter1.vcf
-
-		cat <<- EOF >> version.xml
-		<properties>
-			<entry key="description">annotate</entry>
-			<entry key="header">\${HEADER}</entry>
-			<entry key="info.columns">\${COLS}</entry>
-		</properties>
-		EOF
-	done
 
 
 
-
-	if [ ! -z "${isHg19(reference) && hasFeature("snpeff")?"Y":""}"  ] ; then
-		java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=. -jar "\${SNPEFF_JAR}" eff \
-			-config  "\${SNPEFF_CONFIG}" \
-			-nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf "${isHg19(reference)?"GRCh37.75":"TODO"}" TMP/jeter1.vcf > TMP/jeter2.vcf
-		mv TMP/jeter2.vcf TMP/jeter1.vcf
-
-
-		cat <<- EOF >> version.xml
-		<properties>
-			<entry key="description">annotation with SnpEFF</entry>
-		</properties>
-		EOF
-
-
-	fi
-
-
-        if [ ! -z "${isHg19(reference) && hasFeature("vep")?"Y":""}" ] ; then
-		module load ensembl-vep/104.3
-		vep --cache  --format vcf --force_overwrite --output_file STDOUT --no_stats --offline  --dir_cache /LAB-DATA/BiRD/resources/apps/vep  --species homo_sapiens --cache_version 104 --assembly GRCh37 --merged --fasta "${reference}" --use_given_ref --vcf < TMP/jeter1.vcf > TMP/jeter2.vcf
-		mv TMP/jeter2.vcf TMP/jeter1.vcf
-		module unload ensembl-vep/104.3
-
-
-		cat <<- EOF >> version.xml
-		<properties>
-			<entry key="description">annotation with VEP</entry>
-			<entry key="vep.version">104.3</entry>
-		</properties>
-		EOF
-
-
-	fi
-
-        if [ ! -z "${(hasFeature("snpeff") || hasFeature("vep")) && !isBlank(meta.soacn) ?"Y":""}" ] ; then
-		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=. -jar ${jvarkit("vcffilterso")} \
-			${isSoftFilter(meta,"BAD_SO")?"--filterout  BAD_SO":""} \
-			--acn "${meta.soacn}" TMP/jeter1.vcf > TMP/jeter2.vcf
-		mv TMP/jeter2.vcf TMP/jeter1.vcf
-
-		cat <<- EOF >> version.xml
-		<properties>
-			<entry key="description">filtration consequences</entry>
-			<entry key="so.acn">${meta.soacn}</entry>
-			<entry key="soft.filter">${isSoftFilter(meta,"BAD_SO")}</entry>
-			<entry key="vcffilterso.version">\$(java -jar ${jvarkit("vcffilterso")} --version)</entry>
-		</properties>
-		EOF
-
-
-	fi
 
 	## cadd
 	if [ ! -z  "${isHg19(reference) && hasFeature("cadd")?"Y":""}" ] ; then
@@ -510,50 +550,6 @@ script:
 			<entry key="description">annotation CADD</entry>
 			<entry key="cadd.file">/LAB-DATA/BiRD/resources/species/human/krishna.gs.washington.edu/download/CADD/v1.6/whole_genome_SNVs.tsv.gz</entry>
 			<entry key="vcfcadd.version">\$(java -jar ${jvarkit("vcfcadd")} --version)</entry>
-		</properties>
-		EOF
-
-
-	fi
-
-	if [ ! -z "${hasFeature("gnomadGenome")?"Y":""}" ] ; then
-		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar ${jvarkit("vcfgnomad")} \
-			--bufferSize 10000 \
-			--max-af ${meta.gnomadAF} \
-			--prefix "${isSoftFilter(meta,"GNOMAD")?"GNOMAD":""}" \
-			--gnomad "${getGnomadGenomePath(meta,reference)}" --fields "${meta.gnomadPop}" TMP/jeter1.vcf > TMP/jeter2.vcf
-                mv TMP/jeter2.vcf TMP/jeter1.vcf
-
-		cat <<- EOF >> version.xml
-		<properties>
-			<entry key="description">annotation gnomad genome</entry>
-			<entry key="max-AF">${meta.gnomadAF}</entry>
-			<entry key="population">${meta.gnomadPop}</entry>
-			<entry key="soft.filter">${isSoftFilter(meta,"GNOMAD")}</entry>
-			<entry key="gnomad.path">${getGnomadGenomePath(meta,reference)}</entry>
-			<entry key="vcfgnomad.version">\$(java -jar ${jvarkit("vcfgnomad")} --version)</entry>
-		</properties>
-		EOF
-
-	fi
-
-	if [ ! -z "${hasFeature("gnomadExome")?"Y":""}" ] ; then
-		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=. -jar ${jvarkit("vcfgnomad")} \
-			--bufferSize 10000 \
-			--max-af ${meta.gnomadAF} \
-			--prefix "${isSoftFilter(meta,"GNOMAD")?"GNOMAD":""}" \
-			--gnomad "${getGnomadExomePath(meta,reference)}" --fields "${meta.gnomadPop}" TMP/jeter1.vcf > TMP/jeter2.vcf
-                mv TMP/jeter2.vcf TMP/jeter1.vcf
-
-
-		cat <<- EOF >> version.xml
-		<properties>
-			<entry key="description">annotation gnomad exome</entry>
-			<entry key="max-AF">${meta.gnomadAF}</entry>
-			<entry key="population">${meta.gnomadPop}</entry>
-			<entry key="soft.filter">${isSoftFilter(meta,"GNOMAD")}</entry>
-			<entry key="gnomad.path">${getGnomadExomePath(meta,reference)}</entry>
-			<entry key="vcfgnomad.version">\$(java -jar ${jvarkit("vcfgnomad")} --version)</entry>
 		</properties>
 		EOF
 

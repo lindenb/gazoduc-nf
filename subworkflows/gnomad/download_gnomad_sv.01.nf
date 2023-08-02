@@ -145,7 +145,7 @@ EOF
 
 
 process LIFT_GNOMAD_SV_TO_HG38 {
-tag "${meta.gnomad_sv_grch37_bed_url}"
+tag "=> ${genomeId}"
 afterScript "rm -rf TMP"
 input:
 	val(meta)

@@ -86,14 +86,14 @@ exit 0
 }
 
 workflow {
-		burden_ch = BURDEN_UPSTREAM_ORF_VEP(params, params.reference, params.vcf, file(params.pedigree))
+		burden_ch = BURDEN_UPSTREAM_ORF_VEP(params, params.genomeId, params.vcf, file(params.pedigree))
 		ZIPIT(params,burden_ch.zip.collect())
 		}
 
 workflow BURDEN_UPSTREAM_ORF_VEP {
 	take:
 		meta
-		reference
+		genomeId
 		vcf
 		pedigree
 	main:
@@ -104,7 +104,7 @@ workflow BURDEN_UPSTREAM_ORF_VEP {
 		vcfbed_ch = VCF_TO_BED(meta,vcf)
 		version_ch = version_ch.mix(vcfbed_ch.version)
 
-		plugin_ch = UTR_ANNOTATOR_DOWNLOAD_01(meta,reference)
+		plugin_ch = UTR_ANNOTATOR_DOWNLOAD_01(meta,genomeId)
 		version_ch = version_ch.mix(plugin_ch.version)
 		
 		intersect_ch = INTERSECT(meta, vcfbed_ch.bed, plugin_ch.bed)
@@ -121,16 +121,16 @@ workflow BURDEN_UPSTREAM_ORF_VEP {
 
 		each_bed = intersect_ch.bed.splitCsv(header:false,sep:'\t').map{T->[T[0],T[3],T[4]]}
 
-		annot_ch = ANNOTATE(meta, reference, minikit_ch.jar, rvtests_ped_ch.pedigree, plugin_ch.output, each_bed)
+		annot_ch = ANNOTATE(meta, genomeId, minikit_ch.jar, rvtests_ped_ch.pedigree, plugin_ch.output, each_bed)
 		version_ch = version_ch.mix(annot_ch.version)
 		
-		assoc_ch = RVTESTS01_VCF_01(meta, reference, annot_ch.vcf, rvtests_ped_ch.pedigree)
+		assoc_ch = RVTESTS01_VCF_01(meta, genomeId, annot_ch.vcf, rvtests_ped_ch.pedigree)
 		version_ch = version_ch.mix(assoc_ch.version)
 
 		concat_ch = CONCAT_FILES_01(meta,assoc_ch.output.collect())
 		version_ch = version_ch.mix(concat_ch.version)
 
-		digest_ch = RVTESTS_POST_PROCESS(meta, reference,file(vcf).name,concat_ch.output)
+		digest_ch = RVTESTS_POST_PROCESS(meta, genomeId,file(vcf).name,concat_ch.output)
                 version_ch = version_ch.mix(digest_ch.version)
 		to_zip = to_zip.mix(digest_ch.zip)
 
@@ -324,7 +324,7 @@ afterScript "rm -rf TMP"
 memory "5g"
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	path(minikit)
 	path(rvtestpedigree)
 	path(pluginfile)

@@ -27,17 +27,14 @@ nextflow.enable.dsl=2
 include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
 include {moduleLoad;runOnComplete} from '../../../modules/utils/functions.nf'
 include {ANNOTATE_VCF_01} from '../../../subworkflows/annotation/annotation.vcf.01.nf'
-include {MERGE_VERSION} from '../../../modules/version/version.merge.nf'
+include {MERGE_VERSION} from '../../../modules/version/version.merge.02.nf'
 include {JVARKIT_VCF_TO_INTERVALS_01} from '../../../subworkflows/jvarkit/jvarkit.vcf2intervals.nf'
+include {COLLECT_TO_FILE_01} from '../../../modules/utils/collect2file.01.nf'
+include {BCFTOOLS_CONCAT_01} from '../../../subworkflows/bcftools/bcftools.concat.01.nf'
 
 workflow {
 	ann_ch = ANNOTATE_VCF([:], params.genomeId, file(params.vcf), file(params.bed), file(params.pedigree) )
-
-	// html = VERSION_TO_HTML(params, ann_ch.version)
-	
-	//publish_ch = Channel.empty().mix(html.html).mix(version_ch).mix(concat_ch.vcf).mix(concat_ch.index)
-	
-	//PUBLISH(publish_ch.collect())
+	html = VERSION_TO_HTML(ann_ch.version)	
 	}
 
 
@@ -84,34 +81,19 @@ workflow ANNOTATE_VCF {
 		ann_ch = ANNOTATE_VCF_01([:], genomeId, row_ch)
 		version_ch = version_ch.mix(ann_ch.version)
 
+		tofile_ch = COLLECT_TO_FILE_01([suffix:".list"], ann_ch.output.map{T->T.annot_vcf}.collect())
+		version_ch = version_ch.mix(tofile_ch.version)
+
+		concat_ch = BCFTOOLS_CONCAT_01([:], tofile_ch.output, file("NO_FILE") )
+		version_ch = version_ch.mix(concat_ch.version)
+
+		version_ch = MERGE_VERSION("vcfannot",version_ch.collect())
 	emit:
 		version = version_ch
+		output = concat_ch.vcf
 	}
 
 runOnComplete(workflow);
 
 
-
-process PUBLISH {
-tag "N=${L.size()}"
-publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
-input:
-	val(L)
-output:
-        path("*.bcf"),optional:true
-        path("*.bcf.csi"),optional:true
-        path("*.vcf.gz"),optional:true
-        path("*.vcf.gz.tbi"),optional:true
-        path("*.xml")
-        path("*.html")
-when:
-        !params.getOrDefault("publishDir","").trim().isEmpty()
-script:
-"""
-for F in ${L.join(" ")}
-do
-        ln -s "\${F}" ./
-done
-"""
-}
 

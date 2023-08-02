@@ -350,8 +350,8 @@ wget -O - "${url}" |\
 	uniq | sort -T TMP | uniq |
 	sed 's/\$/\t1/' > TMP/genes.txt
 
-join -t '\t' -1 4 -2 1 -o '1.1,1.2,1.3,2.1,2.2' "${bed}" TMP/genes.txt |\
-sort -T . -t '\t' -k1,1 -k2,2n | bgzip > TMP/bhfucl.bed.gz
+join -t '\t' -1 4 -2 1 -o '1.1,1.2,1.3,2.2' "${bed}" TMP/genes.txt |\
+sort -T TMP -t '\t' -k1,1 -k2,2n | bgzip > TMP/bhfucl.bed.gz
 
 tabix -p bed TMP/bhfucl.bed.gz
 
@@ -642,7 +642,7 @@ echo -n '##INFO=<ID=GO,Number=0,Type=Flag,Description="${whatis}. Terms: ' > go.
 
 cat go.terms.tsv |tr  '"' "'" | tr "\t" " " | paste -sd ' ' | tr -d '\\n' >> go.header
 
-echo '>' >> go.header
+echo '">' >> go.header
 
 #########################################
 cat << EOF > version.xml
@@ -694,7 +694,7 @@ mv TMP/remap.bed.gz ./
 mv TMP/remap.bed.gz.tbi ./
 
 
-echo '##INFO=<ID=REMAP,Number=.,Type=Flag,Description="${whatis}">' > remap.header
+echo '##INFO=<ID=REMAP,Number=0,Type=Flag,Description="${whatis}">' > remap.header
 
 echo "\${PWD}/remap.bed.gz\tCHROM,FROM,TO,REMAP\t\${PWD}/remap.header" > remap.tsv
 
