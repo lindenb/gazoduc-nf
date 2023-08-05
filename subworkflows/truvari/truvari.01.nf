@@ -32,30 +32,19 @@ include {BCFTOOLS_CONCAT_01} from '../bcftools/bcftools.concat.01.nf'
 
 def gazoduc = gazoduc.Gazoduc.getInstance(params)
 
-gazoduc.build("extra_truvari"," --keep maxqual --refdist 500 --sizemin 50 --sizemax 50000").
-	menu("Truvari").
-        desc("extra parameters to add to the truvari command line.").
-        put()
-
-gazoduc.build("extra_view_truvari","").
-	menu("Truvari").
-        desc("extra parameters to add to 'bcftools view' after 'bcftools merge' and before truvari itself. Could be a place to remove large events.").
-        put()
-
-gazoduc.putCondaEnv()
 
 workflow TRUVARI_01 {
      take:
         meta /* meta */
-        reference /* indexed fasta reference */
+       	genomeId /* genome id */
         vcfs /* file containing the path to VCF files . One per line */
      main:
         version_ch = Channel.empty()
 
-	vcf2bed_ch = VCF_TO_BED(meta,vcfs)
+	vcf2bed_ch = VCF_TO_BED([:] ,vcfs)
 	version_ch = version_ch.mix( vcf2bed_ch.version)
 
-	perctg_ch = PER_CONTIG(meta, reference, vcf2bed_ch.chromosomes.splitText().map{it.trim()},vcfs)
+	perctg_ch = PER_CONTIG([:], genomeId, vcf2bed_ch.chromosomes.splitText().map{it.trim()},vcfs)
 	version_ch = version_ch.mix(perctg_ch.version)
 
 
@@ -67,7 +56,7 @@ workflow TRUVARI_01 {
 	version_ch = version_ch.mix(concat_ch.version)
 		
 		
-	version_ch = MERGE_VERSION(meta, "Truvari", "Truvari",version_ch.collect())
+	version_ch = MERGE_VERSION("Truvari",version_ch.collect())
 
 	emit:
 		vcf = concat_ch.vcf
@@ -81,7 +70,7 @@ process PER_CONTIG {
     conda "${params.conda}/truvari"
     input:
         val meta
-	val reference
+	val genomeId
 	val contig
 	val vcfs
     output:
@@ -89,8 +78,10 @@ process PER_CONTIG {
 	path("truvari.bcf.csi"), emit: index
         path "version.xml",emit: version
     script:
-	def extraCmd = meta.extra_truvari?:""
-	def extraBcftools = meta.extra_view_truvari?:""
+	def genome = params.genomes[genomeId]
+	def reference = genome.fasta
+	def extraCmd = params.truvari.extra_truvari?:""
+	def extraBcftools = params.truvari.extra_view_truvari?:""
     """
 	hostname 1>&2
 	${moduleLoad("bcftools")}

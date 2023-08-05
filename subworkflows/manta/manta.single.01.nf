@@ -23,18 +23,10 @@ SOFTWARE.
 
 */
 
-def gazoduc = gazoduc.Gazoduc.getInstance();
-
-gazoduc.make("with_merge_manta_vcf",false).
-        description("try to merge manta files at the end").
-	setBoolean().
-        put()
-
-
 
 include {getVersionCmd} from '../../modules/utils/functions.nf'
-include {SAMTOOLS_SAMPLES01} from '../../modules/samtools/samtools.samples.01.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {SAMTOOLS_SAMPLES02} from '..//samtools/samtools.samples.02.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {MANTA_SINGLE_01} from  '../../modules/manta/manta.single.01.nf'
 include {SIMPLE_ZIP_01} from '../../modules/utils/zip.simple.01.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
@@ -43,39 +35,40 @@ include {TRUVARI_01} from '..//truvari/truvari.01.nf'
 workflow MANTA_SINGLE_SV01 {
 	take:
 		meta
-		reference
+		genomeId
 		bams
 	main:
 		version_ch = Channel.empty()
 
-		all_samples_ch = SAMTOOLS_SAMPLES01([:],reference,bams)
+
+		all_samples_ch = SAMTOOLS_SAMPLES02([allow_multiple_references:false,with_header:true,allow_duplicate_samples:false],genomeId,bams)
 		version_ch= version_ch.mix(all_samples_ch.version)
 
-		each_sample_bam_ch = all_samples_ch.output.splitCsv(header:false,sep:'\t')
+		each_sample_bam_ch = all_samples_ch.output.splitCsv(header:true,sep:'\t')
 	
 		
-		manta_ch = MANTA_SINGLE_01(meta.subMap(["prefix"]),reference,each_sample_bam_ch)
+		manta_ch = MANTA_SINGLE_01([:],genomeId,each_sample_bam_ch)
 		version_ch= version_ch.mix(manta_ch.version.first())
 	
 
 		all_manta_files_ch = manta_ch.output.
-                      map{T->T[2]}.
-                      splitCsv(header:false,sep:'\t').
-                      map{T->T[2]}
+                      map{T->T[1]}.
+                      splitCsv(header:true,sep:'\t').
+                      map{T->T.vcf}
 		
 		to_zip = all_manta_files_ch 
 
 		file_list_ch = COLLECT_TO_FILE_01([:],all_manta_files_ch.collect())
 
 		
-		if(meta.with_merge_manta_vcf==false) {
+		if(params.with_merge_manta_vcf==false) {
 			merge_vcf = Channel.empty()
 			merge_vcf_index = Channel.empty()
 			}
 		else
 			{
 
-			truvari_ch = TRUVARI_01(meta, reference, file_list_ch.output)
+			truvari_ch = TRUVARI_01([:] , genomeId, file_list_ch.output)
 			to_zip = to_zip.mix(truvari_ch.version)
 
 			merge_vcf = truvari_ch.vcf
@@ -87,10 +80,10 @@ workflow MANTA_SINGLE_SV01 {
 
 
 		
-		version_merge = MERGE_VERSION(meta,"manta","manta",version_ch.collect())
+		version_merge = MERGE_VERSION([:],"manta",version_ch.collect())
 		to_zip = to_zip.mix(version_merge.version)
 		
-		zip_ch = SIMPLE_ZIP_01(meta.plus(["level":"0"]),to_zip.collect())
+		zip_ch = SIMPLE_ZIP_01(["level":"0"],to_zip.collect())
 		
 	emit:
 		version = version_merge.version

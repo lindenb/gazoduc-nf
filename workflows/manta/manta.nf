@@ -24,14 +24,6 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults();
-
-gazoduc.make("bams","NO_FILE").
-        description("file containing the path to multiple bam files").
-        required().
-        existingFile().
-        put()
-
 
 
 include {runOnComplete} from '../../modules/utils/functions.nf'
@@ -40,58 +32,14 @@ include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 
 
 if( params.help ) {
-    gazoduc.usage().
-	name("manta").
-	description("call SV/CNV with manta for each bam").
-	print()
     exit 0
-} else {
-	gazoduc.validate();
-	}
 
 
 workflow {
-	manta_ch = MANTA_SINGLE_SV01(params, params.reference, params.bams)
-
-
-	html = VERSION_TO_HTML(params,manta_ch.version)	
-
-	to_publish = Channel.empty()
-	to_publish = to_publish.
-			mix(manta_ch.version).
-			mix(manta_ch.zip).
-			mix(manta_ch.merge_vcf).
-			mix(manta_ch.merge_vcf_index).
-			mix(manta_ch.manta_files).
-			mix(html.html)
-
-
-	PUBLISH(to_publish.collect())
+	manta_ch = MANTA_SINGLE_SV01([:], params.genomeId , file(params.bams))
+	html = VERSION_TO_HTML(manta_ch.version)	
 	}
 
 runOnComplete(workflow)
 
-process PUBLISH {
-tag "N=${files.size()}"
-publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
-input:
-	val(files)
-output:
-	path("*.bcf"),optional:true
-	path("*.bcf.csi"),optional:true
-	path("*.xml")
-	path("*.html")
-	path("*.zip")
-	path("*.list")
-when:
-	!params.getOrDefault("publishDir","").trim().isEmpty()
-script:
-	prefix = params.prefix?:""
-"""
-for F in ${files.join(" ")}
-do
-	ln -s "\${F}" ./
-done
-"""
-}
 

@@ -25,30 +25,30 @@ SOFTWARE.
 
 def gazoduc = gazoduc.Gazoduc.getInstance()
 
-gazoduc.make("manta_cpus",16).
-        description("Number of cpus for manta").
-        setInt().
-        put()
 
 
 include { getKeyValue; getModules} from '../../modules/utils/functions.nf'
 
 process MANTA_SINGLE_01 {
-    tag "${name} ${file(bam).name}"
+    tag "${row.sample} ${file(row.bam).name}"
     afterScript "rm -rf TMP"
     cache 'lenient'
     errorStrategy 'finish'
-    cpus ((params.manta_cpus?:16) as int)
-    memory "20g"
+    // must be specified with config cpus ((params.manta_cpus?:16) as int)
+    // memory "20g"
     input:
 	val(meta)
-	val(reference)
-	tuple val(name),val(bam)
+	val(genomeId)
+	val(row)
     output:
-    	tuple val(name),val(bam),path("${name}.txt"),emit:output
+    	tuple val(row),path("${name}.txt"),emit:output
 	path("version.xml"),emit:version
     script:
-	def prefix = meta.getOrDefault("prefix","")
+	def bam = row.bam
+	def name = row.sample
+	def genome = params.genomes[genomeId]
+	def reference = genome.fasta
+	def prefix = params.prefix?:""
 	"""
 	hostname 1>&2
 	module load ${getModules("manta samtools bcftools")}
@@ -58,7 +58,7 @@ process MANTA_SINGLE_01 {
 		--runDir "TMP"
 
 	
-	./TMP/runWorkflow.py --quiet -m local -j ${task.cpus}
+	./TMP/runWorkflow.py --quiet -m local -j '${task.cpus}'
 	
 	rm -rf ./TMP/workspace
 
@@ -79,9 +79,8 @@ process MANTA_SINGLE_01 {
 	
 	ls *.vcf.gz
 	find \${PWD}  -maxdepth 1  -type f -name "*.vcf.gz" -o -name "*.vcf.gz.tbi" |\
-		awk '{printf("${name}\t${bam}\t%s\\n",\$0);}' > ${name}.txt
-	grep -m1 vcf ${name}.txt
-
+		awk 'BEGIN{printf("sample\tbam\tvcf\\n");} {printf("${name}\t${bam}\t%s\\n",\$0);}' > ${name}.txt
+	tail -n +2 ${name}.txt | grep -m1 vcf 
 
 
 #################################################################################################
@@ -95,10 +94,5 @@ cat << EOF > version.xml
 	<entry key="manta.version">\$(configManta.py --version)</entry>
 </properties>
 EOF
-	"""
-stub:
-	"""
-	touch "${name}.txt"
-	echo "<properties/>" > version.xml
 	"""
 	}

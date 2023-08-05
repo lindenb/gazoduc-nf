@@ -41,7 +41,8 @@ script:
 	def new_sample = row.new_sample?:sample
 	def bam = row.bam
 	def bed = row.bed
-	def ref = row.reference
+	def genome = params.genomes[row.genomeId]
+	def ref = file(row.fasta)
 	def num_shards = meta.num_shards?:20
 	def model_type = meta.model_type?:"WGS"
 """

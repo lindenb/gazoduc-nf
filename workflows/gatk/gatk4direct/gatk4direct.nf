@@ -24,47 +24,14 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putGenomeId()
-
-gazoduc.make("bams","NO_FILE").
-        description("File containing the paths to the BAM/CRAMS files. One path per line").
-        required().
-        existingFile().
-        put()
-
-gazoduc.make("mapq",-1).
-        description("mapping quality or -1").
-        setInt().
-        put()
-
-
-gazoduc.make("nbams",20).
-        description("number of bams per HC").
-        setInt().
-        put()
-
-gazoduc.make("pedigree","").
-        description("path to pedigree").
-        put()
-
-gazoduc.make("beds","").
-        description("path to a list of bed files").
-        put()
-
 
 include {GATK4_HAPCALLER_DIRECT_01} from '../../../subworkflows/gatk/gatk4.hapcaller.direct.01.nf'
 include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
-include {runOnComplete;moduleLoad} from '../../../modules/utils/functions.nf'
+include {runOnComplete} from '../../../modules/utils/functions.nf'
 
 if( params.help ) {
-    gazoduc.usage().
-        name("GraphTyper CNV").
-        desc("Genotype CNV/SV using graphtyper").
-        print();
     exit 0
-} else {
-   gazoduc.validate();
-}
+} 
 
 
 
@@ -74,42 +41,12 @@ workflow {
 	gatk_ch= GATK4_HAPCALLER_DIRECT_01(
 			[:],
 			params.genomeId,
-			params.bams,
+			file(params.bams),
 			file(params.beds)
 			)
-	html_ch = VERSION_TO_HTML(gatk_ch.version)
-
-	publish_ch = publish_ch.mix(gatk_ch.version)
-	publish_ch = publish_ch.mix(html_ch.html)
-
-	PUBLISH(gatk_ch.vcf, gatk_ch.index, publish_ch.collect())
+	VERSION_TO_HTML(gatk_ch.version)
 	}
 
 
-process PUBLISH {
-tag "${L.size()}"
-publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
-input:
-	path(vcf)
-	path(index)
-	val(L)
-output:
-	path("*.bcf"),optional:true
-	path("*.csi"),optional:true
-	path("*.xml"),optional:true
-	path("*.html"),optional:true
-when:
-	!params.getOrDefault("publishDir","").trim().isEmpty()
-script:
-"""
-cp "${vcf}" "${params.prefix?:""}genotyped.bcf"
-cp "${index}" "${params.prefix?:""}genotyped.bcf.csi"
-
-for F in ${L.join(" ")}
-do
-        ln -s "\${F}" ./
-done
-"""
-}
 
 runOnComplete(workflow)

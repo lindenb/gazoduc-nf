@@ -77,7 +77,6 @@ workflow ANNOTATE_VCF_01 {
 			map{T->T[0].plus(T[1])}
 		
 	
-
 		if(hasFeature("snpeff") && !hasFeature("native_snpeff") && !isBlank(params.genomes[genomeId],"gtf")) {
 			snpeff_db = BUILD_SNPEFF([:],genomeId)
         		version_ch = version_ch.mix(snpeff_db.version)
@@ -252,7 +251,7 @@ tabix -s 1 -b 2 -e 2 tommo.bed.gz
 
 
 process APPLY_ANNOTATION {
-tag "${row.vcf} ${row.interval}"
+tag "${row.vcf} ${row.interval?:row.bed?:""}"
 afterScript "rm -rf TMP"
 memory '5 g'
 maxForks 30
@@ -304,6 +303,20 @@ script:
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
 	fi
 
+
+	#
+	# CUSTOM VCFFILTERJDK expression
+	#
+	if ${!params.annotations.vcffilterjdk_args1.trim().isEmpty()} ; then
+
+		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar  \${JVARKIT_DIST}/jvarkit.jar vcffilterjdk \
+			${params.annotations.vcffilterjdk_args1} \
+			TMP/jeter1.vcf > TMP/jeter2.vcf
+		
+		mv -v TMP/jeter2.vcf TMP/jeter1.vcf
+
+	fi
+
 	# annotate variant ID
 	if ${hasFeature("dbsnp_id") && genome.containsKey("dbsnp")} ; then
 
@@ -324,9 +337,13 @@ script:
 
 	# annotations with bcftools annotate
 	if ${row.annotate && !row.annotate.isEmpty()} ; then
-		#
-		${row.annotate.collect{T->"#####\nbcftools annotate --annotations '${T.tabix}' --columns '${T.columns}' --header-lines '${T.header}' --merge-logic '${T.merge_logic}' ${T.minoverlap.equals(".")?"":"--min-overlap '${T.minoverlap}'"} -O v -o TMP/jeter2.vcf TMP/jeter1.vcf\nmv -v TMP/jeter2.vcf TMP/jeter1.vcf"}.join("\n")}
+		
+		bcftools view -O u -o TMP/jeter1.bcf TMP/jeter1.vcf
 
+		${row.annotate.collect{T->"####\n# ${T.name}\n####\nbcftools index -f TMP/jeter1.bcf && bcftools annotate --annotations '${T.tabix}' --columns '${T.columns}' ${T.tabix.name.endsWith(".vcf.gz") || T.tabix.name.endsWith(".bcf")?"":"--header-lines '${T.header}'"} ${T.merge_logic.isEmpty()?"":"--merge-logic '${T.merge_logic}'"}  ${T.minoverlap.equals(".")?"":"--min-overlap '${T.minoverlap}'"} -O b -o TMP/jeter2.bcf TMP/jeter1.bcf\nmv -v TMP/jeter2.bcf TMP/jeter1.bcf"}.join("\n")}
+
+		bcftools view -O v -o TMP/jeter1.vcf TMP/jeter1.bcf
+		rm -f TMP/jeter1.bcf TMP/jeter1.bcf.csi
 	fi
 
 
@@ -381,6 +398,7 @@ script:
 			${isSoftFilter("GQ")?"--filter LOW_GQ_${params.annotations.low_GQ} ":""} \
 			-e 'return variant.getGenotypes().stream().filter(G->G.hasGQ() && G.getAlleles().stream().anyMatch(A->!(A.isNoCall() || A.isReference())) ).allMatch(G->G.getGQ()>=${params.annotations.low_GQ});' TMP/jeter1.vcf > TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
+
 	fi
 
 
@@ -417,9 +435,11 @@ script:
 			genome.vep_invocation
 			} < TMP/jeter1.vcf > TMP/jeter2.vcf
 
-		mv -v TMP/jeter2.vcf TMP/jeter1.vcf
+		mv -v TMP/jeter2.vcf TMP/jeter1.vcf 1>&2
 		module unload ${genome.vep_module}
 	fi
+
+	bcftools view TMP/jeter1.vcf > /dev/null
 
 	#
 	# VCFFILTERSO
@@ -443,6 +463,14 @@ script:
 			--max-af ${params.annotations.gnomad_max_AF} \
 			--gnomad "${genome.gnomad_genome}" --fields "${params.annotations.gnomad_population}" TMP/jeter1.vcf > TMP/jeter2.vcf
                 mv TMP/jeter2.vcf TMP/jeter1.vcf
+
+
+		if  ${!isSoftFilter("gnomad")} ; then
+	
+			bcftools view  -e 'FILTER ~ "GNOMAD_GENOME_BAD_AF" || FILTER ~ "GNOMAD_GENOME_RF"'  TMP/jeter1.vcf > TMP/jeter2.vcf
+	                mv TMP/jeter2.vcf TMP/jeter1.vcf			
+
+		fi
 	fi
 
 	#
@@ -455,6 +483,15 @@ script:
 			--max-af ${params.annotations.gnomad_max_AF} \
 			--gnomad "${genome.gnomad_exome}" --fields "${params.annotations.gnomad_population}" TMP/jeter1.vcf > TMP/jeter2.vcf
                 mv TMP/jeter2.vcf TMP/jeter1.vcf
+
+
+		if  ${!isSoftFilter("gnomad")} ; then
+	
+			bcftools view  -e 'FILTER ~ "GNOMAD_EXOME_BAD_AF" || FILTER ~ "GNOMAD_EXOME_RF"'  TMP/jeter1.vcf > TMP/jeter2.vcf
+	                mv TMP/jeter2.vcf TMP/jeter1.vcf			
+
+		fi
+
 	fi
 
 

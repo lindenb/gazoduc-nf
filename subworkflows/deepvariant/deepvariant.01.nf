@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {SAMTOOLS_SAMPLES_01} from '../../subworkflows/samtools/samtools.samples.01.nf'
+include {SAMTOOLS_SAMPLES02} from '../samtools/samtools.samples.02.nf'
 include {DEEP_VARIANT_CALL_01} from '../../modules/deepvariant/deepvariant.call.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {GLNEXUS_GENOTYPE_01} from '../../modules/glnexus/glnexus.genotype.01.nf'
@@ -32,14 +32,13 @@ include {BCFTOOLS_CONCAT_01} from '../../subworkflows/bcftools/bcftools.concat.0
 workflow DEEPVARIANT_01 {
 	take:
 		meta
-		reference
-		references
+		genomeId
 		bams
 		beds
 	main:
 		version_ch = Channel.empty()
-
-		sn_ch = SAMTOOLS_SAMPLES_01(meta.plus("with_header":true),reference,references,bams)
+		
+		sn_ch = SAMTOOLS_SAMPLES02([allow_multiple_references:false,with_header:true,allow_duplicate_samples:false],genomeId,bams)
 		version_ch = version_ch.mix(sn_ch.version)
 
 		each_bed = beds.splitText().map{T->T.trim()}
@@ -48,9 +47,9 @@ workflow DEEPVARIANT_01 {
 			.combine(each_bed)
 			.map{T->T[0].plus("bed":file(T[1]))}
 			.map{T->T.plus("bam":file(T.bam))}
-			.map{T->T.plus("reference":file(reference))}
+			.map{T->T.plus("genomeId":genomeId)}
 		
-		ch2 = DEEP_VARIANT_CALL_01(meta,ch1)
+		ch2 = DEEP_VARIANT_CALL_01([:],ch1)
 		version_ch = version_ch.mix(ch2.version)
 
 
@@ -58,7 +57,7 @@ workflow DEEPVARIANT_01 {
 			map{T->[T.bed,T.gvcf]}.
 			groupTuple()
 
-		ch4 = GLNEXUS_GENOTYPE_01(meta,ch3)	
+		ch4 = GLNEXUS_GENOTYPE_01([:],ch3)	
 		version_ch = version_ch.mix(ch4.version)
 
 		file_list_ch = COLLECT_TO_FILE_01([:],ch4.output.map{T->T[1]}.collect())
@@ -67,7 +66,7 @@ workflow DEEPVARIANT_01 {
 		concat_ch = BCFTOOLS_CONCAT_01([:],file_list_ch.output)
 		version_ch = version_ch.mix(concat_ch.version)
 
-                version_ch = MERGE_VERSION(meta, "Deep Variant", "Deep variant", version_ch.collect())
+                version_ch = MERGE_VERSION("Deep Variant",version_ch.collect())
 			
 	emit:
 		version = version_ch

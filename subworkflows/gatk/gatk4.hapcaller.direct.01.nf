@@ -25,12 +25,11 @@ SOFTWARE.
 include {LINUX_SPLIT as LINUX_SPLIT1; LINUX_SPLIT as LINUX_SPLIT2} from '../../modules/utils/split.nf'
 include {BCFTOOLS_CONCAT_01} from '../bcftools/bcftools.concat.01.nf'
 include {GATK4_HAPCALLER_DIRECT} from '../../modules/gatk/gatk4.hapcaller.direct.01.nf'
-include {getKeyValue; getModules; assertNotEmpty} from '../../modules/utils/functions.nf'
 include {SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.nf'
 include {BCFTOOLS_MERGE_BED_01} from '../../modules/bcftools/bcftools.merge.bed.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
-
+include {ANNOTATE_VCF_01} from '../annotation/annotation.vcf.01.nf'
 
 workflow GATK4_HAPCALLER_DIRECT_01 {
 	take:
@@ -81,9 +80,19 @@ workflow GATK4_HAPCALLER_DIRECT_01 {
 		bedvcf_ch = BCFTOOLS_MERGE_BED_01([:], bed2vcf_ch)
 		version_ch = version_ch.mix(bedvcf_ch.version)
 
-		cut_ch = COLLECT_TO_FILE_01([:], bedvcf_ch.bedvcf.map{T->T[1]}.collect())
+		if(params.with_annotations) {
+			ann_ch = ANNOTATE_VCF_01([:], genomeId, bedvcf_ch.bedvcf.map{T->[vcf:T[1],bed:T[0]]})
+			version_ch = version_ch.mix(ann_ch.version)		
+			vcfs_ch = ann_ch.output.map{T->T.annot_vcf}
+			}
+		else
+			{
+			vcfs_ch = bedvcf_ch.bedvcf.map{T->T[1]}
+			}
+
+
+		cut_ch = COLLECT_TO_FILE_01([:], vcfs_ch.collect())
 		version_ch = version_ch.mix(cut_ch.version)
-		
 
 		concat_ch = BCFTOOLS_CONCAT_01([:],cut_ch.output, file("NO_FILE"))
 		version_ch = version_ch.mix(concat_ch.version)

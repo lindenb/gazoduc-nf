@@ -63,64 +63,32 @@ workflow BCFTOOLS_ANNOTATE_SOURCES {
 		if (hasFeature("greendb") && params.genomes[genomeId].containsKey("greendb_url")) {
 			db1_ch = DOWNLOAD_GREENDB([:], genomeId, sorted_bed)
 			version_ch = version_ch.mix(db1_ch.version)
-			annot_ch = annot_ch.mix(db1_ch.output.map{T->[
-				tabix : T[0],
-				header: T[1],
-				columns: T[2],
-				merge_logic: T[3],
-				minoverlap : "."
-				]})
+			annot_ch = annot_ch.mix(db1_ch.output)
 			}
 
 		if(hasFeature("go") && params.annotations.containsKey("goTerms") && params.genomes[genomeId].containsKey("gff3")) {
 			db6_ch = DOWNLOAD_GO([:], genomeId)
 			version_ch = version_ch.mix(db6_ch.version)
-
-			annot_ch = annot_ch.mix(db6_ch.output.map{T->[
-                                        tabix : T[0],
-                                        header: T[1],
-                                        columns: T[2],
-                                        merge_logic: T[3],
-                                        minoverlap : "."
-                                        ]})
+			annot_ch = annot_ch.mix(db6_ch.output)
 			}
 
 		if(hasFeature("remap") && params.genomes[genomeId].containsKey("remap_url")) {
 			db7_ch = DOWNLOAD_REMAP([:], genomeId)
 			version_ch = version_ch.mix(db7_ch.version)
-			annot_ch = annot_ch.mix(db7_ch.output.map{T->[
-                                        tabix : T[0],
-                                        header: T[1],
-                                        columns: T[2],
-                                        merge_logic: T[3],
-                                        minoverlap : "."
-                                        ]})
+			annot_ch = annot_ch.mix(db7_ch.output)
 			}
-
 
 
 		if(hasFeature("simpe_repeats") &&  params.genomes[genomeId].containsKey("simple_repeats_url")) {
 			db8_ch = DOWNLOAD_SIMPLE_REPEATS([:], genomeId)
 			version_ch = version_ch.mix(db8_ch.version)
-			annot_ch = annot_ch.mix(db8_ch.output.map{T->[
-                                        tabix : T[0],
-                                        header: T[1],
-                                        columns: T[2],
-                                        merge_logic: T[3],
-                                        minoverlap : "."
-                                        ]})
+			annot_ch = annot_ch.mix(db8_ch.output)
 			}
 
 		if(hasFeature("rmsk") && params.genomes[genomeId].containsKey("rmsk_url")) {
 			db9_ch = DOWNLOAD_RMSK([:], genomeId)
 			version_ch = version_ch.mix(db9_ch.version)
-			annot_ch = annot_ch.mix(db9_ch.output.map{T->[
-                                        tabix : T[0],
-                                        header: T[1],
-                                        columns: T[2],
-                                        merge_logic: T[3],
-                                        minoverlap : "."
-                                        ]})
+			annot_ch = annot_ch.mix(db9_ch.output)
 			}
 		
 		if(hasFeature("gnomad_sv") && params.genomes[genomeId].containsKey("ucsc_name") &&  (params.genomes[genomeId].ucsc_name.equals("hg19") || params.genomes[genomeId].ucsc_name.equals("hg38"))) {
@@ -129,39 +97,19 @@ workflow BCFTOOLS_ANNOTATE_SOURCES {
 
 			db10_ch = FREQUENT_GNOMADSV([:], svch.bed)
 			version_ch = version_ch.mix(db10_ch.version)
-			annot_ch = annot_ch.mix(db10_ch.output.map{T->[
-                                        tabix : T[0],
-                                        header: T[1],
-                                        columns: T[2],
-                                        merge_logic: T[3],
-                                        minoverlap : "."
-                                        ]})
+			annot_ch = annot_ch.mix(db10_ch.output)
 			}
 
 		if(hasFeature("vista") && params.genomes[genomeId].containsKey("vista_enhancers_url") ) {
 			db11_ch = DOWNLOAD_VISTA_ENHANCERS([:], genomeId)
 			version_ch = version_ch.mix(db11_ch.version)
-			annot_ch = annot_ch.mix(db11_ch.output.map{T->[
-                                        tabix : T[0],
-                                        header: T[1],
-                                        columns: T[2],
-                                        merge_logic: T[3],
-                                        minoverlap : "."
-                                        ]})
+			annot_ch = annot_ch.mix(db11_ch.output)
 			}
 
 		
 		if(hasFeature("regfeatures") && params.genomes[genomeId].containsKey("ensembl_regulatory_gff_url")) {
 			db12_ch = DOWNLOAD_REGFEATURES([:], genomeId)
 			version_ch = version_ch.mix(db12_ch.version)
-			annot_ch = annot_ch.mix(db12_ch.output.map{T->[
-                                        tabix : T[0],
-                                        header: T[1],
-                                        columns: T[2],
-                                        merge_logic: T[3],
-                                        minoverlap : "."
-                                        ]})
-
 			annot_ch = annot_ch.mix(db12_ch.output)
 			}
 
@@ -169,13 +117,13 @@ workflow BCFTOOLS_ANNOTATE_SOURCES {
 		if(hasFeature("encode_ccre") && params.genomes[genomeId].containsKey("encode_ccre_url")) {
 			db13_ch = DOWNLOAD_ENCODE_CCRE([:], genomeId, bed)
 			version_ch = version_ch.mix(db13_ch.version)
-			annot_ch = annot_ch.mix(db13_ch.output.map{T->[
-                                        tabix : T[0],
-                                        header: T[1],
-                                        columns: T[2],
-                                        merge_logic: T[3],
-                                        minoverlap : "."
-                                        ]})
+			annot_ch = annot_ch.mix(db13_ch.output)
+			}
+
+		if(hasFeature("clinvar") && params.genomes[genomeId].containsKey("clinvar_vcf_url")) {
+			db13_ch = DOWNLOAD_CLINVAR([:], genomeId)
+			version_ch = version_ch.mix(db13_ch.version)
+			annot_ch = annot_ch.mix(db13_ch.vcf)
 			}
 
 
@@ -188,61 +136,42 @@ workflow BCFTOOLS_ANNOTATE_SOURCES {
 			if(hasFeature("bhfucl")) {
 				db2_ch = DOWNLOAD_BHFUCL([:], bed4genes_ch.bed)
 				version_ch = version_ch.mix(db2_ch.version)
-				annot_ch = annot_ch.mix(db2_ch.output.map{T->[
-                                        tabix : T[0],
-                                        header: T[1],
-                                        columns: T[2],
-                                        merge_logic: T[3],
-                                        minoverlap : "."
-                                        ]})
+				annot_ch = annot_ch.mix(db2_ch.output)
 				}
 
 			if(hasFeature("diseases")) {
 				db3_ch = DOWNLOAD_DISEASES([:], bed4genes_ch.bed)
 				version_ch = version_ch.mix(db3_ch.version)
-				annot_ch = annot_ch.mix(db3_ch.output.map{T->[
-                                        tabix : T[0],
-                                        header: T[1],
-                                        columns: T[2],
-                                        merge_logic: T[3],
-                                        minoverlap : "."
-                                        ]})
+				annot_ch = annot_ch.mix(db3_ch.output)
 				}
 
 			if(hasFeature("gencc")) {
 				db4_ch = DOWNLOAD_GENCC([:], bed4genes_ch.bed)
 				version_ch = version_ch.mix(db4_ch.version)
-				annot_ch = annot_ch.mix(db4_ch.output.map{T->[
-                                        tabix : T[0],
-                                        header: T[1],
-                                        columns: T[2],
-                                        merge_logic: T[3],
-                                        minoverlap : "."
-                                        ]})
+				annot_ch = annot_ch.mix(db4_ch.output)
 				}
 
 
 			if(hasFeature("organizer")) {
 				db5_ch = DOWNLOAD_ORGANIZER([:], bed4genes_ch.bed)
 				version_ch = version_ch.mix(db5_ch.version)
-				annot_ch = annot_ch.mix(db5_ch.output.map{T->[
-                                        tabix : T[0],
-                                        header: T[1],
-                                        columns: T[2],
-                                        merge_logic: T[3],
-                                        minoverlap : "."
-                                        ]})
+				annot_ch = annot_ch.mix(db5_ch.output)
 				}
 			}
 
-		
-		script_ch = BUILD_SCRIPT([:], annot_ch.collect())
-		version_ch = version_ch.mix(script_ch.version)
+		annot_ch = annot_ch.map{T->[
+			name: T[0],
+                        tabix : T[1],
+                        header: T[2],
+                        columns: T[3],
+                        merge_logic: T[4],
+                        minoverlap : "."
+                        ]}
+
 
 		version_ch = MERGE_VERSION("annotations.sources", version_ch.collect())		
 	emit:
 		version = version_ch
-		executable = script_ch.output
 		annotations_ch = annot_ch
 	}
 
@@ -332,7 +261,7 @@ input:
 	val(meta)
       	path(bed)
 output:
-	tuple path("bhfucl.bed.gz"),path("bhfucl.header"),val("CHROM,FROM,TO,BHFUCL"),val("BHFUCL:unique"),emit:output
+	tuple val("BHFUCL"),path("bhfucl.bed.gz"),path("bhfucl.header"),val("CHROM,FROM,TO,BHFUCL"),val(""),emit:output
         path("version.xml"),emit:version
 when:
 script:
@@ -380,7 +309,7 @@ input:
 	val(meta)
       	path(bed)
 output:
-	tuple path("diseases.bed.gz"),path("diseases.header"),val("CHROM,FROM,TO,DISEASES"),val("DISEASES:unique"),emit:output
+	tuple val("DISEASES"),path("diseases.bed.gz"),path("diseases.header"),val("CHROM,FROM,TO,DISEASES"),val("DISEASES:unique"),emit:output
 	path("version.xml"),emit:version
 script:
 	def url = "https://download.jensenlab.org/human_disease_knowledge_filtered.tsv"
@@ -434,7 +363,7 @@ input:
 	val(meta)
       	path(bed)
 output:
-	tuple path("gencc.bed.gz"),path("gencc.header"),val("CHROM,FROM,TO,GENCC"),val("GENCC:unique"),emit:output
+	tuple val("GENCC"),path("gencc.bed.gz"),path("gencc.header"),val("CHROM,FROM,TO,GENCC"),val("GENCC:unique"),emit:output
         path("version.xml"),emit:version
 script:
 	def url= "https://search.thegencc.org/download/action/submissions-export-tsv"
@@ -490,7 +419,7 @@ input:
 	val(genomeId)
 	path(sortedbed)
 output:
-	tuple path("greendb.bed.gz"),path("greendb.header"),val("CHROM,FROM,TO,GREENDB"),val("GREENDB:unique"),emit:output
+	tuple val("GREENDB"),path("greendb.bed.gz"),path("greendb.header"),val("CHROM,FROM,TO,GREENDB"),val("GREENDB:unique"),emit:output
 	path("version.xml"),emit:version
 script:
 	def genome = params.genomes[genomeId]
@@ -540,7 +469,7 @@ input:
 	val(meta)
       	path(bed)
 output:
-	tuple path("organizer.bed.gz"),path("organizer.header"),val("CHROM,FROM,TO,ORGANIZER"),val("ORGANIZER:unique"),emit:output
+	tuple val("ORGANIZER"),path("organizer.bed.gz"),path("organizer.header"),val("CHROM,FROM,TO,ORGANIZER"),val("ORGANIZER:unique"),emit:output
 	path("version.xml"),emit:version
 script:
 
@@ -589,7 +518,7 @@ input:
 	val(meta)
 	val(genomeId)
 output:
-	tuple path("go.bed.gz"),path("go.header"),val("CHROM,FROM,TO,GO"),val("GO:first"),emit:output
+	tuple val("GO"),path("go.bed.gz"),path("go.header"),val("CHROM,FROM,TO,GO"),val(""),emit:output
 	path("go.terms.tsv"),emit:goterms_tsv
         path("version.xml"),emit:version
 script:
@@ -665,7 +594,7 @@ input:
 	val(meta)
 	val(genomeId)
 output:
-	tuple path("remap.bed.gz"),path("remap.header"),val("CHROM,FROM,TO,REMAP"),val("REMAP:first"),emit:output
+	tuple val("REMAP"),path("remap.bed.gz"),path("remap.header"),val("CHROM,FROM,TO,REMAP"),val(""),emit:output
 	path("version.xml"),emit:version
 script:
 	def genome = params.genomes[genomeId]
@@ -716,7 +645,7 @@ input:
 	val(meta)
 	val(genomeId)
 output:
-	tuple path("simpleRepeats.bed.gz"),path("simpleRepeats.header"),val("CHROM,FROM,TO,SREPEAT"),val("SREPEAT:first"),emit:output
+	tuple val("SREPEAT"),path("simpleRepeats.bed.gz"),path("simpleRepeats.header"),val("CHROM,FROM,TO,SREPEAT"),val(""),emit:output
 	path("version.xml"),emit:version
 script:
         def genome = params.genomes[genomeId]
@@ -767,7 +696,7 @@ input:
 	val(meta)
 	val(genomeId)
 output:
-	tuple path("rmsk.bed.gz"),path("rmsk.header"),val("CHROM,FROM,TO,RMSK"),val("RMSK:first"),emit:output
+	tuple val("RMSK"),path("rmsk.bed.gz"),path("rmsk.header"),val("CHROM,FROM,TO,RMSK"),val(""),emit:output
 	path("version.xml"),emit:version
 script:
 	def genome = params.genomes[genomeId]
@@ -812,7 +741,7 @@ input:
 	val(meta)
 	val(tabix)
 output:
-	tuple path("gnomad.sv.bed.gz"),path("gnomad.sv.header"),val("CHROM,FROM,TO,GNOMAD_SV"),val("GNOMAD_SV:unique"),emit:output
+	tuple val("GNOMADSV"),path("gnomad.sv.bed.gz"),path("gnomad.sv.header"),val("CHROM,FROM,TO,GNOMAD_SV"),val("GNOMAD_SV:unique"),emit:output
         path("version.xml"),emit:version
 script:
 	def whatis ="Gnomad SV"
@@ -853,7 +782,7 @@ input:
 	val(meta)
 	val(genomeId)
 output:
-	tuple path("vistaEnhancers.bed.gz"),path("vistaEnhancers.header"),val("CHROM,FROM,TO,VISTA_ENHANCER"),val("VISTA_ENHANCER:unique"),emit:output
+	tuple val("VISTA"),path("vistaEnhancers.bed.gz"),path("vistaEnhancers.header"),val("CHROM,FROM,TO,VISTA_ENHANCER"),val("VISTA_ENHANCER:unique"),emit:output
         path("version.xml"),emit:version
 script:
 	def genome = params.genomes[genomeId]	
@@ -899,10 +828,11 @@ input:
 	val(meta)
 	val(genomeId)
 output:
-	tuple path("regulatory_features.bed.gz"),path("regulatory_features.header"),val("CHROM,FROM,TO,REGULATORY_FEAT"),val("REGULATORY_FEAT:first"),emit:output
+	tuple val("REGFEAT"),path("regulatory_features.bed.gz"),path("regulatory_features.header"),val("CHROM,FROM,TO,REGULATORY_FEAT"),val("REGULATORY_FEAT:unique"),emit:output
         path("version.xml"),emit:version
 script:
-	def genome = params.genome[genomeId]
+	def genome = params.genomes[genomeId]
+	def reference = genome.fasta
 	def url = genome.ensembl_regulatory_gff_url
 	def whatis = "Regulatory Features from ${url}"
 
@@ -936,6 +866,7 @@ cat << EOF > version.xml
 EOF
 """
 }
+
 /**
 
 http://genome.ucsc.edu/cgi-bin/hgTables?db=hg38&hgta_group=regulation&hgta_track=encodeCcreCombined&hgta_table=encodeCcreCombined&hgta_doSchema=describe+table+schema
@@ -950,7 +881,7 @@ input:
 	val(genomeId)
 	path(sortedbed)
 output:
-	tuple path("encode.ccre.bed.gz"),path("encode.ccre.header"),val("CHROM,FROM,TO,ENCODE_CCRE"),val("ENCODE_CCRE:unique"),emit:output
+	tuple val("CCRE"),path("encode.ccre.bed.gz"),path("encode.ccre.header"),val("CHROM,FROM,TO,ENCODE_CCRE"),val("ENCODE_CCRE:unique"),emit:output
         path("version.xml"),emit:version
 script:
 	def genome = params.genomes[genomeId]
@@ -993,36 +924,56 @@ EOF
 """
 }
 
-process BUILD_SCRIPT {
-tag "N=${L.size()}"
-executor "local"
+
+process DOWNLOAD_CLINVAR {
+afterScript "rm -rf TMP"
+memory "3g"
 input:
-	val(meta)
-	val(L)
+      	val(meta)
+        val(genomeId)
 output:
-	path("annotate.sh"),emit:output
-	path("version.xml"),emit:version
+       	tuple val("CLINVAR"),path("clinvar.bcf"),path("clinvar.header"),val("CLNSIG,CLN_ALLELEID"),val(""),emit:vcf
+        path("version.xml"),emit:version
 script:
+	def genome = params.genomes[genomeId]
+       	def url = genome.clinvar_vcf_url
+        def whatis="ClinVar aggregates information about genomic variation and its relationship to human health."
+
 """
+hostname 1>&2
+${moduleLoad("bcftools jvarkit")}
+set -o pipefail
+mkdir -p TMP
 
-cat << '__EOF__' > annotate.sh
-#!/bin/bash
-set -x
-set -e
+wget -O - "${url}" |\
+	gunzip -c |\
+	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfsetdict -R "${genome.fasta}"  -n SKIP |\
+	bcftools sort -T TMP/tmp -O b -o TMP/clinvar.bcf
 
-test -f TMP/jeter1.bcf
+bcftools view --header-only TMP/clinvar.bcf | grep "^##INFO" | cut -d '=' -f3 | cut -d ',' -f1 | grep -v '^CLN' | awk '{printf("INFO/%s\tCLN_%s\\n",\$1,\$1);}' > TMP/rename.tsv
+bcftools annotate --rename-annots TMP/rename.tsv -O b -o TMP/jeter.bcf TMP/clinvar.bcf
+mv TMP/jeter.bcf TMP/clinvar.bcf
 
-${L.collect{T->"#####\nbcftools annotate --annotations '${T.tabix}' --columns '${T.columns}' --header-lines '${T.header}' --merge-logic '${T.merge_logic}' ${T.minoverlap.equals(".")?"":"--min-overlap '${T.minoverlap}'"} -O b -o TMP/jeter2.bcf TMP/jeter1.bcf\nmv -v TMP/jeter2.bcf TMP/jeter2.bcf"}.join("\n")}
+bcftools index --force TMP/clinvar.bcf
 
-mv -v TMP/jeter1.bcf TMP/jeter2.bcf
-__EOF__
+mv TMP/clinvar.bcf ./
+mv TMP/clinvar.bcf.csi ./
 
-chmod a+x annotate.sh
+#useless because vcf
+touch clinvar.header
 
+#########################################
 cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="Name">${task.process}</entry>
+        <entry key="description">${whatis}</entry>
+        <entry key="url"><a>${url}</a></entry>
+        <entry key="versions">${getVersionCmd("bcftools")}</entry>
 </properties>
 EOF
+
 """
 }
+
+
+
