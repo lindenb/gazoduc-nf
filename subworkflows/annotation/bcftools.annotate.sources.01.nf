@@ -106,6 +106,12 @@ workflow BCFTOOLS_ANNOTATE_SOURCES {
 			annot_ch = annot_ch.mix(db11_ch.output)
 			}
 
+		if(hasFeature("cadd") && params.genomes[genomeId].containsKey("cadd_url") ) {
+			db11_ch = DOWNLOAD_CADD([:], genomeId)
+			version_ch = version_ch.mix(db11_ch.version)
+			annot_ch = annot_ch.mix(db11_ch.output)
+			}
+
 		
 		if(hasFeature("regfeatures") && params.genomes[genomeId].containsKey("ensembl_regulatory_gff_url")) {
 			db12_ch = DOWNLOAD_REGFEATURES([:], genomeId)
@@ -157,6 +163,13 @@ workflow BCFTOOLS_ANNOTATE_SOURCES {
 				version_ch = version_ch.mix(db5_ch.version)
 				annot_ch = annot_ch.mix(db5_ch.output)
 				}
+
+			if(hasFeature("stringdb") && params.genomes[genomeId].containsKey("taxon_id")) {
+				db5_ch = DOWNLOAD_STRINGDB([:], genomeId, bed4genes_ch.bed)
+				version_ch = version_ch.mix(db5_ch.version)
+				annot_ch = annot_ch.mix(db5_ch.output)
+				}
+
 			}
 
 		annot_ch = annot_ch.map{T->[
@@ -409,6 +422,72 @@ echo "<properties/>"
 """
 }
 
+
+/** STRINGDB */
+process DOWNLOAD_STRINGDB {
+afterScript "rm -rf TMP"
+input:
+	val(meta)
+	val(genomeId)
+	path(sortedbed)
+output:
+	tuple val("STRINGDB"),path("string.bed.gz"),path("string.header"),val("CHROM,FROM,TO,STRINGDB"),val("STRINGDB:unique"),emit:output
+	path("version.xml"),emit:version
+script:
+	def version = params.annotations.stringdb_version
+	def genome = params.genomes[genomeId]
+	def taxon = genome.taxon_id?:9606
+	def treshold = params.annotations.stringdb_treshold
+"""
+hostname 1>&2
+${moduleLoad("htslib")}	
+mkdir -p TMP
+set -o pipefail
+
+# protein-ID + GENE_NAME
+
+wget -O - "https://stringdb-downloads.org/download/protein.info.${version}/${taxon}.protein.info.${version}.txt.gz" |\
+	gunzip -c |\
+	cut -f 1,2 |\
+	sort  -T TMP -t '\t' -k1,1 > TMP/info.k1.txt
+
+
+# download linked, ouput ID1,ID2  sorted on ID1
+wget -O - "https://stringdb-downloads.org/download/protein.links.${version}/${taxon}.protein.links.${version}.txt.gz" |\
+	gunzip -c |\
+	tr " " "\t" |\
+	awk '(\$3>=${treshold})' |\
+	cut -f1,2 |\
+	sort -T TMP  -k1,1 -t '\t'  |\
+	uniq > TMP/link.k1.txt
+
+join -t $'\t' -1 1 -2 1 -o '1.2,2.2' TMP/link.k1.txt TMP/info.k1.txt |\
+	sort -T TMP -t '\t' -k1,1 |\
+	join -t '\t' -1 1 -2 1 -o '1.2,2.2' - TMP/info.k1.txt |\
+	sort -T TMP -t '\t' -k1,1 |\
+	join -t '\t' -1 1 -2 4 -o '2.1,2.2,2.3,2.4,1.2' - '${sortedbed}' |\
+	cut -f 1,2,3,5 |\
+	sort -T TMP -k1,1 -k2,2n |\
+	bgzip > TMP/string.bed.gz
+
+tabix -p ped TMP/string.bed.gz
+
+mv TMP/string.bed.gz ./
+mv TMP/string.bed.gz.tbi ./
+
+echo '##INFO=<ID=STRINGDB,Number=.,Type=String,Description="Possible interactors from StringDB ${version} treshold:${treshold}.">' > string.header
+
+#########################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="Name">${task.process}</entry>
+        <entry key="versions">${getVersionCmd("tabix wget")}</entry>
+</properties>
+EOF
+
+"""
+
+}
 
 
 /** GREEN-DB is a comprehensive collection of 2.4 million regulatory elements in the human genome collected from previously published databases, high-throughput screenings and functional studies.  */
@@ -773,6 +852,63 @@ cat << EOF > version.xml
 EOF
 """
 }
+
+
+process DOWNLOAD_CADD {
+afterScript "rm -rf TMP"
+tag "${genomeId}"
+input:
+	val(meta)
+	val(genomeId)
+output:
+	tuple val("CADD"),path("cadd.bed.gz"),path("cadd.header"),val("CHROM,POS,REF,ALT,CADD_RAW,CADD_PHRED"),val("CADD_RAW:max,CADD_PHRED:max"),emit:output
+        path("version.xml"),emit:version
+script:
+	def genome = params.genomes[genomeId]	
+	def url = genome.cadd_url
+	def reference = genome.fasta
+	def whatis = "CADD score from ${url}"
+"""
+hostname 1>&2
+${moduleLoad("htslib jvarkit bedtools")}
+set -o pipefail
+mkdir -p TMP
+
+wget -O TMP/cadd.tsv.gz "${url}" 
+
+// change chromosome notation if needed
+if grep -F -w chr1 "${genome.fasta}.fai" ; then
+
+	gunzip -c TMP/cadd.tsv.gz | sed '/^[^#]/s/^/chr/' | bgzip > TMP/jeter.tsv.gz
+	mv -v TMP/jeter.tsv.gz TMP/cadd.tsv.gz
+
+	tabix --force --sequence 1 --begin 2 --end  2 --comment '#' TMP/cadd.tsv.gz
+else
+
+	wget -O TMP/cadd.tsv.gz.tbi "${url}.tbi"
+
+fi
+
+
+mv TMP/cadd.tsv.gz ./
+mv TMP/cadd.tsv.gz.tbi ./
+
+echo '##INFO=<ID=CADD_RAW,Number=A,Type=Float,Description="CADD Raw score. ${whatis}">' > cadd.header
+echo '##INFO=<ID=CADD_PHRED,Number=A,Type=Float,Description="CADD Phred score. ${whatis}">' >> cadd.header
+
+
+#########################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="Name">${task.process}</entry>
+        <entry key="description">${whatis}</entry>
+        <entry key="url"><a>${url}</a></entry>
+</properties>
+EOF
+"""
+}
+
+
 
 
 process DOWNLOAD_VISTA_ENHANCERS {

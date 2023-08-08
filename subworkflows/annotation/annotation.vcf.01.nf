@@ -84,6 +84,7 @@ workflow ANNOTATE_VCF_01 {
 			rows = rows.combine(snpeff_db.output).
 					map{T->T[0].plus("snpeff_data":T[1])}
 			}
+
 		
 		if(hasFeature("vep_utr") && !isBlank(params.genomes[genomeId],"ucsc_name") && ( params.genomes[genomeId].ucsc_name.equals("hg19") || params.genomes[genomeId].ucsc_name.equals("hg38"))) {
 			veputr_ch = UTR_ANNOTATOR_DOWNLOAD_01([:], genomeId)
@@ -153,6 +154,7 @@ grep -v "^#" "${meta.captures}" | while read CN CF
 rm jeter.genome
 """
 }
+
 
 
 /** build snpeff Database from gtf */
@@ -327,6 +329,20 @@ script:
 		bcftools annotate --annotations "${genome.dbsnp}"  --regions-file "TMP/jeter.123.bed"  -c ID -O v -o TMP/jeter1.vcf TMP/jeter1.bcf
 		rm TMP/jeter1.bcf TMP/jeter1.bcf.csi
 	fi
+
+
+	#
+	# MICRO ORF
+	#
+	if ${hasFeature("gff3_uorf") && !isBlank(genome,"gtf")} then
+
+		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar  \${JVARKIT_DIST}/jvarkit.jar vcfscanupstreamorf \
+			--canonical --exclude-cds --gtf "${genome.gtf}" -R "${reference}" --strong TMP/jeter1.vcf > TMP/jeter2.vcf
+		
+		mv -v TMP/jeter2.vcf TMP/jeter1.vcf
+	
+	fi
+
 
 	# bcftools CSQ
         if ${hasFeature("bcftools_csq") && !isBlank(genome,"gff3")}  ; then
