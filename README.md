@@ -102,11 +102,10 @@ Warning: some NF use a custom java library under `lib/`. The NF workflow should 
 ### Misc
 
   * [VCF stats](workflows/vcfstats/vcfstats01/README.md). Apply `bcftools stats` on a set of vcf files
-  * [Samtools stats](workflows/bamstats/bamstats01/README.md). Apply `samtools stats` on a set of bam files
+  * [Samtools stats](workflows/bamstats/bamstats01/README.md). Apply `samtools stats` ,'mosdepth', 'samtools flagstats` on a set of bam files
   * [Mosdepth](workflows/mosdepth/). Apply `mosdepth` on a set of BAMs.
   * [Samtools depth](workflows/samtoolsdepth/). Apply `samtools depth` on a set of BAMs.
   * [Samtools depth VCF](workflows/depthvcf/). Apply `samtools depth` on a set of BAMs. ouput is a vcf file.
-  * [FlagStats](workflows/flagstats/). Apply 'samtools flagstats' on a set of BAMS.
   * [SpliceAI](workflows/spliceai). Apply SpliceAI to a VCF
   * [Sex](workflows/guesssex) . Guess sex from chrX/chrY in BAM file
   * [QC remapping](workflows/comparemapping). QC remapping by genotype concordance + liftover

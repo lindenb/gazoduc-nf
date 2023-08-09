@@ -23,14 +23,6 @@ SOFTWARE.
 
 */
 
-def gazoduc = gazoduc.Gazoduc.getInstance()
-
-gazoduc.make("mosdepth_version","0.3.3").
-        description("mosdepth version").
-        put()
-
-
-
 
 process MOSDEPTH_DOWNLOAD_01 {
 input:
@@ -39,7 +31,7 @@ output:
 	path("mosdepth"),emit:executable
 	path("version.xml"),emit:version
 script:
-	def mosdepth_version = meta.mosdepth_version?:"0.3.3"
+	def mosdepth_version = params.mosdepth.version
 	def url = "https://github.com/brentp/mosdepth/releases/download/v${mosdepth_version}/mosdepth"
 """
 hostname 1>&2
