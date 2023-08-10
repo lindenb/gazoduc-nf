@@ -84,6 +84,8 @@ if( params.help ) {
 workflow {
 
 	somalier_ch = SOMALIER_BAMS_01(
+		[:],
+		params.genomeId,
 		Channel.fromPath(params.bams),
 		file(params.pedigree.isEmpty()?"NO_FILE":params.pedigree)
 		)

@@ -61,10 +61,10 @@ workflow MONOLITH {
 					h=h.plus("LB":T.sample)
 					}
 				if(!T.containsKey("CN") || T.CN.equals(".") || T.CN.trim().isEmpty()) {
-					h=h.plus("CN":"NantesBird")
+					h=h.plus("CN":params.bwa.mem.CN)
 					}
 				if(!T.containsKey("PL") || T.PL.equals(".") || T.PL.trim().isEmpty()) {
-					h=h.plus("PL":"ILLUMINA")
+					h=h.plus("PL":params.bwa.mem.PL)
 					}
 				if(!T.containsKey("R2") || T.R2.equals(".") || T.R2.trim().isEmpty() || T.R1.endsWith(".ora")) {
 					h= h.plus("R2":".");

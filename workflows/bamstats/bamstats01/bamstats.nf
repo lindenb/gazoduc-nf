@@ -34,6 +34,8 @@ include {MULTIQC_01} from '../../../modules/multiqc/multiqc.01.nf'
 include {COLLECT_TO_FILE_01} from '../../../modules/utils/collect2file.01.nf'
 include {SCATTER_TO_BED} from '../../../subworkflows/picard/picard.scatter2bed.02.nf'
 include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
+include {SOMALIER_BAMS_02} from '../../../subworkflows/somalier/somalier.bams.01.nf'
+
 
 if( params.help ) {
     exit 0
@@ -61,11 +63,42 @@ main:
 	
 	rows_ch = samples_ch.output.splitCsv(header:true,sep:"\t")
 
+
+	rows_ch = rows_ch.
+		map{T->T.plus("sample":T.new_sample)}.
+		map{T->{
+			def genomeId = params.genomes.grep{it.value.fasta.equals(T.reference)}.collect{it.key}.join("");
+			if(genomeId.isEmpty()) throw new IllegalStateException("cannot find genomeId for ${T}");
+			return T.plus([genomeId:genomeId]);
+		}}
+
+
+
+	if(params.with_somalier) {
+
+		genomeId_ch = rows_ch.
+        	    map{T->T.genomeId}.
+		    first()
+
+		som_ch = SOMALIER_BAMS_02(
+			[:],
+			genomeId_ch,
+			rows_ch.combine(genomeId_ch).
+				filter{T->T[0].genomeId.equals(T[1])}
+				.map{T->T[0]},
+			file("NO_FILE") /* pedigree */
+			)
+                version_ch = version_ch.mix(som_ch.version)
+		toqc_ch =  toqc_ch.mix(som_ch.qc)
+		}
+
+
 	if(bed.name.equals("NO_FILE")) {
+
+		/** unique ref */
 		refs_ch = rows_ch.
 			map{T->[reference:T.reference]}.
 			unique()
-
 		acgt_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"ACGT","MAX_TO_MERGE":"1"], refs_ch )
                 version_ch = version_ch.mix(acgt_ch.version)
 
@@ -81,13 +114,11 @@ main:
 		}
 
 
-	rows_ch = rows_ch.
-		map{T->T.plus("sample":T.new_sample)}.
-		map{T->{
-			def genomeId = params.genomes.grep{it.value.fasta.equals(T.reference)}.collect{it.key}.join("");
-			if(genomeId.isEmpty()) throw new IllegalStateException("cannot find genomeId for ${T}");
-			return T.plus([genomeId:genomeId]);
-		}}
+	if(params.with_samtools_idxstats) {
+		fstats_ch = APPLY_SAMTOOLS_IDXSTAT([:],rows_ch)
+		version_ch = version_ch.mix(fstats_ch.version)
+		toqc_ch =  toqc_ch.mix(fstats_ch.output.map{T->T[1]})
+		}
 	
 
 	if(params.with_samtools_flagstat) {
@@ -157,6 +188,40 @@ emit:
 
 runOnComplete(workflow);
 
+
+process APPLY_SAMTOOLS_IDXSTAT {
+tag "${row.sample}"
+cpus 1
+input:
+      	val(meta)
+        val(row)
+output:
+       	tuple val(row),path("*.idxstats.txt"),emit:output
+        path("version.xml"),emit:version
+when:
+	row.bam.endsWith(".bam") // idx stats is just slow with CRAM...
+script:
+	if(!row.containsKey("genomeId")) throw new IllegalStateException("cannot find genomeId for ${row}");
+	def genomeId = row.genomeId
+        def prefix = row.prefix?:(params.prefix?:"") + genomeId + "."
+"""
+hostname 1>&2
+${moduleLoad("samtools")}
+
+samtools view idxstats "${row.bam}" > "${row.sample}.${prefix}idxstats.txt"
+
+##################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">samtools idxstats</entry>
+        <entry key="sample">${row.sample}</entry>
+        <entry key="bam">${row.bam}</entry>
+        <entry key="samtools.version">\$(samtools version | head -n1 )</entry>
+</properties>
+EOF
+"""
+}
 
 
 

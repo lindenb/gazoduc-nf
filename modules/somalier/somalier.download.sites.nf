@@ -25,25 +25,33 @@ SOFTWARE.
 include {moduleLoad} from '../utils/functions.nf'
 
 process SOMALIER_DOWNLOAD_SITES {
+tag "${genomeId}"
+afterScript "rm -rf TMP"
+input:
+	val(meta)
+	val(genomeId)
 output:
 	path("sites.vcf.gz"), emit: vcf
 	path("sites.vcf.gz.tbi"), emit:index
 	path("version.xml"), emit:version
 script:
-	def genome = params.genomes[params.genomeId]
+	def genome = params.genomes[genomeId]
 	def url = genome.somalier_sites_url
 """
 hostname 1>&2
 ${moduleLoad("jvarkit bcftools")}
 set -o pipefail
 set -x
+mkdir -p TMP
 
 wget -O - "${url}" |\
 	gunzip -c |\
 	java -jar \${JVARKIT_DIST}/vcfsetdict.jar -R "${genome.fasta}"  --onNotFound SKIP |\
-	bcftools sort -T . -o sites.vcf.gz -O z
+	bcftools sort -T TMP -o TMP/sites.vcf.gz -O z
 
-bcftools index -t sites.vcf.gz
+bcftools index -t TMP/sites.vcf.gz
+
+mv -v TMP/sites* ./
 
 ##################
 cat << EOF > version.xml
