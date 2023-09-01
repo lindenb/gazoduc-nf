@@ -23,43 +23,41 @@ SOFTWARE.
 
 */
 include {getVersionCmd;moduleLoad;parseBoolean} from '../../modules/utils/functions.nf'
-include {SAMTOOLS_SAMPLES_01} from '../../subworkflows/samtools/samtools.samples.01.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {SAMTOOLS_SAMPLES02} from '../../subworkflows/samtools/samtools.samples.02.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 
 
 workflow PLOT_COVERAGE_01 {
 	take:
 		meta
-		reference
-		references
+		genomeId
 		bams
 		bed
-		gtf
 	main:
 
 		version_ch  = Channel.empty()
 
 
-		bams_ch = SAMTOOLS_SAMPLES_01(meta.plus(["with_header":true,"allow_multiple_references":false,"allow_duplicate_samples":true]),reference,references,bams)
+		bams_ch = SAMTOOLS_SAMPLES02(meta.plus(["with_header":true,"allow_multiple_references":false,"allow_duplicate_samples":true]), genomeId,bams)
 		version_ch = version_ch.mix(bams_ch.version)
 		
-		x_ch = EXTEND_BED(meta,reference,bed)
+		x_ch = EXTEND_BED([:], genomeId, bed)
 		version_ch = version_ch.mix(x_ch.version)
 
 		c1_ch = x_ch.bed.splitCsv(header: true,sep:'\t',strip:true)
 		c2_ch = bams_ch.output.splitCsv(header: true,sep:'\t',strip:true)
 
-		cov_ch = DRAW_COVERAGE(meta,gtf, c1_ch.combine(c2_ch).map{T->T[0].plus(T[1])})
+		cov_ch = DRAW_COVERAGE([:], genomeId, c1_ch.combine(c2_ch).map{T->T[0].plus(T[1])})
 		version_ch = version_ch.mix(cov_ch.version)
 
 		input_merge_ch = cov_ch.pdf.
 			map{T->[T[0].chrom+"_"+T[0].delstart+"_"+T[0].delend, T[0].sample+"\t"+T[1]]}
 
 
-		merge_pdf_ch = MERGE_PDFS(meta, input_merge_ch.groupTuple())
+		merge_pdf_ch = MERGE_PDFS([:], input_merge_ch.groupTuple())
 		version_ch = version_ch.mix(merge_pdf_ch.version)
 
-		version_ch = MERGE_VERSION(meta, "Coverage Plot", "Cov Plotter", version_ch.collect())
+		version_ch = MERGE_VERSION("Coverage Plot", version_ch.collect())
 
 		zip_ch = ZIP_ALL(meta,merge_pdf_ch.output.collect())
 	emit:
@@ -72,14 +70,16 @@ process EXTEND_BED {
 	tag "${bed}"
 	input:
 		val(meta)
-		val(reference)
+		val(genomeId)
 		path(bed)
 	output:
 		path("extend.bed"),emit:bed
 		path("version.xml"),emit:version
 	script:
-		def extend =meta.extend_bed?:"3.0"
-		def max_sv_len = ((meta.max_sv_length?:-1) as int)
+		def genome = params.genomes[genomeId]
+		def reference = genome.fasta
+		def extend = params.extend_bed?:"3.0"
+		def max_sv_len = ((params.max_sv_length?:-1) as int)
 	"""
 	hostname 1>&2
 	${moduleLoad("jvarkit bedtools")}
@@ -124,12 +124,14 @@ process DRAW_COVERAGE {
         afterScript "rm -rf TMP"
 	input:
 		val(meta)
-		path(gtf)
+		val(genomeId)
 		val(row)
 	output:
 		tuple val(row),path("${params.prefix?:""}${row.chrom}_${row.start}_${row.end}.${row.sample}.pdf"),emit:pdf
 		path("version.xml"),emit:version
 	script:
+		def genome = params.genomes[genomeId]
+		def gtf = (genome.gtf?:"")
 		def LARGE_SV = 500_000
 		def svlen = 1 + (row.end as int )-(row.start as int)
 		def gene_type = (svlen < LARGE_SV?"exon":"gene")
@@ -139,13 +141,13 @@ process DRAW_COVERAGE {
 	mkdir -p TMP
 
 	
-	if ${gtf.name.equals("NO_FILE")} ; then
+	if ${gtf.isEmpty()} ; then
 
 		touch TMP/exons.R
 
 	else
 
-	tabix "${gtf.toRealPath()}" "${row.chrom}:${row.start}-${row.end}" |\
+	tabix "${gtf}" "${row.chrom}:${row.start}-${row.end}" |\
 		awk -F '\t' '(\$3=="${gene_type}") {printf("%s\t%d\t%s\\n",\$1,int(\$4)-1,\$5);}' |\
 		LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\
 		bedtools merge |\
@@ -287,7 +289,7 @@ process MERGE_PDFS {
 		val(meta)
 		tuple val(title),val(L)
 	output:
-		path("${meta.prefix?:""}${title}.pdf"),emit:output
+		path("${params.prefix?:""}${title}.pdf"),emit:output
 		path("version.xml"),emit:version
 	script:
 	"""
@@ -299,7 +301,7 @@ EOF
 
 	test -s jeter.txt
 
-	gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -dPDFSETTINGS=/prepress -sOutputFile=${meta.prefix?:""}${title}.pdf `cat jeter.txt`
+	gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -dPDFSETTINGS=/prepress -sOutputFile=${params.prefix?:""}${title}.pdf `cat jeter.txt`
 
 	rm jeter.txt
 

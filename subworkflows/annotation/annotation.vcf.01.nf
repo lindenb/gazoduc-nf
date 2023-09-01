@@ -29,6 +29,8 @@ include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_ANNOTATE_SOURCES} from './bcftools.annotate.sources.01.nf'
 include {UTR_ANNOTATOR_DOWNLOAD_01} from '../../modules/vep/utrannotator.download.01.nf'
+include {WGET_01 as WGET_PHYLOP} from '../../modules/utils/wget.01.nf'
+include {WGET_01 as WGET_PHASTCONS} from '../../modules/utils/wget.01.nf'
 
 boolean isBlank(hash,key) {
 	if(hash==null) throw new IllegalArgumentException("[isBlank] hash is null");
@@ -94,6 +96,22 @@ workflow ANNOTATE_VCF_01 {
 					map{T->T[0].plus("vep_utr":T[1])}
 
 			}
+
+
+		if(hasFeature("phyloP") &&  !isBlank(params.genomes[genomeId],"phyloP_bigwig_url")) {
+			phyloP_ch =  WGET_PHYLOP([:], [url:params.genomes[genomeId].phyloP_bigwig_url, output:"phyloP.bw"])
+
+			rows = rows.combine(phyloP_ch.output).
+					map{T->T[0].plus("phyloP_bigwig":T[1])}
+			}
+
+		if(hasFeature("phastCons") &&  !isBlank(params.genomes[genomeId],"phastCons_bigwig_url")) {
+			phastCons_ch =  WGET_PHASTCONS([:], [url:params.genomes[genomeId].phastCons_bigwig_url, output:"phastCons.bw"])
+
+			rows = rows.combine(phastCons_ch.output).
+					map{T->T[0].plus("phastCons_bigwig":T[1])}
+			}
+
 
 		annot_vcf_ch = APPLY_ANNOTATION(
 			[:],
@@ -455,7 +473,35 @@ script:
 		module unload ${genome.vep_module}
 	fi
 
-	bcftools view TMP/jeter1.vcf > /dev/null
+
+	####
+	#
+	# phastCons
+	#
+	#
+	if ${hasFeature("phastCons") && ${!isBlank(row,"phastCons_bigwig")} : then
+		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfbigwig  \
+			--bigwig '${row.phastCons_bigwig?:"NO_FILE"}' \
+			TMP/jeter1.vcf > TMP/jeter2.vcf
+		mv TMP/jeter2.vcf TMP/jeter1.vcf
+
+	fi
+
+	####
+	#
+	# phyloP
+	#
+	#
+	if ${hasFeature("phyloP") && ${!isBlank(row,"phyloP_bigwig")} : then
+
+		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfbigwig  \
+			--bigwig '${row.phyloP_bigwig?:"NO_FILE"}' \
+			TMP/jeter1.vcf > TMP/jeter2.vcf
+		mv TMP/jeter2.vcf TMP/jeter1.vcf
+
+	fi
+
+
 
 	#
 	# VCFFILTERSO

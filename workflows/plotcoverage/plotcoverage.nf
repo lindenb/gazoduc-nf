@@ -24,66 +24,17 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
-
-
-gazoduc.build("bams", "NO_FILE").
-	desc("File containing the paths to the indexed BAM/CRAM files.").
-	existingFile().
-	required().
-	put()
-
-gazoduc.build("gtf", "NO_FILE").
-	desc("gtf file indexed with tabix").
-	put()
-
-gazoduc.build("bed", "NO_FILE").
-	desc("SV intervals as a BED file").
-	existingFile().
-	required().
-	put()
-
-gazoduc.build("mapq","0").
-	desc("min mapping quality").
-	setInt().
-	put()
-
-gazoduc.build("median",true).
-	desc("normalize on median").
-	setBoolean().
-	put()
-
-gazoduc.build("extend_bed",3.0).
-	desc("extend original bed by this factor").
-	setDouble().
-	put()
-
-gazoduc.build("max_sv_length",-1).
-	desc("max abs(SV_LENGTH) or <0 to ignore").
-	setInt().
-	put()
-
-
-params.references="NO_FILE"
-
 include {PLOT_COVERAGE_01} from '../../subworkflows/plotdepth/plot.coverage.01.nf'
 include {runOnComplete} from '../../modules/utils/functions.nf'
 
 
 if( params.help ) {
-    gazoduc.usage().
-	name("plot coverage").
-	desc("Plot coverage for a set of bams").
-	print();
     exit 0
-} else {
-   gazoduc.validate();
-}
-
+} 
 
 
 workflow {
-	ch1 = PLOT_COVERAGE_01(params,params.reference, file(params.references),file(params.bams), file(params.bed), file(params.gtf))
+	ch1 = PLOT_COVERAGE_01([:],params.genomeId,file(params.bams), file(params.bed))
 	//html = VERSION_TO_HTML(params,ch1.version)
 	//PUBLISH(ch1.version,html.html,ch1.zip)
 	}
