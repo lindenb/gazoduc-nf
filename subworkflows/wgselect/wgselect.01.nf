@@ -22,8 +22,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putGnomad()
-
 include {getModules;moduleLoad} from '../../modules/utils/functions.nf'
 include {WGSELECT_EXCLUDE_BED_01 } from './wgselect.exclude.bed.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
@@ -41,7 +39,7 @@ workflow WGSELECT_01 {
 		version_ch = Channel.empty()
 		
 		
-		exclude_ch = WGSELECT_EXCLUDE_BED_01(genomeId)
+		exclude_ch = WGSELECT_EXCLUDE_BED_01([:], genomeId)
 		version_ch = version_ch.mix(exclude_ch.version)
 
 

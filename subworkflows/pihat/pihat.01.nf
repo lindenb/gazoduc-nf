@@ -26,7 +26,7 @@ nextflow.enable.dsl=2
 
 
 include {moduleLoad} from '../../modules/utils/functions.nf'
-include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf' addParams(with_header:false)
+include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 
 

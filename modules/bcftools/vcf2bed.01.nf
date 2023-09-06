@@ -37,13 +37,17 @@ output:
 	path("version.xml"),emit:version
 script:
 	if(!meta.containsKey("with_header")) throw new IllegalArgumentException("with_header was not specified")
-	if(!(vcf.name.endsWith(".list") || vcf.name.endsWith(".vcf.gz") || vcf.name.endsWith(".bcf")))  throw new IllegalArgumentException("bad extension for vcf file:"+vcf);
+	if(!(vcf.name.endsWith(".bed") || vcf.name.endsWith(".list") || vcf.name.endsWith(".vcf.gz") || vcf.name.endsWith(".bcf")))  throw new IllegalArgumentException("bad extension for vcf file:"+vcf);
 	"""
 	hostname 1>&2
 	set -o pipefail
 	${moduleLoad("bcftools")}
 
-	if ${vcf.name.endsWith(".list")} ; then
+	if ${vcf.name.endsWith(".bed")} ; then
+
+		grep -v '^#' '${vcf}' | cut -f1-4 | LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n | uniq > vcf2bed.bed
+
+	elif ${vcf.name.endsWith(".list")} ; then
 		cat "${vcf}" | while read V
 		do
 			bcftools index -s "\${V}" | awk -F '\t' -vV=\${V} '{printf("%s\t0\t%s\t%s\\n",\$1,\$2,V);}'

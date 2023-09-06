@@ -113,6 +113,7 @@ EOF
 
 process CONCAT_ONE_CONTIG {
 tag "${row.contig}:${file(row.vcfs).name}"
+afterScript "rm -rf TMP"
 cpus 3
 input:
         val(meta)
@@ -126,18 +127,23 @@ script:
 	def suffix = meta.suffix?:".bcf"
 	def contig = row.contig
 	def vcfs = row.vcfs
+	def compression = 9
 	if(!(suffix.equals(".vcf.gz") || suffix.equals(".bcf"))) throw new IllegalArgumentException("bad VCF suffix ${suffix}");
         """
         hostname 1>&2
         ${moduleLoad("bcftools")}
+	mkdir -p TMP
 
 	test -s "${vcfs}"
 
         bcftools concat --threads "${task.cpus}" --regions "${contig}" \
                 --no-version --allow-overlaps --remove-duplicates \
-                -O "${suffix.contains("b")?"b":"z"}" -o "${prefix}${contig}.concat${suffix}" --file-list "${vcfs}"
+                -O "${suffix.contains("b")?"b":"z"}${compression}" -o "TMP/${prefix}${contig}.concat${suffix}" --file-list "${vcfs}"
 
-        bcftools index --threads "${task.cpus}" ${!suffix.contains("b")?"--tbi":""} "${prefix}${contig}.concat${suffix}"
+        bcftools index --threads "${task.cpus}" ${!suffix.contains("b")?"--tbi":""} "TMP/${prefix}${contig}.concat${suffix}"
+
+
+	mv -v TMP/${meta.prefix?:""}${row.contig}.concat* ./
 
 ###############################################
 

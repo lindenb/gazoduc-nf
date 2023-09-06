@@ -23,71 +23,27 @@ SOFTWARE.
 
 */
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults()
+include {dumpParams;runOnComplete} from '../../../modules/utils/functions.nf'
 
-
-
-gazoduc.
-    make("vcf","NO_FILE").
-    description("indexed vcf").
-    required().
-    put()
-
-gazoduc.
-    make("pedigree","NO_FILE").
-    description("pedigree").
-    put()
-
-gazoduc.
-    make("bed","NO_FILE").
-    description("pedigree").
-    put()
-
-include {runOnComplete;moduleLoad;getKeyValue;hasFeature} from '../../../modules/utils/functions.nf'
-include {WGSELECT_02} from '../../../subworkflows/wgselect/wgselect.02.nf'
-include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
 
 if(params.help) {
-        gazoduc.usage().name("wgselect").description("Cleanup variants from a VCF").print()
-        exit 0
+        dumpParams(params);
+	exit 0
 	}
 else
     	{
-	gazoduc.validate()
+        dumpParams(params);	
         }
+
+
+include {WGSELECT_02} from '../../../subworkflows/wgselect/wgselect.02.nf'
+include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
+
 
 
 workflow {
 		ch1 = WGSELECT_02(params.genomeId, file(params.vcf), file(params.pedigree), file(params.bed))
 		html = VERSION_TO_HTML(ch1.version)
-		PUBLISH(params, ch1.contig_vcfs, ch1.variants_list , ch1.version, html.html)
 		}
 
 runOnComplete(workflow)
-
-process PUBLISH {
-publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
-executor "local"
-input:
-	val(meta)
-	path(vcfs)
-	path(variants)
-	path(xml)
-	path(html)
-output:
-
-when:
-        !params.getOrDefault("publishDir","").trim().isEmpty()
-script:
-	prefix = meta.prefix?:""
-"""
-mkdir "${prefix}archive"
-
-for F in "${vcfs}" "${variants}" "${xml}" "${html}"
-do
-	ln -s "\${F}" "./${prefix}archive/" 
-done
-
-zip -r "${prefix}archive.zip" "${prefix}archive"
-"""
-}

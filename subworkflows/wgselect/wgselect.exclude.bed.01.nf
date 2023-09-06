@@ -22,24 +22,21 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-def gazoduc = gazoduc.Gazoduc.getInstance(params)
 
-log.info("parsing wgselect.exclude.bed.01.nf");
 include {moduleLoad} from '../../modules/utils/functions.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
-log.info("scatter_to_bed")
-include { SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.nf'
-log.info("xA")
+include { SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.02.nf'
 
 workflow WGSELECT_EXCLUDE_BED_01 {
 	take:
+		meta
 		genomeId
 	main:
 		version_ch = Channel.empty()
 		to_merge_ch = Channel.empty()
 
-		gaps_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"N","MAX_TO_MERGE":"1"], params.genomes[genomeId].fasta)
-		to_merge_ch = to_merge_ch.mix(gaps_ch.bed)
+		gaps_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"N","MAX_TO_MERGE":"1"], ["genomeId":genomeId])
+		to_merge_ch = to_merge_ch.mix(gaps_ch.output.map{T->T.scatter_bed})
 
 		if(params.wgselect.with_rmsk as boolean) {
 			rmsk_ch = RMSK(genomeId)

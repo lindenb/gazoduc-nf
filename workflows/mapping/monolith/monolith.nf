@@ -66,7 +66,11 @@ workflow MONOLITH {
 				if(!T.containsKey("PL") || T.PL.equals(".") || T.PL.trim().isEmpty()) {
 					h=h.plus("PL":params.bwa.mem.PL)
 					}
-				if(!T.containsKey("R2") || T.R2.equals(".") || T.R2.trim().isEmpty() || T.R1.endsWith(".ora")) {
+				if((!T.containsKey("R2") || T.R2.equals(".")) && (!T.containsKey("R1") || T.R1.equals(".")) && T.containsKey("ora")) {
+					h= h.plus("R1":T.ora);
+					h= h.plus("R2":".");
+					}
+				else if(!T.containsKey("R2") || T.R2.equals(".") || T.R2.trim().isEmpty() || T.R1.endsWith(".ora")) {
 					h= h.plus("R2":".");
 					}
 				return T.plus(h);
@@ -133,6 +137,7 @@ do
 		fi
 	fi
 
+	ls -lah TMP 1>&2
 	du -hs TMP 1>&2
 	find TMP -name "*q.gz" | grep -F q.gz 1>&2
 

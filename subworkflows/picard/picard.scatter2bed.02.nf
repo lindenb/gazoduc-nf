@@ -79,10 +79,10 @@ script:
 
 	"""
 	hostname 1>&2
-	${moduleLoad("picard")}
+	${moduleLoad("gatk/0.0.0")}
 	mkdir -p TMP
 
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=. -jar \${PICARD_JAR} ScatterIntervalsByNs \
+	gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" ScatterIntervalsByNs \
 	    -R "${fasta.toRealPath()}" \
 	    --MAX_TO_MERGE "${meta.MAX_TO_MERGE}" \
 	    -O "TMP/jeter.interval_list" \
@@ -96,7 +96,6 @@ script:
 		<entry key="name">${task.process}</entry>
 		<entry key="description">call ScatterIntervalsByNs to get a list of intervals</entry>
 		<entry key="reference">${fasta}</entry>
-		<entry key="picard">\$(java -jar \${PICARD_JAR} ScatterIntervalsByNs --version 2>&1)</entry>
 	</properties>
 	EOF
 	"""
@@ -119,15 +118,15 @@ script:
 	def interval_list = row.scatter_interval_list
 """
 hostname 1>&2
-${moduleLoad("picard")}
+${moduleLoad("gatk/0.0.0")}
 mkdir -p TMP
 
-java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${PICARD_JAR} IntervalListToBed \
+gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" IntervalListToBed \
 		--INPUT "${interval_list}" \
 		--OUTPUT TMP/jeter.bed  \
 		${params.gatk.intervalListToBed.args}
 
-mv  TMP/jeter.bed "${interval_list.getSimpleName()}.bed"
+LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n  TMP/jeter.bed > "${interval_list.getSimpleName()}.bed"
 
 		
 cat << EOF > version.xml
@@ -135,7 +134,6 @@ cat << EOF > version.xml
 	<entry key="name">${task.process}</entry>
 	<entry key="description">call IntervalListToBed to convert intervals to bed</entry>
 	<entry key="interval_list">${interval_list}</entry>
-	<entry key="picard">\$(java -jar \${PICARD_JAR} IntervalListToBed --version 2>&1)</entry>
 </properties>
 EOF
 """

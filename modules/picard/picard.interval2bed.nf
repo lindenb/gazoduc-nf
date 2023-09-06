@@ -24,7 +24,6 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-log.info("parsing picard.interval2bed.nf");
 
 include {moduleLoad} from '../utils/functions.nf'
 
