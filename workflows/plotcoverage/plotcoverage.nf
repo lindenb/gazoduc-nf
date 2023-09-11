@@ -25,41 +25,22 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 include {PLOT_COVERAGE_01} from '../../subworkflows/plotdepth/plot.coverage.01.nf'
-include {runOnComplete} from '../../modules/utils/functions.nf'
+include {dumpParams; runOnComplete} from '../../modules/utils/functions.nf'
+include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 
 
 if( params.help ) {
+    dumpParams(params);
     exit 0
-} 
+}  else {
+    dumpParams(params);
+}
 
 
 workflow {
 	ch1 = PLOT_COVERAGE_01([:],params.genomeId,file(params.bams), file(params.bed))
-	//html = VERSION_TO_HTML(params,ch1.version)
-	//PUBLISH(ch1.version,html.html,ch1.zip)
+	html = VERSION_TO_HTML(ch1.version)
 	}
 
 runOnComplete(workflow);
-
-
-process PUBLISH {
-publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
-input:
-	val(version)
-	val(html)
-	val(zip)
-output:
-	path("*.zip")
-	path("*.html")
-	path("*.xml")
-when:
-	!params.getOrDefault("publishDir","").trim().isEmpty()
-script:
-"""
-ln -s ${version} ./
-ln -s ${html} ./
-ln -s ${zip} ./
-"""
-}
-
 
