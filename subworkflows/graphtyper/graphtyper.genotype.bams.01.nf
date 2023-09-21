@@ -22,98 +22,113 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-def gazoduc = gazoduc.Gazoduc.getInstance()
-
-gazoduc.make("depth_method","mosdepth").
-        description("How do we get the DEPTH ? valid are samtoolsdepth and mosdepth").
-        put()
 
 
 
 include {GRAPHTYPER_DOWNLOAD_01} from '../../modules/graphtyper/graphtyper.download.01.nf'
 include {GRAPHTYPER_GENOTYPE_01} from '../../modules/graphtyper/graphtyper.genotype.01.nf'
-include {SCATTER_TO_BED} from '../../subworkflows/picard/picard.scatter2bed.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+//include {SCATTER_TO_BED} from '../../subworkflows/picard/picard.scatter2bed.02.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {isBlank;moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
-include {MOSDEPTH_BAMS_01} from '../../subworkflows/mosdepth/mosdepth.01.nf'
+include {MOSDEPTH_DOWNLOAD_01} from '../../modules/mosdepth/mosdepth.downoad.01.nf'
 include {COLLECT_TO_FILE_01 as COLLECT_TO_FILE_X1} from '../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_CONCAT_01} from '../../subworkflows/bcftools/bcftools.concat.01.nf'
-include {SAMTOOLS_DEPTH_01} from '../../subworkflows/samtools/samtools.depth.01.nf'
-include {SAMTOOLS_SAMPLES_01} from '../samtools/samtools.samples.01.nf'
+include {MOSDEPTH_RUN_01} from '../../modules/mosdepth/mosdepth.run.01.nf'
+//include {SAMTOOLS_DEPTH_01} from '../../subworkflows/samtools/samtools.depth.01.nf'
+include {SAMTOOLS_SAMPLES02} from '../../subworkflows/samtools/samtools.samples.02.nf'
 include {CONCAT_FILES_01} from '../../modules/utils/concat.files.nf'
 
 
 workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 	take:
 		meta
-		reference
+		genomeId
 		bams
 		bed
 		sample2depth
-		dbsnp
 	main:
 		version_ch = Channel.empty()
 		
 
-		concat_bed_ch = MAKE_WINDOWS_50KB(meta, reference, bed)
+		concat_bed_ch = MAKE_WINDOWS_50KB([:], genomeId, bed)
 		version_ch = version_ch.mix(concat_bed_ch.version)
 		
-		// convert channel to file hack ?
-		bed0 = concat_bed_ch.merged
+
+		bams_ch = SAMTOOLS_SAMPLES02(["with_header":false,"allow_multiple_references":false,"allow_duplicate_samples":false],genomeId,bams)
 		
+bams_ch.output.dump()
+
 		/** file SAMPLE <-> DEPTH provided */
-		if(!sample2depth.name.equals("NO_FILE")) {
-			bams_ch = SAMTOOLS_SAMPLES_01(["with_header":false,"allow_multiple_references":false,"allow_duplicate_samples":false],reference,file("NO_FILE"),bams)
+		if( !sample2depth.name.equals("NO_FILE") ) {
 			version_ch = version_ch.mix(bams_ch.version)
 
-			join1_ch = JOIN_WITH_DEPTH(meta,bams_ch.output,sample2depth)
+			join1_ch = JOIN_WITH_DEPTH([:],bams_ch.output,sample2depth)
 
 			summary = join1_ch.output
 			}
-		else if((meta.depth_method?:"mosdepth").equals("samtoolsdepth")) {
-			stdp_ch = SAMTOOLS_DEPTH_01(meta,reference,file("NO_FILE"),bams, bed0)
+		else if( params.depth_method.equals("mosdepth") ) {
+
+			mosdepth_input_ch  = bams_ch.output.
+				splitCsv(sep:'\t',header:false).
+				map{T->[
+					"sample":T[0],
+					"bam":T[2],
+					"genomeId":genomeId,
+					"mapq": params.mapq
+					]}.
+				combine(concat_bed_ch.merged).
+				map{T->T[0].plus("bed":T[1])}
+
+			mosdepth_ex = MOSDEPTH_DOWNLOAD_01([:])
+
+			mosdepth_ch = MOSDEPTH_RUN_01([:], mosdepth_ex.executable, mosdepth_input_ch)
+
+			merge_mosdepth = MERGE_MOSDEPTH([:], mosdepth_ch.output.map{T->T[1]}.collect() )
+			version_ch = version_ch.mix(merge_mosdepth.version)
+			summary= merge_mosdepth.output
+			}
+		/*
+		else if((params.depth_method.equals("samtoolsdepth")) {
+			stdp_ch = SAMTOOLS_DEPTH_01([:],genomeId,file("NO_FILE"),bams, bed0)
 			version_ch = version_ch.mix(stdp_ch.version)
 			
-			convert_ch = CONVERT_TO_MOSDEPTH_SUMMARY(meta,stdp_ch.output)
+			convert_ch = CONVERT_TO_MOSDEPTH_SUMMARY([:],stdp_ch.output)
 
 			summary= convert_ch.output
-			}
-		else 
+			} */
+		else
 			{
-			mosdepth_ch = MOSDEPTH_BAMS_01(meta, reference, bams, bed0)
-			version_ch = version_ch.mix(mosdepth_ch.version)
-			summary= mosdepth_ch.summary
+			throw new IllegalArgumentException("unknown params.depth_method")
 			}
 		
-		x1_ch = COVERAGE_DIVIDE_READLENGTH(meta,summary)
+		x1_ch = COVERAGE_DIVIDE_READLENGTH([:],summary)
 		version_ch = version_ch.mix(x1_ch.version)
 		
 
-		executable_ch = GRAPHTYPER_DOWNLOAD_01(meta)
+		executable_ch = GRAPHTYPER_DOWNLOAD_01([:])
 		version_ch = version_ch.mix(executable_ch.version)
 
 		
 		each_rgn_ch = concat_bed_ch.windows.splitCsv(header:false,sep:'\t').
 				map{T->T[0] + ":" + ((T[1] as int)+1) + "-" + T[2]}
 	
-		x2_ch = GRAPHTYPER_GENOTYPE_01(meta, executable_ch.executable,x1_ch.output.combine(each_rgn_ch).map{T->[
+		x2_ch = GRAPHTYPER_GENOTYPE_01([:], executable_ch.executable,x1_ch.output.combine(each_rgn_ch).map{T->[
 			"bams":T[0],
 			"avg_cov_by_readlen":T[1],
 			"interval":T[2],
-			"reference":reference,
-			"dbsnp":dbsnp
+			"genomeId":genomeId
 			]})
 
 		version_ch = version_ch.mix(x2_ch.version)
 		
-		x3_ch = CONCAT_FILES_01([:],x2_ch.output.map{T->T[1]}.collect())
+		x3_ch = CONCAT_FILES_01(["suffix":".list","concat_n_files":50,"downstream_cmd":""],x2_ch.output.map{T->T[1]}.collect())
 		version_ch = version_ch.mix(x3_ch.version)
 
 
-		x4_ch = BCFTOOLS_CONCAT_01(meta,x3_ch.output)
+		x4_ch = BCFTOOLS_CONCAT_01([:],x3_ch.output,file("NO_FILE"))
 		version_ch = version_ch.mix(x4_ch.version)
 
-		version_ch = MERGE_VERSION(meta, "graptyper", "genotype bams with graphtyper", version_ch.collect())
+		version_ch = MERGE_VERSION("genotype bams with graphtyper", version_ch.collect())
 	emit:
 		version = version_ch
 		vcf = x4_ch.vcf
@@ -123,7 +138,7 @@ process MAKE_WINDOWS_50KB {
 executor "local"
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	path(bed)
 output:
 	path("concat.bed"),emit:merged
@@ -181,13 +196,55 @@ mv jeter.tsv summary.tsv
 }
 
 
+process MERGE_MOSDEPTH {
+tag "N=${L.size()}"
+executor "local"
+input:
+	val(meta)
+	val(L)
+output:
+	path("summary.tsv"),emit:output
+	path("version.xml"),emit:version
+"""
+mkdir -p TMP
+
+cat << EOF > TMP/jeter1.txt
+${L.join("\n")}
+EOF
+
+
+echo "sample\tbam\treference\tcoverage\tcoverage_region" > TMP/jeter2.txt
+
+xargs -a TMP/jeter1.txt cat | grep -v '^sample' | while read SN	REF	BAM	_globaldist	_regiondist	SUMMARY	_perbase	_regions
+do
+        echo -n "\${SN}\t\${BAM}\t\${REF}" >> TMP/jeter2.txt
+        awk -F '\t' '(\$1=="total") {printf("\t%s",\$4);}' "\${SUMMARY}" >> TMP/jeter2.txt
+        awk -F '\t' 'BEGIN{C="";} (\$1=="total") {if(C=="") {C=\$4;}} (\$1=="total_region") {C=\$4;} END{printf("\t%s",C);}' "\${SUMMARY}" >> TMP/jeter2.txt
+        echo >> TMP/jeter2.txt
+done
+
+mv TMP/jeter2.txt "summary.tsv"
+
+##################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">merge mosdepth summary</entry>
+        <entry key="count">${L.size()}</entry>
+</properties>
+EOF
+"""
+}
+
 process CONVERT_TO_MOSDEPTH_SUMMARY {
 executor "local"
+afterScript "rm -rf TMP"
 input:
 	val(meta)
 	path(depths)
 output:
 	path("summary.tsv"),emit:output
+	path("version.xml"),emit:version
 script:
 """
 echo -e "sample\tbam\tref\tcov\tcovr" > jeter.tsv
@@ -199,7 +256,7 @@ mv jeter.tsv summary.tsv
 }
 
 process COVERAGE_DIVIDE_READLENGTH {
-tag "${summary.name}"
+//tag "${summary.name}"
 input:
 	val(meta)
 	path(summary)
@@ -223,5 +280,6 @@ cat << EOF > version.xml
         <entry key="description">create list of bams and list of coverage/read-length</entry>
 </properties>
 EOF
+
 """
 }

@@ -35,7 +35,7 @@ map fastq using BWA, all in the same process
 
 */
 workflow {
-	ch1_ch  = MONOLITH([:], params.genomeId, Channel.fromPath(params.samplesheet))
+	ch1_ch  = MONOLITH([:], params.genomeId, Channel.fromPath(params.samplesheet), file(params.bed))
 	html = VERSION_TO_HTML(ch1_ch.version)
 	}
 
@@ -48,6 +48,7 @@ workflow MONOLITH {
 		meta
 		genomeId
 		fastqs
+		bed
 	main:
 		version_ch = Channel.empty()
 
@@ -78,7 +79,7 @@ workflow MONOLITH {
 			}.map{T->[T.sample,T]}.
 			groupTuple();
 
-		bwa_ch = APPLY_BWA(meta, genomeId, fastq_ch)
+		bwa_ch = APPLY_BWA(meta, genomeId, bed, fastq_ch)
 		version_ch = version_ch.mix(bwa_ch.version)
 
 
@@ -98,6 +99,7 @@ afterScript "rm -rf TMP"
 input:
 	val(meta)
 	val(genomeId)
+	val(bed)
 	tuple val(sample),val(L)
 output:
 	tuple path("${params.prefix?:""}${sample}.${genomeId}.cram"),path("${params.prefix?:""}${sample}.${genomeId}.cram.crai"),emit:bam
@@ -109,9 +111,10 @@ script:
 	def reference = genome.fasta
 	def bwa_reference = genome.bwa_reference?:reference
 	def description = params.description?:""
+	def filterbed = file(bed).name.equals("NO_FILE")?"": "${params.htsplusplus.executable} samviewwithmate -B '${bed}' -O BAM --compression 0 |"
 """
 hostname 1>&2
-${moduleLoad("samtools bwa")}
+${moduleLoad("samtools bwa htsplusplus")}
 set -o pipefail
 mkdir -p TMP/FASTP
 set -x
@@ -165,7 +168,7 @@ do
 		${description.isEmpty()?"":"-H '@CO\\t${description}'"} \
 		-R "@RG\\\\tID:\${ID}\\\\tSM:${sample}\\\\tLB:\${LB}\\\\tCN:\${CN}\\\\tPL:\${PL}" \
 		"${bwa_reference}" \
-		`find TMP  -name "*q.gz"| sort -V  ` |\
+		`find TMP  -name "*q.gz"| sort -V  ` | ${filterbed}  \
 		samtools fixmate -m -c -O BAM - TMP/jeter.bam
 
 	rm -vf TMP/*q.gz 1>&2

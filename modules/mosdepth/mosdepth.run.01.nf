@@ -42,7 +42,17 @@ process MOSDEPTH_RUN_01 {
 		path("version.xml"),emit:version
 	script:
 		if(!row.containsKey("sample")) throw new IllegalArgumentException("[mosdepth]row.sample is missing");
-		if(!row.containsKey("reference")) throw new IllegalArgumentException("[mosdepth]row.reference is missing");
+		if(!row.containsKey("reference") && !row.containsKey("genomeId")) throw new IllegalArgumentException("[mosdepth]row.reference/genomeId is missing");
+
+		def reference
+
+		if( row.containsKey("reference") ) {
+			reference = row.reference 
+			}
+		else 	
+			{
+			reference = params.genomes[row.genomeId].fasta
+			}
 		def bed = row.bed?row.bed:file("NO_FILE")
 		def mapq = row.mapq?:params.mosdepth.mapq
 		def suffix = (row.sample?:"")+(row.suffix?:"")
@@ -52,7 +62,7 @@ process MOSDEPTH_RUN_01 {
 	mkdir -p TMP
 
         ${executable} ${bed.name.equals("NO_FILE")?"":"--by \"${bed}\""} \
- 		-t ${task.cpus} --fasta "${row.reference}" --mapq ${mapq} ${extra} \
+ 		-t ${task.cpus} --fasta "${reference}" --mapq ${mapq} ${extra} \
 		'TMP/${suffix}' "${row.bam}"
 
 	mv -v TMP/${suffix}* ./
@@ -69,7 +79,7 @@ regions
 EOF
 
 
-echo -ne "${row.sample}\t${row.reference}\t${row.bam}\t\${PWD}/${suffix}.mosdepth.global.dist.txt" >> output.tsv
+echo -ne "${row.sample}\t${reference}\t${row.bam}\t\${PWD}/${suffix}.mosdepth.global.dist.txt" >> output.tsv
 
 if  test -f "${suffix}.mosdepth.region.dist.txt" ; then
 	echo -ne "\t\${PWD}/${suffix}.mosdepth.region.dist.txt" >> output.tsv

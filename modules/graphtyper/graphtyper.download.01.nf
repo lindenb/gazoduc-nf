@@ -23,12 +23,6 @@ SOFTWARE.
 
 */
 
-def gazoduc = gazoduc.Gazoduc.getInstance()
-
-gazoduc.make("graptyper_version","2.7.5").
-        description("graphtyper version").
-        put()
-
 
 
 /**
@@ -39,11 +33,14 @@ graphtyper is a graph-based variant caller capable of genotyping population-scal
 
 */
 process GRAPHTYPER_DOWNLOAD_01 {
+tag "${params.graphtyper.version}"
+input:
+	val(meta)
 output:
 	path("graphtyper"),emit:executable
 	path("version.xml"),emit:version
 script:
-	def v = (params.graptyper_version?:"2.7.5")
+	def v = params.graphtyper.version
 """
 wget -O graphtyper "https://github.com/DecodeGenetics/graphtyper/releases/download/v${v}/graphtyper"
 chmod a+x graphtyper

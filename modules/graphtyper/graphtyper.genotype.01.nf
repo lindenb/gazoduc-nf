@@ -28,6 +28,8 @@ include {isBlank;moduleLoad;getVersionCmd;parseBoolean} from '../../modules/util
 process GRAPHTYPER_GENOTYPE_01 {
 tag "${row.interval?:row.bed}"
 memory "10g"
+errorStrategy "retry"
+maxRetries 2
 cpus 10
 afterScript "rm -rf TMP2 TMP"
 input:
@@ -38,12 +40,15 @@ output:
 	tuple val(row),path("genotyped.list"),emit:output
 	path("version.xml"),emit:version
 script:
-	if(!row.reference) {exit 1,"reference missing"}
+	if(!row.genomeId) {exit 1,"genomeId missing"}
 	if(!row.bams) {exit 1,"bams missing"}
 	if(!row.interval && !row.bed) {exit 1,"interval/bed missing"}
 	if(row.interval && row.bed) {exit 1,"interval/bed both defined"}
 
-	def copy_bams = parseBoolean(meta.copy_bams)
+	def genome = params.genomes[row.genomeId]
+	def reference = genome.fasta
+
+	def copy_bams = (task.attemp > 1)
 	def avg_cov_by_readlen= row.avg_cov_by_readlen?:""
 	def arg2 = isBlank(avg_cov_by_readlen)?"":"--avg_cov_by_readlen=${avg_cov_by_readlen}"
 """
@@ -70,16 +75,16 @@ if ${copy_bams} ; then
 		echo "\$i : \${SAM}" 1>&2
 
 		# extract reads in regions
-		samtools view --uncompressed -@ "${task.cpus}" -O BAM -o "TMP/BAMS/tmp.jeter.bam" ${row.containsKey("bed")?"-M -L ${row.bed}":""} -T "${row.reference}" "\${SAM}"   ${row.containsKey("bed")?"":"--region=${row.interval}"}
+		samtools view --uncompressed -@ "${task.cpus}" -O BAM -o "TMP/BAMS/tmp.jeter.bam" ${row.containsKey("bed")?"-M -L ${row.bed}":""} -T "${reference}" "\${SAM}"   ${row.containsKey("bed")?"":"--region=${row.interval}"}
 
 		# sort on query name
-		samtools sort  -@ "${task.cpus}" --reference "${row.reference}" -u -n -T TMP/sort. -O BAM -o TMP/BAMS/tmp.jeter2.bam TMP/BAMS/tmp.jeter.bam
+		samtools sort  -@ "${task.cpus}" --reference "${reference}" -u -n -T TMP/sort. -O BAM -o TMP/BAMS/tmp.jeter2.bam TMP/BAMS/tmp.jeter.bam
 
 		# fix mate info
 		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${PICARD_JAR}  FixMateInformation I=TMP/BAMS/tmp.jeter.bam O=TMP/BAMS/tmp.jeter2.bam ADD_MATE_CIGAR=true  ASSUME_SORTED=true
 
 		# sort on coordinate
-		samtools sort  -@ "${task.cpus}" --reference "${row.reference}"  -T TMP/sort. -O BAM -o TMP/BAMS/tmp.jeter.bam TMP/BAMS/tmp.jeter2.bam
+		samtools sort  -@ "${task.cpus}" --reference "${reference}"  -T TMP/sort. -O BAM -o TMP/BAMS/tmp.jeter.bam TMP/BAMS/tmp.jeter2.bam
 		rm TMP/BAMS/tmp.jeter2.bam
 		
 		
@@ -95,7 +100,7 @@ if ${copy_bams} ; then
 fi
 
 ${graphtyper} genotype \
-	"${row.reference}" \
+	"${reference}" \
 	--output=TMP2 \
 	--force_no_copy_reference \
 	--force_use_input_ref_for_cram_reading \
@@ -116,7 +121,7 @@ cat << EOF > version.xml
         <entry key="bed">${row.bed?:""}</entry>
         <entry key="interval">${row.interval?:""}</entry>
         <entry key="bams">${row.bams}</entry>
-        <entry key="reference">${row.reference}</entry>
+        <entry key="reference">${reference}</entry>
         <entry key="version">${getVersionCmd("bcftools bedtools")}</entry>
 </properties>
 EOF
