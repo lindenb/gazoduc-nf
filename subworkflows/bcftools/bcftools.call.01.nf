@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {SAMTOOLS_SAMPLES_01} from '../../subworkflows/samtools/samtools.samples.01.nf'
+include {SAMTOOLS_SAMPLES02} from '../../subworkflows/samtools/samtools.samples.02.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include {isHg19;isHg38;moduleLoad} from '../../modules/utils/functions.nf'
@@ -32,14 +32,13 @@ include {BCFTOOLS_CONCAT_01} from '../../subworkflows/bcftools/bcftools.concat.0
 workflow BCFTOOLS_CALL_01 {
 	take:
 		meta
-		reference
-		references
+		genomeId
 		bams
 		beds
 	main:
 		version_ch = Channel.empty()
 
-		sn_ch = SAMTOOLS_SAMPLES_01(meta.plus("with_header":false,"allow_multiple_references":true),reference,references,bams)
+		sn_ch = SAMTOOLS_SAMPLES02(["with_header":false,"allow_multiple_references":true], genomeId, bams)
 		version_ch = version_ch.mix(sn_ch.version)
 
 		each_bed = beds.splitText().map{T->T.trim()}
@@ -48,16 +47,16 @@ workflow BCFTOOLS_CALL_01 {
 			map{T->[T[3],T[2]]}.
 			groupTuple()
 
-		split_per_ref_ch = SPLIT_PER_REF(meta,ref2bams)
+		split_per_ref_ch = SPLIT_PER_REF([:], ref2bams)
 		version_ch = version_ch.mix(split_per_ref_ch.version)
 
 		ref_bams_bed = split_per_ref_ch.output.splitCsv(header:false,sep:'\t').combine(each_bed)
 
 
-		call_ch = CALL_INTERVAL(meta, reference, ref_bams_bed)
+		call_ch = CALL_INTERVAL([:], genomeId, ref_bams_bed)
 		version_ch = version_ch.mix(call_ch.version)
 
-		merge_ch = BCFTOOL_MERGE_BED(meta, call_ch.output.groupTuple())
+		merge_ch = BCFTOOL_MERGE_BED([:], call_ch.output.groupTuple())
 		version_ch = version_ch.mix(merge_ch.version)
 
 		file_list_ch = COLLECT_TO_FILE_01([:],merge_ch.output.collect())
@@ -66,7 +65,7 @@ workflow BCFTOOLS_CALL_01 {
 		concat_ch = BCFTOOLS_CONCAT_01([:],file_list_ch.output)
 		version_ch = version_ch.mix(concat_ch.version)
 
-                version_ch = MERGE_VERSION(meta, "Deep Variant", "Deep variant", version_ch.collect())
+                version_ch = MERGE_VERSION("Calling samtools", version_ch.collect())
 			
 	emit:
 		version = version_ch
@@ -76,15 +75,15 @@ workflow BCFTOOLS_CALL_01 {
 
 process SPLIT_PER_REF {
 executor "local"
-tag "${reference} N=${L.size()}"
+tag "${genomeId} N=${L.size()}"
 input:
 	val(meta)
-	tuple val(reference),val(L)
+	tuple val(genomeId),val(L)
 output:
 	path("output.txt"),emit:output
 	path("version.xml"),emit:version
 script:
-	def n = meta.num_bams_per_call?:10
+	def n = params.num_bams_per_call
 """
 hostname 1>&2
 set -o pipefail
@@ -94,14 +93,14 @@ cat << EOF | split --lines=${n} --additional-suffix=.list - OUT/cluster.
 ${L.join("\n")}
 EOF
 
-find \${PWD}/OUT -type f -name "cluster.*.list" | awk '{printf("${reference}\t%s\\n",\$0);}'  > output.txt
+find \${PWD}/OUT -type f -name "cluster.*.list" | awk '{printf("${genomeId}\t%s\\n",\$0);}'  > output.txt
 
 #########################################
 cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="Name">${task.process}</entry>
         <entry key="description">split bam list</entry>
-        <entry key="reference">${reference}</entry>
+        <entry key="genomeId">${genomeId}</entry>
         <entry key="n">${n}</entry>
 </properties>
 EOF
@@ -109,24 +108,26 @@ EOF
 }
 
 process CALL_INTERVAL {
-tag "${reference2} ${bams} ${bed}"
+tag "${genomeId2} ${bams} ${bed}"
 afterScript  "rm -rf TMP"
 input:
 	val(meta)
-	val(reference)
-	tuple val(reference2),val(bams),val(bed)
+	val(genomeId)
+	tuple val(genomeId2),val(bams),val(bed)
 output:
 	tuple val(bed),path("output.bcf"),emit:output
 	path("version.xml"),emit:version
 script:
 	def mapq = meta.mapq?:20
 	def t= task.cpus?"--threads ${task.cpus}":""
+	def genome = params.genomes[genomeId2]
+	def reference2 = genome.fasta
 	def ploidy = isHg19(reference2)?"--ploidy GRCh37":(isHg38(reference2)?"--ploidy GRCh38":"")
 """
 hostname 1>&2
 ${moduleLoad("bcftools jvarkit")}
 set -o pipefail
-mkdir TMP
+mkdir -p TMP
 
 
 if [ "${reference}" != "${reference2}" ] ; then
@@ -149,7 +150,7 @@ mv TMP/jeter2.bcf TMP/jeter.bcf
 
 bcftools index ${t} TMP/jeter.bcf
 
-if [ "${reference}" != "${reference2}" ] ; then
+if [ "${genomeId}" != "${genomeId2}" ] ; then
 	## TODO
 	false	
 fi

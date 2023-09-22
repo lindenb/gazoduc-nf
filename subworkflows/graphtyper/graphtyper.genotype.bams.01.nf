@@ -56,8 +56,6 @@ workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 
 		bams_ch = SAMTOOLS_SAMPLES02(["with_header":false,"allow_multiple_references":false,"allow_duplicate_samples":false],genomeId,bams)
 		
-bams_ch.output.dump()
-
 		/** file SAMPLE <-> DEPTH provided */
 		if( !sample2depth.name.equals("NO_FILE") ) {
 			version_ch = version_ch.mix(bams_ch.version)
@@ -109,13 +107,12 @@ bams_ch.output.dump()
 		version_ch = version_ch.mix(executable_ch.version)
 
 		
-		each_rgn_ch = concat_bed_ch.windows.splitCsv(header:false,sep:'\t').
-				map{T->T[0] + ":" + ((T[1] as int)+1) + "-" + T[2]}
+		each_bed_ch = concat_bed_ch.windows.splitText().map{it.trim()}
 	
-		x2_ch = GRAPHTYPER_GENOTYPE_01([:], executable_ch.executable,x1_ch.output.combine(each_rgn_ch).map{T->[
+		x2_ch = GRAPHTYPER_GENOTYPE_01([:], executable_ch.executable,x1_ch.output.combine(each_bed_ch).map{T->[
 			"bams":T[0],
 			"avg_cov_by_readlen":T[1],
-			"interval":T[2],
+			"bed":T[2],
 			"genomeId":genomeId
 			]})
 
@@ -135,32 +132,43 @@ bams_ch.output.dump()
 	}
 
 process MAKE_WINDOWS_50KB {
-executor "local"
+tag "${bed.name}"
+memory "3g"
+afterScript "rm -rf TMP"
 input:
 	val(meta)
 	val(genomeId)
 	path(bed)
 output:
 	path("concat.bed"),emit:merged
-	path("windows.bed"),emit:windows
+	path("windows.list"),emit:windows
 	path("version.xml"),emit:version
 script:
 	def w=50000
 	def s=w-10
+	def reference = params.genomes[genomeId].fasta
 """
 set -o pipefail
-${moduleLoad("bedtools")}
+mkdir -p TMP BEDS
+${moduleLoad("bedtools jvarkit")}
 cut -f1,2,3 "${bed}"|\
 	sort -T . -t '\t' -k1,1 -k2,2n |\
 	bedtools merge > concat.bed
 
 bedtools makewindows -b concat.bed -w "${w}" -s "${s}"|\
 	awk -F '\t' '(int(\$2)<int(\$3))' |\
-	sort -T . -t '\t' -k1,1V -k2,2n > windows.bed
+	sort -T . -t '\t' -k1,1V -k2,2n > TMP/windows.bed
 
+
+java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar bedcluster \
+		-R "${reference}" \
+		--size '${params.bedcluster_size}' \
+		-o BEDS TMP/windows.bed
+
+find \${PWD}/BEDS -type f -name "*.bed"  > windows.list
 
 test -s concat.bed
-test -s windows.bed
+test -s windows.list
 
 sleep 10
 
