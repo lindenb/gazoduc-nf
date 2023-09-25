@@ -58,6 +58,7 @@ workflow BCFTOOLS_ANNOTATE_SOURCES {
 			sorted_bed = sortbed_ch.bed
 			}
 		
+		
 
 
 		if (hasFeature("greendb") && params.genomes[genomeId].containsKey("greendb_url")) {
@@ -132,6 +133,12 @@ workflow BCFTOOLS_ANNOTATE_SOURCES {
 			annot_ch = annot_ch.mix(db13_ch.vcf)
 			}
 
+
+		if (hasFeature("alphamissense") && params.genomes[genomeId].containsKey("alphamissense_url")) {
+			db14_ch = DOWNLOAD_ALPHAMISSENSE([:], genomeId, sorted_bed)
+			version_ch = version_ch.mix(db14_ch.version)
+			annot_ch = annot_ch.mix(db14_ch.output)
+			}
 
 
 		if (params.genomes[genomeId].containsKey("gtf")) {
@@ -1113,3 +1120,54 @@ EOF
 
 
 
+/**   ALPHA MISSENSE */
+process DOWNLOAD_ALPHAMISSENSE {
+afterScript "rm -rf TMP"
+input:
+	val(meta)
+	val(genomeId)
+	path(sortedbed)
+output:
+	tuple val("ALPHAMISSENSE"),path("alphamissense.tsv.gz"),path("alphamissense.header"),val("CHROM,POS,REF,ALT,ALPHAMISSENSE_PATHOGENOCITY,ALPHAMISSENSE_CLASS"),val("ALPHAMISSENSE_PATHOGENOCITY:max,ALPHAMISSENSE_CLASS:unique"),emit:output
+	path("version.xml"),emit:version
+script:
+	def genome = params.genomes[genomeId]
+	def reference = genome.fasta
+	def url = genome.alphamissense_url
+	def whatis = "Data from AlphaMissense https://www.science.org/doi/10.1126/science.adg7492 ."
+"""
+hostname 1>&2
+${moduleLoad("htslib bedtools jvarkit")}
+set -o pipefail
+mkdir -p TMP
+
+wget -O - "${url}" |\
+	gunzip -c |\
+	grep -v '^#' |\
+	 cut -f 1-4,9,10 |\
+	java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 1 --convert SKIP  |\
+	${sortedbed.name.equals("NO_FILE")?"":" sort -T TMP -t '\t' -k1,1 -k2,2n | bedtools intersect -u -a - -b '${sortedbed}' | "} \
+	LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n |\
+	uniq |\
+	bgzip > TMP/alphamissense.tsv.gz
+
+
+tabix -s 1 -b 2 -e 2  TMP/alphamissense..bed.gz
+
+mv TMP/alphamissense.tsv.gz ./
+mv TMP/alphamissense.tsv.gz.tbi ./
+
+echo '##INFO=<ID=ALPHAMISSENSE_PATHOGENOCITY,Number=1,Type=Float,Description="${whatis}. ${url}.">' >  alphamissense.header
+echo '##INFO=<ID=ALPHAMISSENSE_CLASS,Number=.,Type=String,Description="${whatis}. ${url}.">' >> alphamissense.header
+
+#########################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="Name">${task.process}</entry>
+	<entry key="description">${whatis}</entry>
+        <entry key="url"><a>${url}</a></entry>
+        <entry key="versions">${getVersionCmd("tabix wget awk")}</entry>
+</properties>
+EOF
+"""
+}

@@ -49,9 +49,11 @@ workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 	main:
 		version_ch = Channel.empty()
 		
-
-		concat_bed_ch = MAKE_WINDOWS_50KB([:], genomeId, bed)
+		concat_bed_ch = MERGE_BED([:],genomeId, bed)
 		version_ch = version_ch.mix(concat_bed_ch.version)
+
+		windows_bed_ch = MAKE_WINDOWS_50KB([:], genomeId, concat_bed_ch.output)
+		version_ch = version_ch.mix(windows_bed_ch.version)
 		
 
 		bams_ch = SAMTOOLS_SAMPLES02(["with_header":false,"allow_multiple_references":false,"allow_duplicate_samples":false],genomeId,bams)
@@ -74,7 +76,7 @@ workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 					"genomeId":genomeId,
 					"mapq": params.mapq
 					]}.
-				combine(concat_bed_ch.merged).
+				combine(concat_bed_ch.output).
 				map{T->T[0].plus("bed":T[1])}
 
 			mosdepth_ex = MOSDEPTH_DOWNLOAD_01([:])
@@ -107,7 +109,7 @@ workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 		version_ch = version_ch.mix(executable_ch.version)
 
 		
-		each_bed_ch = concat_bed_ch.windows.splitText().map{it.trim()}
+		each_bed_ch = windows_bed_ch.output.splitText().map{it.trim()}
 	
 		x2_ch = GRAPHTYPER_GENOTYPE_01([:], executable_ch.executable,x1_ch.output.combine(each_bed_ch).map{T->[
 			"bams":T[0],
@@ -131,6 +133,43 @@ workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 		vcf = x4_ch.vcf
 	}
 
+
+process MERGE_BED {
+executor "local"
+tag "${bed.name}"
+afterScript "rm -rf TMP"
+input:
+	val(meta)
+	val(genomeId)
+	path(bed)
+output:
+	path("concat.bed"),emit:output
+	path("version.xml"),emit:version
+script:
+"""
+set -o pipefail
+mkdir -p TMP 
+${moduleLoad("bedtools jvarkit")}
+cut -f1,2,3 "${bed}"|\
+	sort -T . -t '\t' -k1,1 -k2,2n |\
+	bedtools merge > TMP/concat.bed
+
+mv TMP/concat.bed ./
+
+test -s concat.bed
+
+
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">concatenate bed file+merge.</entry>
+	<entry key="version">${getVersionCmd("bedtools")}</entry>
+</properties>
+EOF
+"""
+}
+
+
 process MAKE_WINDOWS_50KB {
 tag "${bed.name}"
 memory "3g"
@@ -140,8 +179,7 @@ input:
 	val(genomeId)
 	path(bed)
 output:
-	path("concat.bed"),emit:merged
-	path("windows.list"),emit:windows
+	path("windows.list"),emit:output
 	path("version.xml"),emit:version
 script:
 	def w=50000
@@ -151,11 +189,8 @@ script:
 set -o pipefail
 mkdir -p TMP BEDS
 ${moduleLoad("bedtools jvarkit")}
-cut -f1,2,3 "${bed}"|\
-	sort -T . -t '\t' -k1,1 -k2,2n |\
-	bedtools merge > concat.bed
 
-bedtools makewindows -b concat.bed -w "${w}" -s "${s}"|\
+bedtools makewindows -b '${bed}' -w "${w}" -s "${s}"|\
 	awk -F '\t' '(int(\$2)<int(\$3))' |\
 	sort -T . -t '\t' -k1,1V -k2,2n > TMP/windows.bed
 
