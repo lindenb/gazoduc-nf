@@ -30,16 +30,16 @@ include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 workflow DELLY2_SV {
 	take:
 		meta
-		reference
+		genomeId
 		cases
 		controls
 		genotype_vcf /** SV to genotype or NO_FILE */
 	main:
 		version_ch = Channel.empty()
-		rsrcr_ch = DELLY2_RESOURCES([:],reference)
+		rsrcr_ch = DELLY2_RESOURCES([:], genomeId)
 		version_ch= version_ch.mix(rsrcr_ch.version)
 
-		cases_controls_ch = SAMTOOLS_CASES_CONTROLS_01([:],reference,cases,controls)
+		cases_controls_ch = SAMTOOLS_CASES_CONTROLS_01([:], genomeId,cases,controls)
 		version_ch= version_ch.mix(cases_controls_ch.version)
 
 		each_case_control_ch = cases_controls_ch.output.
@@ -53,10 +53,10 @@ workflow DELLY2_SV {
 			each_cases = each_case_control_ch.filter{T->T[2].equals("case")}.map{T->[T[0],T[1]]}
 		
 		
-			delly_bcf = CALL_DELLY([:], reference, rsrcr_ch.executable, rsrcr_ch.exclude, each_cases)
+			delly_bcf = CALL_DELLY([:], genomeId, rsrcr_ch.executable, rsrcr_ch.exclude, each_cases)
 			version_ch= version_ch.mix(delly_bcf.version.first())
 
-			merge_delly = 	MERGE_DELLY(meta.subMap(["bnd"]), reference, rsrcr_ch.executable, delly_bcf.output.map{T->T[2]}.collect())
+			merge_delly = 	MERGE_DELLY(meta.subMap(["bnd"]), genomeId, rsrcr_ch.executable, delly_bcf.output.map{T->T[2]}.collect())
 			version_ch= version_ch.mix(merge_delly.version)
 	
 			call_vcf = merge_delly.output	
@@ -66,7 +66,7 @@ workflow DELLY2_SV {
 			call_vcf = genotype_vcf
 			}
 
-		genotype_ch = GENOTYPE_DELLY([:],reference, rsrcr_ch.executable, call_vcf, rsrcr_ch.exclude, each_sample_bam)
+		genotype_ch = GENOTYPE_DELLY([:],genomeId, rsrcr_ch.executable, call_vcf, rsrcr_ch.exclude, each_sample_bam)
 		version_ch= version_ch.mix(genotype_ch.version.first())
 
 	
@@ -79,7 +79,7 @@ workflow DELLY2_SV {
 		if(getBoolean(meta,"cnv")) {
 			if( genotype_vcf.name.equals("NO_FILE")) {
 
-				cnv_bcf = CALL_CNV([:], reference, rsrcr_ch.executable,  rsrcr_ch.mappability, each_cases.combine(filter_delly.output) )
+				cnv_bcf = CALL_CNV([:], genomeId, rsrcr_ch.executable,  rsrcr_ch.mappability, each_cases.combine(filter_delly.output) )
 				version_ch = version_ch.mix(cnv_bcf.version.first())
 
 				cnv_merge = MERGE_CNV([:], rsrcr_ch.executable,cnv_bcf.output.map{T->T[2]}.collect())
@@ -92,7 +92,7 @@ workflow DELLY2_SV {
 				call_cnv = genotype_vcf
 				}
 
-			cnv_genotype = GENOTYPE_CNV([:],reference, rsrcr_ch.executable, call_cnv, rsrcr_ch.mappability,  each_sample_bam)
+			cnv_genotype = GENOTYPE_CNV([:], genomeId, rsrcr_ch.executable, call_cnv, rsrcr_ch.mappability,  each_sample_bam)
 			version_ch = version_ch.mix(cnv_genotype.version.first())
 	
 			cnv_gt_merge = MERGE_CNV_GENOTYPED([:], cnv_genotype.output.collect())			
@@ -124,7 +124,7 @@ process CALL_DELLY {
     afterScript "rm -rf TMP"
     input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	path(delly)
 	val(exclude)
 	tuple val(name),val(bam)
@@ -132,6 +132,8 @@ process CALL_DELLY {
     	tuple val(name),val(bam),path("${name}.bcf"),emit:output
 	path("version.xml"),emit:version
     script:
+	def genome = params.genomes[genomeId]
+	def reference = genome.fasta
 	"""
 	hostname 1>&2
 	mkdir -p TMP
@@ -165,7 +167,7 @@ process MERGE_DELLY {
     memory "20g"
     input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	path(delly)
 	val(bcfs)
     output:
@@ -173,6 +175,8 @@ process MERGE_DELLY {
 	path("version.xml"),emit:version
 	path("merged.bcf.csi")
     script:
+        def genome = params.genomes[genomeId]
+        def reference =	genome.fasta
 	def bnd = getBoolean(meta,"bnd")
     """
     hostname 1>&2
@@ -219,7 +223,7 @@ process GENOTYPE_DELLY {
     memory "15g"
     input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	path(delly)
         val(merged)
 	val(exclude)
@@ -228,6 +232,8 @@ process GENOTYPE_DELLY {
         path("genotyped.${name}.bcf"),emit:output
 	path("version.xml"),emit:version
     script:
+        def genome = params.genomes[genomeId]
+        def reference =	genome.fasta
     """
     hostname 1>&2
     mkdir -p TMP
@@ -416,7 +422,7 @@ process CALL_CNV {
     memory '10 g'
     input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	path(delly)
 	val(mappability)
 	tuple val(name),val(bam),val(sv)
@@ -424,6 +430,9 @@ process CALL_CNV {
     	tuple val(name),val(bam),path("${name}.cnv.bcf"),emit:output
 	path("version.xml"),emit:version
     script:
+        def genome = params.genomes[genomeId]
+        def reference =	genome.fasta
+
 	"""
 	hostname 1>&2
 	mkdir -p TMP
@@ -433,7 +442,7 @@ process CALL_CNV {
 	delly cnv \
 		--outfile "${name}.cnv.bcf" \
 		--mappability "${mappability}" \
-		--genome "${params.reference}" \
+		--genome "${reference}" \
 		--svfile "${sv}" \
 		"${bam}" 1>&2
 
@@ -500,7 +509,7 @@ process GENOTYPE_CNV {
     memory '10 g'
     input:
 	val(meta)
-        val(reference)
+        val(genomeId)
         path(delly)
 	val(merged)
         val(mappability)
@@ -509,6 +518,8 @@ process GENOTYPE_CNV {
         path("genotyped.${name}.cnv.bcf"),emit:output
 	path("version.xml"),emit:version
     script:
+        def genome = params.genomes[genomeId]
+        def reference =	genome.fasta
     """
     hostname 1>&2
     mkdir -p TMP

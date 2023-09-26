@@ -29,7 +29,7 @@ process GRAPHTYPER_GENOTYPE_01 {
 tag "${row.interval?:row.bed}"
 memory "10g"
 errorStrategy "retry"
-maxRetries 2
+maxRetries 3
 cpus 10
 afterScript "rm -rf TMP2 TMP"
 input:
@@ -53,7 +53,7 @@ script:
 	def arg2 = isBlank(avg_cov_by_readlen)?"":"--avg_cov_by_readlen=${avg_cov_by_readlen}"
 """
 hostname 1>&2
-${moduleLoad("bcftools bedtools samtools picard/0.0.0")}
+${moduleLoad("bcftools bedtools samtools jvarkit")}
 mkdir -p TMP
 mkdir -p TMP2
 
@@ -68,6 +68,7 @@ fi
 export TMPDIR=\${PWD}/TMP
 
 if ${copy_bams} ; then
+	set -x
 	mkdir -p TMP/BAMS
 	i=1
 	cat "${row.bams}" | while read SAM
@@ -75,18 +76,9 @@ if ${copy_bams} ; then
 		echo "\$i : \${SAM}" 1>&2
 
 		# extract reads in regions
-		samtools view --uncompressed -@ "${task.cpus}" -O BAM -o "TMP/BAMS/tmp.jeter.bam" ${row.containsKey("bed")?"-M -L ${row.bed}":""} -T "${reference}" "\${SAM}"   ${row.containsKey("bed")?"":"--region=${row.interval}"}
-
-		# sort on query name
-		samtools sort  -@ "${task.cpus}" --reference "${reference}" -u -n -T TMP/sort. -O BAM -o TMP/BAMS/tmp.jeter2.bam TMP/BAMS/tmp.jeter.bam
-
-		# fix mate info
-		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${PICARD_JAR}  FixMateInformation I=TMP/BAMS/tmp.jeter.bam O=TMP/BAMS/tmp.jeter2.bam ADD_MATE_CIGAR=true  ASSUME_SORTED=true
-
-		# sort on coordinate
-		samtools sort  -@ "${task.cpus}" --reference "${reference}"  -T TMP/sort. -O BAM -o TMP/BAMS/tmp.jeter.bam TMP/BAMS/tmp.jeter2.bam
-		rm TMP/BAMS/tmp.jeter2.bam
-		
+		samtools view --uncompressed -O BAM -o "TMP/BAMS/tmp.jeter.bam" ${row.containsKey("bed")?"-M -L ${row.bed}":""} -T "${reference}" "\${SAM}"   ${row.containsKey("bed")?"":"--region=${row.interval}"} |\
+			java -jar \${JVARKIT_DIST}/jvarkit.jar samrmdupnames -R "${reference}" --samoutputformat BAM --bamcompression 0 |\
+			samtools view --reference "${reference}"  -O BAM -o TMP/BAMS/tmp.jeter.bam
 		
 		samtools index -@ "${task.cpus}" TMP/BAMS/tmp.jeter.bam
 

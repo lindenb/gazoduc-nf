@@ -23,16 +23,7 @@ SOFTWARE.
 
 */
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params);
-
-gazoduc.make("delly2_version","v1.1.6").
-        menu("delly").
-        description("delly2 version").
-	notEmpty().
-        put()
-
-
-include { moduleLoad;getVersionCmd;getKeyValue; isHg19; isHg38} from '../../modules/utils/functions.nf'
+include { moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
 include { SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.nf'
 
 
@@ -40,23 +31,23 @@ include { SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.nf
 workflow DELLY2_RESOURCES {
      take:
         meta /* meta */
-        reference /* indexed fasta reference */
+       	genomeId
      main:
 		version_ch = Channel.empty()
 		map_ch = GET_MAPPABILITY([:],reference)
 		version_ch = version_ch.mix(map_ch.version)
 
 
-		gaps_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"N","MAX_TO_MERGE":"1"],reference)
+		gaps_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"N","MAX_TO_MERGE":"1"], genomeId)
 		version_ch = version_ch.mix(gaps_ch.version)
 
-		exclude_ch = GET_EXCLUDE(meta,reference)
+		exclude_ch = GET_EXCLUDE([:], genomeId)
 		version_ch = version_ch.mix(exclude_ch.version)
 
-		delly2_ch = DOWNLOAD_DELLY2(meta.subMap(["delly2_version"]))
+		delly2_ch = DOWNLOAD_DELLY2([:])
 		version_ch = version_ch.mix(delly2_ch.version)
 
-		xmerge_ch = MERGE_EXCLUDE([:],reference,gaps_ch.bed,exclude_ch.bed)
+		xmerge_ch = MERGE_EXCLUDE([:],genomeId,gaps_ch.bed,exclude_ch.bed)
 		version_ch = version_ch.mix(xmerge_ch.version)
 
 	emit:
@@ -68,19 +59,18 @@ workflow DELLY2_RESOURCES {
 
 
 process GET_MAPPABILITY {
-tag "${file(reference).name}"
+tag "${genomeId}"
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 output:
 	path("blacklist.gz"),emit:mappability
 	path("version.xml"),emit:version
 	path("blacklist.gz.fai")
 	path("blacklist.gz.gzi")
 script:
-	def url19 = "https://gear.embl.de/data/delly/Homo_sapiens.GRCh37.dna.primary_assembly.fa.r101.s501.blacklist.gz"
-	def url38 = "https://gear.embl.de/data/delly/Homo_sapiens.GRCh38.dna.primary_assembly.fa.r101.s501.blacklist.gz"
-	def url=(isHg19(reference)?url19:(isHg38(reference)?url38:""))
+	def genome = params.genomes[genomeId]
+	def url = genome.delly2_blacklist_url?:""
 	
 	if(!url.isEmpty())
 	"""
@@ -114,16 +104,18 @@ script:
 
 
 process GET_EXCLUDE {
-tag "${file(reference).name}"
+tag "${genomeId}"
 afterScript "rm -f jeter.bed jeter2.bed jeter.interval_list"
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 output:
 	path("exclude.bed"),emit:bed
 	path("version.xml"),emit:version
 script:
-	def url1 = (isHg19(reference)?"https://raw.githubusercontent.com/hall-lab/speedseq/master/annotations/ceph18.b37.lumpy.exclude.2014-01-15.bed":(isHg38(reference)?"https://raw.githubusercontent.com/hall-lab/speedseq/master/annotations/exclude.cnvnator_100bp.GRCh38.20170403.bed":""))
+	def genome = params.genomes[genomeId]
+	def reference = genome.fasta
+	def url1 = genome.delly2_exclude_url?:""
 """
 hostname 1>&2
 ${moduleLoad("jvarkit")}
@@ -156,13 +148,15 @@ process MERGE_EXCLUDE {
 label "process_tiny"
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	path(xclude)
 	path(gaps)
 output:
 	path("exclude.bed"),emit:bed
 	path("version.xml"),emit:version
 script:
+	def genome = params.genomes[genomeId]
+	def reference = genome.fasta
 """
 hostname 1>&2
 ${moduleLoad("bedtools")}
@@ -201,7 +195,7 @@ process DOWNLOAD_DELLY2 {
 		path("delly"),emit:executable
 		path("version.xml"),emit:version
 	script:
-		def version = getKeyValue(meta,"delly2_version","v1.1.6")
+		def version = params.delly2.version
 		def url = "https://github.com/dellytools/delly/releases/download/${version}/delly_${version}_linux_x86_64bit"
 	"""
 	hostname 1>&2

@@ -57,22 +57,23 @@ workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 		
 
 		bams_ch = SAMTOOLS_SAMPLES02(["with_header":false,"allow_multiple_references":false,"allow_duplicate_samples":false],genomeId,bams)
+
+		unknowndp_ch = EXTRACT_SAMPLES_WITH_UNKNOWN_DEPTH([:],sample2depth,bams_ch.output)
+		version_ch = version_ch.mix(unknowndp_ch.version)
+
 		
-		/** file SAMPLE <-> DEPTH provided */
-		if( !sample2depth.name.equals("NO_FILE") ) {
-			version_ch = version_ch.mix(bams_ch.version)
-
-			join1_ch = JOIN_WITH_DEPTH([:],bams_ch.output,sample2depth)
-
-			summary = join1_ch.output
+		summary_ch = Channel.empty()
+		if(!sample2depth.name.equals("EMPTY")) {
+			summary_ch = summary_ch.mix(unknowndp_ch.knowndp)
 			}
-		else if( params.depth_method.equals("mosdepth") ) {
 
-			mosdepth_input_ch  = bams_ch.output.
+		if( params.depth_method.equals("mosdepth") ) {
+
+			mosdepth_input_ch  = unknowndp_ch.bams4depth.
 				splitCsv(sep:'\t',header:false).
 				map{T->[
 					"sample":T[0],
-					"bam":T[2],
+					"bam":T[1],
 					"genomeId":genomeId,
 					"mapq": params.mapq
 					]}.
@@ -83,9 +84,10 @@ workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 
 			mosdepth_ch = MOSDEPTH_RUN_01([:], mosdepth_ex.executable, mosdepth_input_ch)
 
-			merge_mosdepth = MERGE_MOSDEPTH([:], mosdepth_ch.output.map{T->T[1]}.collect() )
-			version_ch = version_ch.mix(merge_mosdepth.version)
-			summary= merge_mosdepth.output
+			merge_mosdepth_ch = MERGE_MOSDEPTH([:], mosdepth_ch.output.map{T->T[1]}.collect() )
+			version_ch = version_ch.mix(merge_mosdepth_ch.version)
+
+			summary_ch = summary_ch.mix(merge_mosdepth_ch.output)
 			}
 		/*
 		else if((params.depth_method.equals("samtoolsdepth")) {
@@ -101,7 +103,7 @@ workflow GRAPHTYPER_GENOTYPE_BAMS_01 {
 			throw new IllegalArgumentException("unknown params.depth_method")
 			}
 		
-		x1_ch = COVERAGE_DIVIDE_READLENGTH([:],summary)
+		x1_ch = COVERAGE_DIVIDE_READLENGTH([:], genomeId, summary_ch.collect())
 		version_ch = version_ch.mix(x1_ch.version)
 		
 
@@ -217,26 +219,56 @@ EOF
 """
 }
 
-process JOIN_WITH_DEPTH {
+
+process EXTRACT_SAMPLES_WITH_UNKNOWN_DEPTH {
+tag "${sample2depth} ${bams}"
 executor "local"
 input:
-      	val(meta)
-        path(samplebam)
-        path(sample2depth)
+	val(meta)
+	path(sample2depth)
+	path(bams)
 output:
-        path("summary.tsv"),emit:output
+	path("knowndepth.tsv"),emit:knowndp
+	path("bams4depths.tsv"),emit:bams4depth
+	path("version.xml"),emit:version
 script:
+
+if(sample2depth.name.equals("NO_FILE") )
+
 """
-echo -e "sample\tbam\tref\tcov\tcovr" > jeter.tsv
+touch knowndepth.tsv
 
-join -t '\t' -1 1 -2 1 -o '1.1,1.3,1.4,2.2,2.2' \
-	<(sort -t '\t' -k1,1 "${samplebam}" ) \
-	<(sort -t '\t' -k1,1 "${sample2depth}" )  >> jeter.tsv
+cut -f2,3 '${bams}' > bams4depths.tsv
 
-sleep 10
-mv jeter.tsv summary.tsv
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">join know/unknown depth</entry>
+</properties>
+EOF
+"""
+
+else
+
+"""
+join -t '\t' -1 1 -2 1 -o '2.2,2.3,1.2' \
+	<(sort -T . -t '\t' -k1,1 '${sample2depth}' | grep -v '^#' | uniq) \
+	<(sort -T . -t '\t' -k1,1 '${bams}') > knowndepth.tsv
+
+
+join -t '\t' -1 1 -2 1 -v 2 -o '2.2,2.3' \
+	<(sort -T . -t '\t' -k1,1 '${sample2depth}' | uniq) \
+	<(sort -T . -t '\t' -k1,1 '${bams}') > bams4depths.tsv
+
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">join know/unknown depth</entry>
+</properties>
+EOF
 """
 }
+
 
 
 process MERGE_MOSDEPTH {
@@ -255,13 +287,11 @@ cat << EOF > TMP/jeter1.txt
 ${L.join("\n")}
 EOF
 
-
-echo "sample\tbam\treference\tcoverage\tcoverage_region" > TMP/jeter2.txt
+touch TMP/jeter2.txt
 
 xargs -a TMP/jeter1.txt cat | grep -v '^sample' | while read SN	REF	BAM	_globaldist	_regiondist	SUMMARY	_perbase	_regions
 do
-        echo -n "\${SN}\t\${BAM}\t\${REF}" >> TMP/jeter2.txt
-        awk -F '\t' '(\$1=="total") {printf("\t%s",\$4);}' "\${SUMMARY}" >> TMP/jeter2.txt
+        echo -n "\${SN}\t\${BAM}" >> TMP/jeter2.txt
         awk -F '\t' 'BEGIN{C="";} (\$1=="total") {if(C=="") {C=\$4;}} (\$1=="total_region") {C=\$4;} END{printf("\t%s",C);}' "\${SUMMARY}" >> TMP/jeter2.txt
         echo >> TMP/jeter2.txt
 done
@@ -284,7 +314,7 @@ executor "local"
 afterScript "rm -rf TMP"
 input:
 	val(meta)
-	path(depths)
+	val(L)
 output:
 	path("summary.tsv"),emit:output
 	path("version.xml"),emit:version
@@ -299,21 +329,26 @@ mv jeter.tsv summary.tsv
 }
 
 process COVERAGE_DIVIDE_READLENGTH {
-//tag "${summary.name}"
+tag "N=${L.size()}"
 input:
 	val(meta)
-	path(summary)
+	val(genomeId)
+	val(L)
 output:
 	tuple path("bams.txt"),path("avg_cov_by_readlen.txt"),emit:output
 	path("version.xml"),emit:version
 script:
+	def genome = params.genomes[genomeId]
+	def reference = genome.fasta
 	def n_reads = meta.n_reads?:1000
 """
+hostname 1>&2
 ${moduleLoad("samtools")}
-tail -n+2 "${summary}" | while read SN BAM REF COV COVR
+
+cat ${L.join(" ")} | while read SN BAM COV
 do
-	samtools view -F 3844 -T "\${REF}" "\${BAM}" | head -n "${n_reads}" |\
-		awk -F '\t' -vCOVR=\${COVR} 'BEGIN{T=0.0;N=0;} {N++;T+=length(\$10)} END{print COVR/(N==0?100:T/N);}' >> avg_cov_by_readlen.txt
+	samtools view -F 3844 -T "${reference}" "\${BAM}" | head -n "${n_reads}" |\
+		awk -F '\t' -vCOV=\${COV} 'BEGIN{T=0.0;N=0;} {N++;T+=length(\$10)} END{print COV/(N==0?100:T/N);}' >> avg_cov_by_readlen.txt
 	echo "\${BAM}" >> bams.txt
 done
 
@@ -323,6 +358,5 @@ cat << EOF > version.xml
         <entry key="description">create list of bams and list of coverage/read-length</entry>
 </properties>
 EOF
-
 """
 }
