@@ -160,6 +160,7 @@ mv TMP/concat.bed ./
 
 test -s concat.bed
 
+sleep 60
 
 cat << EOF > version.xml
 <properties id="${task.process}">
@@ -191,6 +192,9 @@ script:
 set -o pipefail
 mkdir -p TMP BEDS
 ${moduleLoad("bedtools jvarkit")}
+
+echo "\${JAVA_HOME}"
+which java
 
 bedtools makewindows -b '${bed}' -w "${w}" -s "${s}"|\
 	awk -F '\t' '(int(\$2)<int(\$3))' |\
@@ -345,10 +349,10 @@ script:
 hostname 1>&2
 ${moduleLoad("samtools")}
 
-cat ${L.join(" ")} | while read SN BAM COV
+cat ${L.join(" ")} | sort -T . -t '\t' -k1,1 | while read SN BAM COV
 do
 	samtools view -F 3844 -T "${reference}" "\${BAM}" | head -n "${n_reads}" |\
-		awk -F '\t' -vCOV=\${COV} 'BEGIN{T=0.0;N=0;} {N++;T+=length(\$10)} END{print COV/(N==0?100:T/N);}' >> avg_cov_by_readlen.txt
+		awk -F '\t' -vCOV=\${COV} 'BEGIN{T=0.0;N=0;} {N++;T+=length(\$10)} END{print COV/(N==0?100:(T/N));}' >> avg_cov_by_readlen.txt
 	echo "\${BAM}" >> bams.txt
 done
 

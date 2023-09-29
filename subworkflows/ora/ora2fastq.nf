@@ -39,13 +39,11 @@ workflow ORA_TO_FASTQ {
 			}.set{branch_ch}
 		
 
-		ch1 = APPLY_ORAD([:] , branch_ch.fastq)
+		ch1 = APPLY_ORAD([:] , branch_ch.ora)
 		version_ch = version_ch.mix(ch1.version)
 
 
-		output = branch_ch.fastq.mix(
-			
-			)		
+		rows_out = branch_ch.fastq.mix(ch1.output.splitCsv(sep:'\t',header:true) )
 	emit:
 		version = version_ch
 		output = rows_out

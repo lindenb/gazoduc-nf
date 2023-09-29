@@ -26,7 +26,7 @@ SOFTWARE.
 include {isBlank;moduleLoad;getVersionCmd;parseBoolean} from '../../modules/utils/functions.nf'
 
 process GRAPHTYPER_GENOTYPE_01 {
-tag "${row.interval?:row.bed}"
+tag "${row.interval?:file(row.bed).name}"
 memory "10g"
 errorStrategy "retry"
 maxRetries 3
@@ -39,6 +39,8 @@ input:
 output:
 	tuple val(row),path("genotyped.list"),emit:output
 	path("version.xml"),emit:version
+when:
+	true
 script:
 	if(!row.genomeId) {exit 1,"genomeId missing"}
 	if(!row.bams) {exit 1,"bams missing"}
@@ -48,7 +50,7 @@ script:
 	def genome = params.genomes[row.genomeId]
 	def reference = genome.fasta
 
-	def copy_bams = (task.attemp > 1)
+	def copy_bams = (task.attempt > 1)
 	def avg_cov_by_readlen= row.avg_cov_by_readlen?:""
 	def arg2 = isBlank(avg_cov_by_readlen)?"":"--avg_cov_by_readlen=${avg_cov_by_readlen}"
 """
@@ -76,8 +78,8 @@ if ${copy_bams} ; then
 		echo "\$i : \${SAM}" 1>&2
 
 		# extract reads in regions
-		samtools view --uncompressed -O BAM -o "TMP/BAMS/tmp.jeter.bam" ${row.containsKey("bed")?"-M -L ${row.bed}":""} -T "${reference}" "\${SAM}"   ${row.containsKey("bed")?"":"--region=${row.interval}"} |\
-			java -jar \${JVARKIT_DIST}/jvarkit.jar samrmdupnames -R "${reference}" --samoutputformat BAM --bamcompression 0 |\
+		samtools view --uncompressed -O BAM  ${row.containsKey("bed")?"-M -L ${row.bed}":""} -T "${reference}" "\${SAM}"   ${row.containsKey("bed")?"":"--region=${row.interval}"} |\
+			java -jar \${JVARKIT_DIST}/jvarkit.jar samrmdupnames -R "${reference}" --validation-stringency SILENT --samoutputformat BAM --bamcompression 0 |\
 			samtools view --reference "${reference}"  -O BAM -o TMP/BAMS/tmp.jeter.bam
 		
 		samtools index -@ "${task.cpus}" TMP/BAMS/tmp.jeter.bam
@@ -89,6 +91,7 @@ if ${copy_bams} ; then
 	done
 
 	test -s TMP/bams.list
+	
 fi
 
 ${graphtyper} genotype \
@@ -101,8 +104,24 @@ ${graphtyper} genotype \
 	--threads=${task.cpus} \
 	${arg2}
 
+
+rm -rf "TMP2/input_sites"
+
+
+# bug graphtyper ? https://github.com/DecodeGenetics/graphtyper/issues/136 , reorder samples
+
+find TMP2 -type f -name "*.vcf.gz"  | while read F
+do
+	bcftools query -l "\${F}" | sort > TMP/ordered.samples.txt
+	bcftools view  --threads ${task.cpus} -O b -o "\${F}.bcf"  --samples-file TMP/ordered.samples.txt "\${F}"
+	bcftools index --threads ${task.cpus} "\${F}.bcf"
+
+	rm "\${F}" "\${F}.tbi"
+done
+
+
 mv TMP2 OUT
-find \${PWD}/OUT -type f -name "*.vcf.gz" | grep -F -v '/input_sites/' > genotyped.list
+find \${PWD}/OUT -type f -name "*.bcf"  > genotyped.list
 
 
 ##################

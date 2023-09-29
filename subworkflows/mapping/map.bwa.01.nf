@@ -33,7 +33,7 @@ include {GATK4_GATHER_BQSR_01} from '../../modules/gatk/gatk4.gather.bqsr.01.nf'
 include {GATK4_APPLY_BQSR_01} from '../../modules/gatk/gatk4.apply.bqsr.01.nf'
 include {moduleLoad;isBlank;parseBoolean;getVersionCmd} from '../../modules/utils/functions.nf'
 include {SEQTK_SPLITFASTQ} from '../fastq/split.fastq.nf'
-include {ORA_TO_FASTQ}  from '../subworkflows/ora/ora2fastq.nf'
+include {ORA_TO_FASTQ}  from '../ora/ora2fastq.nf'
 
 workflow MAP_BWA_01 {
 	take:
@@ -43,8 +43,8 @@ workflow MAP_BWA_01 {
 	main:
 		version_ch = Channel.empty()
 
-		fastq_ch1 =  ORA_TO_FASTQ([:], fastq_ch)
-		version_ch = version_ch.mix(fastq_ch1.version)
+		fastq1_ch =  ORA_TO_FASTQ([:], fastq_ch)
+		version_ch = version_ch.mix(fastq1_ch.version)
 
 	
 		fastq_ch2 =  SEQTK_SPLITFASTQ([:], fastq1_ch)
@@ -63,31 +63,31 @@ workflow MAP_BWA_01 {
 		markdup_ch = SAMBAMBA_MARKDUP_01([:],merge_ch.bam)
 		version_ch = version_ch.mix(markdup_ch.version)
 
-		if( parseBoolean(meta.with_bqsr) ) {
+		if( parseBoolean(params.with_bqsr) ) {
 			beds_ch = CONTIGS_IN_BAM([:], genomeId, markdup_ch.bam)
 			version_ch = version_ch.mix(beds_ch.version)
 
-			brecal_ch = GATK4_BASE_RECALIBRATOR_01(meta, beds_ch.output.splitCsv(header:true,sep:'\t'))
+			brecal_ch = GATK4_BASE_RECALIBRATOR_01([:], beds_ch.output.splitCsv(header:true,sep:'\t'))
 			version_ch = version_ch.mix(brecal_ch.version)
 	
-			gather_ch = GATK4_GATHER_BQSR_01(meta, brecal_ch.output.map{T->[
+			gather_ch = GATK4_GATHER_BQSR_01([:], brecal_ch.output.map{T->[
 				["sample":T[0].sample,"bam":T[0].bam],
 				T[1]
 				]}.groupTuple())
 			version_ch = version_ch.mix(gather_ch.version)
 
 		
-			applybqsr_ch = GATK4_APPLY_BQSR_01(meta, gather_ch.output.map{T->
+			applybqsr_ch = GATK4_APPLY_BQSR_01([:], gather_ch.output.map{T->
 				T[0].plus("table":T[1])
 				})
 			version_ch = version_ch.mix(applybqsr_ch.version)
 		
-			cram_ch = SAMTOOLS_BAM_TO_CRAM_01(meta,genomeId,applybqsr_ch.bam.map{T->[T[0].sample,T[1]]})
+			cram_ch = SAMTOOLS_BAM_TO_CRAM_01([:],genomeId,applybqsr_ch.bam.map{T->[T[0].sample,T[1]]})
 			version_ch = version_ch.mix(cram_ch.version)
 			}
 		else
 			{
-			cram_ch = SAMTOOLS_BAM_TO_CRAM_01(meta, genomeId, markdup_ch.bam)
+			cram_ch = SAMTOOLS_BAM_TO_CRAM_01([:], genomeId, markdup_ch.bam)
 			version_ch = version_ch.mix(cram_ch.version)		
 			}
 

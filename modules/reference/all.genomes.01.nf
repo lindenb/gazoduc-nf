@@ -22,33 +22,31 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-nextflow.enable.dsl=2
-
-/**
-
-Takes a mapped set of BAM or CRAM files and remap them on a new reference
-
-*/
-
-
-include {REMAP_BWA_01} from '../../../subworkflows/mapping/remap.bwa.01.nf'
-include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
-include {dumpParams;runOnComplete} from '../../../modules/utils/functions.nf'
+process ALL_GENOMES {
+executor "local"
+output:
+	path("genomes.tsv"),emit:output
+	path("version.xml"),emit:version
+script:
+"""
+hostname 1>&2
 
 
 
-if( params.help ) {
-    dumpParams(params);
-    exit 0
-}  else {
-    dumpParams(params);
+cat << EOF >> genomes.tsv
+genomeId	fasta	gtf
+${params.genomes.collect{K,V ->K+"\t"+(V.fasta?:".")+"\t"+(V.gtf?:".")}.unique().join('\n')}
+EOF
+
+sleep 10
+
+
+##################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">list all the available genomes</entry>
+</properties>
+EOF
+"""
 }
-
-
-workflow {
-	remap_ch = REMAP_BWA_01(params, params.genomeId, params.bams, file(params.bed_in))
-	//html = VERSION_TO_HTML(params,remap_ch.version)	
-	}
-
-runOnComplete(workflow);
-
