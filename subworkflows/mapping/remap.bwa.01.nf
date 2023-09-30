@@ -25,9 +25,10 @@ SOFTWARE.
 
 
 include {MAP_BWA_01} from '../../subworkflows/mapping/map.bwa.01.nf'
-include {MERGE_VERSION as MERGE_VERSIONA; MERGE_VERSION as MERGE_VERSIONB} from '../../modules/version/version.merge.02.nf'
-include {isBlank;moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
+include {MERGE_VERSION as MERGE_VERSIONA; MERGE_VERSION as MERGE_VERSIONB; MERGE_VERSION as MERGE_VERSIONC} from '../../modules/version/version.merge.02.nf'
+include {moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
 include {SAMTOOLS_SAMPLES} from '../samtools/samtools.samples.03.nf'
+include {SAMTOOLS_COLLATE} from '../../modules/samtools/samtools.collate.01.nf'
 
 
 boolean isEmptyGz(Object filename) {
@@ -58,7 +59,7 @@ workflow REMAP_BWA_01 {
 		version_ch = version_ch.mix(samples_ch.version)
 
 
-		remap_ch = REMAP_ONE([:], genomeId, bed, samples_ch.rows )
+		remap_ch = REMAP_ONE([:], genomeId, bed, samples_ch.rows.map{T->T.plus("sample":T.new_sample)} )
 		version_ch = version_ch.mix(remap_ch.version)
 		version_ch = MERGE_VERSIONA("Extract Fastq from bam and remap", version_ch.collect())
 
@@ -74,110 +75,68 @@ take:
 	bed
 	row
 main:
+
 	version_ch = Channel.empty()
 
-	collate_ch = COLLATE_AND_FASTQ([:], bed, row)
+	collate_ch = COLLATE_BAMS([:], bed, row)
 	version_ch = version_ch.mix(collate_ch.version)
 
-
-	src1_ch = collate_ch.paired.splitCsv(header:true,sep:'\t').
-		filter{T->!(isEmptyGz(T.R1) && isEmptyGz(T.R2))}
-
-	src2_ch = collate_ch.single.splitCsv(header:true,sep:'\t').
-		filter{T->!isEmptyGz(T.R1)}
-
-	src3_ch =  src1_ch.mix(src2_ch).
-		map{T->row.plus(T)}.		
-		map{T->{
-                	T.remove("bam");
-                	T.remove("genomeId");
-	                T.remove("fasta");
-	                T.remove("gtf");
-	                T.remove("reference");
-        	        return T;
-                	}}.
-	        map{T->T.plus("genomeId":genomeId)}
-
-/*
 			
-	bam1_ch = MAP_BWA_01([:],genomeId, src3_ch)
-
+	bam1_ch = MAP_BWA_01([:],genomeId, collate_ch.output)
 	version_ch = version_ch.mix(bam1_ch.version)
 
 	version_ch = MERGE_VERSIONB("Remap bam on another reference", version_ch.collect())
-emit:
-	version= version_ch.version
-	bams = bam1_ch.bams
-*/
-	bamsxx  = Channel.empty()
+
 emit:
 	version=version_ch
-	bams = bamsxx
+	bams = bam1_ch.bams
 }
 
 
+workflow COLLATE_BAMS {
+take:
+	meta
+	bed
+	row
+main:
+	
+     	version_ch = Channel.empty()
 
-process COLLATE_AND_FASTQ {
-tag "${row.new_sample} ${file(row.bam).name}"
-afterScript "rm -rf TMP TMP2"
-memory "5g"
-cpus 4
-input:
-	val(meta)
-	path(bed)
-	val(row)
-output:
-	path("FASTQS/${row.new_sample}.paired.fastq.tsv"),emit:paired
-	path("FASTQS/${row.new_sample}.single.fastq.tsv"),emit:single
-	path("version.xml"),emit:version
-script:
-	def sample = row.new_sample
-"""
-hostname 1>&2
-set -o pipefail
-${moduleLoad("samtools/")}
-
-mkdir -p TMP TMP2
+        collate_ch = SAMTOOLS_COLLATE([:], bed, row)
+        version_ch = version_ch.mix(collate_ch.version)
 
 
-# extract reads
-if ${!bed.name.equals("NO_FILE")} ; then
-	samtools view  --threads ${task.cpus} --reference "${row.reference}" -M -O BAM -o TMP/jeter.bam --regions-file "${bed}" "${row.bam}"
-fi
+        src1_ch = collate_ch.output.
+		map{T->T[0].plus("R1":T[1],"R2":T[2])}.
+                filter{T->!(isEmptyGz(T.R1) && isEmptyGz(T.R2))}
 
-# show size
-ls -lah  "${!bed.name.equals("NO_FILE") ? "TMP/jeter.bam":"${row.bam}"}" 1>&2
-
-
-# collate
-samtools collate -f --threads ${(task.cpus as int) -1} -O -u --no-PG --reference "${row.reference}" "${!bed.name.equals("NO_FILE") ? "TMP/jeter.bam":"${row.bam}"}" TMP/tmp.collate |\
-	samtools fastq -n --threads 1 -1 TMP/jeter.paired.R1.fq.gz -2 TMP/jeter.paired.R2.fq.gz -s "TMP/jeter.singleton.fq.gz" -0 "TMP/jeter.other.fq.gz"
+        src2_ch = collate_ch.output.
+		flatMap{T-> [
+			T[0].plus("R1":T[3]),
+			T[0].plus("R1":T[4])
+			]}.
+                filter{T->!isEmptyGz(T.R1)}
 
 
-# merge both singleton or other
 
-cat TMP/jeter.singleton.fq.gz TMP/jeter.other.fq.gz > TMP/jeter.gz
-mv -v TMP/jeter.gz TMP/jeter.singleton.fq.gz
 
-mv -v TMP2 FASTQS
+        src3_ch =  src1_ch.mix(src2_ch).
+                map{T->{
+                        T.remove("bam");
+                        T.remove("new_sample");
+                        T.remove("genomeId");
+                        T.remove("fasta");
+                        T.remove("gtf");
+                        T.remove("reference");
+                        return T;
+                        }}
 
-find \${PWD}/FASTQS -type f -name "${sample}.paired*.R1.fastq.gz" -o -name "${sample}.paired*.R2.fastq.gz" | LC_ALL=C sort -T TMP | paste - - |\
-	awk -F '\t' 'BEGIN{printf("R1\tR2\\n");} {printf("%s\t%s\\n",\$1,\$2);}' > FASTQS/${sample}.paired.fastq.tsv
 
-find \${PWD}/FASTQS -type f -name "${sample}.singleton*.fastq.gz" | \
-	awk -F '\t' 'BEGIN{printf("R1\\n");} {printf("%s\\n",\$0);}' > FASTQS/${sample}.single.fastq.tsv
+	version_ch = MERGE_VERSIONC("Extract FASTQ from BAM", version_ch.collect())
+emit:
+	output = src3_ch
+	version = version_ch
 
-##################
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="description">convert BAM to fastq</entry>
-	<entry key="sample">${sample}</entry>
-	<entry key="bam">${row.bam}</entry>
-        <entry key="versions">${getVersionCmd("samtools awk")}</entry>
-	<entry key="bed">${bed}</entry>
-</properties>
-EOF
-"""
 }
+
 

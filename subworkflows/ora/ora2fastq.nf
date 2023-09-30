@@ -42,8 +42,13 @@ workflow ORA_TO_FASTQ {
 		ch1 = APPLY_ORAD([:] , branch_ch.ora)
 		version_ch = version_ch.mix(ch1.version)
 
+	
+		ora_ch = branch_ch.ora.combine( ch1.output.splitCsv(sep:'\t',header:true) ).
+			filter{T->T[0].R1.equals(T[1].ora)}.
+			map{T->T[0].plus(T[1])}
+	
 
-		rows_out = branch_ch.fastq.mix(ch1.output.splitCsv(sep:'\t',header:true) )
+		rows_out = branch_ch.fastq.mix(ora_ch)
 	emit:
 		version = version_ch
 		output = rows_out
@@ -62,8 +67,6 @@ output:
 	path("fastq.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
-	def COL = row.grep({!(it.key.equals("R1") || it.key.equals("R2"))}).collect{it.key}.join("\t")
-	def ROW = row.grep({!(it.key.equals("R1") || it.key.equals("R2"))}).collect{it.value}.join("\t")
 	if(row.containsKey("R2") && !row.R2.isEmpty() && !row.R2.equals(".")) throw new IllegalArgumentException("ORA specified but got R2 : ${row}");
 """
 hostname 1>&2
@@ -77,11 +80,11 @@ mv -v TMP OUT
 find \${PWD}/OUT/ -type f -name "*q.gz" |\
 	sort -T . -k1,1V |\
 	paste - - |\
-	awk -F '\t' '{printf("${ROW}\t%s\\n",\$0);}' > OUT/fastq.tsv
+	awk -F '\t' '{printf("${row.R1}\t%s\\n",\$0);}' > OUT/fastq.tsv
 
 test -s OUT/fastq.tsv
 
-echo "${COL}\tR1\tR2" > fastq.tsv
+echo "ora\tR1\tR2" > fastq.tsv
 cat OUT/fastq.tsv >> fastq.tsv
 
 

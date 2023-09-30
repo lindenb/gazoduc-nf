@@ -28,14 +28,11 @@ include {parseBoolean;isBlank;moduleLoad} from '../../modules/utils/functions.nf
 process BWA_MEM_01 {
 tag "${row.sample} ${row.R1} ${row.R2?:""}"
 afterScript "rm -rf TMP"
-memory "5g"
-cpus 5
 input:
 	val(meta)
 	val(row)
 output:
-	tuple val("${row.sample}"),path("${row.sample}.sorted.bam"),emit:bam
-	path("${row.sample}.sorted.bam.bai"),emit:bai
+	tuple val(row),path("${row.sample}.sorted.bam"), path("${row.sample}.sorted.bam.bai"),emit:output
 	path("version.xml"),emit:version
 script:
 	if(!row.containsKey("R1")) throw new IllegalArgumentException("R1 missing");
@@ -61,7 +58,7 @@ set -o pipefail
 mkdir -p TMP
 
 bwa mem ${is_interleaved?"-p":""} -t ${cpus2} -R '@RG\\tID:${ID}\\tSM:${sample}\\tLB:${LB}.R0\\tCN:${CN}\\tPL:${PL}' "${reference}" "${R1}" ${isBlank(R2)?"":"\"${R2}\""} |\
-	samtools ${isBlank(R2)?"view":"fixmate -m"} -O BAM -o TMP/jeter.bam -
+	samtools ${isBlank(R2)?"view -O BAM -o TMP/jeter.bam -":"fixmate -mc - TMP/jeter.bam"}  
 
 
 samtools sort --threads ${cpus1} -o TMP/jeter2.bam -O BAM -T TMP/tmp TMP/jeter.bam
@@ -88,11 +85,6 @@ cat << EOF > version.xml
 	<entry key="bwa.version">\$(bwa 2>&1 | grep Version)</entry>
 </properties>
 EOF
-"""
-stub:
-"""
-touch "${row.sample}.sorted.bam" "${row.sample}.sorted.bam.bai"
-echo "<properties/>" > version.xml
 """
 }
 

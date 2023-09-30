@@ -47,7 +47,7 @@ workflow MAP_BWA_01 {
 		version_ch = version_ch.mix(fastq1_ch.version)
 
 	
-		fastq_ch2 =  SEQTK_SPLITFASTQ([:], fastq1_ch)
+		fastq_ch2 =  SEQTK_SPLITFASTQ([:], fastq1_ch.output)
 		version_ch = version_ch.mix(fastq_ch2.version)
 
 		r1r2_ch= fastq_ch2.output.map{T->T.plus([
@@ -57,13 +57,14 @@ workflow MAP_BWA_01 {
 		bam1_ch = BWA_MEM_01([:], r1r2_ch)
 		version_ch = version_ch.mix(bam1_ch.version)
 	
-		merge_ch = SAMTOOLS_MERGE_01([:], genomeId, bam1_ch.bam.groupTuple())
+
+		merge_ch = SAMTOOLS_MERGE_01([:], genomeId, bam1_ch.output.map{T->[T[0].sample,T[1]] }.groupTuple())
 		version_ch = version_ch.mix(merge_ch.version)
 
 		markdup_ch = SAMBAMBA_MARKDUP_01([:],merge_ch.bam)
 		version_ch = version_ch.mix(markdup_ch.version)
 
-		if( parseBoolean(params.with_bqsr) ) {
+		if( parseBoolean(params.bwa.with_bqsr) ) {
 			beds_ch = CONTIGS_IN_BAM([:], genomeId, markdup_ch.bam)
 			version_ch = version_ch.mix(beds_ch.version)
 
@@ -82,19 +83,19 @@ workflow MAP_BWA_01 {
 				})
 			version_ch = version_ch.mix(applybqsr_ch.version)
 		
-			cram_ch = SAMTOOLS_BAM_TO_CRAM_01([:],genomeId,applybqsr_ch.bam.map{T->[T[0].sample,T[1]]})
+			cram_ch = SAMTOOLS_BAM_TO_CRAM_01([:],applybqsr_ch.bam.map{T->["sample":T[0],"bam":T[1],"genomeId":genomeId]})
 			version_ch = version_ch.mix(cram_ch.version)
 			}
 		else
 			{
-			cram_ch = SAMTOOLS_BAM_TO_CRAM_01([:], genomeId, markdup_ch.bam)
+			cram_ch = SAMTOOLS_BAM_TO_CRAM_01([:], markdup_ch.bam.map{T->["sample":T[0],"bam":T[1],"genomeId":genomeId]})
 			version_ch = version_ch.mix(cram_ch.version)		
 			}
 
 		version_ch = MERGE_VERSION("bwa", version_ch.collect())
 	emit:
 		version= version_ch.version
-		bams = cram_ch.cram
+		bams = cram_ch.output
 	}
 
 process CONTIGS_IN_BAM {

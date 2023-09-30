@@ -26,26 +26,29 @@ SOFTWARE.
 include {moduleLoad} from '../../modules/utils/functions.nf'
 
 process SAMTOOLS_BAM_TO_CRAM_01 {
-tag "${sample}"
+tag "${row.sample} ${file(row.bam).name}"
 afterScript "rm -rf TMP"
-cpus 5
 input:
 	val(meta)
-	val(genomeId)
-	tuple val(sample),val(bam)
+	val(row)
 output:
-	tuple val(sample),path("${meta.prefix?:""}${sample}.cram"),emit:cram
-	path("${meta.prefix?:""}${sample}.cram.crai"),emit:index
+	tuple val(row),path("${params.prefix?:""}${row.sample}.cram"), path("${params.prefix?:""}${row.sample}.cram.crai"),emit:output
 	path("version.xml"),emit:version
 script:
-	def genome = params.genomes[genomeId]
+	def bam = row.bam
+	def sample = row.sample
+	def genome = params.genomes[row.genomeId]
         def reference =	genome.fasta
+	def level=9
 """
 hostname 1>&2
 ${moduleLoad("samtools")}
+mkdir -p TMP
+samtools view -@ ${task.cpus} --write-index -O "CRAM,level=${level}" -o TMP/jeter.cram -T "${reference}" "${bam}"
 
-samtools view -@ ${task.cpus} -O CRAM -o "${meta.prefix?:""}${sample}.cram" -T "${reference}" "${bam}"
-samtools index -@ ${task.cpus}  "${meta.prefix?:""}${sample}.cram"
+
+mv TMP/jeter.cram "./${params.prefix?:""}${sample}.cram"
+mv TMP/jeter.cram.crai "./${params.prefix?:""}${sample}.cram.crai"
 
 ##################
 cat << EOF > version.xml
@@ -59,12 +62,6 @@ cat << EOF > version.xml
         <entry key="samtools.version">\$(samtools  --version | head -n 1| cut -d ' ' -f2)</entry>
 </properties>
 EOF
-"""
-stub:
-"""
-touch "${meta.prefix?:""}${sample}.cram"
-touch "${meta.prefix?:""}${sample}.cram.crai"
-echo "<properties/>" > version.xml
 """
 }
 

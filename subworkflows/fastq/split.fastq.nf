@@ -30,13 +30,13 @@ workflow SEQTK_SPLITFASTQ {
 		meta
 		rows /** contains sample,R1,(R2)? */
 	main:
-		if(!params.containsKey("seqtk_split2_args")) throw new IllegalArgumentException("seqtk_split2_args missing")
+		if(!params.seqtk.split2.containsKey("args")) throw new IllegalArgumentException("params.seqtk.split2.args missing")
 		
 		version_ch = Channel.empty()
 		
 		
 
-		if(params.seqtk_split2_args.trim().isEmpty()) {
+		if(params.seqtk.split2.args.trim().isEmpty()) {
 			rows_out = rows
 			}
 		else
@@ -48,7 +48,6 @@ workflow SEQTK_SPLITFASTQ {
 			}
 		
 		
-
 	emit:
 		version = version_ch
 		output = rows_out
@@ -67,11 +66,10 @@ output:
 	path("fastq.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
-	if(!params.containsKey("seqtk_split2_args")) throw new IllegalArgumentException("seqtk_split2_args missing");
 	def COL = row.grep({!(it.key.equals("R1") || it.key.equals("R2"))}).collect{it.key}.join("\t")
 	def ROW = row.grep({!(it.key.equals("R1") || it.key.equals("R2"))}).collect{it.value}.join("\t")
 
-	seqtk = params.seqtk_split2_args
+	seqtk = params.seqtk.split2.args
 
 if(row.containsKey("R2") && !row.R2.isEmpty() && !row.R2.equals("."))
 """
