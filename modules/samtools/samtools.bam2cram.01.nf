@@ -32,14 +32,14 @@ input:
 	val(meta)
 	val(row)
 output:
-	tuple val(row),path("${params.prefix?:""}${row.sample}.cram"), path("${params.prefix?:""}${row.sample}.cram.crai"),emit:output
+	tuple val(row),path("${params.prefix?:""}${row.genomeId}.${row.sample}.cram"), path("${params.prefix?:""}${row.genomeId}.${row.sample}.cram.crai"),emit:output
 	path("version.xml"),emit:version
 script:
 	def bam = row.bam
 	def sample = row.sample
 	def genome = params.genomes[row.genomeId]
         def reference =	genome.fasta
-	def level=9
+	def level = task.ext.compression_level?:9
 """
 hostname 1>&2
 ${moduleLoad("samtools")}
@@ -47,8 +47,8 @@ mkdir -p TMP
 samtools view -@ ${task.cpus} --write-index -O "CRAM,level=${level}" -o TMP/jeter.cram -T "${reference}" "${bam}"
 
 
-mv TMP/jeter.cram "./${params.prefix?:""}${sample}.cram"
-mv TMP/jeter.cram.crai "./${params.prefix?:""}${sample}.cram.crai"
+mv TMP/jeter.cram "./${params.prefix?:""}${row.genomeId}.${sample}.cram"
+mv TMP/jeter.cram.crai "./${params.prefix?:""}${row.genomeId}.${sample}.cram.crai"
 
 ##################
 cat << EOF > version.xml

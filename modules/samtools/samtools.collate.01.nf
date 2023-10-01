@@ -29,6 +29,8 @@ include {moduleLoad;getVersionCmd} from '../utils/functions.nf'
 process SAMTOOLS_COLLATE {
 tag "${row.sample} ${file(row.bam).name}"
 afterScript "rm -rf TMP"
+errorStrategy "retry"
+maxRetries 2
 input:
 	val(meta)
 	path(bed)
@@ -43,6 +45,9 @@ output:
 script:
 	if(!(row.containsKey("reference") || row.containeKey("genomeId"))) throw new IllegalArgumentException("missing ref/genomeId");
 	if(!row.containsKey("sample")) throw new IllegalArgumentException("sample");
+
+	// bug in samtools ?
+	def fetch_pairs = task.attempt==1?" --fetch-pairs ":""
 	def reference = row.reference?:params.genomes[row.genomeId].fasta
 	def level = task.ext.compression_level?:5
 	def sample = row.sample
@@ -56,7 +61,7 @@ mkdir -p TMP
 
 # extract reads
 if ${!bed.name.equals("NO_FILE")} ; then
-	samtools view  --fast --threads ${task.cpus} --fetch-pairs --reference "${reference}" -M -O BAM -o TMP/jeter.bam --regions-file "${bed}" "${row.bam}"
+	samtools view  --fast --threads ${task.cpus} ${fetch_pairs} --reference "${reference}" -M -O BAM -o TMP/jeter.bam --regions-file "${bed}" "${row.bam}"
 fi
 
 # show size
