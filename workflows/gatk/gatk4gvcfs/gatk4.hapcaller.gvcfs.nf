@@ -23,35 +23,8 @@ SOFTWARE.
 
 */
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putGenomeId()
 
-
-gazoduc.make("bams","NO_FILE").
-	description("file containing the path to multiple bam files").
-	required().
-	existingFile().
-	put()
-
-
-gazoduc.make("beds","NO_FILE").
-	description("Path to a list of bed files. if undefined, the REF will be split into parts").
-	put()
-
-
-gazoduc.make("pedigree","NO_FILE").
-	description("Optional path to a pedigree").
-	put()
-
-
-gazoduc.make("mapq",10).
-	description("mapping quality").
-	put()
-
-
-params.disableFeatures=""
-
-
-include {runOnComplete;hasFeature;parseBoolean;getKeyValue} from '../../../modules/utils/functions.nf'
+include {dumpParams;runOnComplete} from '../../../modules/utils/functions.nf'
 include {GATK4_HAPCALLER_GVCFS_01} from '../../../subworkflows/gatk/gatk4.hapcaller.gvcfs.01.nf'
 include {COLLECT_TO_FILE_01 as COLLECT2FILE1; COLLECT_TO_FILE_01 as COLLECT2FILE2} from '../../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_CONCAT_01} from '../../../subworkflows/bcftools/bcftools.concat.01.nf'
@@ -66,19 +39,12 @@ include {LINUX_SPLIT} from '../../../modules/utils/split.nf' addParams(
 	method:"--lines=1"
 	)
 
-
-
 if( params.help ) {
-    gazoduc.usage().
-        name("HC").
-        description("Haplotype Caller").
-        print();
+    dumpParams(params);
     exit 0
-    }
-else
-    	{
-	gazoduc.validate()
-        }
+}  else {
+    dumpParams(params);
+}
 
 
 workflow  {
@@ -108,28 +74,7 @@ workflow  {
 
 	html_ch = VERSION_TO_HTML(version2_ch.version)
 
-	PUBLISH(params,concat_ch.vcf,html_ch.html,version2_ch.version)
 	}
 
-process PUBLISH {
-executor "local"
-publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
-input:
-	val(meta)
-	val(vcf)
-	val(html)
-	val(xml)
-output:
-	path("${params.prefix}genotyped.vcf.gz")
-	path("${params.prefix}genotyped.html")
-	path("${params.prefix}genotyped.xml")
-script:
-"""
-module load bcftools
-bcftools view -O z -o "${params.prefix}genotyped.vcf.gz" "${vcf}"
-ln -s "${html}" ./${params.prefix}genotyped.html
-ln -s "${xml}" ./${params.prefix}genotyped.xml
-"""
-}
 
 runOnComplete(workflow)

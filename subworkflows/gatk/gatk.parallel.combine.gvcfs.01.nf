@@ -23,8 +23,6 @@ SOFTWARE.
 
 */
 
-def gazoduc = gazoduc.Gazoduc.getInstance()
-
 
 include {moduleLoad;getVersionCmd} from './../../modules/utils/functions.nf'
 include {gatkGetArgumentsForCombineGVCFs;gatkGetArgumentsForGenotypeGVCF} from './gatk.hc.utils.nf'
@@ -33,7 +31,7 @@ include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 workflow GATK_PARALLEL_COMBINE_GVCFS {
 	take:
 		meta
-		reference
+		genomeId
 		pedigree
 		rows
 	main:
@@ -42,13 +40,13 @@ workflow GATK_PARALLEL_COMBINE_GVCFS {
 		ch1 = EXPAND(meta,rows)		
 		version_ch = version_ch.mix(ch1.version)
 
-		level0_ch = COMBINE_LEVEL0(meta, reference, ch1.output.splitCsv(header:true,sep:'\t') )
+		level0_ch = COMBINE_LEVEL0(meta, genomeId, ch1.output.splitCsv(header:true,sep:'\t') )
 		version_ch = version_ch.mix(level0_ch.version)
 
-		level1_ch = COMBINE_LEVEL1(meta, reference, level0_ch.output.groupTuple())
+		level1_ch = COMBINE_LEVEL1(meta, genomeId, level0_ch.output.groupTuple())
 		version_ch = version_ch.mix(level1_ch.version)
 
-		level2_ch = GENOTYPE_LEVEL2(meta, reference, pedigree, level1_ch.output )
+		level2_ch = GENOTYPE_LEVEL2(meta, genomeId, pedigree, level1_ch.output )
 		version_ch = version_ch.mix(level1_ch.version)
 
 		version_ch = MERGE_VERSION(meta, "combine_gvcfs", "combine.gvcfs", version_ch.collect())
@@ -94,14 +92,14 @@ maxRetries 3
 afterScript 'rm -rf  TMP'
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	val(row)
 output:
         tuple val("${row.interval}"),path("combine0.g.vcf.gz"),emit:output
         path("combine0.g.vcf.gz"),emit:index
 	path("version.xml"),emit:version
 script:
-     def otherOpts =  gatkGetArgumentsForCombineGVCFs(meta.plus("reference":reference))
+     def otherOpts =  gatkGetArgumentsForCombineGVCFs(meta.plus("genomeId":genomeId))
 """
 hostname 1>&2
 ${moduleLoad("gatk4")}
@@ -140,14 +138,14 @@ maxRetries 3
 afterScript 'rm -rf  TMP'
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	tuple val(region),val(L)
 output:
         tuple val("${region}"),path("combine1.g.vcf.gz"),emit:output
         path("combine1.g.vcf.gz"),emit:index
 	path("version.xml"),emit:version
 script:
-     def otherOpts =  gatkGetArgumentsForCombineGVCFs(meta.plus("reference":reference)) 
+     def otherOpts =  gatkGetArgumentsForCombineGVCFs(meta.plus("genomeId":genomeId)) 
 if(L.size()==1)
 """
 
@@ -199,7 +197,7 @@ maxRetries 3
 afterScript 'rm -rf  TMP'
 input:
         val(meta)
-        val(reference)
+        val(genomeId)
         path(pedigree)
         tuple val(region),path(gvcf)
 output:
@@ -207,7 +205,7 @@ output:
         path("genotyped.bcf.csi"),emit:index
         path("version.xml"),emit:version
 script:
-     def otherOpts =  gatkGetArgumentsForGenotypeGVCF(meta.plus("reference":reference,"pedigree":pedigree))
+     def otherOpts =  gatkGetArgumentsForGenotypeGVCF(meta.plus("genomeId":genomeId,"pedigree":pedigree))
 
 """
 hostname 1>&2

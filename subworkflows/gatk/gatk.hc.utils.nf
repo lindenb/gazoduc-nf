@@ -23,12 +23,6 @@ SOFTWARE.
 
 */
 
-def gazoduc = gazoduc.Gazoduc.getInstance()
-
-gazoduc.make("maxAlternateAlleles",6).
-        description("Max number of GenotypeGVCF ALT alleles").
-	setInt().
-        put()
 
 
 include {isBlank} from './../../modules/utils/functions.nf'
@@ -36,27 +30,29 @@ include {isBlank} from './../../modules/utils/functions.nf'
 /**
   compute common options for gatk CombineGVCFs or GenotypeGVCF
 */
-def gatkGetArguments(def meta) {
-	def optDbsnp =  (isBlank(meta.dbsnp)?"":"--dbsnp \"${meta.dbsnp}\" ");
-	return " -R \"${meta.reference}\" " + optDbsnp;
+def gatkGetArguments(def hash) {
+	def genomeId = hash.genomeId
+	def genome = params.genomes[genomeId]
+	def optDbsnp =  (isBlank(genome.dbsnp)?"":"--dbsnp \"${genome.dbsnp}\" ");
+	return " -R \"${genome.fasta}\" " + optDbsnp;
 	}
 	
 /**
   compute common options for gatk CombineGVCFs
 */
-def gatkGetArgumentsForCombineGVCFs(def meta) {
-	return gatkGetArguments(meta) +" -G StandardAnnotation  -G AS_StandardAnnotation ";
+def gatkGetArgumentsForCombineGVCFs(def hash) {
+	return gatkGetArguments(hash) +" -G StandardAnnotation  -G AS_StandardAnnotation ";
 	}
 
 /**
   compute common options for gatk GenotypeGVCF
 */
-def gatkGetArgumentsForGenotypeGVCF(def meta) {
-	def maxAlternateAlleles = meta.maxAlternateAlleles?:6
-	def pedigree = (meta.pedigree.name.equals("NO_FILE")?"":meta.pedigree.toRealPath())
+def gatkGetArgumentsForGenotypeGVCF(def hash) {
+	def maxAlternateAlleles = params.gatk.haplotypecaller.maxAlternateAlleles?:6
+	def pedigree = (hash.pedigree.name.equals("NO_FILE")?"":params.pedigree.toRealPath())
 	
 	// BUG HAPLOID https://github.com/broadinstitute/gatk/issues/7304#issuecomment-1497966273
         def optPed = (isBlank(pedigree)?"":" -A PossibleDeNovo --pedigree \"${pedigree}\" ");
         
-	return gatkGetArguments(meta) +" --max-alternate-alleles ${maxAlternateAlleles}  -G StandardAnnotation  -G AS_StandardAnnotation ${optPed} ";
+	return gatkGetArguments(hash) +" --max-alternate-alleles ${maxAlternateAlleles}  -G StandardAnnotation  -G AS_StandardAnnotation ${optPed} ";
 	}
