@@ -22,41 +22,30 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include { SAMTOOLS_SAMPLES01} from '../../modules/samtools/samtools.samples.01.nf'
+include { SAMTOOLS_SAMPLES} from '../samtools/samtools.samples.03.nf'
 include { COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include { getKeyValue;moduleLoad; assertFileExists;getVersionCmd} from '../../modules/utils/functions.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params);
-
-
-gazoduc.make("goleft_version","v0.2.4").
-        description("gotleft/indexcov version").
-	menu("goleft").
-        put()
-
 
 workflow INDEXCOV {
      take:
         meta /* meta */
-        reference /* indexed fasta reference */
+        genomeId
         bams /* file containing the path to the bam/cram files . One per line */
      main:
-	assertFileExists(reference,"reference must be defined")
-	assertFileExists(bams,"path to bams must be defined")
-        mapq = ((meta.mapq?:"0") as int)
         ch_version = Channel.empty()
 
 
-    	if ( mapq > 0) {
- 		log.info("mapq ${mapq} is greater than 0. rebuilding bam indexes... ${bams} ${reference}")
-		bams_ch = SAMTOOLS_SAMPLES01([:], reference, bams)
+    	if ( (params.mapq  as int)> 0) {
+ 		log.info("mapq ${params.mapq} is greater than 0. rebuilding bam indexes... ${bams} ${genomeId}")
+		bams_ch = SAMTOOLS_SAMPLES([:], bams)
 		ch_version = ch_version.mix( bams_ch.version)
 
-        	sample_bam_fasta_ch = bams_ch.output.splitCsv(header: false,sep:'\t',strip:true)
+        	sample_bam_fasta_ch = bams_ch.rows.filter{T->T.genomeId.equals(genomeId)}
         
-		rebuild_bai_ch = REBUILD_BAI(meta.subMap(["mapq"]), reference, sample_bam_fasta_ch)
+		rebuild_bai_ch = REBUILD_BAI([:], genomeId, sample_bam_fasta_ch)
 		ch_version = ch_version.mix( rebuild_bai_ch.version.first() ) 
 
 		bams2_ch = COLLECT_TO_FILE_01([:], rebuild_bai_ch.bam.collect()).output
@@ -66,12 +55,12 @@ workflow INDEXCOV {
 		bams2_ch = Channel.fromPath(bams)
 		}
 
-	executable_ch = DOWNLOAD_GOLEFT(meta.subMap(["goleft_version"]))
+	executable_ch = DOWNLOAD_GOLEFT([:])
 	ch_version = ch_version.mix( executable_ch.version)
-    	indexcov_ch = RUN_GOLEFT_INDEXCOV(meta, executable_ch.executable ,reference , bams2_ch, ch_version.collect())
+    	indexcov_ch = RUN_GOLEFT_INDEXCOV([:], executable_ch.executable ,genomeId , bams2_ch, ch_version.collect())
 	ch_version = ch_version.mix( indexcov_ch.version)
 
-	ch_version = MERGE_VERSION(meta, "IndexCov", "Indexcov",ch_version.collect())		
+	ch_version = MERGE_VERSION("Indexcov",ch_version.collect())		
 
 
 	emit:
@@ -81,6 +70,7 @@ workflow INDEXCOV {
 	}
 
 process DOWNLOAD_GOLEFT {
+	tag "${params.goleft.version}"
 	errorStrategy "retry"
 	maxRetries 3
 	input:
@@ -89,7 +79,7 @@ process DOWNLOAD_GOLEFT {
 		path("goleft"),emit:executable
 		path("version.xml"),emit:version
 	script:
-		def version = getKeyValue(meta,"goleft_version","v0.2.4")
+		def version = params.goleft.version
 		def url ="https://github.com/brentp/goleft/releases/download/${version}/goleft_linux64"
 	"""
 	wget -O goleft "${url}"
@@ -114,13 +104,13 @@ process DOWNLOAD_GOLEFT {
 
  **/
 process REBUILD_BAI {
-    tag "${sample} ${file(bam).name} mapq=${meta.mapq}"
+    tag "${sample} ${file(bam).name} mapq=${params.mapq}"
     afterScript "rm -rf TMP"
     memory "5g"
     cpus 3
     input:
         val meta
-	val reference
+	val genomeId
         tuple val(sample), val(bam)
     output:
 	path("OUT/${sample}.bam"),     emit: bam
@@ -128,11 +118,12 @@ process REBUILD_BAI {
         path "version.xml",           emit: version
 
     script:
-	def mapq = getKeyValue(meta,"mapq","1")
+	def reference = params.genomes[genomeId].fasta
+	def mapq = params.mapq?:1
     """
 	hostname 1>&2
 	${moduleLoad("samtools")}
-	mkdir TMP
+	mkdir -p TMP
 
         # write header only
 	samtools view --header-only -O BAM  \
@@ -149,7 +140,7 @@ process REBUILD_BAI {
 		--reference "${reference}" \
 		"${bam}"
 
-	mv TMP OUT
+	mv -v TMP OUT
 
 	##########################################################################################
 	cat <<- EOF > version.xml
@@ -170,7 +161,7 @@ process RUN_GOLEFT_INDEXCOV {
     input:
 	val meta
 	val executable
-	val fasta
+	val genomeId
 	path bams
 	val(versions)
     output:
@@ -179,7 +170,8 @@ process RUN_GOLEFT_INDEXCOV {
     	path "version.xml"        , emit: version
 
     script:
-    	def prefix = getKeyValue(meta,"prefix","indexcov").replaceAll("[\\.]+\$","")
+	def fasta = params.genomes[genomeId].fasta
+    	def prefix = params.prefix.replaceAll("[\\.]+\$","")
     	def prefix2 = prefix +"."
     """
 	hostname 1>&2

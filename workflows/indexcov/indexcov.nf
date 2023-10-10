@@ -25,41 +25,21 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
-
-gazoduc.make("mapq",-1).
-	description("mapq min mapping quality . If it's <=0, just use the bam index as is. Otherwise OR IF IT's A CRAM, rebuild the bai").
-	setInteger().
-	argName("MAPQ").
-	put()
-
-gazoduc.make("bams","NO_FILE").
-	description("File containing the paths to the BAM/CRAMS files. One path per line").
-	required().
-	existingFile().
-	put()
-
-
 include {INDEXCOV} from '../../subworkflows/indexcov/indexcov.nf'
 include {runOnComplete} from '../../modules/utils/functions.nf'
 include {SIMPLE_ZIP_01} from '../../modules/utils/zip.simple.01.nf'
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 
-
-
 if( params.help ) {
-    gazoduc.usage().
-		name("indexcov").
-		description("Detects CNVs using go-left indexcov").
-		print();
+    dumpParams(params);
     exit 0
-    } else {
-	gazoduc.validate();
-	}
+}  else {
+    dumpParams(params);
+}
 
 
 workflow {
-	indexcov_ch = INDEXCOV(params,params.reference,params.bams)
+	indexcov_ch = INDEXCOV(params,params.genomeId,file(params.bams))
 
 	html = VERSION_TO_HTML(params, indexcov_ch.version)
 
@@ -67,22 +47,7 @@ workflow {
 	zip_ch = SIMPLE_ZIP_01(params,to_zip.collect())
 
 
-	PUBLISH(zip_ch.zip)
 	}
 
-process PUBLISH {
-tag "${zip.name}"
-publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
-input:
-	path(zip)
-output:
-	path(zip)
-when:
-	!params.getOrDefault("publishDir","").trim().isEmpty()
-script:
-"""
-echo "publishing ${zip}"
-"""
-}
 
 runOnComplete(workflow)
