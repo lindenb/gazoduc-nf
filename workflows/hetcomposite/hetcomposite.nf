@@ -24,61 +24,22 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
-
-
-gazoduc.build("vcf", "NO_FILE").
-	desc("Indexed VCF file.").
-	existingFile().
-	required().
-	put()
-
-gazoduc.make("pedigree","NO_FILE").
-	description("pedigree containing trios").
-	existingFile().
-	required().
-	put()
-
-gazoduc.make("gtf","NO_FILE").
-	description("gtf file indexed with tabix").
-	existingFile().
-	required().
-	put()
-
-
-gazoduc.make("gnomadAF",0.01).
-	description("Frequency in gnomad").
-	setDouble().
-	put()
-
-gazoduc.make("gnomadPop","AF_NFE").
-	description("Population in gnomad").
-	put()
-
-
 include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
-include {getVersionCmd;getGnomadGenomePath;runOnComplete;moduleLoad;isBlank;isHg38;isHg19} from '../../modules/utils/functions.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
+include {dumpParams;getVersionCmd;runOnComplete;moduleLoad;isBlank} from '../../modules/utils/functions.nf'
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
-include {SIMPLE_PUBLISH_01} from '../../modules/utils/publish.simple.01.nf'
-
 
 if( params.help ) {
-    gazoduc.usage().
-	name("HET Composite").
-	desc("Scan for het composites").
-	print();
+    dumpParams(params);
     exit 0
-} else {
-   gazoduc.validate();
+}  else {
+    dumpParams(params);
 }
 
 
-
 workflow {
-	ch = SCAN_HET_COMPOSITES(params, params.reference, file(params.vcf), file(params.pedigree), file(params.gtf) )
-	html = VERSION_TO_HTML(params,ch.version)
-	SIMPLE_PUBLISH_01(params, Channel.empty().mix(html.html).mix(ch.version).mix(ch.zip).collect())
+	ch = SCAN_HET_COMPOSITES([:], params.genomeId, file(params.vcf), file(params.pedigree) )
+	html = VERSION_TO_HTML(ch.version)
 	}
 
 runOnComplete(workflow);
@@ -86,28 +47,27 @@ runOnComplete(workflow);
 workflow SCAN_HET_COMPOSITES {
     take:
 	    meta
-	    reference
+	    genomeId
 	    vcf
 	    pedigree
-	    gtf
     main:
 		version_ch = Channel.empty()
 
-		ch1 = VCF_TO_BED(meta, vcf)
+		ch1 = VCF_TO_BED([with_header:false], vcf)
 		version_ch = version_ch.mix(ch1.version)
 
-		ch4= INTER_VCF_GTF(meta, ch1.bed, gtf)
+		ch4= INTER_VCF_GTF([:], genomeId, ch1.bed)
 		version_ch = version_ch.mix(ch4.version)
 
 		ctg_vcf_gtf = ch4.output.splitCsv(header:false,sep:'\t')
 
-		ch2 = PER_CONTIG(meta, reference, pedigree, ctg_vcf_gtf)
+		ch2 = PER_CONTIG([:], genomeId, pedigree, ctg_vcf_gtf)
 		version_ch = version_ch.mix(ch2.version)
 
-		ch3 = MERGE(meta, ch2.vcf.collect(), ch2.genes_report.collect(), ch2.variants_report.collect())
+		ch3 = MERGE([:], ch2.vcf.collect(), ch2.genes_report.collect(), ch2.variants_report.collect())
 		version_ch = version_ch.mix(ch3.version)
 
-		version_ch = MERGE_VERSION(meta, "Het Composites", "Het Composites", version_ch.collect())
+		version_ch = MERGE_VERSION("Het Composites", version_ch.collect())
     emit:
 	    version = version_ch
 	    zip = ch3.zip
@@ -118,21 +78,25 @@ process INTER_VCF_GTF {
 executor "local"
 input:
 	val(meta)
+	val(genomeId)
 	path(bed)
-	val(gtf)
 output:
 	path("join.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
+	def gtf = params.genomes[genomeId].gtf
 """
 hostname 1>&2
 ${moduleLoad("htslib")}
 
-join -t '\t' -1 1 -2 1 -o '2.1,2.2' \
-	<( tabix -l "${gtf}" | sort) \
-	<( cut -f1,4 "${bed}" | sort -t '\t' -k1,1 -k2,2) |\
-	awk -F '\t' '{printf("%s\t${gtf}\\n",\$0);}' > join.tsv
+mkdir -p TMP
 
+join -t '\t' -1 1 -2 1 -o '2.1,2.2' \
+	<( tabix -l "${gtf}" | sort -T TMP ) \
+	<( cut -f1,4 "${bed}" | sort -T TMP -t '\t' -k1,1 -k2,2) |\
+	awk -F '\t' '{printf("%s\t${gtf}\\n",\$0);}' > TMP/join.tsv
+
+mv TMP/join.tsv ./
 
 test -s join.tsv
 
@@ -152,7 +116,7 @@ memory "3g"
 afterScript "rm -rf TMP"
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	val(pedigree)
 	tuple val(contig), val(vcf), val(gtf)
 output:
@@ -161,19 +125,66 @@ output:
 	path("variants.report"),emit:variants_report
 	path("version.xml"),emit:version
 script:
-       	def snpeffdb = (isHg19(reference)?"GRCh37.75":(isHg38(reference)?"GRCh38.86":"TODO"))
-        def gnomadVcf = getGnomadGenomePath(meta,reference)
-        def gnomadAF = meta.gnomadAF?:0.01
-        def gnomadPop = meta.gnomadPop?:"AF_nfe"
-        def soacn = meta.soacn?:"SO:0001629,SO:0001818"
+	def genome =  params.genomes[genomeId]
+	def reference = genome.fasta
+       	def snpeffdb = genome.snpeff_database_name
+        def gnomadVcf = genome.gnomad_genome
+        def gnomadAF = params.gnomadAF
+        def gnomadPop = params.gnomadPop
+        def soacn = params.soacn?:"SO:0001629,SO:0001818"
 """
 hostname 1>&2
-${moduleLoad("bcftools jvarkit bedtools snpEff")}
+${moduleLoad("bcftools bedtools snpEff jvarkit")}
 
 mkdir -p TMP
 set -x
 
-awk -F '\t' 'BEGIN {printf("Genotype f,m,c;");} {P=\$6; if((P=="case" || P=="affected") && \$3!="0" && \$4!="0") {printf("c=variant.getGenotype(\\"%s\\");f=variant.getGenotype(\\"%s\\");m=variant.getGenotype(\\"%s\\");if(!c.isHet()) return false; if(f.isHet() && m.isHet()) return false;if(!(f.isHet() || m.isHet())) return false;",\$2,\$3,\$4);} if(P=="control" || P=="unaffected") {printf("if(variant.getGenotype(\\"%s\\").isHomVar()) return false;",\$2);} } END {printf("return true;");}'  '${pedigree}' > TMP/jeter.code
+which java 1>&2
+echo "\${JAVA_HOME}" 1>&2
+
+cat << EOF > TMP/jeter.code
+
+
+private boolean acceptControl(final VariantContext vc,String sm) {
+	final Genotype g = vc.getGenotype(sm);
+	if(g!=null && g.isHomVar()) return false;
+	return true;
+	}
+
+
+
+private boolean acceptTrio(final VariantContext vc,String cm,String fm,String mm) {
+	final Genotype c = vc.getGenotype(cm);
+        if(c==null) return false;
+	final Genotype m = vc.getGenotype(mm);
+	final Genotype f = vc.getGenotype(fm);
+	// child must be HET
+	if(!c.isHet()) return false;
+	// discard de novo
+	if(f.isHomRef() && m.isHomRef()) return false;
+	// parent shouldn't be homvar
+	if(f.isHomVar()) return false;
+	if(m.isHomVar()) return false;
+	// at least one parent should be het
+	if(!(f.isHet() || m.isHet())) return false;
+	return true;
+	}
+
+public Object apply(final VariantContext variant) {
+EOF
+
+## all other samples are controls
+comm -13 \
+	<(cut -f 2 '${pedigree}' | sort | uniq) \
+	<(bcftools query -l '${vcf}'| sort | uniq) |\
+	awk '{printf("if(!acceptControl(variant,\\"%s\\")) return false;\\n",\$1);}' >> TMP/jeter.code
+
+awk -F '\t' '(\$6=="control" || \$6=="unaffected") {printf("if(!acceptControl(variant,\\"%s\\")) return false;\\n",\$2);}'  '${pedigree}' >> TMP/jeter.code
+
+awk -F '\t' '((\$6=="case" || \$6=="affected") && \$3!="0" && \$4!="0") {printf("if(acceptTrio(variant,\\"%s\\",\\"%s\\",\\"%s\\")) return true;\\n",\$2,\$3,\$4);}'  '${pedigree}'  >> TMP/jeter.code
+
+
+echo "return false;}" >> TMP/jeter.code
 
 
 tabix "${gtf}" "${contig}" |\
@@ -190,7 +201,7 @@ fi
 
 
 bcftools view --regions-file TMP/exons.bed "${vcf}"  |\
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterjdk -f TMP/jeter.code > TMP/jeter2.vcf
+	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterjdk --body -f TMP/jeter.code > TMP/jeter2.vcf
 mv TMP/jeter2.vcf TMP/jeter1.vcf
 
 bcftools query -f . TMP/jeter1.vcf |wc -c 1>&2
@@ -217,7 +228,8 @@ java -Xmx${task.memory.giga}G  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarki
                 --max-af "${gnomadAF}" TMP/jeter1.vcf > TMP/jeter2.vcf
 mv TMP/jeter2.vcf TMP/jeter1.vcf
 
-bcftools view  -e 'FILTER ~ "GNOMAD_GENOME_BAD_AF" || FILTER ~ "GNOMAD_GENOME_AS_VQSR"' -O v -o TMP/jeter2.vcf TMP/jeter1.vcf
+## bcftools ne marche pas avec   -e 'FILTER ~ "GNOMAD_GENOME_BAD_AF" || FILTER ~ "GNOMAD_GENOME_AS_VQSR"' filtre pas forcement 
+awk  '\$0 ~ /^#/ || !(\$7 ~ /GNOMAD_GENOME_BAD/)' TMP/jeter1.vcf > TMP/jeter2.vcf
 mv TMP/jeter2.vcf TMP/jeter1.vcf
 
 bcftools query -f . TMP/jeter1.vcf |wc -c 1>&2
@@ -258,24 +270,25 @@ input:
 	val(L2)
 	val(L3)
 output:
-	path("${meta.prefix?:""}archive.zip"),emit:zip
+	path("${params.prefix?:""}archive.zip"),emit:zip
 	path("version.xml"),emit:version
 script:
+	def prefix = params.prefix?:""
 """
 hostname 1>&2
 ${moduleLoad("bcftools")}
 
 mkdir -p "TMP"
 
-bcftools concat -O b -o "TMP/${meta.prefix?:""}concat.bcf" ${L1.join(" ")}
-bcftools index "TMP/${meta.prefix?:""}concat.bcf"
+bcftools concat -a -O z -o "TMP/${prefix}concat.vcf.gz" ${L1.join(" ")}
+bcftools index "TMP/${prefix}concat.vcf.gz"
 
-cat ${L2.join(" ")} | LC_ALL=C sort -T . | uniq > "TMP/${meta.prefix?:""}genes.txt"
-cat ${L3.join(" ")} | LC_ALL=C sort -T . | uniq > "TMP/${meta.prefix?:""}variants.txt"
+cat ${L2.join(" ")} | LC_ALL=C sort -T . | uniq > "TMP/${prefix}genes.txt"
+cat ${L3.join(" ")} | LC_ALL=C sort -T . | uniq > "TMP/${prefix}variants.txt"
 
-mv TMP "${meta.prefix?:""}archive"
+mv TMP "${prefix?:""}archive"
 
-zip -r -9  "${meta.prefix?:""}archive.zip"  "${meta.prefix?:""}archive"
+zip -r -9  "${prefix}archive.zip"  "${prefix}archive"
 
 cat << EOF > version.xml
 <properties id="${task.process}">

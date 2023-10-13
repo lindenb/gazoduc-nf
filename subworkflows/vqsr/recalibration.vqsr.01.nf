@@ -88,6 +88,10 @@ workflow VARIANT_VQSR_01 {
 
 		gather_ch = PICARD_GATHER_VCFS_01(["suffix":".bcf"], cat_files_ch.output)
 		version_ch = version_ch.mix(gather_ch.version)
+
+
+		pdf_ch = PLOT_VQSLOD([:],gather_ch.vcf)
+		version_ch = version_ch.mix(pdf_ch.version)
 		
 		version_ch = MERGE_VERSION("Variant Recalibration", version_ch.collect())
 
@@ -491,6 +495,62 @@ cat <<- EOF > version.xml
 	<entry key="vcf">${row.vcf}</entry>
 	<entry key="contig">${row.contig}</entry>
         <entry key="gatk.version">\$( gatk --version 2> /dev/null  | paste -s -d ' ' )</entry>
+</properties>
+EOF
+"""
+}
+
+process PLOT_VQSLOD {
+afterScript "rm -rf TMP"
+tag "${vcf.name}"
+input:
+	val(meta)
+	path(vcf)
+output:
+	path("${params.prefix}vqsr.pdf"),emit:output
+	path("version.xml"),emit:version
+script:
+"""
+hostname 1>&2
+${moduleLoad("r bcftools")} 
+mkdir -p TMP
+
+bcftools query -f '%VQSLOD\t%FILTER\t%TYPE\\n' "${vcf}" | sed 's/,OVERLAP\$//' > TMP/jeter.tsv
+
+
+cat << "__EOF__" > TMP/jeter.R
+T1 <- read.table("TMPjeter.tsv",header=FALSE,sep="\t",col.names=c("VQSLOD","FILTER","TYPE"),colClasses=c("numeric","character","character"),stringsAsFactors=FALSE)
+head(T1)
+pairs = unique(T1[,c("FILTER","TYPE")])
+head(pairs)
+
+
+pdf("${params.prefix}vqsr.pdf")
+xminmax = c(-5,5)
+
+
+for(i in 1:nrow(pairs) ) {
+        T2 = T1[T1\$TYPE==pairs[i,"TYPE"] & T1\$FILTER==pairs[i,"FILTER"],]
+        d <- density(T2\$VQSLOD)
+        plot(d,  xlim = xminmax,
+                 ylim = c(0,max(d\$y)),
+                xlab = paste(pairs[i,]),
+                ylab = "Density",
+                main =  paste(pairs[i,]),
+                col = ifelse(pairs[i,"FILTER"]=="PASS","green","red")
+                ) # plots the results
+        }
+dev.off()
+__EOF__
+
+R --vanilla < TMP/jeter.R
+
+##################################################################################
+cat <<- EOF > version.xml
+<properties id="${task.process}">
+	<entry key="name">${task.process}</entry>
+	<entry key="description">plot VQSL distribution</entry>
+	<entry key="vcf">${vcf}</entry>
 </properties>
 EOF
 """
