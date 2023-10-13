@@ -24,93 +24,25 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-/** path to indexed fasta reference */
-params.reference = ""
-params.vcf = ""
-params.help = false
-params.publishDir = ""
-params.prefix = ""
 
 include {VARIANT_VQSR_01} from '../../subworkflows/vqsr/recalibration.vqsr.01.nf'
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
-include {runOnComplete} from '../../modules/utils/functions.nf'
-
-def helpMessage() {
-  log.info"""
-## About
-
-apply VQSR for a VCF
-
-## Author
-
-Pierre Lindenbaum
-
-## Options
-
-  * --reference (fasta) The full path to the indexed fasta reference genome. It must be indexed with samtools faidx and with picard CreateSequenceDictionary or samtools dict. [REQUIRED]
-  * --vcf (file) required SV indexed vcf file. default: ""
-  * --publishDir (dir) Save output in this directory
-  * --prefix (string) files prefix. default: ""
-
-## Usage
-
-```
-nextflow -C ../../confs/cluster.cfg  run -resume recalibration.vqsr.nf \\
-	--publishDir output \\
-	--prefix "analysis." \\
-	--reference /path/to/reference.fasta \\
-	--vcf /path/to/cnv.vcf.gz
-```
-
-## Workflow
-
-![workflow](./workflow.svg)
-  
-## See also
-
-* https://gatk.broadinstitute.org/hc/en-us/articles/360035531612-Variant-Quality-Score-Recalibration-VQSR-
-
-"""
-}
+include {dumpParams; runOnComplete} from '../../modules/utils/functions.nf'
 
 
 if( params.help ) {
-    helpMessage()
+    dumpParams(params);
     exit 0
+}  else {
+    dumpParams(params);
 }
 
 
 workflow {
-	ch1 = VARIANT_VQSR_01(params,params.reference, params.vcf)
-	html = VERSION_TO_HTML(params,ch1.version)
-	PUBLISH(ch1.version,html.html,ch1.vcf,ch1.index,ch1.pdf)
+	ch1 = VARIANT_VQSR_01([:], params.genomeId , file(params.vcf))
+	html = VERSION_TO_HTML(ch1.version)
 	}
 
-process PUBLISH {
-publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
-input:
-	val(version)
-	val(html)
-	val(vcf)
-	val(csi)
-	val(pdf)
-output:
-	path("*.bcf")
-	path("*.csi")
-	path("*.html")
-	path("*.xml")
-	path("*.pdf")
-when:
-	!params.getOrDefault("publishDir","").trim().isEmpty()
-script:
-"""
-ln -s ${vcf} ./
-ln -s ${csi} ./
-ln -s ${html} ./
-ln -s ${version} ./
-ln -s ${pdf} ./
-"""
-}
 
 runOnComplete(workflow);
 
