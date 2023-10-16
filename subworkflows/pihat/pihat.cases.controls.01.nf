@@ -59,7 +59,7 @@ workflow PIHAT_CASES_CONTROLS_01 {
 		pihat_png = pihat_ch.pihat_png
 		removed_samples = pihat_ch.pihat_removed_samples
 		plink_genome = pihat_ch.plink_genome
-		pihat_pdf  = pihat_ch.pihat_pdf
+		pihat_sample2avg_png  = pihat_ch.pihat_sample2avg_png
 	}
 
 process REMOVE_SAMPLES {

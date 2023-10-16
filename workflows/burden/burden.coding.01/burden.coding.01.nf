@@ -100,7 +100,7 @@ workflow BURDEN_CODING {
 			pihat = PIHAT_CASES_CONTROLS_01(genomeId,file(vcf),ped_ch.cases_list,ped_ch.controls_list)
 			version_ch = version_ch.mix(pihat.version)
 			to_zip = to_zip.mix(pihat.pihat_png)
-			to_zip = to_zip.mix(pihat.pihat_pdf)
+			to_zip = to_zip.mix(pihat.pihat_sample2avg_png)
 			to_zip = to_zip.mix(pihat.removed_samples)
 			to_zip = to_zip.mix(pihat.plink_genome)
 

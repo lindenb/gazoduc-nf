@@ -53,6 +53,9 @@ workflow PIHAT01 {
 		pihat_ch = MERGE_PIHAT_VCF(vcf, perCtg.vcf.map{T->T.join("\t")}.collect())
 		version_ch = version_ch.mix(pihat_ch.version)
 
+		mqc_ch = MULTIQC([:],vcf,pihat_ch.pihat_png, pihat_ch.pihat_sample2avg_png, pihat_ch.pihat_removed_samples, pihat_ch.plink_genome)
+		version_ch = version_ch.mix(mqc_ch.version)
+
 		version_ch = MERGE_VERSION("pihat",version_ch.collect())
 
 	emit:
@@ -60,7 +63,8 @@ workflow PIHAT01 {
 		pihat_png = pihat_ch.pihat_png
 		pihat_removed_samples = pihat_ch.pihat_removed_samples
 		plink_genome = pihat_ch.plink_genome
-		pihat_pdf  = pihat_ch.pihat_pdf
+		pihat_sample2avg_png  = pihat_ch.pihat_sample2avg_png
+		pihat_multiqc_zip = mqc_ch.zip
 	}
 
 
@@ -289,7 +293,7 @@ input:
 	val(L)
 output:
 	path("${prefix}pihat.png"),emit:pihat_png
-	path("${prefix}sample2avg.pihat.pdf"),emit:pihat_pdf
+	path("${prefix}sample2avg.pihat.png"),emit:pihat_sample2avg_png
 	path("${prefix}removed_samples.txt"),emit:pihat_removed_samples
 	path("${prefix}plink.genome.txt.gz"),emit:plink_genome
 	path("version.xml"),emit:version
@@ -346,7 +350,7 @@ dev.off()
 
 T1<-read.table("${prefix}sample2avg.pihat.tsv",sep="\\t",header=FALSE,col.names=c("S","X"),colClasses=c("character","numeric"))
 head(T1)
-pdf("${prefix}sample2avg.pihat.pdf")
+png("${prefix}sample2avg.pihat.png")
 boxplot(T1\\\$X ,ylim=c(0,max(T1\\\$X)),main="${prefix}AVG(PIHAT)/SAMPLE",sub="${vcf.name}",xlab="Sample",ylab="pihat")
 abline(h=${maxPiHat},col="blue");
 dev.off()
@@ -374,5 +378,88 @@ stub:
 """
 touch "${prefix}plink.genome.txt.gz" "${prefix}pihat.png" "${prefix}removed_samples.txt"
 echo "<properties/>" > version.xml
+"""
+}
+
+process MULTIQC {
+input:
+	val(meta)
+	path(vcf)
+        path(pihat_png)
+        path(pihat_sample2avg_png)
+        path(pihat_removed_samples)
+	path(genome_tsv_gz)
+output:
+	path("${params.prefix?:""}multiqc.zip"),emit:zip
+	path("version.xml"),emit:version
+script:
+	def m = 20
+	def prefix =params.prefix?:""
+	def prefix0 = prefix.endsWith(".")?prefix.substring(0,prefix.length()-1):prefix
+"""
+${moduleLoad("multiqc")}
+hostname 1>&2
+mkdir -p TMP
+
+cat << EOF > multiqc_config.yaml
+custom_data:
+  pihat01:
+    section_name: "Pihat"
+    description: "Pihat"
+  pihat02:
+    section_name: "Sample to Average Pihat"
+    description: "Sample to Average Pihat"
+sp:
+  pihat01:
+    fn: "${pihat_png.name}"
+  pihat02:
+    fn: "${pihat_sample2avg_png.name}"
+ignore_images: false
+EOF
+
+
+cat << EOF > TMP/genome_mqc.html
+<!--
+id: 'mytable'
+section_name: 'High Pihat'
+description: '${m} higher pihat pairs.'
+-->
+EOF
+
+
+
+gunzip -c '${genome_tsv_gz}' |\
+	awk '(NR>1) {printf("%s\t%s\t%s\\n",\$1,\$3,\$10);}' |\
+	LC_ALL=C sort -t '\t' -T TMP -k3,3gr |\
+	head -n ${m} |\
+	awk -F '\t' 'BEGIN {printf("<table><tr><th>SN1</th><th>SN2</th><th>PIHAT</th></tr>\\n");} {printf("<tr><td>%s</td><td>%s</td><td>%s</td></tr>\\n",\$1,\$2,\$3);} END {printf("</table>\\n");}' >> TMP/genome_mqc.html
+
+
+cat << EOF > TMP/removed_samples_mqc.html
+<!--
+id: 'rmsamples'
+section_name: 'Removed Samples'
+description: 'Samples that would be removed with max.pihat=${params.pihat.pihat_max}.'
+-->
+EOF
+
+awk -F '\t' 'BEGIN {printf("<ol>\\n");} {printf("<li>%s</li>\\n",\$0);} END {printf("</ol>\\n");}' '${pihat_removed_samples}'  >> TMP/removed_samples_mqc.html
+
+mkdir -p "${params.prefix}multiqc"
+
+multiqc   --outdir "${params.prefix}multiqc"  --filename "${prefix0}.multiqc"  --title "${params.prefix}PIHAT for ${vcf.name}" \
+	--comment "  PLINK --genome estimates relatedness of all pairs of samples and reports identify by decent (IBD, a measure of whether identical regions of two genomes were inherited from the same ancestry) in the PI_HAT (actually, proportional IBD, i.e. P(IBD=2) + 0.5*P(IBD=1)) column of the result file. A PI_HAT value close to 1 would indicate a duplicate sample. VCF was ${vcf}." \
+	--interactive --force --verbose --module custom_content .
+
+zip -9 -r "${params.prefix}multiqc.zip" "${params.prefix}multiqc"
+
+##################################################################################
+cat <<- EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">MultiQC</entry>
+        <entry key="wget.version">\$( multiqc --version )</entry>
+</properties>
+EOF
 """
 }

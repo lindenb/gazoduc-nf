@@ -24,60 +24,25 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults()
 
-
-
-gazoduc.
-    make("vcf","NO_FILE").
-    description("indexed vcf").
-    required().
-    put()
-
-gazoduc.
-    make("samples","NO_FILE").
-    description("limit to the samples in that file").
-    put()
-
-include {runOnComplete} from '../../../modules/utils/functions.nf'
+include {dumpParams;runOnComplete} from '../../../modules/utils/functions.nf'
 include {PIHAT01} from '../../../subworkflows/pihat/pihat.01.nf'
 
-if(params.help) {
-        gazoduc.usage().name("burden").description("burden for coding regions").print()
-        exit 0
-        }
-else
-        {
-        gazoduc.validate()
-        }
 
-
+if( params.help ) {
+    dumpParams(params);
+    exit 0
+}  else {
+    dumpParams(params);
+}
 
 workflow {
-
 	pihat_ch = PIHAT01(
 		params.genomeId,
 		file(params.vcf),
 		Channel.fromPath(params.samples)
 		)
-	//PUBLISH(indexcov_ch.zip)
 	}
-
-
-process PUBLISH {
-tag "${zip.name}"
-publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
-input:
-	path(zip)
-output:
-	path(zip)
-when:
-	!params.getOrDefault("publishDir","").trim().isEmpty()
-script:
-"""
-echo "publishing ${zip}"
-"""
-}
 
 runOnComplete(workflow);
 
