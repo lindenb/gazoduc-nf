@@ -24,68 +24,26 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
-
-gazoduc.build("vcf","NO_FILE").
-	desc("file containing the variant").
-	existingFile().
-	required().
-	put()
-
-gazoduc.make("bams","NO_FILE").
-        description("File containing the paths to the BAM/CRAMS files. One path per line").
-        required().
-        existingFile().
-        put()
-
-
-gazoduc.make("num_cases",5).
-        description("number of samples carrying a ALT allele to choose from the VCF").
-	setInt().
-        put()
-
-gazoduc.make("num_controls",5).
-        description("number of samples carrying *NO* ALT allele to choose from the VCF").
-	setInt().
-        put()
-
-gazoduc.make("sv_flanking",250).
-        description("display 'x' bases around breakpoints of SV variants.").
-	setInt().
-        put()
-
 
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
-include {runOnComplete;moduleLoad} from '../../modules/utils/functions.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
-include {SAMTOOLS_SAMPLES_01} from '../../subworkflows/samtools/samtools.samples.01.nf'
+include {dumpParams;runOnComplete;moduleLoad} from '../../modules/utils/functions.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
+include {SAMTOOLS_SAMPLES} from '../../subworkflows/samtools/samtools.samples.03.nf'
 include {DOWNLOAD_CYTOBAND} from '../../modules/ucsc/download.cytoband.nf'
 include {DOWNLOAD_REFGENE} from '../../modules/ucsc/download.refgene.nf'
-include {SIMPLE_ZIP_01} from '../../modules/utils/zip.simple.01.nf'
-include {SIMPLE_PUBLISH_01} from '../../modules/utils/publish.simple.01.nf'
-
 
 if( params.help ) {
-    gazoduc.usage().
-	name("IGV Report").
-	desc("generate static HTML report from VCF + BAM using https://github.com/igvteam/igv-reports.").
-	print();
+    dumpParams(params);
     exit 0
-} else {
-   gazoduc.validate();
+}  else {
+    dumpParams(params);
 }
 
 
+
 workflow {
-	ch1 = IGVREPORTS(params,params.reference,file(params.bams),file(params.vcf))
-	html = VERSION_TO_HTML(params,ch1.version)
-
-	
-	
-	tozip = Channel.empty().mix(ch1.htmls).mix(ch1.version).mix(html.html)
-	zip_ch = SIMPLE_ZIP_01(params ,tozip.collect())
-
-	SIMPLE_PUBLISH_01(params, Channel.empty().mix(zip_ch.zip).collect())
+	ch1 = IGVREPORTS([:],params.genomeId,file(params.bams),file(params.vcf))
+	html = VERSION_TO_HTML(ch1.version)
 	}
 
 runOnComplete(workflow)
@@ -93,31 +51,33 @@ runOnComplete(workflow)
 workflow IGVREPORTS {
 	take:
 		meta
-		reference
+		genomeId
 		bams
 		vcf
 	main:
 		version_ch = Channel.empty()
 
-                snbam_ch = SAMTOOLS_SAMPLES_01(meta.plus("with_header":false,"allow_multiple_references":false,"allow_duplicate_samples":false), reference, file("NO_FILE"), bams)
+                snbam_ch = SAMTOOLS_SAMPLES(["with_header":false,"allow_multiple_references":false,"allow_duplicate_samples":false], bams)
                 version_ch = version_ch.mix(snbam_ch.version)
 
-		compile_ch = COMPILE(meta)
+		rows = snbam_ch.rows.filter{T->T.genomeId.equals(genomeId)}
+
+		compile_ch = COMPILE([:])
 		version_ch = version_ch.mix(compile_ch.version)
 
-		cyto_ch = DOWNLOAD_CYTOBAND(meta,reference)
+		cyto_ch = DOWNLOAD_CYTOBAND([:],genomeId)
                 version_ch = version_ch.mix(cyto_ch.version)
 
-		refgene_ch = DOWNLOAD_REFGENE(meta,reference)
+		refgene_ch = DOWNLOAD_REFGENE([:],genomeId)
                 version_ch = version_ch.mix(refgene_ch.version)
 
-		prepare_ch = PREPARE_IGVREPORTS(meta, reference, compile_ch.output, snbam_ch.output, vcf )
+		prepare_ch = PREPARE_IGVREPORTS([:], genomeId, compile_ch.output, rows.map{T->T.sample+"\t"+T.bam}.collect(), vcf )
                 version_ch = version_ch.mix(prepare_ch.version)
 
-		report_ch = IGVREPORT(meta,reference, vcf, cyto_ch.output, refgene_ch.output, prepare_ch.output.splitCsv(header:true,sep:'\t') )
+		report_ch = IGVREPORT([:], genomeId, vcf, cyto_ch.output, refgene_ch.output, prepare_ch.output.splitCsv(header:true,sep:'\t') )
                 version_ch = version_ch.mix(report_ch.version)
 		
-		version_ch = MERGE_VERSION(meta, "IGV report", "IGV report", version_ch.collect())
+		version_ch = MERGE_VERSION("IGV report", version_ch.collect())
 
 	emit:
 		version = version_ch
@@ -168,8 +128,8 @@ import htsjdk.variant.vcf.VCFIteratorBuilder;
 
 public class Minikit {
 	private static final Logger LOG = Logger.getLogger("Minikit");
-	private final int MAX_CONTROLS= ${meta.num_controls};
-	private final int MAX_CASES= ${meta.num_cases};
+	private final int MAX_CONTROLS= ${params.num_controls};
+	private final int MAX_CASES= ${params.num_cases};
 	private final Map<String,Path> sample2bam = new HashMap<>();
 	
 	private List<Locatable> parseBnd(final VariantContext ctx,final SAMSequenceDictionary dict) {
@@ -244,12 +204,12 @@ public class Minikit {
         	}
     	try                              
             {
-    	    final int SV_FLANKING= ${meta.sv_flanking?:250};
+    	    final int SV_FLANKING= ${params.sv_flanking?:250};
             try(BufferedReader in=Files.newBufferedReader(bams)) {
                     in.lines().
                     	filter(T->!T.startsWith("#")).
                     	map(T->tab.split(T)).
-                    	forEach(T->sample2bam.put(T[0],Paths.get(T[2])));
+                    	forEach(T->sample2bam.put(T[0],Paths.get(T[1])));
                     }
             final ToIntFunction<Genotype> countALT = G->(int)(G.getAlleles().stream().filter(A->!(A.isReference() || A.isNoCall())).count());
             final Comparator<Genotype> gtSorter = (A,B)->{
@@ -442,23 +402,30 @@ EOF
 process PREPARE_IGVREPORTS {
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	path(jar)
-	path(snbam)
+	val(L)
 	path(vcf)
 output:
 	path("output.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
+	def reference = params.genomes[genomeId].fasta
 """        
 hostname 1>&2     
 ${moduleLoad("jvarkit bcftools")}
 set -o pipefail
 mkdir -p OUT
 
-bcftools view "${vcf}" |\
-	java -cp ${jar}:\${JVARKIT_DIST}/vcffilterjdk.jar Minikit --reference "${reference}" --bams "${snbam}" --out "\${PWD}/OUT" > output.tsv
+cat << EOF > jeter.list
+${L.join("\n")}
+EOF
 
+bcftools view "${vcf}" |\
+	java -cp ${jar}:\${JVARKIT_DIST}/vcffilterjdk.jar Minikit --reference "${reference}" --bams jeter.list --out "\${PWD}/OUT" > output.tsv
+
+
+rm jeter.list
 ###############################################################################
 cat << EOF > version.xml
 <properties id="${task.process}">
@@ -473,10 +440,10 @@ EOF
 process IGVREPORT {
 tag "${row.title}"
 afterScript "rm -rf TMP"
-conda "${meta.conda}/IGVREPORTS"
+conda "${params.conda}/IGVREPORTS"
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	val(vcf)
 	val(cytoband)
 	val(refgene)
@@ -485,6 +452,7 @@ output:
 	path("${row.title}.html"),emit:output
 	path("version.xml"),emit:version
 script:
+	def reference = params.genomes[genomeId].fasta
 """
 hostname 1>&2
 mkdir -p TMP

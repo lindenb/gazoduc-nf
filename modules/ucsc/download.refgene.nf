@@ -24,24 +24,20 @@ SOFTWARE.
 
 include {getVersionCmd;isHg19;isHg38;moduleLoad} from '../utils/functions.nf'
 
-def ucscID(ref) {
-        if(isHg19(ref)) return "hg19";
-        if(isHg38(ref)) return "hg38";
-        throw new IllegalArgumentException("Don't know genome ID at ucsc for "+ref);
-        }
-
 
 process DOWNLOAD_REFGENE {
 tag "${reference}"
 afterScript "rm -rf TMP"
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 output:
-	path("${ucscID(reference)}.refGene.txt.gz"),emit:output
+	path("${genomeId}.refGene.txt.gz"),emit:output
 	path("version.xml"),emit:version
 script:
-	def url="https://hgdownload.cse.ucsc.edu/goldenPath/${ucscID(reference)}/database/refGene.txt.gz"
+	def genome = params.genomes[genomeId]
+	def reference = genome.fasta
+	def url="https://hgdownload.cse.ucsc.edu/goldenPath/${genome.ucsc_name}/database/refGene.txt.gz"
 """
 hostname 1>&2
 ${moduleLoad("jvarkit htslib")}
@@ -53,9 +49,9 @@ wget -O TMP/refGene.txt.gz "${url}"
 gunzip -c TMP/refGene.txt.gz |\
 		java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 3 --convert SKIP |\
 		LC_ALL=C sort -T TMP -t '\t' -k3,3 -k5,5n |\
-		bgzip > "${ucscID(reference)}.refGene.txt.gz" 
+		bgzip > "${genomeId}.refGene.txt.gz"
 
-tabix -f -0 -b 5 -e 6 -s 3 "${ucscID(reference)}.refGene.txt.gz"
+tabix -f -0 -b 5 -e 6 -s 3 "${genomeId}.refGene.txt.gz"
 
 ###############################################################################
 cat << EOF > version.xml

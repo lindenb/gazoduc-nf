@@ -24,24 +24,20 @@ SOFTWARE.
 
 include {getVersionCmd;isHg19;isHg38;moduleLoad} from '../utils/functions.nf'
 
-def ucscID(ref) {
-        if(isHg19(ref)) return "hg19";
-        if(isHg38(ref)) return "hg38";
-        throw new IllegalArgumentException("Don't know genome ID at ucsc for "+ref);
-        }
-
 
 process DOWNLOAD_CYTOBAND {
 tag "${reference}"
 afterScript "rm -rf TMP"
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 output:
-	path("${ucscID(reference)}.cytoBandIdeo.txt"),emit:output
+	path("${genomeId}.cytoBandIdeo.txt"),emit:output
 	path("version.xml"),emit:version
 script:
-	def url="https://hgdownload.cse.ucsc.edu/goldenPath/${ucscID(reference)}/database/cytoBandIdeo.txt.gz"
+	def genome = params.genomes[genomeId]
+	def reference = genome.fasta
+	def url="https://hgdownload.cse.ucsc.edu/goldenPath/${genome.ucsc_name}/database/cytoBandIdeo.txt.gz"
 """
 hostname 1>&2
 ${moduleLoad("jvarkit")}
@@ -51,7 +47,7 @@ set -o pipefail
 
 wget -O TMP/cytoBandIdeo.txt.gz "${url}"
 gunzip -c TMP/cytoBandIdeo.txt.gz |\
-		java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 1 --convert SKIP > "${ucscID(reference)}.cytoBandIdeo.txt" 
+		java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 1 --convert SKIP > "${genomeId}.cytoBandIdeo.txt" 
 
 ###############################################################################
 cat << EOF > version.xml
