@@ -171,12 +171,7 @@ main:
 		*/
 		}
 
-               
-	file_list_ch = COLLECT_TO_FILE_01([:], toqc_ch.collect() )
-        version_ch = version_ch.mix(file_list_ch.version)
-	
-
-         multiqc_ch = MULTIQC_01([extra:" --fullnames "],file_list_ch.output)
+         multiqc_ch = MULTIQC_01([extra:" --fullnames "], toqc_ch.collect())
          version_ch = version_ch.mix(multiqc_ch.version)
 
 

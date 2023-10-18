@@ -26,7 +26,6 @@ SOFTWARE.
 include {SAMTOOLS_SAMPLES02} from '../../modules/samtools/samtools.samples.02.nf'
 include {assertFileExists;isBlank} from '../../modules/utils/functions.nf'
 include {SAMTOOLS_FLAGSTATS_01} from '../../modules/samtools/samtools.flagstats.01.nf'
-include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include {MULTIQC_01} from '../../modules/multiqc/multiqc.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 
@@ -45,10 +44,7 @@ workflow BAM_FLAGSTATS_01 {
 		flags_ch = SAMTOOLS_FLAGSTATS_01(meta,samples_ch.output.splitCsv(header:true,sep:"\t"))
 		version_ch = version_ch.mix(flags_ch.version)
 
-                file_list_ch = COLLECT_TO_FILE_01([:],flags_ch.output.map{T->T[1]}.collect())
-                version_ch = version_ch.mix(file_list_ch.version)
-
-                multiqc_ch = MULTIQC_01(meta,file_list_ch.output.map{T->["files":T,"prefix":(meta.prefix?:"")]})
+                multiqc_ch = MULTIQC_01(meta,flags_ch.output.map{T->T[1]}.collect())
                 version_ch = version_ch.mix(multiqc_ch.version)
 
 		

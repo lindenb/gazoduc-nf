@@ -208,9 +208,14 @@ echo "\${JAVA_HOME}"
 
 	# extract variants  ######################################################################################
 	if ${vcf.endsWith(".list")} ; then
+
 		bcftools concat --file-list "${vcf}" --regions-file "TMP/contig.bed" -O u  --allow-overlaps --remove-duplicates -o TMP/jeter1.bcf
+		bcftools view ${params.wgselect.bcftools_options} -O u -o TMP/jeter2.bcf  TMP/jeter1.bcf
+		mv -v TMP/jeter2.bcf TMP/jeter1.bcf
 	else
-		bcftools view  --regions-file "TMP/contig.bed" -O u -o TMP/jeter1.bcf "${vcf}"
+
+		bcftools view ${params.wgselect.bcftools_options} --regions-file "TMP/contig.bed" -O u -o TMP/jeter1.bcf "${vcf}"
+
 	fi	
 
 	cat <<- EOF >> version.xml
@@ -598,7 +603,7 @@ echo "\${JAVA_HOME}"
 	EOF
 
 		# DukeMapability
-		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfbigwig --aggregate avg -tag mapability \
+		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfbigwig -tag mapability \
 			-B "${mapability}" TMP/jeter1.vcf > TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
 
@@ -692,7 +697,7 @@ echo "\${JAVA_HOME}"
 		${vep_invocation} --output_file TMP/jeter2.vcf < TMP/jeter1.vcf
  		mv TMP/jeter2.vcf TMP/jeter1.vcf
 		module unload ${vep_module}
-	
+		${moduleLoad("jvarkit")}
 		echo '<entry key="vep version">${vep_module}</entry>' >> version.xml
 
 
@@ -702,6 +707,7 @@ echo "\${JAVA_HOME}"
 		 ${moduleLoad("snpEff/0.0.0")}
 	         java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar "\${SNPEFF_JAR}" eff -config "\${SNPEFF_CONFIG}" -interval "TMP/contig.bed" -nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf "${snpeffDb}" TMP/jeter1.vcf > TMP/jeter2.vcf
 	         module unload ${getModules("snpEff/0.0.0")}
+		${moduleLoad("jvarkit")}
 	         mv TMP/jeter2.vcf TMP/jeter1.vcf
 
 		echo '<entry key="snpeff">${snpeffDb}</entry>' >> version.xml
@@ -721,7 +727,7 @@ echo "\${JAVA_HOME}"
 			${inverse_so?"--invert":""} \
 			--remove-attribute  --rmnoatt \
 			--acn "${soacn}" \
-		   	TMP/jeter1.vcf   2> /dev/null > TMP/jeter2.vcf
+		   	TMP/jeter1.vcf  > TMP/jeter2.vcf
 
 		cat <<- EOF
 		<entry key="sequence.ontology">

@@ -24,10 +24,9 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults()
 
 
-include {getVersionCmd;runOnComplete;moduleLoad;parseBoolean} from '../../../modules/utils/functions.nf'
+include {getVersionCmd;runOnComplete;moduleLoad;parseBoolean;dumpParams;paramsToString} from '../../../modules/utils/functions.nf'
 include {VALIDATE_CASE_CONTROL_PED_01} from '../../../modules/pedigree/validate.case.ctrl.pedigree.01.nf'
 include {VCF_INTER_CASES_CONTROLS_01} from '../../../subworkflows/bcftools/vcf.inter.cases.controls.01.nf'
 include {BED_CLUSTER_01} from '../../../modules/jvarkit/jvarkit.bedcluster.01.nf'
@@ -38,38 +37,22 @@ include {PEDIGREE_FOR_RVTESTS} from '../../../modules/rvtests/rvtests.cases.cont
 include {RVTESTS_POST_PROCESS} from '../../../subworkflows/rvtests/rvtests.post.process.01.nf'
 include {CONCAT_FILES_01} from '../../../modules/utils/concat.files.nf'
 include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
+include {MULTIQC_01} from '../../../modules/multiqc/multiqc.01.nf'
 include {MERGE_VERSION} from '../../../modules/version/version.merge.02.nf'
 include {PIHAT_CASES_CONTROLS_01} from '../../../subworkflows/pihat/pihat.cases.controls.01.nf'
 include {VCF_TO_BED} from '../../../modules/bcftools/vcf2bed.01.nf'
 include {JVARKIT_GATK_HARD_FILTERING_01} from '../../../subworkflows/jvarkit/jvarkit.gatk_hard_filtering.01.nf'
+include {PARAMS_MULTIQC} from '../../../modules/utils/params.multiqc.nf'
 
-gazoduc.
-    make("vcf","NO_FILE").
-    description(gazoduc.Gazoduc.DESC_VCF_OR_VCF_LIST).
-    required().
-    put()
-
-gazoduc.
-    make("bed","NO_FILE").
-    description("limit analysis to that BED file").
-    put()
-
-gazoduc.
-    make("pedigree", "NO_FILE").
-    description(gazoduc.Gazoduc.DESC_JVARKIT_PEDIGREE).
-    required().
-    existingFile().
-    put()
+if( params.help ) {
+    dumpParams(params);
+    exit 0
+}  else {
+    dumpParams(params);
+}
 
 
-if(params.help) {
-	gazoduc.usage().name("burden").description("burden for coding regions").print()
-	exit 0
-	}
-else
-	{
-	gazoduc.validate()
-	}
+
 
 workflow {
 		BURDEN_CODING(params.genomeId, Channel.fromPath(params.vcf), file(params.pedigree), file(params.bed))
@@ -122,7 +105,7 @@ workflow BURDEN_CODING {
 
 		/* compute GATK Hard filters if needed */
 
-		if(params.wgselect.gatk_hardfiltering_percentile  > 0 ) {
+		if((params.wgselect.gatk_hardfiltering_percentile as int)  > 0 ) {
 			gatk_hard_filters_ch = JVARKIT_GATK_HARD_FILTERING_01(
 				[percentile: params.wgselect.gatk_hardfiltering_percentile],
 				vcf2bed_ch.bed.splitCsv(sep:'\t', header:false).map{T->[
@@ -150,7 +133,7 @@ workflow BURDEN_CODING {
 		version_ch = version_ch.mix(exons_ch.version)
 
 		cluster_ch = BED_CLUSTER_01(
-                        [bed_cluster_method : " --size 1mb "],
+                        [bed_cluster_method : params.bed_cluster_method],
                         genomeId,
                         exons_ch.bed
                         )
@@ -186,7 +169,7 @@ workflow BURDEN_CODING {
 			genomeId,
 			rvtests_ped_ch.pedigree,
 			wgselect_ch.bed,
-			genes_ch.bed.splitCsv(header:true,sep:'\t').collate(params.burden.collate_size)
+			genes_ch.bed.splitCsv(header:true,sep:'\t').collate(params.collate_size)
 			)
 		version_ch = version_ch.mix(per_gene_ch.version)
 
@@ -199,10 +182,19 @@ workflow BURDEN_CODING {
                 version_ch = version_ch.mix(digest_ch.version)
 		to_zip = to_zip.mix(digest_ch.zip)
 
+		params4multiqc_ch = PARAMS_MULTIQC([:])
+		
+
+
+		multiqc_ch = MULTIQC_01(["title":"${params.prefix}BurdenCoding","comment":"VCF ${params.vcf}"], digest_ch.to_multiqc.concat(params4multiqc_ch.output).collect());
+                version_ch = version_ch.mix(multiqc_ch.version)
+
 		version_ch = MERGE_VERSION("burden coding",version_ch.collect())
 
 		html = VERSION_TO_HTML(version_ch.version)
 		to_zip = to_zip.mix(html.html)
+
+
 		
 		PUBLISH(to_zip.collect())
 
@@ -262,7 +254,7 @@ script:
 	def genome = params.genomes[genomeId]
 	def reference = genome.fasta
 	def gtf = genome.gtf
-	def slop= params.burden.genes_slop
+	def slop= params.genes_slop
 """
 hostname 1>&2
 ${moduleLoad("htslib jvarkit bedtools")}
@@ -319,7 +311,7 @@ script:
 	def genome = params.genomes[genomeId]
 	def reference = genome.fasta
 	def gtf = genome.gtf
-	def slop= params.burden.genes_slop
+	def slop= params.genes_slop
 """
 hostname 1>&2
 ${moduleLoad("htslib jvarkit bedtools")}
@@ -524,6 +516,8 @@ cat << EOF > version.xml
 EOF
 """
 }
+
+
 
 process PUBLISH {
 tag "N=${files.size()}"

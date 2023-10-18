@@ -387,39 +387,47 @@ def md5(def in) {
 	}
 
 
-void _dumpParams(final int level,final String margin, final java.util.Map map) {
+void _dumpParams(final int level,final String margin, final java.util.Map map, java.lang.Appendable out) {
 	 def fmt = org.fusesource.jansi.Ansi.ansi()
 	for(Object k: map.keySet()) {
 		final Object v = map.get(k);
-		System.out.print(margin);
-		System.out.print(" + ");
+		out.append(margin);
+		out.append(" + ");
 
 		//fmt = fmt.fg(Color.GREEN);
-		System.out.print(k.toString());
+		out.append(k.toString());
 
 		//fmt = fmt.fg(Color.DEFAULT)	
 
-		System.out.print(" : ");
+		out.append(" : ");
 		if(v instanceof Map) {
 			if(level==0 && k.equals("genomes")) {
-				System.out.println(" (hidden) .... ");
+				out.append(" (hidden) ....\n");
 				}
 			else {
-				System.out.println();
-				_dumpParams(level+1, margin+"    ",(Map)v);
+				out.append("\n");
+				_dumpParams(level+1, margin+"    ",(Map)v, out);
 				}
 			}
 		else
 			{
-			System.out.println(v);
+			out.append(String.valueOf(v));
+			out.append("\n");
 			}
 		}
 	}
 
 void dumpParams(final java.util.Map map) {
 	System.out.println("# Params:");
-	_dumpParams(0,"",map);
+	_dumpParams(0,"",map,System.out);
 	System.out.println();
+	}
+
+String paramsToString(final java.util.Map map) {
+	StringBuilder sb = new StringBuilder();
+	_dumpParams(0,"",map,sb);
+	sb.append("\n");
+	return sb.toString();
 	}
 
 

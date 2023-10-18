@@ -16,7 +16,7 @@ String extractTestName(f) {
 workflow RVTESTS_POST_PROCESS {
 	take:
 		meta
-		reference
+		genomeId
 		subtitle
 		list
 	main:
@@ -31,18 +31,21 @@ workflow RVTESTS_POST_PROCESS {
 			groupTuple()
 		
 
-		group_ch = groupByTest(meta, assoc2file_ch)
+		group_ch = groupByTest([:], assoc2file_ch)
 		version_ch = version_ch.mix(group_ch.version)
 
-		plot_ch = plotIt(meta, R_ch.lib, subtitle, group_ch.assoc)
+		plot_ch = PLOTIT([:], R_ch.lib, subtitle, group_ch.assoc)
 		version_ch = version_ch.mix(plot_ch.version)
 
-		zip_ch = zipIt(meta, plot_ch.plots.concat(group_ch.assoc).collect())
+		zip_ch = ZIPIT([:], plot_ch.multiqc.concat(group_ch.assoc).collect())
+		
+		to_multiqc_ch = plot_ch.multiqc.mix(plot_ch.multiqc_yaml)
 
                 version_ch = MERGE_VERSION(meta, "rvtests","${subtitle}", version_ch.collect())
 	emit:
-		zip = zip_ch.zip
 		version = version_ch.version
+		zip = zip_ch.zip
+		to_multiqc = to_multiqc_ch
 	}
                         
 
@@ -54,10 +57,10 @@ input:
 	val(meta)
 	tuple val(assoc),val(L)
 output:
-	tuple val(assoc),path("${prefix}${assoc}.tsv"),emit:assoc
+	tuple val(assoc),path("${params.prefix?:""}${assoc}.tsv"),emit:assoc
 	path("version.xml"),emit:version
 script:
-	prefix = getKeyValue(meta,"prefix","")
+	prefix = params.prefix?:""
 """
 hostname 1>&2
 
@@ -92,7 +95,7 @@ rm jeter.list
 }
 
 
-process plotIt {
+process PLOTIT {
 tag "${assoc} (${tsv.name})"
 afterScript "rm -f jeter.tsv jeter.R"
 input:
@@ -102,9 +105,13 @@ input:
 	tuple val(assoc),val(tsv)
 output:
 	path("paths.txt"),emit:plots
+	path("${params.prefix?:""}${assoc}.*"),optional:true,emit:multiqc
+	path("multiqc_config.yaml"),emit:multiqc_yaml
 	path("version.xml"),emit:version
 script:
-	prefix = getKeyValue(meta,"prefix","")
+	prefix = params.prefix?:""
+	def head = 20
+
 """
 module load ${getModules("r/3.6.3")}
 hostname 1>&2
@@ -132,6 +139,45 @@ __EOF__
 
 R --vanilla < jeter.R || true
 
+
+cat << EOF > multiqc_config.yaml
+custom_data:
+  ${assoc}_manhattan:
+    parent_id: ${assoc}_section
+    parent_name: "${assoc}"
+    parent_description: "RVTEST ${assoc}"
+    section_name: "${assoc} Manhattan"
+    description: "RVTEST ${assoc} Manhattan plot"
+  ${assoc}_qqplot:
+    parent_id: ${assoc}_section
+    parent_name: "${assoc}"
+    parent_description: "RVTEST ${assoc}"
+    section_name: "${assoc} QQPlot"
+    description: "RVTEST ${assoc} QQPlot"
+sp:
+  ${assoc}_manhattan:
+    fn: "${prefix}${assoc}.manhattan.png"
+  ${assoc}_qqplot:
+    fn: "${prefix}${assoc}.qqplot.png"
+ignore_images: false
+EOF
+
+cat << EOF > "${prefix}${assoc}.table_mqc.html"
+<!--
+parent_id: ${assoc}_section
+parent_name: "${assoc}"
+parent_description: "RVTEST ${assoc}"
+id: '${assoc}_table'
+section_name: '${assoc} table'
+description: '${head} first lines.'
+-->
+<pre>
+EOF
+
+head -n ${head} jeter.tsv | column -t >> "${prefix}${assoc}.table_mqc.html"
+echo "</pre>" >>  "${prefix}${assoc}.table_mqc.html"
+
+
 ############################################################################
 cat << EOF > version.xml
 <properties id="${task.process}">
@@ -145,16 +191,28 @@ find \${PWD} -type f -name "*.png" >> paths.txt
 """
 }
 
-process zipIt {
+process ZIPIT {
 tag "N=${L.size()}"
 input:
 	val(meta)
 	val(L)
 output:
-	path("${prefix}rvtest.zip"),emit:zip
+	path("${params.prefix?:""}rvtest.zip"),emit:zip
+	path("version.xml"),emit:version
 script:
-	prefix = getKeyValue(meta,"prefix","")
 """
-cat ${L.join(" ")} | zip -j -9 -@ "${prefix}rvtest.zip"
+hostname 1>&2
+
+zip -j -9 "${params.prefix?:""}rvtest.zip" ${L.join(" ")}
+
+##################################################################################
+cat <<- EOF > version.xml
+<properties id="${task.process}">
+        <entry key="name">${task.process}</entry>
+        <entry key="description">zip</entry>
+</properties>
+EOF
 """
+
 }
+

@@ -26,30 +26,43 @@ include {moduleLoad;} from '../utils/functions.nf'
 
 
 process MULTIQC_01 {
-	tag "${files.name}"
+	tag "N=${files.size()}"
+	afterScript "rm -rf TMP"
 	input:
 		val(meta)
-		path(files)
+		val(files)
 	output:
 		path("${params.prefix?:""}multiqc.zip"),emit:zip
 		path("${params.prefix?:""}multiqc/${params.prefix?:""}multiqc_report_data"),emit:datadir
 		path("version.xml"),emit:version
 	script:
 		def prefix = params.prefix?:""
-		def extra = meta.exta?:""
+		def extra = meta.extra?:""
+		def title = meta.title?"--title \"${meta.title}\"":""
+		def comment = meta.comment?"--comment \"${meta.comment}\"":""
+		def configs = files.findAll{it.name.equals("multiqc_config.yaml")}.collect{"--config ${it}"}.join(" ")
 	"""
 		hostname 1>&2
 		${moduleLoad("multiqc")}
+		mkdir -p TMP
+
+cat << EOF > TMP/jeter.list
+${files.findAll{!it.name.equals("multiqc_config.yaml")}.join("\n")}
+EOF
+
+
 
 		mkdir -p "${prefix}multiqc"
 
 		export LC_ALL=en_US.utf8
 		multiqc  --filename  "${prefix}multiqc_report.html" --no-ansi \
-			--title "${prefix}FASTQC"  \
+			${title}  \
+			${comment}  \
 			--force \
 			${extra} \
+			${configs} \
 			--outdir "${prefix}multiqc" \
-			--file-list "${files}"
+			--file-list TMP/jeter.list
 		
 		zip -9 -r "${prefix}multiqc.zip" "${prefix}multiqc"
 

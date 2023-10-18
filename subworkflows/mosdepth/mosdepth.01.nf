@@ -72,7 +72,7 @@ workflow MOSDEPTH_BAMS_01 {
 		regdist_ch = ZIP_REGION_DIST(meta, file_list_ch.output)
 		version_ch = version_ch.mix(regdist_ch.version)
 
-		multiqc_ch = MULTIQC_01(meta,file_list_ch.output.map{T->["files":T,"prefix":(meta.prefix?:"")]})
+		multiqc_ch = MULTIQC_01(meta,ch2.regiondist.map{T->T[1]}.collect())
 		version_ch = version_ch.mix(multiqc_ch.version)
 
 		pdf_ch = Channel.empty()

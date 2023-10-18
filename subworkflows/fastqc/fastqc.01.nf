@@ -23,7 +23,6 @@ SOFTWARE.
 
 */
 include {moduleLoad;escapeXml} from '../../modules/utils/functions.nf'
-include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {APPLY_FASTQC_01} from '../../modules/fastqc/fastqc.01.nf'
 include {MULTIQC_01} from '../../modules/multiqc/multiqc.01.nf'
@@ -60,11 +59,8 @@ workflow FASTQC_01 {
 		version_ch = version_ch.mix(qc_ch.version)
 		to_zip = to_zip.mix(qc_ch.output.map{T->T[1]})
 
-		file_list_ch = COLLECT_TO_FILE_01([:],qc_ch.output.map{T->T[1]}.collect())
-		version_ch = version_ch.mix(file_list_ch.version)
-		
 
-		multiqc_ch = MULTIQC_01(meta,file_list_ch.output.map{T->["files":T,"prefix":(meta.prefix?:"")]})
+		multiqc_ch = MULTIQC_01(meta,qc_ch.output.map{T->T[1]}.collect())
 		version_ch = version_ch.mix(multiqc_ch.version)
 		to_zip = to_zip.mix(multiqc_ch.zip)
 
