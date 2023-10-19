@@ -1,26 +1,29 @@
 m4_define(`MACRO_WORKFLOW',wgselect)m4_dnl
 m4_define(`MACRO_MAIN_NF',gazoduc-nf/workflows/wgselect/basic/wgselect.basic.nf)m4_dnl
-m4_include(../../../src/main/m4/common.m4)m4_dnl
-md_h1(MACRO_WORKFLOW)
+m4_define(`MACRO_MAIN_CFG',../../../confs/by_workflow/wgselect.basic.cfg)m4_dnl
+m4_sinclude(../../../src/main/m4/common.m4)m4_dnl
+MACRO_H1(MACRO_WORKFLOW)
 
-md_h2(About)
+MACRO_H2(About)
 
+This workflow filter out bad quality variants from a VCF file.
 
-HOW_TO_INSTALL
+MACRO_HOW_TO_INSTALL
 
-md_make
+MACRO_PEDIGREE
 
-$ module purge
-$ module load nextflow \
-$ export NXF_ANSI_LOG=false
-$ nextflow -c "../../gazoduc-nf/confs/login-01.compute.bird2.prive.cfg" -c ../../gazoduc-nf/confs/by_workflow/wgselect.basic.cfg run \
-	-resume \
-	-work-dir /SCRATCH-BIRD/users/lindenbaum-p/work/NEXTFLOW/2023/20230906.wgselect.hs37d5/work \
-	/PATH/TO/MACRO_MAIN_NF \
-	--vcf /LAB-DATA/BiRD/shares/ITX/u1087/lindenb/20211117.brs.mitral.chopin.genmed.gatk4.hs37d5/20211117.brs.mitral.chopin.genmed.gatk4.hs37d5.list \
-	--pedigree "/SCRATCH-BIRD/users/lindenbaum-p/work/NEXTFLOW/2023/20230906.wgselect.hs37d5/work/20230906.wgselect.hs37d5.in.ped" \
-	--genomeId hs37d5 \
-	--prefix "20230906.wgselect.hs37d5." \
-	--bed /SCRATCH-BIRD/users/lindenbaum-p/work/NEXTFLOW/2023/20230906.wgselect.hs37d5/work/scn5a.bed \
-	--publishDir "/SCRATCH-BIRD/users/lindenbaum-p/work/NEXTFLOW/2023/20230906.wgselect.hs37d5/work"
+MACRO_H2(Parameters)
 
+MACRO_OPTIONS(`MACRO_AWK_PARAMS(../../../confs/by_workflow/wgselect.basic.cfg,)m4_dnl
+MACRO_AWK_PARAMS(../../../confs/default.params.cfg,)m4_dnl
+MACRO_AWK_PARAMS(../../../confs/genomeId.params.cfg,)m4_dnl
+MACRO_AWK_PARAMS(../../../confs/by_subworkflow/wgselect.config,wgselect.)m4_dnl
+')
+
+MACRO_EXECUTE(	--vcf /path/to/vcf \
+	MACRO_COMMON_PARAMS \
+	--pedigree "/path/to/file.ped" \
+	--bed /path/to/input.bed 
+)
+
+MACRO_FOOTER
