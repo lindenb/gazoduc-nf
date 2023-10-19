@@ -3,6 +3,27 @@ include {getKeyValue;getModules} from '../../modules/utils/functions.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 
 
+String testDescription(assoc) {
+	switch(assoc)
+		{
+		
+		case "RareCover" : return   "The RareCover test in (Bhatia et al 2010) is an efficient heuristic greedy algorithm to find an optimized combination of variants in a loci with the strongest association signal. It uses the same collapsing strategy and test statistic as in (Li and Leal, 2008) but scans over the loci, adding at each iteration the variants that contributes most to the statistic.";
+		case "SkatO": return "The SKAT-O test computes an optimal average of SKAT and burden tests based on minimizing the p-values";
+		case "VariableThresholdPrice": return "The Variable Threshold (VT) test has been proposed by Price et al (2010) based on the assumption that the minor allele frequencies of the causal rare variants may be different from those nonfunctional rare variants, which, if true, can be utilized to improve the power of the corresponding pooled association tests. The idea behind this approach is that there exists some (unknown) threshold T for which variants with a minor allele frequency (MAF) below T are more likely to be functional than are variants with an MAF above T. VT works by finding the maximum z-score across all possible values for the threshold T.";
+		case "Zeggini": return  "Models a continuous or binary phenotype as a function of the proportion of low-frequency/rare variants at which an individual carries a minor allele within a regression framework. This model implicitly assumes that all collapsed variants are associated with disease, and that they have the same direction of effect, which can be either deleterious or protective.";
+		case "CMCFisherExact": return "Combined and Multivariate Collapsing method for rare variants with Fisher's exact test for evaluating association between rare variants and disease phenotypes (case/ctrl data)";
+		case "MadsonBrowning": return "Studies have shown that genetic heterogeneity is a probable scenario for common diseases, in which multiple rare mutations together explain a large proportion of the genetic basis for the disease. Thus, we propose a weighted-sum method to jointly analyse a group of mutations in order to test for groupwise association with disease status.";
+		case "CMAT": return "The CMAT is closely related to the tests described in Madsen and Browning in that it aggregates allele counts rather than collapsing on them. Like these methods, the CMAT jointly analyzes sets of variants that occur in the same gene and that would otherwise be missed by a standard single-marker analysis. Because the power of single-marker tests is dependent on study sample size and risk-allele frequency, the CMAT is computed on variants with a maf below a preset threshold.";
+		case "Skat": return  "Supervised, flexible, computationally efficient regression method to test for association between genetic variants (common and rare) in a region and a continuous or dichotomous trait while easily adjusting for covariates.";
+		case "CMC": return "The CMC method is a unified approach that combines collapsing and multivariate tests. For the CMC method, markers are divided into subgroups on the basis of predefined criteria (e.g., allele frequencies), and within each group, marker data are collapsed. A multivariate test (e.g., Hotelling's T2 test) is then applied for analysis of the groups of marker data.";
+		case "CMCWald": return "The CMC Wald test collapses and combines all rare variants and then performs a Wald test, where only an alternative model is fit and the effect size is estimate.";
+		case "Kbac": return "Kernel-based adaptive cluster (KBAC) was developed to perform powerful gene/locus based rare variant association testing. The KBAC combines variant classification and association testing in a coherent framework. Covariates can also be incorporated in the analysis to control for potential confounders including age, sex, and population substructure.";
+		case "Fp": return "Up-weight rare variant using inverse frequency from controls by Danyu Lin.";
+		case "AnalyticVT": return "Variable threshold model by analytic form.";
+		default: return "RVTEST ${assoc}";
+		}
+	}
+
 /** extract test name from filename */
 String extractTestName(f) {
     String s = f.getName();
@@ -111,7 +132,7 @@ output:
 script:
 	prefix = params.prefix?:""
 	def head = 20
-
+	def assoc_desc= "${testDescription(assoc)}"
 """
 module load ${getModules("r/3.6.3")}
 hostname 1>&2
@@ -145,7 +166,7 @@ custom_data:
   ${assoc}_manhattan:
     parent_id: ${assoc}_section
     parent_name: "${assoc}"
-    parent_description: "RVTEST ${assoc}"
+    parent_description: "${assoc_desc}"
     section_name: "${assoc} Manhattan"
     description: "RVTEST ${assoc} Manhattan plot"
   ${assoc}_qqplot:
