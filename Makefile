@@ -8,3 +8,4 @@ all: doc
 
 doc:
 	$(call M4DOC,workflows/wgselect/basic)
+	$(call M4DOC,workflows/burden/burden.coding.01)

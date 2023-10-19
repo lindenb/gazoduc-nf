@@ -92,8 +92,8 @@ Parameters can be specified on the command line by prefixing the parameter name 
 | --wgselect.min_distance | "100" |  when splitting vcf into parts, don't leave variant if distance lower that this value  | ../../../confs/by_subworkflow/wgselect.config |
 | --wgselect.bcftools_options | "" |  option for first bcftools, e.g: --apply-filters '.,PASS'  | ../../../confs/by_subworkflow/wgselect.config |
 | --wgselect.gatk_hardfiltering_percentile | 0.001 |  apply gatk hard filtering ignore if < 0  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.f_missing | 0.05 |  fraction of missing allele  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.with_rmsk | true |  filter out variant overlapping repeat masker data in ucsc  | ../../../confs/by_subworkflow/wgselect.config |
+| --wgselect.f_missing | 0.05 /* Note: setting params.pihat.f_missing raised a bug */ |  fraction of missing allele  | ../../../confs/by_subworkflow/wgselect.config |
+| --wgselect.with_rmsk | true  |  filter out variant overlapping repeat masker data in ucsc  | ../../../confs/by_subworkflow/wgselect.config |
 | --wgselect.with_encode_exclude | true |  filter out variants in encode blacklisted  | ../../../confs/by_subworkflow/wgselect.config |
 | --wgselect.with_lcr | true |  filter out variants in low complexity region  | ../../../confs/by_subworkflow/wgselect.config |
 | --wgselect.with_simple_repeats | true |  filter out variant overlapping  ucsc  simple repeat  | ../../../confs/by_subworkflow/wgselect.config |
@@ -103,7 +103,7 @@ Parameters can be specified on the command line by prefixing the parameter name 
 | --wgselect.fisherh | -1.0 |  remove variant having a low p-value case vs controls ignore if < 0  | ../../../confs/by_subworkflow/wgselect.config |
 | --wgselect.soacn | "SO:0001629,SO:0001818" |  keep so consequences  | ../../../confs/by_subworkflow/wgselect.config |
 | --wgselect.gnomadPop | "AF_nfe" |  GNOMAD population  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.gnomadAF | 0.01 |  gnomad max allele frequency  | ../../../confs/by_subworkflow/wgselect.config |
+| --wgselect.gnomadAF | 0.01  |  gnomad max allele frequency  | ../../../confs/by_subworkflow/wgselect.config |
 | --wgselect.minGQsingleton | 90 |  | ../../../confs/by_subworkflow/wgselect.config |
 | --wgselect.lowGQ | 50 |  | ../../../confs/by_subworkflow/wgselect.config |
 | --wgselect.annot_method | "snpeff" |  | ../../../confs/by_subworkflow/wgselect.config |
@@ -121,8 +121,8 @@ Parameters can be specified on the command line by prefixing the parameter name 
 | --wgselect.minRatioSingleton | 0.2 |  emove variant if HET singleton has AD ratio out of x< AD/ratio < (1.0-x)  | ../../../confs/by_subworkflow/wgselect.config |
 | --wgselect.annot_method | "snpeff" |  how to annotate ? 'vep' or 'snpeff'  | ../../../confs/by_subworkflow/wgselect.config |
 | --wgselect.cadd_phred | -1.0 |  Discard variants having CADD phred treshold < 'x'. Ignore if 'x' < 0.0 or --wgselect_cadd_tabix is not defined.  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.gnomadgenomefilterexpr_hg19 | "FILTER~\"GNOMAD_GENOME_BAD_AF\"|| |  remove gnomad hg19 expression  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.gnomadgenomefilterexpr_hg38 | "FILTER~\"GNOMAD_GENOME_BAD_AF\"|| |  remove gnomad hg38 expression  | ../../../confs/by_subworkflow/wgselect.config |
+| --wgselect.gnomadgenomefilterexpr_hg19 | "FILTER~\"GNOMAD_GENOME_BAD_AF\"|| FILTER~\"GNOMAD_GENOME_InbreedingCoeff\"|| FILTER~\"GNOMAD_GENOME_RF\"" |  remove gnomad hg19 expression  | ../../../confs/by_subworkflow/wgselect.config |
+| --wgselect.gnomadgenomefilterexpr_hg38 | "FILTER~\"GNOMAD_GENOME_BAD_AF\"|| FILTER~\"GNOMAD_GENOME_InbreedingCoeff\"|| FILTER~\"GNOMAD_GENOME_AS_VQSR\"" |  remove gnomad hg38 expression  | ../../../confs/by_subworkflow/wgselect.config |
 | --wgselect.cadd_phred | -1.0 |  TODO  | ../../../confs/by_subworkflow/wgselect.config |
 
 
