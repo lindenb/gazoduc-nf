@@ -24,69 +24,21 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-params.bams=""
-params.reference=""
-params.references="NO_FILE"
-params.prefix="PREFIX."
-params.mapq=10
-params.pedigree=""
-params.dimension="3000x400"
-params.maxcov=80
-params.include_contig_regex="(chr)?[0-9XY]+" 
-params.help=false
-
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
-include {getVersionCmd;moduleLoad;runOnComplete} from '../../modules/utils/functions.nf'
+include {getVersionCmd;moduleLoad;runOnComplete;dumpParams} from '../../modules/utils/functions.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
-include {SAMTOOLS_SAMPLES_01} from '../../subworkflows/samtools/samtools.samples.01.nf'
-
-
-def helpMessage() {
-  log.info"""
-## About
-
-plot WGS coverage as SVG
-
-## Author
-
-Pierre Lindenbaum
-
-## Options
-
-  * --reference (fasta) indexed reference [REQUIRED]
-  * --bams (list) path to bams
-  * --publishDir (dir) Save output in this directory
-  * --prefix (string) files prefix. default: ""
-
-## Usage
-
-```
-nextflow -C ../../confs/cluster.cfg  run -resume workflow.nf \\
-	--publishDir output \\
-	--prefix "analysis." \\
-	--reference /path/to/reference.fasta \\
-	--bams bams.list
-```
-
-## Workflow
-
-![workflow](./workflow.svg)
-  
-
-"""
-}
+include {SAMTOOLS_SAMPLES} from '../../subworkflows/samtools/samtools.samples.03.nf'
 
 
 if( params.help ) {
-    helpMessage()
+    dumpParams(params);
     exit 0
+}  else {
+    dumpParams(params);
 }
 
-
-
-
 workflow {
-	PLOT_WGS_COVERAGE(params, params.reference, file(params.references), file(params.bams))
+	PLOT_WGS_COVERAGE(params, file(params.bams))
 	}
 
 runOnComplete(workflow)
@@ -94,27 +46,25 @@ runOnComplete(workflow)
 workflow PLOT_WGS_COVERAGE {
 	take:
 		meta
-		reference
-		references
 		bams
 	main:
 		version_ch = Channel.empty()
 		to_zip = Channel.empty()
 
-		snbam_ch = SAMTOOLS_SAMPLES_01(meta.plus("with_header":true,"allow_multiple_references":true,"allow_duplicate_samples":true), reference, references, bams)
+		snbam_ch = SAMTOOLS_SAMPLES(["with_header":true,"allow_multiple_references":true,"allow_duplicate_samples":true], "", bams)
 		version_ch = version_ch.mix(snbam_ch.version)
 
-		plot_ch = PLOT_WGS(meta,snbam_ch.output.splitCsv(header:true,sep:'\t'))
+		plot_ch = PLOT_WGS([:],snbam_ch.rows.splitCsv(header:true,sep:'\t'))
 		version_ch = version_ch.mix(plot_ch.version)
 		to_zip = to_zip.mix(plot_ch.svg)
 
-		version_ch = MERGE_VERSION(meta, "wgsplot", "WGS plot", version_ch.collect())
+		version_ch = MERGE_VERSION([:], "wgsplot", "WGS plot", version_ch.collect())
 		to_zip = to_zip.mix(version_ch)
 
-		html =  VERSION_TO_HTML(meta,version_ch)
+		html =  VERSION_TO_HTML([:],version_ch)
 		to_zip = to_zip.mix(html.html)
 
-		zip_ch = ZIPIT(meta,to_zip.collect())
+		zip_ch = ZIPIT([:],to_zip.collect())
 	emit:
 		version = version_ch
 		zip = zip_ch.zip
@@ -130,12 +80,12 @@ input:
         val(meta)
 	val(row)
 output:
-	path("${meta.prefix?:""}${row.new_sample}.svg"),emit:svg
+	path("${params.prefix?:""}${row.new_sample}.svg"),emit:svg
 	path("version.xml"),emit:version
 script:
-	def maxcov = meta.maxcov?:80
-	def mapq = meta.mapq?:80
-	def dimension = meta.dimension?:"3000x400"
+	def maxcov = params.maxcov?:80
+	def mapq = params.mapq?:80
+	def dimension = params.dimension?:"3000x400"
 """
 	hostname 1>&2
 	${moduleLoad("jvarkit")}
@@ -143,11 +93,11 @@ script:
 
 	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=. -jar \${JVARKIT_DIST}/wgscoverageplotter.jar \
 		--mapq ${mapq} \
-		${meta.include_contig_regex.isEmpty()?"":"--include-contig-regex \"${params.include_contig_regex}\""} \
+		${params.include_contig_regex.isEmpty()?"":"--include-contig-regex \"${params.include_contig_regex}\""} \
 		--dimension "${dimension}" \
 		-C "${maxcov}" -R "${row.reference}" "${row.bam}" > jeter.svg
 
-	mv jeter.svg "${meta.prefix?:""}${row.new_sample}.svg"
+	mv jeter.svg "${params.prefix?:""}${row.new_sample}.svg"
 
 #######################
 cat << EOF > version.xml
@@ -171,16 +121,16 @@ input:
 	val(meta)
 	val(L)
 output:
-	path("${meta.prefix?:""}plots.zip"),emit:zip
+	path("${params.prefix?:""}plots.zip"),emit:zip
 script:
 """
 hostname 1>&2
 
-cat << __EOF__ >  "${meta.prefix?:""}index.html" 
+cat << __EOF__ >  "${params.prefix?:""}index.html" 
 <html>
 <head>
 <meta charset="UTF-8"/>
-<title>${meta.prefix?:""}.IndexCov</title>
+<title>${params.prefix?:""}.IndexCov</title>
 <script>
 var index=0;
 var svgs=[${L.collect{T->"\""+file(T).name+"\""}.join(",")}];
@@ -202,11 +152,11 @@ function change(dx) {
 </html>
 __EOF__
 
-cat << __EOF__ >  "${meta.prefix?:""}all.html"
+cat << __EOF__ >  "${params.prefix?:""}all.html"
 <html>
 <head>
 <meta charset="UTF-8"/>
-<title>${meta.prefix?:""}.IndexCov</title>
+<title>${params.prefix?:""}.WGSPlotCov</title>
 <script>
 function init() {
 	var svgs=[${L.collect{T->"\""+file(T).name+"\""}.join(",")}];
@@ -233,8 +183,8 @@ window.addEventListener('load', (event) => {init();});
 __EOF__
 
 
-zip -j -9  "${meta.prefix?:""}plots.zip" ${L.join(" ")} \
-	"${meta.prefix?:""}all.html" \
-	"${meta.prefix?:""}index.html"
+zip -j -9  "${params.prefix?:""}plots.zip" ${L.join(" ")} \
+	"${params.prefix?:""}all.html" \
+	"${params.prefix?:""}index.html"
 """
 }
