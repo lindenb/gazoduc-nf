@@ -51,17 +51,17 @@ workflow PLOT_WGS_COVERAGE {
 		version_ch = Channel.empty()
 		to_zip = Channel.empty()
 
-		snbam_ch = SAMTOOLS_SAMPLES(["with_header":true,"allow_multiple_references":true,"allow_duplicate_samples":true], "", bams)
+		snbam_ch = SAMTOOLS_SAMPLES(["with_header":true,"allow_multiple_references":true,"allow_duplicate_samples":true],  bams)
 		version_ch = version_ch.mix(snbam_ch.version)
 
-		plot_ch = PLOT_WGS([:],snbam_ch.rows.splitCsv(header:true,sep:'\t'))
+		plot_ch = PLOT_WGS([:],snbam_ch.rows)
 		version_ch = version_ch.mix(plot_ch.version)
 		to_zip = to_zip.mix(plot_ch.svg)
 
 		version_ch = MERGE_VERSION([:], "wgsplot", "WGS plot", version_ch.collect())
 		to_zip = to_zip.mix(version_ch)
 
-		html =  VERSION_TO_HTML([:],version_ch)
+		html =  VERSION_TO_HTML(version_ch)
 		to_zip = to_zip.mix(html.html)
 
 		zip_ch = ZIPIT([:],to_zip.collect())

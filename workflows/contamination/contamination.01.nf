@@ -144,7 +144,7 @@ workflow CONTAMINATION {
 		html =  VERSION_TO_HTML(params,version_ch)
 		to_zip = to_zip.mix(html.html)
 
-		zip_ch = SIMPLE_ZIP_01(meta,to_zip.collect())
+		zip_ch = SIMPLE_ZIP_01([:],to_zip.collect())
 	emit:
 		version = version_ch
 		zip = zip_ch.zip

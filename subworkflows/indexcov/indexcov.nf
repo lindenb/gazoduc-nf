@@ -25,7 +25,7 @@ SOFTWARE.
 include { SAMTOOLS_SAMPLES} from '../samtools/samtools.samples.03.nf'
 include { COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include { getKeyValue;moduleLoad; assertFileExists;getVersionCmd} from '../../modules/utils/functions.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 
 
 
@@ -45,7 +45,7 @@ workflow INDEXCOV {
 
         	sample_bam_fasta_ch = bams_ch.rows.filter{T->T.genomeId.equals(genomeId)}
         
-		rebuild_bai_ch = REBUILD_BAI([:], genomeId, sample_bam_fasta_ch)
+		rebuild_bai_ch = REBUILD_BAI([:], sample_bam_fasta_ch)
 		ch_version = ch_version.mix( rebuild_bai_ch.version.first() ) 
 
 		bams2_ch = COLLECT_TO_FILE_01([:], rebuild_bai_ch.bam.collect()).output
@@ -104,20 +104,20 @@ process DOWNLOAD_GOLEFT {
 
  **/
 process REBUILD_BAI {
-    tag "${sample} ${file(bam).name} mapq=${params.mapq}"
+    tag "${row.sample} ${file(row.bam).name} mapq=${params.mapq}"
     afterScript "rm -rf TMP"
     memory "5g"
     cpus 3
     input:
         val meta
-	val genomeId
-        tuple val(sample), val(bam)
+        val(row)
     output:
-	path("OUT/${sample}.bam"),     emit: bam
-	path("OUT/${sample}.bam.bai"), emit: bai
+	path("OUT/${row.sample}.bam"),     emit: bam
+	path("OUT/${row.sample}.bam.bai"), emit: bai
         path "version.xml",           emit: version
 
     script:
+	def genomeId = row.genomeId
 	def reference = params.genomes[genomeId].fasta
 	def mapq = params.mapq?:1
     """
@@ -128,17 +128,17 @@ process REBUILD_BAI {
         # write header only
 	samtools view --header-only -O BAM  \
 		--threads ${task.cpus} \
-		-o "TMP/${sample}.bam" \
+		-o "TMP/${row.sample}.bam" \
 		--reference "${reference}" \
-		"${bam}"
+		"${row.bam}"
 
 	# hack about creating bam index. see main samtools manual
 	samtools view -F 3844 -q "${mapq}" --uncompressed \
 		--threads ${task.cpus} \
-		-o "/dev/null##idx##TMP/${sample}.bam.bai" \
+		-o "/dev/null##idx##TMP/${row.sample}.bam.bai" \
 		--write-index  -O BAM  \
 		--reference "${reference}" \
-		"${bam}"
+		"${row.bam}"
 
 	mv -v TMP OUT
 

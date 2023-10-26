@@ -48,7 +48,7 @@ workflow {
 	ch1 = INDEXCOV_TO_CIRCOS_01(params,params.reference,file(params.bed))
 	html = VERSION_TO_HTML(params, ch1.version)
 	to_zip =  Channel.empty().mix(ch1.version).mix(html.html).mix(ch1.png).mix(ch1.svg)
-	SIMPLE_ZIP_01(params, to_zip.collect())
+	SIMPLE_ZIP_01([:], to_zip.collect())
 	}
 
 runOnComplete(workflow)

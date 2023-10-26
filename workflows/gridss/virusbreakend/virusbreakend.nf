@@ -126,7 +126,7 @@ workflow GRIDSS_VIRUS_BND {
 		html = VERSION_TO_HTML(meta,version_ch.version)
 		to_zip = to_zip.mix(html.html)
 
-		zip_ch = SIMPLE_ZIP_01(meta,to_zip.collect())
+		zip_ch = SIMPLE_ZIP_01([:],to_zip.collect())
 		
 	emit:
 		version = version_ch

@@ -68,7 +68,7 @@ workflow {
 		mix(ch1.version).
 		mix(ch1.output).
 		mix(html.html)
-	SIMPLE_ZIP_01(params,to_zip.collect())
+	SIMPLE_ZIP_01([:],to_zip.collect())
 	}
 
 runOnComplete(workflow);

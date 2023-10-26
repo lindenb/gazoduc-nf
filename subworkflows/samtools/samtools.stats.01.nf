@@ -29,7 +29,7 @@ include {SAMTOOLS_STATS_01 as ST_STATS} from '../../modules/samtools/samtools.st
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include {MULTIQC_01} from '../../modules/multiqc/multiqc.01.nf' 
 include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
-include {SIMPLE_ZIP_01} from '../../modules/utils/zip.simple.01.nf' addParams(compression_level:9)
+include {SIMPLE_ZIP_01} from '../../modules/utils/zip.simple.01.nf'
 
 workflow SAMTOOLS_STATS_01 {
 	take:
@@ -70,7 +70,7 @@ workflow SAMTOOLS_STATS_01 {
 
 		to_zip = Channel.empty().mix(st_stats_outputs_ch).mix(multiqc_ch.zip)
 		
-		ch1_ch = SIMPLE_ZIP_01(to_zip.collect())
+		ch1_ch = SIMPLE_ZIP_01([compression_level:9],to_zip.collect())
 		
 		version_ch = MERGE_VERSION("Samtools stats",version_ch.collect())
 	emit:

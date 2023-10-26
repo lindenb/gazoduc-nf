@@ -138,7 +138,7 @@ workflow WALLY_REGION_01 {
 	        plot_ch = PLOT_WALLY(meta, reference, wally_ch.executable, known_ch.bed, ch2_ch)
 		version_ch = version_ch.mix(plot_ch.version)
 
-		zip_ch = SIMPLE_ZIP_01(params,plot_ch.output.collect())
+		zip_ch = SIMPLE_ZIP_01([:],plot_ch.output.collect())
 		version_ch = version_ch.mix(zip_ch.version)
 
 

@@ -26,7 +26,7 @@ nextflow.enable.dsl=2
 
 
 include {INDEXCOV} from '../../subworkflows/indexcov/indexcov.nf'
-include {runOnComplete} from '../../modules/utils/functions.nf'
+include {runOnComplete;dumpParams} from '../../modules/utils/functions.nf'
 include {SIMPLE_ZIP_01} from '../../modules/utils/zip.simple.01.nf'
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 
@@ -41,12 +41,10 @@ if( params.help ) {
 workflow {
 	indexcov_ch = INDEXCOV(params,params.genomeId,file(params.bams))
 
-	html = VERSION_TO_HTML(params, indexcov_ch.version)
+	html = VERSION_TO_HTML(indexcov_ch.version)
 
 	to_zip = Channel.empty().mix(indexcov_ch.zip).mix(indexcov_ch.version).mix(html.html)
-	zip_ch = SIMPLE_ZIP_01(params,to_zip.collect())
-
-
+	zip_ch = SIMPLE_ZIP_01([compression_level:9],to_zip.collect())
 	}
 
 

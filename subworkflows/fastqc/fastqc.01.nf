@@ -71,7 +71,7 @@ workflow FASTQC_01 {
 		html = VERSION_TO_HTML(meta, version_ch)
 		to_zip = to_zip.mix(html.html)
 
-		zip_ch = SIMPLE_ZIP_01(meta,to_zip.collect())
+		zip_ch = SIMPLE_ZIP_01([:],to_zip.collect())
 
 	emit:
 		zip = zip_ch.zip

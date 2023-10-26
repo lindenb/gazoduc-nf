@@ -23,23 +23,23 @@ SOFTWARE.
 
 */
 
-if(!params.containsKey("compression_level")) throw new IllegalArgumentException("compression_level missing");
 
 process SIMPLE_ZIP_01 {
 tag "N=${L.size()}"
 input:
+	val(meta)
 	val(L)
 output:
 	path("${params.prefix?:""}archive.zip"),emit:zip
 	path("version.xml"),emit:version
 script:
 	def prefix = params.prefix?:""
-	def compression_level = params.compression_level?:"5"
+	def compression_level = meta.compression_level?:"5"
 """
 hostname 1>&2
 set -o pipefail
 
-mkdir "${prefix}archive"
+mkdir -p "${prefix}archive"
 
 cat << EOF | while read F ; do ln -s "\${F}" "./${prefix}archive/" ; done
 ${L.join("\n")}

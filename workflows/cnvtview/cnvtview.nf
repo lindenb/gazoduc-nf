@@ -81,7 +81,7 @@ workflow {
 	
 	
 	tozip = Channel.empty().mix(ch1.htmls).mix(ch1.version).mix(html.html)
-	zip_ch = SIMPLE_ZIP_01(params ,tozip.collect())
+	zip_ch = SIMPLE_ZIP_01([:] ,tozip.collect())
 
 	SIMPLE_PUBLISH_01(params, Channel.empty().mix(zip_ch.zip).collect())
 	}

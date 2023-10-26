@@ -124,7 +124,7 @@ workflow ETCHING_01 {
 		sv_ch = APPLY_ETCHING(meta, reference, etching_ch.executable, kmers_ch.output, bed, fq_ch)
 		version_ch = version_ch.mix(sv_ch.version)
 
-		zip_ch = SIMPLE_ZIP_01(meta ,sv_ch.output.flatMap{T->[T[1],T[2]]}.collect())
+		zip_ch = SIMPLE_ZIP_01([:] ,sv_ch.output.flatMap{T->[T[1],T[2]]}.collect())
 		version_ch = version_ch.mix(zip_ch.version)
 	
 		version_ch = MERGE_VERSION(meta, "etching", "Etching", version_ch.collect())

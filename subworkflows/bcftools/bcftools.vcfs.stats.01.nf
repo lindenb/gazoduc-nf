@@ -43,7 +43,7 @@ workflow BCFTOOLS_VCFS_STATS_01 {
 		version2_ch = MERGE_VERSION(meta, "VCF Stats", "VCF Stats using bcftools", version_ch.collect())
 		html = VERSION_TO_HTML(params,version2_ch)
 
-		zip_ch = SIMPLE_ZIP_01(meta.plus(["level":"0"]),vcfstat_ch.output.map{T->T[1]}.mix(version2_ch).mix(html.html).collect())
+		zip_ch = SIMPLE_ZIP_01(["compression_level":"0"],vcfstat_ch.output.map{T->T[1]}.mix(version2_ch).mix(html.html).collect())
 	emit:
 		zip = zip_ch.zip
 		version = version2_ch		

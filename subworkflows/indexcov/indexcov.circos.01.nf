@@ -25,7 +25,6 @@ SOFTWARE.
 
 include {moduleLoad;isHg19;isHg38;getVersionCmd} from '../../modules/utils/functions.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
-include {SIMPLE_ZIP_01} from '../../modules/utils/zip.simple.01.nf'
 
 
 gazoduc = gazoduc.Gazoduc.getInstance(params)

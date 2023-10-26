@@ -43,7 +43,7 @@ workflow {
 			mix(c1_ch.version).
 			mix(c1_ch.junctions).
 			mix(html.html)
-	zip_ch = SIMPLE_ZIP_01(params ,zip_ch.collect())
+	zip_ch = SIMPLE_ZIP_01([:] ,zip_ch.collect())
 	}
 
 

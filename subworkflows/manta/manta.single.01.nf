@@ -83,7 +83,7 @@ workflow MANTA_SINGLE_SV01 {
 		version_merge = MERGE_VERSION([:],"manta",version_ch.collect())
 		to_zip = to_zip.mix(version_merge.version)
 		
-		zip_ch = SIMPLE_ZIP_01(["level":"0"],to_zip.collect())
+		zip_ch = SIMPLE_ZIP_01(["compression_level":"0"],to_zip.collect())
 		
 	emit:
 		version = version_merge.version
