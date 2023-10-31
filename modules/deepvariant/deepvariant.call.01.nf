@@ -26,9 +26,8 @@ SOFTWARE.
 include {moduleLoad} from '../utils/functions.nf'
 
 process DEEP_VARIANT_CALL_01 {
-tag "${row.sample}/${row.bed.name}/${row.bam.name}"
-memory "15g"
-///cpus 16
+tag "${row.sample}/${file(row.bed).name}/${file(row.bam).name}"
+afterScript "rm -rf TMP  .keras  .parallel"
 input:
 	val(meta)
 	val(row)
@@ -36,15 +35,14 @@ output:
 	tuple val(row),path("${row.sample}.bcf"),path("${row.sample}.g.vcf.gz"),emit:output
 	path("version.xml"),emit:version
 script:
-	def img = meta.deepvariant_singularity_image?:"/LAB-DATA/BiRD/users/lindenbaum-p/packages/deepvariant/deepvariant.simg"
+	def img = params.deepvariant.singularity_image
 	def sample = row.sample
 	def new_sample = row.new_sample?:sample
-	def bam = row.bam
-	def bed = row.bed
+	def bam = file(row.bam)
+	def bed = file(row.bed)
 	def genome = params.genomes[row.genomeId]
-	def ref = file(row.fasta)
-	def num_shards = meta.num_shards?:20
-	def model_type = meta.model_type?:"WGS"
+	def ref = file(genome.fasta)
+	def model_type = row.model_type?:params.deepvariant.model_type
 """
 	hostname 1>&2
 	${moduleLoad("bcftools")}
@@ -61,11 +59,13 @@ script:
 		--model_type ${model_type} \
 		--output_vcf /outdir/jeter.vcf.gz \
 		--output_gvcf /outdir/jeter.g.vcf.gz \
-		--num_shards ${num_shards} \
+		--num_shards ${task.cpus} \
 		--regions /beddir/${bed.name} \
 		--ref /ref/${ref.name} \
 		--reads /data1/${bam.name} \
 		--intermediate_results_dir  /outdir/TMP 1>&2
+
+
 
 	mv TMP/jeter.g.vcf.gz "${sample}.g.vcf.gz"
 	mv TMP/jeter.g.vcf.gz.tbi "${sample}.g.vcf.gz.tbi"

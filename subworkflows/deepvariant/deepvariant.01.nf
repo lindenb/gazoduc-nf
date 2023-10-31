@@ -22,9 +22,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {SAMTOOLS_SAMPLES02} from '../samtools/samtools.samples.02.nf'
+include {SAMTOOLS_SAMPLES} from '../samtools/samtools.samples.03.nf'
 include {DEEP_VARIANT_CALL_01} from '../../modules/deepvariant/deepvariant.call.01.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {GLNEXUS_GENOTYPE_01} from '../../modules/glnexus/glnexus.genotype.01.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_CONCAT_01} from '../../subworkflows/bcftools/bcftools.concat.01.nf'
@@ -38,16 +38,14 @@ workflow DEEPVARIANT_01 {
 	main:
 		version_ch = Channel.empty()
 		
-		sn_ch = SAMTOOLS_SAMPLES02([allow_multiple_references:false,with_header:true,allow_duplicate_samples:false],genomeId,bams)
+		sn_ch = SAMTOOLS_SAMPLES([allow_multiple_references:false,with_header:true,allow_duplicate_samples:false],bams)
 		version_ch = version_ch.mix(sn_ch.version)
 
 		each_bed = beds.splitText().map{T->T.trim()}
 
-		ch1 = sn_ch.output.splitCsv(header:true,sep:'\t')
+		ch1 = sn_ch.rows.filter{T->T.genomeId.equals(genomeId)}
 			.combine(each_bed)
 			.map{T->T[0].plus("bed":file(T[1]))}
-			.map{T->T.plus("bam":file(T.bam))}
-			.map{T->T.plus("genomeId":genomeId)}
 		
 		ch2 = DEEP_VARIANT_CALL_01([:],ch1)
 		version_ch = version_ch.mix(ch2.version)
@@ -63,7 +61,7 @@ workflow DEEPVARIANT_01 {
 		file_list_ch = COLLECT_TO_FILE_01([:],ch4.output.map{T->T[1]}.collect())
 		version_ch = version_ch.mix(file_list_ch.version)
 
-		concat_ch = BCFTOOLS_CONCAT_01([:],file_list_ch.output)
+		concat_ch = BCFTOOLS_CONCAT_01([:],file_list_ch.output, file("NO_FILE"))
 		version_ch = version_ch.mix(concat_ch.version)
 
                 version_ch = MERGE_VERSION("Deep Variant",version_ch.collect())

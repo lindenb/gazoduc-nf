@@ -22,91 +22,25 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-nextflow.enable.dsl=2
-
-/** path to indexed fasta reference */
-params.reference = ""
-params.references = "NO_FILE"
-params.mapq = 0
-params.bams = ""
-params.beds = "NO_FILE"
-params.help = false
-params.publishDir = ""
-params.prefix = ""
 
 include {DEEPVARIANT_01} from '../../subworkflows/deepvariant/deepvariant.01.nf'
-include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
-include {runOnComplete} from '../../modules/utils/functions.nf'
-
-def helpMessage() {
-  log.info"""
-## About
-
-call deepvariant to a set of bams
-
-## Author
-
-Pierre Lindenbaum
-
-## Options
-
-  * --reference (fasta) The full path to the indexed fasta reference genome. It must be indexed with samtools faidx and with picard CreateSequenceDictionary or samtools dict. [REQUIRED]
-  * --bams (file) one file containing the paths to the BAM/CRAM [REQUIRED]
-  * --beds (file) path to multiple bed files
-  * --publishDir (dir) Save output in this directory
-  * --prefix (string) files prefix. default: ""
-
-## Usage
-
-```
-nextflow -C ../../confs/cluster.cfg  run -resume deepvariant.nf \\
-	--publishDir output \\
-	--prefix "analysis." \\
-	--reference /path/to/reference.fasta \\
-	--bams /path/to/bams.list \\
-	--beds /path/to/in.bed.list
-```
-
-## Workflow
-
-![workflow](./workflow.svg)
-  
-## See also
-
-
-"""
-}
+include {runOnComplete; dumpParams} from '../../modules/utils/functions.nf'
 
 
 if( params.help ) {
-    helpMessage()
+    dumpParams(params);
     exit 0
+}  else {
+    dumpParams(params);
 }
+
+
 
 
 workflow {
-	ch1 = DEEPVARIANT_01(params,params.reference,file(params.references),file(params.bams), Channel.fromPath(params.beds))
-	html = VERSION_TO_HTML(params,ch1.version)
-	//PUBLISH(ch1.version,html.html,ch1.summary,ch1.pdf.collect())
+	ch1 = DEEPVARIANT_01([:],params.genomeId,file(params.bams), Channel.fromPath(params.beds))
+	html = VERSION_TO_HTML(ch1.version)
 	}
 
-process PUBLISH {
-publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
-input:
-	path(version)
-	path(html)
-	path(summary)
-	path(pdfs)
-output:
-	path("${params.prefix}mosdepth.zip")
-when:
-	!params.getOrDefault("publishDir","").trim().isEmpty()
-script:
-"""
-zip -j "${params.prefix}mosdepth.zip" ${version} ${html} ${summary} ${pdfs.join(" ")}
-"""
-}
-
-runOnComplete(workflow);
-
+runOnComplete(workflow)

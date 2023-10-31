@@ -28,8 +28,6 @@ include {moduleLoad} from '../utils/functions.nf'
 
 process GLNEXUS_GENOTYPE_01  {
 tag "${bed.name} N=${vcfs.size()}"
-memory "15g"
-cpus 5
 afterScript  "rm -rf TMP GLnexus.DB"
 input:
 	val(meta)
@@ -39,8 +37,8 @@ output:
 	path("version.xml"),emit:version
 	path("merged.bcf.csi")
 script:
-       	def img = meta.glnexus_singularity_image?:"/LAB-DATA/BiRD/users/lindenbaum-p/packages/glnexus/glnexus.simg"
-	def config = meta.glnexus_config?:"DeepVariantWGS"
+       	def img = params.glnexus.singularity_image
+	def config = meta.glnexus_config?:(params.glexus.config?:"DeepVariantWGS")
 """
 	hostname 1>&2
 	${moduleLoad("bcftools")}
