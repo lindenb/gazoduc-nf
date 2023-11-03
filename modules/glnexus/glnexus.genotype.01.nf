@@ -38,7 +38,7 @@ output:
 	path("merged.bcf.csi")
 script:
        	def img = params.glnexus.singularity_image
-	def config = meta.glnexus_config?:(params.glexus.config?:"DeepVariantWGS")
+	def config = meta.glnexus_config?:(params.glnexus.config?:"DeepVariantWGS")
 """
 	hostname 1>&2
 	${moduleLoad("bcftools")}
