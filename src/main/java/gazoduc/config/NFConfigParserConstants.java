@@ -13,35 +13,43 @@ public interface NFConfigParserConstants {
   /** RegularExpression Id. */
   int COMMENT = 5;
   /** RegularExpression Id. */
-  int SINGLE_QUOTE_LITERAL = 6;
+  int BLOCK = 6;
   /** RegularExpression Id. */
-  int DOUBLE_QUOTE_LITERAL = 7;
+  int SINGLE_QUOTE_LITERAL = 7;
   /** RegularExpression Id. */
-  int OBRACKET = 8;
+  int DOUBLE_QUOTE_LITERAL = 8;
   /** RegularExpression Id. */
-  int CBRACKET = 9;
+  int OBRACKET = 9;
   /** RegularExpression Id. */
-  int DOT = 10;
+  int CBRACKET = 10;
   /** RegularExpression Id. */
-  int EQ = 11;
+  int SEMICOLON = 11;
   /** RegularExpression Id. */
-  int DIGIT = 12;
+  int DOT = 12;
   /** RegularExpression Id. */
-  int INT = 13;
+  int EQ = 13;
   /** RegularExpression Id. */
-  int SIGN = 14;
+  int OPAR = 14;
   /** RegularExpression Id. */
-  int EXPONENT = 15;
+  int CPAR = 15;
   /** RegularExpression Id. */
-  int DOUBLE = 16;
+  int DIGIT = 16;
   /** RegularExpression Id. */
-  int BOOLEAN = 17;
+  int INT = 17;
   /** RegularExpression Id. */
-  int LETTER = 18;
+  int SIGN = 18;
   /** RegularExpression Id. */
-  int INCLUDE_CONFIG = 19;
+  int EXPONENT = 19;
   /** RegularExpression Id. */
-  int IDENTIFIER = 20;
+  int DOUBLE = 20;
+  /** RegularExpression Id. */
+  int BOOLEAN = 21;
+  /** RegularExpression Id. */
+  int LETTER = 22;
+  /** RegularExpression Id. */
+  int INCLUDE_CONFIG = 23;
+  /** RegularExpression Id. */
+  int IDENTIFIER = 24;
 
   /** Lexical state. */
   int DEFAULT = 0;
@@ -54,12 +62,16 @@ public interface NFConfigParserConstants {
     "\"\\n\"",
     "\"\\r\"",
     "<COMMENT>",
+    "<BLOCK>",
     "<SINGLE_QUOTE_LITERAL>",
     "<DOUBLE_QUOTE_LITERAL>",
     "\"{\"",
     "\"}\"",
+    "\";\"",
     "\".\"",
     "\"=\"",
+    "\"(\"",
+    "\")\"",
     "<DIGIT>",
     "<INT>",
     "<SIGN>",

@@ -9,19 +9,18 @@ package gazoduc.config;
 import java.util.*;
 import java.io.*;
 import java.nio.file.*;
-import javax.xml.*;
-import javax.xml.stream.*;
+import java.util.function.*;
+
 
 
 public class NFConfigParser {
+
 private static abstract class Param {
 	Token doc=null;
-	void print(XMLStreamWriter out,int depth,String title) throws XMLStreamException{
-		out.writeStartElement("dt");
-		out.writeCharacters(title);
-		
+
+	protected String getDescription() {
+	  String c="";
 		if(doc!=null) {
-			String c="";
 			Token t = doc;
 			while(t!=null) {
 				c+=t.image;
@@ -36,19 +35,11 @@ private static abstract class Param {
 				while(c.endsWith("*"))c=c.substring(0,c.length()-1);
 				}
 			c=c.trim();
-			if(!c.isEmpty()) {
-				out.writeCharacters(" ");
-				out.writeStartElement("q");
-				out.writeCharacters(c);
-				out.writeEndElement();//qiote
-				}
 			}
-		else
-			{
-			}
-		
-		out.writeEndElement();//dt
-		}
+		return c;
+	 	}
+
+	abstract void markdown(PrintStream pw,String prefix);
 	}
 
 private static class ObjectParam extends Param {
@@ -58,25 +49,15 @@ private static class ObjectParam extends Param {
 		return comment(doc) +" "+map.toString();
 		}
 	@Override 
-	void print(XMLStreamWriter out,int depth,String title) throws XMLStreamException {
-		
-		super.print(out,depth,title);
-		out.writeStartElement("dd");
-		out.writeStartElement("dl");
-		for(final String k: keySet()) {
-			if(map.get(k)==null) {
-				System.err.println("NULLL?? "+k);
-				continue;
-				}
-			map.get(k).print(out,depth+1,k);
-			}
-		out.writeEndElement();//dl
-		out.writeEndElement();//dd
+	void markdown(PrintStream pw,String prefix) { 
+		for(final String k: map.keySet()) {
+			map.get(k).markdown(pw,prefix.isEmpty()?k:prefix+"."+k);
+		 	}
 		}
 		
 	Set<String> keySet() { return map.keySet();}
 	
-	void put(String t,Param p) {
+	void put(String t,final Param p) {
 		if(p instanceof ValueParam) {
 			this.map.put(t,p);
 			}
@@ -99,32 +80,92 @@ private static class ObjectParam extends Param {
 
 private static class ValueParam extends Param {
 	final String value;
-	ValueParam(final String s) {
+	final Path source;
+
+	ValueParam(final String s,final Path source) {
 		this.value = s;
+		this.source= source;
 		}
 	@Override
 	public String toString() {
 		return value;
 		}
-	@Override  void print(XMLStreamWriter out,int depth,String title) throws XMLStreamException {
-		super.print(out,depth,title);
-		out.writeStartElement("dd");
-		out.writeStartElement("pre");
-		out.writeCharacters(title+" = "+ value);
-		out.writeEndElement();
-		out.writeEndElement();
+	@Override
+	void markdown(PrintStream w,String name){
+		w.print("| `--");
+		w.print(name);
+		w.print("` | ");
+		w.print(getDescription());
+		w.print(" | ");
+		w.print(value);
+		w.print(" | `");
+		w.print(source);
+		w.println("` |");
 		}
 	}
 
-private Path path;
-private ObjectParam params;
-NFConfigParser(final ObjectParam params, final Path path) throws IOException {
-	this(Files.newInputStream(path));
-	System.err.println("parsing "+path);
+private  Path path = null;
+private  ObjectParam params=null;
+
+
+NFConfigParser(final ObjectParam params, final Path path,final Reader r) throws IOException {
+	this(r);
 	this.params= params;
 	this.path = path;
 	}
-static String unescape(final String s) {
+
+
+
+private static void scanPath(final ObjectParam params, final Path path) throws IOException {
+	final List<String > lines = Files.readAllLines(path);
+	final Predicate<String> isStartSection = new Predicate<String>() {
+		public boolean test(String s) {
+		  	s=s.trim();
+		  	return (s.startsWith("/*") || s.startsWith("//")) && s.contains("BEGIN_PARAMS");
+			}
+		};
+	final Predicate<String> isEndSection = new Predicate<String>() {
+		public boolean test(String s) {
+		  	s=s.trim();
+			return (s.startsWith("/*") || s.startsWith("//")) && s.contains("END_PARAMS");
+			}
+		};
+	for(int i=0;i< lines.size();i++) {
+		if(isStartSection.test(lines.get(i))) {
+			lines.subList(0,i).clear();
+			break;
+			}
+	 	}
+	int state=1;
+	int i=0;
+	while(i<lines.size()) {
+	 if(state==1 && isEndSection.test(lines.get(i))) {
+		lines.remove(i);
+		state=0;
+		}
+	 else if(state==0 && isStartSection.test(lines.get(i))) {
+		lines.remove(i);
+		state=1;
+		}
+	 else if(state==1 &&lines.get(i).trim().startsWith("process")) {
+		lines.subList(i,lines.size()).clear();
+		break;
+	  	}
+	 else
+		 {
+		 i++;
+		 }
+	 }
+	try(Reader r= new StringReader(String.join("\n",lines))) { 
+		final NFConfigParser p = new NFConfigParser(params,path,r);
+		p.input();
+		}
+	catch(ParseException err) {
+		throw new IOException(err);
+	 	}
+	}
+
+private static String unescape(final String s) {
 	if(s.startsWith("'") && s.endsWith("'")) return s.substring(1,s.length()-1);
 	if(s.startsWith("\"") && s.endsWith("\"")) return s.substring(1,s.length()-1);
 	return s;
@@ -143,34 +184,26 @@ private static String comment(Token t) {
 public static void main(final String[] args) {
 	try {
 		final ObjectParam root=new ObjectParam();
-		for(final String f: args) {
-			System.err.println(f);
-				final NFConfigParser p = new NFConfigParser(root,Paths.get(f));
-			p.input();
-			System.err.println(f+"="+root);
-			}
+		final PrintStream w= System.out;
 
 		
-		if(root!=null) {
-			final XMLOutputFactory xof = XMLOutputFactory.newFactory();
-		 	final XMLStreamWriter w = xof.createXMLStreamWriter(System.out,"UTF-8");
-			w.writeStartElement("html");
-			w.writeStartElement("head");
-			w.writeStartElement("style");
-			w.writeCharacters("pre {background:lightgray;}\n");
-			w.writeCharacters("dt {color:blue;font-style: bold;}\n");
-			w.writeCharacters("q {color:blue;font-style: italic; color:black;}\n");
-			w.writeEndElement();
-			w.writeEndElement();
-			w.writeStartElement("body");
-			w.writeStartElement("dl");
-			root.print(w,0,"params");
-			w.writeEndElement();
-			w.writeEndElement();
-			w.writeEndElement();
-			w.close();
+		w.print("| ");
+		w.print("Field");
+		w.print(" | ");
+		w.print("Description");
+		w.print(" | ");
+		w.print("Value");
+		w.print(" | ");
+		w.print("Source");
+		w.println(" |");
+		
+		for(final String f: args) {
+			NFConfigParser.scanPath(root,Paths.get(f));
 			}
-		} catch(Throwable err) {
+		
+		root.markdown(w,"");
+		}
+	catch(Throwable err) {
 		err.printStackTrace();
 		System.exit(-1);		
 		}
@@ -196,12 +229,16 @@ SPECIAL_TOKEN : {
 
 TOKEN : /* LITERALS */
 {
-  <SINGLE_QUOTE_LITERAL: "\'" (~["\'"]|"\\" ~[])*"\'" >
+  <BLOCK: "\"\"\""  (~[])* "\"\"\"" >
+| <SINGLE_QUOTE_LITERAL: "\'" (~["\'"]|"\\" ~[])*"\'" >
 | <DOUBLE_QUOTE_LITERAL: "\"" (~["\""]|"\\" ~[])*"\"" >
 | <OBRACKET:"{">
 | <CBRACKET:"}">
+| <SEMICOLON:";">
 | <DOT:".">
 | <EQ:"=">
+| <OPAR:"(" >
+| <CPAR:")" >
 | <#DIGIT: ["0"-"9"] >
 | <INT: <DIGIT> (<DIGIT>)*>
 | <#SIGN: ["-","+"]>
@@ -216,14 +253,12 @@ TOKEN : /* LITERALS */
 public void input():{}
     {
     (any())*<EOF> {
-    	System.err.println("DONE "+path+" "+this.params.keySet());
     	}
     }
 
 private void any(): {Map.Entry<String,ObjectParam> h;}
 	{
 	h=map() {
-		System.err.println("XXXXXXX adding "+h+" to params");
 		for(final String k: h.getValue().keySet()) {
 			this.params.put(k,h.getValue().map.get(k));
 		}
@@ -232,12 +267,10 @@ private void any(): {Map.Entry<String,ObjectParam> h;}
 
 private void includeConfig(): {String f;}
 	{
-	<INCLUDE_CONFIG> f=string() {
-		Path p = this.path.getParent().resolve(f);
+	<INCLUDE_CONFIG> (<OPAR > f=string() <CPAR> |  f=string()) (<SEMICOLON>)? {
+		final Path p = this.path.getParent().resolve(f);
 		try {
-			final NFConfigParser c = new NFConfigParser(this.params,p);
-			c.input();
-			System.err.println("done "+p+" "+this.params+" ############### "+c.params);
+		  	NFConfigParser.scanPath(this.params,p);
 			}
 		catch(IOException err) {
 			err.printStackTrace();
@@ -268,11 +301,11 @@ private Map.Entry<String,ObjectParam> map(): {String title;Token t;Param v;final
 
 private Param value():{String s; Token t; ObjectParam m;} {
 	(
-	s=string() { return new ValueParam(s);}
-	| t=<BOOLEAN> { return new ValueParam(t.image);}
-	| t=<INT> { return new ValueParam(t.image);}
-	| t=<DOUBLE> { return new ValueParam(t.image);}
-	| t= <IDENTIFIER> (<DOT> <IDENTIFIER>)* { return new ValueParam("${"+t.image+"}");}
+	s=string() { return new ValueParam(s, this.path);}
+	| t=<BOOLEAN> { return new ValueParam(t.image, this.path);}
+	| t=<INT> { return new ValueParam(t.image, this.path);}
+	| t=<DOUBLE> { return new ValueParam(t.image, this.path);}
+	| t= <IDENTIFIER> (<DOT> <IDENTIFIER>)* { return new ValueParam("${"+t.image+"}", this.path);}
 	)
 	}
 private String string() : {Token t;}
@@ -280,6 +313,7 @@ private String string() : {Token t;}
 	(
 	t=<SINGLE_QUOTE_LITERAL> { return unescape(t.image);}
 	| t=<DOUBLE_QUOTE_LITERAL> { return unescape(t.image);}
+	| t=<BLOCK> {  return t.image.substring(3,t.image.length()-3); } 
 	)
 	}
 

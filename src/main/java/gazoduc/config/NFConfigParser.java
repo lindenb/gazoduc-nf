@@ -4,19 +4,18 @@ package gazoduc.config;
 import java.util.*;
 import java.io.*;
 import java.nio.file.*;
-import javax.xml.*;
-import javax.xml.stream.*;
+import java.util.function.*;
+
 
 
 public class NFConfigParser implements NFConfigParserConstants {
+
 private static abstract class Param {
         Token doc=null;
-        void print(XMLStreamWriter out,int depth,String title) throws XMLStreamException{
-                out.writeStartElement("dt");
-                out.writeCharacters(title);
 
+        protected String getDescription() {
+          String c="";
                 if(doc!=null) {
-                        String c="";
                         Token t = doc;
                         while(t!=null) {
                                 c+=t.image;
@@ -31,19 +30,11 @@ private static abstract class Param {
                                 while(c.endsWith("*"))c=c.substring(0,c.length()-1);
                                 }
                         c=c.trim();
-                        if(!c.isEmpty()) {
-                                out.writeCharacters(" ");
-                                out.writeStartElement("q");
-                                out.writeCharacters(c);
-                                out.writeEndElement();//qiote
-                                }
                         }
-                else
-                        {
-                        }
-
-                out.writeEndElement();//dt
+                return c;
                 }
+
+        abstract void markdown(PrintStream pw,String prefix);
         }
 
 private static class ObjectParam extends Param {
@@ -53,25 +44,15 @@ private static class ObjectParam extends Param {
                 return comment(doc) +" "+map.toString();
                 }
         @Override
-        void print(XMLStreamWriter out,int depth,String title) throws XMLStreamException {
-
-                super.print(out,depth,title);
-                out.writeStartElement("dd");
-                out.writeStartElement("dl");
-                for(final String k: keySet()) {
-                        if(map.get(k)==null) {
-                                System.err.println("NULLL?? "+k);
-                                continue;
-                                }
-                        map.get(k).print(out,depth+1,k);
+        void markdown(PrintStream pw,String prefix) {
+                for(final String k: map.keySet()) {
+                        map.get(k).markdown(pw,prefix.isEmpty()?k:prefix+"."+k);
                         }
-                out.writeEndElement();//dl
-                out.writeEndElement();//dd
                 }
 
         Set<String> keySet() { return map.keySet();}
 
-        void put(String t,Param p) {
+        void put(String t,final Param p) {
                 if(p instanceof ValueParam) {
                         this.map.put(t,p);
                         }
@@ -94,32 +75,92 @@ private static class ObjectParam extends Param {
 
 private static class ValueParam extends Param {
         final String value;
-        ValueParam(final String s) {
+        final Path source;
+
+        ValueParam(final String s,final Path source) {
                 this.value = s;
+                this.source= source;
                 }
         @Override
         public String toString() {
                 return value;
                 }
-        @Override  void print(XMLStreamWriter out,int depth,String title) throws XMLStreamException {
-                super.print(out,depth,title);
-                out.writeStartElement("dd");
-                out.writeStartElement("pre");
-                out.writeCharacters(title+" = "+ value);
-                out.writeEndElement();
-                out.writeEndElement();
+        @Override
+        void markdown(PrintStream w,String name){
+                w.print("| `--");
+                w.print(name);
+                w.print("` | ");
+                w.print(getDescription());
+                w.print(" | ");
+                w.print(value);
+                w.print(" | `");
+                w.print(source);
+                w.println("` |");
                 }
         }
 
-private Path path;
-private ObjectParam params;
-NFConfigParser(final ObjectParam params, final Path path) throws IOException {
-        this(Files.newInputStream(path));
-        System.err.println("parsing "+path);
+private  Path path = null;
+private  ObjectParam params=null;
+
+
+NFConfigParser(final ObjectParam params, final Path path,final Reader r) throws IOException {
+        this(r);
         this.params= params;
         this.path = path;
         }
-static String unescape(final String s) {
+
+
+
+private static void scanPath(final ObjectParam params, final Path path) throws IOException {
+        final List<String > lines = Files.readAllLines(path);
+        final Predicate<String> isStartSection = new Predicate<String>() {
+                public boolean test(String s) {
+                        s=s.trim();
+                        return (s.startsWith("/*") || s.startsWith("//")) && s.contains("BEGIN_PARAMS");
+                        }
+                };
+        final Predicate<String> isEndSection = new Predicate<String>() {
+                public boolean test(String s) {
+                        s=s.trim();
+                        return (s.startsWith("/*") || s.startsWith("//")) && s.contains("END_PARAMS");
+                        }
+                };
+        for(int i=0;i< lines.size();i++) {
+                if(isStartSection.test(lines.get(i))) {
+                        lines.subList(0,i).clear();
+                        break;
+                        }
+                }
+        int state=1;
+        int i=0;
+        while(i<lines.size()) {
+         if(state==1 && isEndSection.test(lines.get(i))) {
+                lines.remove(i);
+                state=0;
+                }
+         else if(state==0 && isStartSection.test(lines.get(i))) {
+                lines.remove(i);
+                state=1;
+                }
+         else if(state==1 &&lines.get(i).trim().startsWith("process")) {
+                lines.subList(i,lines.size()).clear();
+                break;
+                }
+         else
+                 {
+                 i++;
+                 }
+         }
+        try(Reader r= new StringReader(String.join("\n",lines))) {
+                final NFConfigParser p = new NFConfigParser(params,path,r);
+                p.input();
+                }
+        catch(ParseException err) {
+                throw new IOException(err);
+                }
+        }
+
+private static String unescape(final String s) {
         if(s.startsWith("'") && s.endsWith("'")) return s.substring(1,s.length()-1);
         if(s.startsWith("\"") && s.endsWith("\"")) return s.substring(1,s.length()-1);
         return s;
@@ -138,34 +179,26 @@ private static String comment(Token t) {
 public static void main(final String[] args) {
         try {
                 final ObjectParam root=new ObjectParam();
+                final PrintStream w= System.out;
+
+
+                w.print("| ");
+                w.print("Field");
+                w.print(" | ");
+                w.print("Description");
+                w.print(" | ");
+                w.print("Value");
+                w.print(" | ");
+                w.print("Source");
+                w.println(" |");
+
                 for(final String f: args) {
-                        System.err.println(f);
-                                final NFConfigParser p = new NFConfigParser(root,Paths.get(f));
-                        p.input();
-                        System.err.println(f+"="+root);
+                        NFConfigParser.scanPath(root,Paths.get(f));
                         }
 
-
-                if(root!=null) {
-                        final XMLOutputFactory xof = XMLOutputFactory.newFactory();
-                        final XMLStreamWriter w = xof.createXMLStreamWriter(System.out,"UTF-8");
-                        w.writeStartElement("html");
-                        w.writeStartElement("head");
-                        w.writeStartElement("style");
-                        w.writeCharacters("pre {background:lightgray;}\n");
-                        w.writeCharacters("dt {color:blue;font-style: bold;}\n");
-                        w.writeCharacters("q {color:blue;font-style: italic; color:black;}\n");
-                        w.writeEndElement();
-                        w.writeEndElement();
-                        w.writeStartElement("body");
-                        w.writeStartElement("dl");
-                        root.print(w,0,"params");
-                        w.writeEndElement();
-                        w.writeEndElement();
-                        w.writeEndElement();
-                        w.close();
-                        }
-                } catch(Throwable err) {
+                root.markdown(w,"");
+                }
+        catch(Throwable err) {
                 err.printStackTrace();
                 System.exit(-1);
                 }
@@ -187,15 +220,14 @@ public static void main(final String[] args) {
       any();
     }
     jj_consume_token(0);
-System.err.println("DONE "+path+" "+this.params.keySet());
+
 }
 
   final private void any() throws ParseException {Map.Entry<String,ObjectParam> h;
     switch ((jj_ntk==-1)?jj_ntk_f():jj_ntk) {
     case IDENTIFIER:{
       h = map();
-System.err.println("XXXXXXX adding "+h+" to params");
-                for(final String k: h.getValue().keySet()) {
+for(final String k: h.getValue().keySet()) {
                         this.params.put(k,h.getValue().map.get(k));
                 }
       break;
@@ -213,12 +245,36 @@ System.err.println("XXXXXXX adding "+h+" to params");
 
   final private void includeConfig() throws ParseException {String f;
     jj_consume_token(INCLUDE_CONFIG);
-    f = string();
-Path p = this.path.getParent().resolve(f);
+    switch ((jj_ntk==-1)?jj_ntk_f():jj_ntk) {
+    case OPAR:{
+      jj_consume_token(OPAR);
+      f = string();
+      jj_consume_token(CPAR);
+      break;
+      }
+    case BLOCK:
+    case SINGLE_QUOTE_LITERAL:
+    case DOUBLE_QUOTE_LITERAL:{
+      f = string();
+      break;
+      }
+    default:
+      jj_la1[2] = jj_gen;
+      jj_consume_token(-1);
+      throw new ParseException();
+    }
+    switch ((jj_ntk==-1)?jj_ntk_f():jj_ntk) {
+    case SEMICOLON:{
+      jj_consume_token(SEMICOLON);
+      break;
+      }
+    default:
+      jj_la1[3] = jj_gen;
+      ;
+    }
+final Path p = this.path.getParent().resolve(f);
                 try {
-                        final NFConfigParser c = new NFConfigParser(this.params,p);
-                        c.input();
-                        System.err.println("done "+p+" "+this.params+" ############### "+c.params);
+                        NFConfigParser.scanPath(this.params,p);
                         }
                 catch(IOException err) {
                         err.printStackTrace();
@@ -238,7 +294,7 @@ title=t.image;h.doc = t.specialToken;
         break;
         }
       default:
-        jj_la1[2] = jj_gen;
+        jj_la1[4] = jj_gen;
         break label_2;
       }
       if (jj_2_1(2)) {
@@ -255,7 +311,7 @@ v.doc = t.specialToken;
           break;
           }
         default:
-          jj_la1[3] = jj_gen;
+          jj_la1[5] = jj_gen;
           jj_consume_token(-1);
           throw new ParseException();
         }
@@ -268,25 +324,26 @@ v.doc = t.specialToken;
 
   final private Param value() throws ParseException {String s; Token t; ObjectParam m;
     switch ((jj_ntk==-1)?jj_ntk_f():jj_ntk) {
+    case BLOCK:
     case SINGLE_QUOTE_LITERAL:
     case DOUBLE_QUOTE_LITERAL:{
       s = string();
-{if ("" != null) return new ValueParam(s);}
+{if ("" != null) return new ValueParam(s, this.path);}
       break;
       }
     case BOOLEAN:{
       t = jj_consume_token(BOOLEAN);
-{if ("" != null) return new ValueParam(t.image);}
+{if ("" != null) return new ValueParam(t.image, this.path);}
       break;
       }
     case INT:{
       t = jj_consume_token(INT);
-{if ("" != null) return new ValueParam(t.image);}
+{if ("" != null) return new ValueParam(t.image, this.path);}
       break;
       }
     case DOUBLE:{
       t = jj_consume_token(DOUBLE);
-{if ("" != null) return new ValueParam(t.image);}
+{if ("" != null) return new ValueParam(t.image, this.path);}
       break;
       }
     case IDENTIFIER:{
@@ -299,17 +356,17 @@ v.doc = t.specialToken;
           break;
           }
         default:
-          jj_la1[4] = jj_gen;
+          jj_la1[6] = jj_gen;
           break label_3;
         }
         jj_consume_token(DOT);
         jj_consume_token(IDENTIFIER);
       }
-{if ("" != null) return new ValueParam("${"+t.image+"}");}
+{if ("" != null) return new ValueParam("${"+t.image+"}", this.path);}
       break;
       }
     default:
-      jj_la1[5] = jj_gen;
+      jj_la1[7] = jj_gen;
       jj_consume_token(-1);
       throw new ParseException();
     }
@@ -328,8 +385,13 @@ v.doc = t.specialToken;
 {if ("" != null) return unescape(t.image);}
       break;
       }
+    case BLOCK:{
+      t = jj_consume_token(BLOCK);
+{if ("" != null) return t.image.substring(3,t.image.length()-3);}
+      break;
+      }
     default:
-      jj_la1[6] = jj_gen;
+      jj_la1[8] = jj_gen;
       jj_consume_token(-1);
       throw new ParseException();
     }
@@ -344,7 +406,7 @@ v.doc = t.specialToken;
     finally { jj_save(0, xla); }
   }
 
-  private boolean jj_3R_map_251_9_4()
+  private boolean jj_3R_map_284_9_4()
  {
     if (jj_scan_token(IDENTIFIER)) return true;
     if (jj_scan_token(OBRACKET)) return true;
@@ -353,7 +415,7 @@ v.doc = t.specialToken;
 
   private boolean jj_3_1()
  {
-    if (jj_3R_map_251_9_4()) return true;
+    if (jj_3R_map_284_9_4()) return true;
     return false;
   }
 
@@ -368,13 +430,13 @@ v.doc = t.specialToken;
   private Token jj_scanpos, jj_lastpos;
   private int jj_la;
   private int jj_gen;
-  final private int[] jj_la1 = new int[7];
+  final private int[] jj_la1 = new int[9];
   static private int[] jj_la1_0;
   static {
 	   jj_la1_init_0();
 	}
 	private static void jj_la1_init_0() {
-	   jj_la1_0 = new int[] {0x180000,0x180000,0x100000,0x100000,0x400,0x1320c0,0xc0,};
+	   jj_la1_0 = new int[] {0x1800000,0x1800000,0x41c0,0x800,0x1000000,0x1000000,0x1000,0x13201c0,0x1c0,};
 	}
   final private JJCalls[] jj_2_rtns = new JJCalls[1];
   private boolean jj_rescan = false;
@@ -391,7 +453,7 @@ v.doc = t.specialToken;
 	 token = new Token();
 	 jj_ntk = -1;
 	 jj_gen = 0;
-	 for (int i = 0; i < 7; i++) jj_la1[i] = -1;
+	 for (int i = 0; i < 9; i++) jj_la1[i] = -1;
 	 for (int i = 0; i < jj_2_rtns.length; i++) jj_2_rtns[i] = new JJCalls();
   }
 
@@ -406,7 +468,7 @@ v.doc = t.specialToken;
 	 token = new Token();
 	 jj_ntk = -1;
 	 jj_gen = 0;
-	 for (int i = 0; i < 7; i++) jj_la1[i] = -1;
+	 for (int i = 0; i < 9; i++) jj_la1[i] = -1;
 	 for (int i = 0; i < jj_2_rtns.length; i++) jj_2_rtns[i] = new JJCalls();
   }
 
@@ -417,7 +479,7 @@ v.doc = t.specialToken;
 	 token = new Token();
 	 jj_ntk = -1;
 	 jj_gen = 0;
-	 for (int i = 0; i < 7; i++) jj_la1[i] = -1;
+	 for (int i = 0; i < 9; i++) jj_la1[i] = -1;
 	 for (int i = 0; i < jj_2_rtns.length; i++) jj_2_rtns[i] = new JJCalls();
   }
 
@@ -436,7 +498,7 @@ v.doc = t.specialToken;
 	 token = new Token();
 	 jj_ntk = -1;
 	 jj_gen = 0;
-	 for (int i = 0; i < 7; i++) jj_la1[i] = -1;
+	 for (int i = 0; i < 9; i++) jj_la1[i] = -1;
 	 for (int i = 0; i < jj_2_rtns.length; i++) jj_2_rtns[i] = new JJCalls();
   }
 
@@ -446,7 +508,7 @@ v.doc = t.specialToken;
 	 token = new Token();
 	 jj_ntk = -1;
 	 jj_gen = 0;
-	 for (int i = 0; i < 7; i++) jj_la1[i] = -1;
+	 for (int i = 0; i < 9; i++) jj_la1[i] = -1;
 	 for (int i = 0; i < jj_2_rtns.length; i++) jj_2_rtns[i] = new JJCalls();
   }
 
@@ -456,7 +518,7 @@ v.doc = t.specialToken;
 	 token = new Token();
 	 jj_ntk = -1;
 	 jj_gen = 0;
-	 for (int i = 0; i < 7; i++) jj_la1[i] = -1;
+	 for (int i = 0; i < 9; i++) jj_la1[i] = -1;
 	 for (int i = 0; i < jj_2_rtns.length; i++) jj_2_rtns[i] = new JJCalls();
   }
 
@@ -587,12 +649,12 @@ v.doc = t.specialToken;
   /** Generate ParseException. */
   public ParseException generateParseException() {
 	 jj_expentries.clear();
-	 boolean[] la1tokens = new boolean[21];
+	 boolean[] la1tokens = new boolean[25];
 	 if (jj_kind >= 0) {
 	   la1tokens[jj_kind] = true;
 	   jj_kind = -1;
 	 }
-	 for (int i = 0; i < 7; i++) {
+	 for (int i = 0; i < 9; i++) {
 	   if (jj_la1[i] == jj_gen) {
 		 for (int j = 0; j < 32; j++) {
 		   if ((jj_la1_0[i] & (1<<j)) != 0) {
@@ -601,7 +663,7 @@ v.doc = t.specialToken;
 		 }
 	   }
 	 }
-	 for (int i = 0; i < 21; i++) {
+	 for (int i = 0; i < 25; i++) {
 	   if (la1tokens[i]) {
 		 jj_expentry = new int[1];
 		 jj_expentry[0] = i;
