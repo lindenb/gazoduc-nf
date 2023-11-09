@@ -14,12 +14,7 @@ MACRO_PEDIGREE
 
 MACRO_H2(Parameters)
 
-MACRO_OPTIONS(`MACRO_AWK_PARAMS(../../../confs/by_workflow/wgselect.basic.cfg,)m4_dnl
-MACRO_AWK_PARAMS(../../../confs/default.params.cfg,)m4_dnl
-MACRO_AWK_PARAMS(../../../confs/genomeId.params.cfg,)m4_dnl
-MACRO_AWK_PARAMS(../../../confs/by_subworkflow/burden.config,burden.)m4_dnl
-MACRO_AWK_PARAMS(../../../confs/by_subworkflow/wgselect.config,wgselect.)m4_dnl
-')
+MACRO_PARSE_CONFIG(`../../../lib/nfconfigparser.jar',` ../../../confs/by_workflow/wgselect.basic.cfg')
 
 MACRO_EXECUTE(	--vcf /path/to/vcf \
 	MACRO_COMMON_PARAMS \

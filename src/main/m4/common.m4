@@ -61,19 +61,7 @@ MACRO_BASH(export CAPSULE_CACHE_DIR=/LAB-DATA/BiRD/users/`$'{USER}/.nextflow/cap
 m4_dnl
 m4_dnl
 m4_dnl
-m4_define(`MACRO_AWK_PARAMS',m4_changequote([[,]])[[m4_syscmd(awk -vPREFIX="$2" '/M4_END_PARAM/ {exit 0;} {if(match($`0',/^[ \t]*\/[\*]+(.*)[\*]+\/[ \t]*`$'/,a)) {comment=a[1]} else if(match($`0',/^[ \t]*([a-zA-Z][a-zA-Z_0-9]*)[ \t]*=[ \t]*(.*)/,a)>0) { printf("| --%s%s | %s | %s | %s |\n",PREFIX,a[1],a[2],comment, FILENAME); comment="";}  else {comment="";}}' "$1")]]m4_changequote(`,'))m4_dnl
-m4_dnl
-m4_dnl
-m4_dnl
-m4_define(`MACRO_OPTIONS',
-
-Parameters can be specified on the command line by prefixing the parameter name with a double dash character e.g. --input.
-
-| Parameters | Default Value | Description | Defined in  |
-| --- | --- | --- |
-$1
-
-)m4_dnl
+m4_define(`MACRO_PARSE_CONFIG',`m4_syscmd(java -cp "$1" gazoduc.config.NFConfigParser $2)')
 m4_dnl
 m4_dnl
 m4_dnl

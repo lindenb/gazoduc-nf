@@ -112,6 +112,7 @@ NFConfigParser(final ObjectParam params, final Path path,final Reader r) throws 
 
 
 private static void scanPath(final ObjectParam params, final Path path) throws IOException {
+        System.err.println("[DEBUG] scanning "+path);
         final List<String > lines = Files.readAllLines(path);
         final Predicate<String> isStartSection = new Predicate<String>() {
                 public boolean test(String s) {
@@ -406,7 +407,7 @@ v.doc = t.specialToken;
     finally { jj_save(0, xla); }
   }
 
-  private boolean jj_3R_map_284_9_4()
+  private boolean jj_3R_map_285_9_4()
  {
     if (jj_scan_token(IDENTIFIER)) return true;
     if (jj_scan_token(OBRACKET)) return true;
@@ -415,7 +416,7 @@ v.doc = t.specialToken;
 
   private boolean jj_3_1()
  {
-    if (jj_3R_map_284_9_4()) return true;
+    if (jj_3R_map_285_9_4()) return true;
     return false;
   }
 

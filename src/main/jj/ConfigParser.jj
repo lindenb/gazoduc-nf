@@ -117,6 +117,7 @@ NFConfigParser(final ObjectParam params, final Path path,final Reader r) throws 
 
 
 private static void scanPath(final ObjectParam params, final Path path) throws IOException {
+	System.err.println("[DEBUG] scanning "+path);
 	final List<String > lines = Files.readAllLines(path);
 	final Predicate<String> isStartSection = new Predicate<String>() {
 		public boolean test(String s) {
