@@ -117,8 +117,8 @@ A **pedigree** is a tab delimited file without header with the following columns
 | `--wgselect.inverse_so` | inverse output of vcffilterso | false | `../../../confs/by_workflow/../by_subworkflow/wgselect.config` |
 | `--wgselect.minRatioSingleton` | emove variant if HET singleton has AD ratio out of x< AD/ratio < (1.0-x) | 0.2 | `../../../confs/by_workflow/../by_subworkflow/wgselect.config` |
 | `--wgselect.cadd_phred` | TODO | -1.0 | `../../../confs/by_workflow/../by_subworkflow/wgselect.config` |
-| `--wgselect.gnomadgenomefilterexpr_hg19` | remove gnomad hg19 expression | FILTER~\"GNOMAD_GENOME_BAD_AF\"|| FILTER~\"GNOMAD_GENOME_InbreedingCoeff\"|| FILTER~\"GNOMAD_GENOME_RF\" | `../../../confs/by_workflow/../by_subworkflow/wgselect.config` |
-| `--wgselect.gnomadgenomefilterexpr_hg38` | remove gnomad hg38 expression | FILTER~\"GNOMAD_GENOME_BAD_AF\"|| FILTER~\"GNOMAD_GENOME_InbreedingCoeff\"|| FILTER~\"GNOMAD_GENOME_AS_VQSR\" | `../../../confs/by_workflow/../by_subworkflow/wgselect.config` |
+| `--wgselect.gnomadgenomefilterexpr_hg19` | remove gnomad hg19 expression | FILTER~\"GNOMAD_GENOME_BAD_AF\"&#124;&#124; FILTER~\"GNOMAD_GENOME_InbreedingCoeff\"&#124;&#124; FILTER~\"GNOMAD_GENOME_RF\" | `../../../confs/by_workflow/../by_subworkflow/wgselect.config` |
+| `--wgselect.gnomadgenomefilterexpr_hg38` | remove gnomad hg38 expression | FILTER~\"GNOMAD_GENOME_BAD_AF\"&#124;&#124; FILTER~\"GNOMAD_GENOME_InbreedingCoeff\"&#124;&#124; FILTER~\"GNOMAD_GENOME_AS_VQSR\" | `../../../confs/by_workflow/../by_subworkflow/wgselect.config` |
 | `--vcf` | indexed VCF or a list of vcf with the .list suffix | NO_FILE | `../../../confs/by_workflow/wgselect.basic.cfg` |
 | `--pedigree` | pedigree | NO_FILE | `../../../confs/by_workflow/wgselect.basic.cfg` |
 | `--bed` | limit to that bed | NO_FILE | `../../../confs/by_workflow/wgselect.basic.cfg` |

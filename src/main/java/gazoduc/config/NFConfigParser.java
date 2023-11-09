@@ -92,7 +92,7 @@ private static class ValueParam extends Param {
                 w.print("` | ");
                 w.print(getDescription());
                 w.print(" | ");
-                w.print(value);
+                w.print(escapeMarkdown(value));
                 w.print(" | `");
                 w.print(source);
                 w.println("` |");
@@ -109,6 +109,17 @@ NFConfigParser(final ObjectParam params, final Path path,final Reader r) throws 
         this.path = path;
         }
 
+private static String escapeMarkdown(final String s) {
+        final StringBuilder sb = new StringBuilder(s.length());
+        for(int i=0;i< s.length();i++) {
+                char c = s.charAt(i);
+                switch(c) {
+                        case '|' : sb.append("&#124;");break;
+                        default: sb.append(c); break;
+                        }
+                }
+        return sb.toString();
+        }
 
 
 private static void scanPath(final ObjectParam params, final Path path) throws IOException {
@@ -407,7 +418,7 @@ v.doc = t.specialToken;
     finally { jj_save(0, xla); }
   }
 
-  private boolean jj_3R_map_285_9_4()
+  private boolean jj_3R_map_296_9_4()
  {
     if (jj_scan_token(IDENTIFIER)) return true;
     if (jj_scan_token(OBRACKET)) return true;
@@ -416,7 +427,7 @@ v.doc = t.specialToken;
 
   private boolean jj_3_1()
  {
-    if (jj_3R_map_285_9_4()) return true;
+    if (jj_3R_map_296_9_4()) return true;
     return false;
   }
 
