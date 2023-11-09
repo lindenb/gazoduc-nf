@@ -204,6 +204,18 @@ public static void main(final String[] args) {
                 w.print("Source");
                 w.println(" |");
 
+
+                w.print("|");
+                w.print("-----");
+                w.print("|");
+                w.print("----");
+                w.print("|");
+                w.print("----");
+                w.print("|");
+                w.print("----");
+                w.println("|");
+
+
                 for(final String f: args) {
                         NFConfigParser.scanPath(root,Paths.get(f));
                         }
@@ -418,7 +430,7 @@ v.doc = t.specialToken;
     finally { jj_save(0, xla); }
   }
 
-  private boolean jj_3R_map_296_9_4()
+  private boolean jj_3R_map_308_9_4()
  {
     if (jj_scan_token(IDENTIFIER)) return true;
     if (jj_scan_token(OBRACKET)) return true;
@@ -427,7 +439,7 @@ v.doc = t.specialToken;
 
   private boolean jj_3_1()
  {
-    if (jj_3R_map_296_9_4()) return true;
+    if (jj_3R_map_308_9_4()) return true;
     return false;
   }
 

@@ -79,6 +79,7 @@ A **pedigree** is a tab delimited file without header with the following columns
 
 
 | Field | Description | Value | Source |
+|-----|----|----|----|
 | `--prefix` | files will be generated with this prefix .eg: "20230101.hello." |  | `../../../confs/by_workflow/../default.params.cfg` |
 | `--help` | should you print the help and exit ? | false | `../../../confs/by_workflow/../default.params.cfg` |
 | `--publishDir` | base directory where results will be written |  | `../../../confs/by_workflow/../default.params.cfg` |

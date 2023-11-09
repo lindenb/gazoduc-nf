@@ -208,6 +208,18 @@ public static void main(final String[] args) {
 		w.print(" | ");
 		w.print("Source");
 		w.println(" |");
+
+
+		w.print("|");
+		w.print("-----");
+		w.print("|");
+		w.print("----");
+		w.print("|");
+		w.print("----");
+		w.print("|");
+		w.print("----");
+		w.println("|");
+
 		
 		for(final String f: args) {
 			NFConfigParser.scanPath(root,Paths.get(f));
