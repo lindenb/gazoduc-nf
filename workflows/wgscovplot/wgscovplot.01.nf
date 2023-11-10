@@ -159,7 +159,7 @@ cat << __EOF__ >  "${params.prefix?:""}all.html"
 <title>${params.prefix?:""}.WGSPlotCov</title>
 <script>
 function init() {
-	var svgs=[${L.collect{T->"\""+file(T).name+"\""}.join(",")}];
+	var svgs=[${L.findAll{T->T.toString().endsWith(".svg")}.collect{T->"\""+file(T).name+"\""}.join(",")}];
 	var i;
 	var main=document.getElementById("main");
 	for(i in svgs) {
