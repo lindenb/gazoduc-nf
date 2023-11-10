@@ -114,21 +114,27 @@ rm jeter.chain
 
 process MERGE_LIFTED {
 tag "${sample} N=${L.size()}"
+afterScript "rm -rf TMP"
+cpus 6
 input:
 	val(meta)
 	tuple val(sample),val(L)
 output:
-	tuple val(sample),path("${sample}.lift.bam"),path("${sample}.lift.bam.bai"),emit:output
+	tuple val(sample),path("${params.prefix?:""}${sample}.lift.bam"),path("${params.prefix?:""}${sample}.lift.bam.bai"),emit:output
 script:
 """
 hostname 1>&2
 ${moduleLoad("samtools")}
+mkdir -p TMP
 
-cat << EOF > jeter.list
+cat << EOF > TMP/jeter.list
 ${L.join("\n")}
 EOF
 
-samtools merge -o "${sample}.lift.bam" --write-index --threads ${task.cpus} -b jeter.list
-rm jeter.list
+samtools merge -l 9 --threads ${task.cpus} -O BAM -o "TMP/jeter.bam" --threads ${task.cpus} -b TMP/jeter.list
+samtools index --threads ${task.cpus} "TMP/jeter.bam"
+
+mv -v TMP/jeter.bam "${params.prefix?:""}${sample}.lift.bam"
+mv -v TMP/jeter.bam.bai "${params.prefix?:""}${sample}.lift.bam.bai"
 """
 }

@@ -48,7 +48,28 @@ workflow {
 		good_ref_ch = snbam_ch.rows.filter{T->T.genomeId.equals(params.genomeId)}
 		bad_ref_ch = snbam_ch.rows.filter{T->!T.genomeId.equals(params.genomeId)}
 
-		LIFTOVER_BAM([:], params.genomeId,bad_ref_ch)
+		lifted = LIFTOVER_BAM([:], params.genomeId,bad_ref_ch)
+		
+		all_bams = lifted.rows.map{T->"${params.publishDir}/results/LIFTED_BAM/"+T.bam.name}.
+			mix(good_ref_ch.map{T->T.bam})
+
+		MAKE_LIST(all_bams.collect())
+			
 	}
+
+process MAKE_LIST {
+executor "local"
+tag "N=${L.size()}"
+input:
+	val(L)
+output:
+	path("${params.prefix?:""}bams.list");
+script:
+"""
+cat << EOF > ${params.prefix?:""}bams.list
+${L.join("\n")}
+EOF
+"""
+}
 
 runOnComplete(workflow)
