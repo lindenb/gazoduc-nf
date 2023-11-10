@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {getVersionCmd;getKeyValue; moduleLoad; getBoolean} from '../../modules/utils/functions.nf'
+include {getVersionCmd;moduleLoad; getBoolean} from '../../modules/utils/functions.nf'
 include {DELLY2_RESOURCES} from './delly2.resources.nf' 
 include {SAMTOOLS_CASES_CONTROLS_01} from '../samtools/samtools.cases.controls.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
@@ -56,7 +56,7 @@ workflow DELLY2_SV {
 			delly_bcf = CALL_DELLY([:], genomeId, rsrcr_ch.executable, rsrcr_ch.exclude, each_cases)
 			version_ch= version_ch.mix(delly_bcf.version.first())
 
-			merge_delly = 	MERGE_DELLY(meta.subMap(["bnd"]), genomeId, rsrcr_ch.executable, delly_bcf.output.map{T->T[2]}.collect())
+			merge_delly = 	MERGE_DELLY([:], genomeId, rsrcr_ch.executable, delly_bcf.output.map{T->T[2]}.collect())
 			version_ch= version_ch.mix(merge_delly.version)
 	
 			call_vcf = merge_delly.output	
@@ -108,7 +108,7 @@ workflow DELLY2_SV {
 			cnv_output = Channel.empty()
 			cnv_index = Channel.empty()
 			}
-		version_merge = MERGE_VERSION(meta,"delly","delly2",version_ch.collect())
+		version_merge = MERGE_VERSION("delly2",version_ch.collect())
 	emit:
 		version = version_merge.version
 		sv_vcf = filter_delly.output
@@ -177,7 +177,7 @@ process MERGE_DELLY {
     script:
         def genome = params.genomes[genomeId]
         def reference =	genome.fasta
-	def bnd = getBoolean(meta,"bnd")
+	def bnd = TODO CHECK THIS params.bnd
     """
     hostname 1>&2
     ${moduleLoad("bcftools")}
@@ -193,7 +193,7 @@ EOF
     
     delly merge -o TMP/merged.bcf TMP/jeter.tsv 1>&2
 
-	if [ "${bnd?"Y":"N"}" == "N" ] ; then
+	if ${!bnd} ; then
                 bcftools view -e 'INFO/SVTYPE="BND"' -O b -o  merged.bcf TMP/merged.bcf
 		bcftools index -f merged.bcf
 	else
@@ -363,11 +363,11 @@ process FILTER_DELLY {
 	val(cases_ctrl_list)
 	val(merged)
     output:
-	path("${prefix}sv.bcf"),emit:output
+	path("${params.prefix?:""}sv.bcf"),emit:output
 	path("version.xml"),emit:version
-	path("${prefix}sv.bcf.csi"),emit:index
+	path("${params.prefix?:""}sv.bcf.csi"),emit:index
     script:
-	prefix = getKeyValue(meta,"prefix","")
+	def prefix = params.prefix?:""
     """
     export LC_ALL=C
     ${moduleLoad("bcftools/0.0.0")}
@@ -597,11 +597,11 @@ process CLASSIFY_CNV {
 	path(delly)
 	val(merged)
     output:
-	path("${params.prefix}cnv.bcf"),emit:output
-	path("${params.prefix}cnv.bcf.csi"),emit:index
+	path("${params.prefix?:""}cnv.bcf"),emit:output
+	path("${params.prefix?:""}cnv.bcf.csi"),emit:index
 	path("version.xml"),emit:version
     script:
-	prefix = getKeyValue(meta,"prefix","")
+	prefix = params.prefix?:""
     """
     hostname 1>&2
     export LC_ALL=C
@@ -623,5 +623,3 @@ process CLASSIFY_CNV {
 	EOF
     """
     }
-
-

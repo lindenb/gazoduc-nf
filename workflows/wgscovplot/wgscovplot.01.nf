@@ -133,7 +133,7 @@ cat << __EOF__ >  "${params.prefix?:""}index.html"
 <title>${params.prefix?:""}.IndexCov</title>
 <script>
 var index=0;
-var svgs=[${L.collect{T->"\""+file(T).name+"\""}.join(",")}];
+var svgs=[${L.findAll{T->T.toString().endsWith(".svg")}.collect{T->"\""+file(T).name+"\""}.join(",")}];
 
 function change(dx) {
 	index+=dx;

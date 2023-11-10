@@ -25,108 +25,15 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
-
-gazoduc.make("controls","").
-	description("file containing the path to indexed BAM or CRAM files for controls.").
-	argName("file").
-	put()
-
-gazoduc.make("cases","").
-	description("file containing the path to indexed BAM or CRAM files for cases.").
-	required().
-	existingFile().
-	put()
-
-gazoduc.make("bnd",true).
-	description("keep BND data").
-	menu("delly").
-	setBoolean().
-	put()
-
-gazoduc.make("cnv",true).
-	description("run 'delly cnv'").
-	menu("delly").
-	setBoolean().
-	put()
-
-gazoduc.make("genotype_vcf","NO_FILE").
-	description("do not perform SV discovery and genotype the variant in the VCF.").
-	menu("delly").
-	put()
-
-
-include {DELLY2_RESOURCES} from '../../subworkflows/delly2/delly2.resources.nf' 
 include {DELLY2_SV} from '../../subworkflows/delly2/delly2.sv.nf' 
-include {SAMTOOLS_CASES_CONTROLS_01} from '../../subworkflows/samtools/samtools.cases.controls.01.nf'
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 
-if(params.help) {
-	gazoduc.usage().
-		name("delly2").
-		description("Detects CNV/SV using delly2 ( https://github.com/dellytools/delly ) ").
-		print();
-	exit 0
-	}
-else	{
-	gazoduc.validate()
-	}
 
+TODO print USAGE
 
 workflow {
-	delly_ch = DELLY2_SV(params, params.reference, params.cases, params.controls, file(params.genotype_vcf))
-
-
-	html = VERSION_TO_HTML(params,delly_ch.version)	
-
-	to_publish = Channel.empty()
-	to_publish = to_publish.
-			mix(delly_ch.sv_vcf).
-			mix(delly_ch.sv_vcf_index).
-			mix(delly_ch.cnv_vcf).
-			mix(delly_ch.cnv_vcf_index).
-			mix(delly_ch.version).
-			mix(html.html)
-
-	PUBLISH(to_publish.collect())
+	delly_ch = DELLY2_SV([:], params.genomeId, file(params.cases), file(params.controls), file(params.genotype_vcf))
+	html = VERSION_TO_HTML(delly_ch.version)	
 	}
 
-process PUBLISH {
-tag "N=${files.size()}"
-publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
-input:
-	val(files)
-output:
-	path("*.bcf")
-	path("*.bcf.csi")
-	path("*.xml")
-	path("*.html")
-when:
-	!params.getOrDefault("publishDir","").trim().isEmpty()
-script:
-	prefix = params.getOrDefault("prefix","")
-"""
-for F in ${files.join(" ")}
-do
-	ln -s "\${F}" ./
-done
-"""
-}
-
-workflow.onComplete {
-
-    println ( workflow.success ? """
-        Pipeline execution summary
-        ---------------------------
-        Completed at: ${workflow.complete}
-        Duration    : ${workflow.duration}
-        Success     : ${workflow.success}
-        workDir     : ${workflow.workDir}
-        exit status : ${workflow.exitStatus}
-        """ : """
-        Failed: ${workflow.errorReport}
-        exit status : ${workflow.exitStatus}
-        """
-    )
-}
-
+TODO workflow on complete
