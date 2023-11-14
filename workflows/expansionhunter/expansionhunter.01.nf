@@ -25,58 +25,46 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 
-
-/** path to indexed fasta reference */
-params.reference = ""
-params.references = "NO_FILE"
-params.prefix = ""
-params.publishDir = ""
-params.bams = "NO_FILE"
-params.help=false
-params.extension=1000
-params.mapq = 60
-params.version="v5.0.0"
-params.keepbam=false
-params.mode="seeking"
-params.catalog="NO_FILE"
-params.pedigree="NO_FILE"
-
-
-
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 include {parseBoolean;isHg19;getVersionCmd;moduleLoad;runOnComplete} from '../../modules/utils/functions.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {SEX_GUESS_02} from '../../subworkflows/sex/sex.guess.02.nf'
 
 workflow {
-	EXPANSION_HUNTER_01(params,params.reference,file(params.references),file(params.catalog),file(params.bams),file(params.pedigree))
+	EXPANSION_HUNTER_01([:],params.genomeId, file(params.catalog), file(params.bams),file(params.pedigree))
 	}
 
 workflow EXPANSION_HUNTER_01 {
 	take:
 		meta
-		reference
-		references
+		genomeId
 		catalog
 		bams
 		pedigree
 	main:
 		version_ch = Channel.empty()
-		xhunter = DOWNLOAD_XHUNTER(meta,reference,catalog)
+		xhunter = DOWNLOAD_XHUNTER([:], genomeId, catalog)
 		version_ch = version_ch.mix(xhunter.version)
 
-		ch1 = SEX_GUESS_02(params, reference, references, bams)
+		ch1 = SEX_GUESS_02([:], bams)
 		version_ch = version_ch.mix(ch1.version)
 
-		sn_bam = ch1.output.splitCsv(header:true,sep:'\t')
+		sn_bam = ch1.rows.
+				filter{T->genomeId.equals(genomeId)}.
+				map{T->{
+					if(T.containsKey("new_sample")) {
+						return T.plus(sample:T.new_sample);
+					}
+				return T;
+				}}
 
-		xh_ch  = RUN_XHUNTER(meta, reference, xhunter.xhunter, xhunter.catalog, sn_bam)
+		xh_ch  = RUN_XHUNTER([:], xhunter.xhunter, xhunter.catalog, sn_bam)
 		version_ch = version_ch.mix(xh_ch.version)
 
-		merge_ch = MERGE_VCFS(meta, xh_ch.output.map{T->T[1]}.collect())
+		merge_ch = MERGE_VCFS([:], xh_ch.output.map{T->T[1]}.collect())
 		version_ch = version_ch.mix(merge_ch.version)
 
-		version_ch = MERGE_VERSION(meta, "ExpansionHunter", "Expansion hunter", version_ch.collect())
+		version_ch = MERGE_VERSION("ExpansionHunter", version_ch.collect())
 
 	emit:
 		version = version_ch
@@ -85,19 +73,23 @@ workflow EXPANSION_HUNTER_01 {
 	}
 
 process DOWNLOAD_XHUNTER {
+	tag "${genomeId}"
 	executor "local"
 	afterScript "rm -f jeter.tar.gz"
 	input:
 		val(meta)
-		val(reference)
+		val(genomeId)
 		path(catalog)
 	output:
 		path("ExpansionHunter-linux_x86_64/bin/ExpansionHunter"),emit:xhunter
 		path("CATALOG/variant_catalog.json"),emit:catalog
 		path("version.xml"),emit:version
 	script:
-		def xversion = meta.expansion_hunter_version?:"5.0.0"
-		def url = isHg19(reference) ? "https://github.com/Illumina/RepeatCatalogs/blob/master/hg19/variant_catalog.json?raw=true":""
+		def genome = params.genomes[genomeId]
+		if(genome==null) throw new IllegalArgumentException("cannot find genome for "+genomeId);
+		if(genome.ucsc_name==null) throw new IllegalArgumentException("cannot find genome.ucsc_name for "+genomeId);
+		def xversion = params.expansion_hunter_version?:"5.0.0"
+		def url = "https://github.com/Illumina/RepeatCatalogs/blob/master/${genome.ucsc_name}/variant_catalog.json?raw=true"
 	"""
 	hostname 1>&2
 	set -x
@@ -106,10 +98,10 @@ process DOWNLOAD_XHUNTER {
 	rm jeter.tar.gz
 	chmod +x "ExpansionHunter-v${xversion}-linux_x86_64/bin/ExpansionHunter"
 	# rename directory
-	mv "ExpansionHunter-v${xversion}-linux_x86_64"  "ExpansionHunter-linux_x86_64"
+	mv -v "ExpansionHunter-v${xversion}-linux_x86_64"  "ExpansionHunter-linux_x86_64"
 
 
-	mkdir CATALOG
+	mkdir -p CATALOG
 	if ${!catalog.name.equals("NO_FILE")} ; then
 		cp -v "${catalog}" CATALOG/variant_catalog.json
 	elif [ ! -z "${url}" ] ; then
@@ -136,16 +128,17 @@ process RUN_XHUNTER {
 	cpus 1
 	input:
 		val(meta)
-		val(reference)
 		path(executable)
 		path(catalog)
 		val(row)
 	output:
-		tuple val(meta),path("${row.new_sample}.bcf"),path("${row.new_sample}.json.gz"),emit:output
-		tuple val(meta),path("${row.new_sample}.realigned.cram"),optional:true,emit:bam
+		tuple val(row),path("${row.sample}.bcf"),path("${row.new_sample}.json.gz"),emit:output
+		tuple val(row),path("${row.sample}.realigned.cram"),optional:true,emit:bam
 		path("version.xml"),emit:version
 	script:
-
+		def keepbam = false
+		def genome = params.genomes[row.genomeId]
+		def reference = genome.fasta
 	"""
 	hostname 1>&2
 	${moduleLoad("samtools bcftools")}
@@ -155,43 +148,39 @@ process RUN_XHUNTER {
 
 	${executable.toRealPath()} \
 		--reads "${row.bam}" \
-		--reference "${row.reference}" \
+		--reference "${reference}" \
 		--variant-catalog "${catalog}" \
 		--threads ${task.cpus} \
 		--output-prefix "TMP/jeter" \
-		--region-extension-length ${meta.extension} \
+		--region-extension-length ${params.extension} \
 		--analysis-mode "\${MODE}" \
 		--sex '${row.sex}' \
 		--log-level info 1>&2
 	
-	if ${!reference.equals(row.reference)} ; then
-		TODO
-	fi
-
 	# rename sample
-	bcftools query -l TMP/jeter.vcf | awk '{printf("%s\t${row.new_sample}\\n",\$1);}' > TMP/jeter.txt
-	bcftools reheader --fai "${row.reference}.fai" --samples TMP/jeter.txt TMP/jeter.vcf |\
-		awk '/^#CHROM/ {printf("##samples.sex=${row.new_sample}=${row.sex}\\n",S);} {print;}' > TMP/jeter2.vcf
+	bcftools query -l TMP/jeter.vcf | awk '{printf("%s\t${row.sample}\\n",\$1);}' > TMP/jeter.txt
+	bcftools reheader --fai "${reference}.fai" --samples TMP/jeter.txt TMP/jeter.vcf |\
+		awk '/^#CHROM/ {printf("##samples.sex=${row.sample}=${row.sex}\\n",S);} {print;}' > TMP/jeter2.vcf
 	mv TMP/jeter2.vcf TMP/jeter.vcf
 	rm TMP/jeter.txt
 	
 	#sort and index
 	bcftools annotate --set-id '%INFO/REPID' -O u TMP/jeter.vcf |\
-	bcftools sort --max-mem '${task.memory.giga}G' -T TMP -O b -o "TMP/${row.new_sample}.bcf"
-	bcftools index "TMP/${row.new_sample}.bcf"
+	bcftools sort --max-mem '${task.memory.giga}G' -T TMP -O b -o "TMP/${row.sample}.bcf"
+	bcftools index "TMP/${row.sample}.bcf"
 
 	# save json
 	gzip --best TMP/jeter.json 
 
-	if  ${parseBoolean(meta.keepbam)} ; then
-		samtools sort -T TMP/sort  -@ ${task.cpus} -O CRAM --reference "${row.reference}" -o "${row.new_sample}.realigned.cram" "TMP/jeter_realigned.bam"
-		samtools index "${row.new_sample}.realigned.cram"
+	if  ${keepbam} ; then
+		samtools sort -T TMP/sort  -@ ${task.cpus} -O CRAM --reference "${reference}" -o "${row.sample}.realigned.cram" "TMP/jeter_realigned.bam"
+		samtools index "${row.sample}.realigned.cram"
 	fi
 
 
-	mv TMP/${row.new_sample}.bcf ./
-	mv TMP/${row.new_sample}.bcf.csi ./
-	mv TMP/jeter.json.gz "${row.new_sample}.json.gz"
+	mv TMP/${row.sample}.bcf ./
+	mv TMP/${row.sample}.bcf.csi ./
+	mv TMP/jeter.json.gz "${row.sample}.json.gz"
 
 #######################
 cat << EOF > version.xml
@@ -199,7 +188,7 @@ cat << EOF > version.xml
 	<entry key="name">${task.process}</entry>
 	<entry key="description">run expansion hunter</entry>
 	<entry key="mode">\${MODE}</entry>
-	<entry key="sample">${row.new_sample}</entry>
+	<entry key="sample">${row.sample}</entry>
 	<entry key="bam">${row.bam}</entry>
 	<entry key="version">${getVersionCmd("samtools bcftools")}</entry>
 </properties>

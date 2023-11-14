@@ -31,45 +31,28 @@ include {moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
 workflow SEX_GUESS_01 {
 	take:
 		meta
-		sample_bam /* file output of SAMTOOLS_SAMPLES01 */
+		rows /* contains samples/bam/fasta */
 	main:
 		version_ch = Channel.empty()
-		sn_ch = sample_bam.splitCsv(header:true,sep:'\t')
-		sex_count_ch = SEX_CONTIG_COUNT(meta, sn_ch)
+		sex_count_ch = SEX_CONTIG_COUNT([:], rows)
 		version_ch = version_ch.mix(sex_count_ch.version)
 
-		sn_sex_ch  = DIGEST(meta, sex_count_ch.output.collect())
+		ch0 = sex_count_ch.output.splitCsv(header:true, sep:'\t').
+			map{T->T[0].plus(T[1])}
+
+		sn_sex_ch  = DIGEST([:], ch0.collect())
+
+		ch1 = rows.combine(ch0).
+			filter{T->T[0].sample.equals(T[1].sample)}.
+			map{T->T[0].plus(sex:T[1].sex)}
+
 		version_ch = version_ch.mix(sn_sex_ch.version)
 	emit:
 		pdf = sn_sex_ch.pdf
-		output = sn_sex_ch.output
+		rows = ch1
 		version = version_ch
 	}
 
-process SEXUAL_CONTIGS {
-executor "local"
-input:
-	val(meta)
-	val(reference)
-output:
-	path("XY.bed"),emit:output
-	path("version.xml"),emit:version
-script:
-"""
-hostname 1>&2
-
-
-
-#######################
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="description">extract count from sexual chromosome, guess the sex</entry>
-	<entry key="version">${getVersionCmd("awk")}</entry>
-</properties>
-EOF
-"""
-}
 
 process SEX_CONTIG_COUNT {
 tag "${row.sample}  ${file(row.bam).name}"
@@ -79,18 +62,20 @@ input:
 	val(meta)
 	val(row)
 output:
-	path("count.tsv"),emit:output
+	tuple val(row),path("samples.sex.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
-	def reference = row.reference?:"NO_FILE"
+	def genome = params.genomes[row.genomeId]
+	def reference = genome.fasta
 	def bam = row.bam?:"NO_FILE"
-	def mapq = meta.mapq?:30
+	def mapq = params.mapq?:30
+	def treshold = params.treshold?:10.0
 """
 hostname 1>&2
 ${moduleLoad("samtools")}
 set -o pipefail
 
-mkdir TMP
+mkdir -p TMP
 
 test -s "${reference}.fai"
 awk -F '\t' '(\$1 ~ /^(chr)?X\$/) {printf("%s\t%s\tX\\n",\$1,\$2);}' "${reference}.fai" > TMP/X.tsv
@@ -113,9 +98,9 @@ do
 		"${bam}" "\${C}" >> TMP/count.txt
 done
 
-
-join -t '\t' -1 1 -2 1 -o '1.1,1.2,1.3,2.2'  TMP/XY.tsv TMP/count.txt |\
-	awk -F '\t' '{printf("${row.sample}\t${row.new_sample}\t${bam}\t${reference}\t%s\\n",\$0);}' > count.tsv
+echo "fx\tfy\tsex" > samples.sex.tsv
+join -t \$'\t' -1 1 -2 1  -o '1.1,1.2,1.3,2.2'  TMP/XY.tsv TMP/count.txt  |\
+	awk -F '\t' '(\$3=="X") {FX=int(\$4)/(int(\$2)*1.0);next;} (\$3=="Y") {S="male";FY=int(\$4)/(int(\$2)*1.0);if(FX > (FY * ${treshold} )) {S="female"};printf("%f\t%f\t%s\\n",FX,FY,S);next;}' >> samples.sex.tsv
 
 
 #######################
@@ -132,7 +117,6 @@ EOF
 """
 }
 
-//	awk '{printf("${row.new_sample:?row.sample}\t${bam}\t${reference}\t{contigType}\t{contigLen}\t%s\\n",\$1);}' > count.txt
 
 
 process DIGEST {
@@ -142,43 +126,35 @@ input:
 	val(meta)
 	val(L)
 output:
-	path("${meta.prefix?:""}samples.sex.tsv"),emit:output
-	path("${meta.prefix?:""}sex.pdf"),emit:pdf
+	path("${params.prefix?:""}sex.pdf"),emit:pdf
 	path("version.xml"),emit:version
 script:
-	def treshold = meta.treshold?:10
+	def treshold = params.treshold?:10
 """
 hostname 1>&2
 ${moduleLoad("R")}
 set -o pipefail
 
 
-cat << EOF > jeter.txt
-${L.join("\n")}
+echo "fx\tfy\tsex" > jeter.txt
+cat << EOF >> jeter.txt
+${L.collect{T->""+T.fx+"\t"+T.fy+"\t"+T.sex}.join("\n")}
 EOF
 
 
-echo -e "sample\tnew_sample\tbam\treference\tfx\tfy\tsex"  > samples.sex.tsv
-
-xargs -a jeter.txt -L 1 cat |\
-	sort -T . -t '\t' -k1,1 -k7,7 |\
-	awk -F '\t' '(\$7=="X") {FX=int(\$8)/(int(\$6)*1.0);next;} (\$7=="Y") {S="male";FY=int(\$8)/(int(\$6)*1.0);if(FX > (FY * 10.0)) {S="female"};printf("%s\t%s\t%s\t%s\t%f\t%f\t%s\\n",\$1,\$2,\$3,\$4,FX,FY,S);next;}' >> samples.sex.tsv
-
-rm jeter.txt
-
 cat << '__EOF__' | R --vanilla
-T1<-read.table("samples.sex.tsv",header = TRUE,sep="\t",comment.char="",stringsAsFactors=FALSE)
+T1<-read.table("jeter.txt",header = TRUE,sep="\t",comment.char="",stringsAsFactors=FALSE)
 male <-T1[T1\$sex=="male",]
 head(male)
 
 female <-T1[T1\$sex=="female",]
 head(female)
-pdf("${meta.prefix?:""}sex.pdf")
+pdf("${params.prefix?:""}sex.pdf")
 plot(1,
 	xlab="chrX: count n-read / chrom-length",
 	ylab="chrY: count n-read / chrom-length",
 	main="Sex guessed from BAMs.",
-	sub="${meta.prefix?:""}",
+	sub="${params.prefix?:""}",
 	xlim=c(0,max(T1\$fx)),
 	ylim=c(0,max(T1\$fy))
 	)
@@ -191,7 +167,6 @@ legend("topright",legend=c("male","female"),title="Sex",pch=16,col=c(mc,fc))
 dev.off()
 __EOF__
 
-mv 'samples.sex.tsv' '${meta.prefix?:""}samples.sex.tsv'
 
 #######################
 cat << EOF > version.xml

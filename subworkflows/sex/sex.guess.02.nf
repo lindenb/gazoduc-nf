@@ -23,8 +23,8 @@ SOFTWARE.
 
 */
 include {getVersionCmd;moduleLoad;runOnComplete} from '../../modules/utils/functions.nf'
-include {SAMTOOLS_SAMPLES_01} from '../samtools/samtools.samples.01.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {SAMTOOLS_SAMPLES} from '../samtools/samtools.samples.03.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {SEX_GUESS_01} from './sex.guess.01.nf'
 
 /**
@@ -33,24 +33,22 @@ guess sex from list of bams
 workflow SEX_GUESS_02 {
 	take:
 		meta
-		reference
-		references
 		bams
 	main:
 		version_ch = Channel.empty()
 
-		bams_ch = SAMTOOLS_SAMPLES_01(meta.plus(["with_header":true,"allow_multiple_references":true,"allow_duplicate_samples":true]),reference,references,bams)
+		bams_ch = SAMTOOLS_SAMPLES(meta.plus(["with_header":true,"allow_multiple_references":true,"allow_duplicate_samples":true]), bams)
 		version_ch = version_ch.mix(bams_ch.version)
 		
-		sex_ch= SEX_GUESS_01(meta,bams_ch.output)
+		sex_ch= SEX_GUESS_01(meta,bams_ch.rows)
 		version_ch = version_ch.mix(sex_ch.version)
 
-		version_ch = MERGE_VERSION(meta, "SexGuess", "Guess Sex from Bams", version_ch.collect())
+		version_ch = MERGE_VERSION("SexGuess", version_ch.collect())
 	emit:
 		/* version */
 		version= version_ch
 		pdf = sex_ch.pdf
-		output = sex_ch.output
+		rows = sex_ch.rows
 	}
 
 
