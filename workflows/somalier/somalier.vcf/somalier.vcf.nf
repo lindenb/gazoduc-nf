@@ -24,98 +24,21 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-/** path to indexed fasta reference */
-params.reference = ""
-params.vcf=""
-params.pedigree="NO_FILE"
-params.help = false
-/** publish Directory */
-params.publishDir = ""
-/** files prefix */
-params.prefix = ""
-
+include {runOnComplete;dumpParams} from '../../../modules/utils/functions.nf'
 include {SOMALIER_VCF_01} from  '../../../subworkflows/somalier/somalier.vcf.01.nf'
-
-def helpMessage() {
-  log.info"""
-## About
-
-
-## Author
-
-Pierre Lindenbaum
-
-## Options
-
-  * --reference (fasta) The full path to the indexed fasta reference genome. It must be indexed with samtools faidx and with picard CreateSequenceDictionary or samtools dict. [REQUIRED]
-  * --bams (file) one file containing the paths to the BAM/CRAM [REQUIRED]
-  * --mapq (int)  min mapping quality . If it's lower than 0 (this is the default) just use the bam index as is. Otherwise, rebuild the bai
-  * --publishDir (dir) Save output in this directory
-  * --prefix (string) files prefix. default: ""
-
-## Usage
-
-```
-nextflow -C ../../confs/cluster.cfg  run -resume ${workflow.scriptFile} \\
-	--publishDir output \\
-	--prefix "analysis." \\
-	--reference /path/to/reference.fasta \\
-	--bams /path/to/bams.list \\
-	--mapq 30
-```
-
-## Workflow
-
-![workflow](./workflow.svg)
-  
-## See also
-
-* https://github.com/brentp/somalier
-
-"""
-}
 
 
 if( params.help ) {
-    helpMessage()
+    dumpParams(params);
     exit 0
+}  else {
+    dumpParams(params);
 }
+
 
 workflow {
-	publish_ch = Channel.empty()
-
-	somalier_ch = SOMALIER_VCF_01(params,params.reference,file(params.vcf), file(params.pedigree))
+	SOMALIER_VCF_01([:], params.genomeId, file(params.vcf), file(params.pedigree))
 	}
 
-process PUBLISH {
-tag "${zip.name}"
-publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
-input:
-	path(zip)
-output:
-	path(zip)
-when:
-	!params.getOrDefault("publishDir","").trim().isEmpty()
-script:
-"""
-echo "publishing ${zip}"
-"""
-}
 
-workflow.onComplete {
-
-    println ( workflow.success ? """
-        Pipeline execution summary
-        ---------------------------
-        Completed at: ${workflow.complete}
-        Duration    : ${workflow.duration}
-        Success     : ${workflow.success}
-        workDir     : ${workflow.workDir}
-        exit status : ${workflow.exitStatus}
-        """ : """
-        Failed: ${workflow.errorReport}
-        exit status : ${workflow.exitStatus}
-        """
-    )
-}
-
+runOnComplete(workflow)

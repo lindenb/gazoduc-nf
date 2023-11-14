@@ -24,7 +24,7 @@ SOFTWARE.
 */
 
 include {moduleLoad;assertFileExists;isBlank} from '../../modules/utils/functions.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {DOWNLOAD_SOMALIER} from '../../modules/somalier/somalier.download.nf'
 include {SOMALIER_DOWNLOAD_SITES} from '../../modules/somalier/somalier.download.sites.nf'
 //CELUI LA est à changer ==> include {VCF_INTER_PED_01} from '../../modules/bcftools/vcf.inter.pedigree.01.nf'
@@ -34,19 +34,19 @@ include {SOMALIER_DOWNLOAD_SITES} from '../../modules/somalier/somalier.download
 workflow SOMALIER_VCF_01 {
 	take:
 		meta
-		reference
+		genomeId
 		vcf
 		pedigree
 	main:
 		version_ch = Channel.empty()
-		exe_ch = DOWNLOAD_SOMALIER(meta)
+		exe_ch = DOWNLOAD_SOMALIER([:])
 		version_ch = version_ch.mix(exe_ch.version)
 
-		sites_ch = SOMALIER_DOWNLOAD_SITES(meta,reference)
+		sites_ch = SOMALIER_DOWNLOAD_SITES([:], genomeId)
 		version_ch = version_ch.mix(sites_ch.version)
 	
 		if(!pedigree.name.equals("NO_FILE")) {
-			vcf_samples_ch = VCF_INTER_PED_01(meta.plus(["pedigree_type","other"]),vcf,pedigree)	
+			vcf_samples_ch = VCF_INTER_PED_01(["pedigree_type","other"],vcf,pedigree)	
 			version_ch = version_ch.mix(vcf_samples_ch.version)
 			ped_ch = vcf_samples_ch.pedigree
 			}
@@ -55,10 +55,10 @@ workflow SOMALIER_VCF_01 {
 			ped_ch = pedigree
 			}
 	
-		somalier_ch = APPLY_SOMALIER(meta, reference, exe_ch.executable ,sites_ch.vcf ,vcf, ped_ch)
+		somalier_ch = APPLY_SOMALIER([:], genomeId , exe_ch.executable ,sites_ch.vcf ,vcf, ped_ch)
 		version_ch = version_ch.mix(somalier_ch.version)
 
-		version_ch = MERGE_VERSION(meta, "somalier", "somalier on vcf", version_ch.collect())
+		version_ch = MERGE_VERSION("somalier.vcf", version_ch.collect())
 	emit:
 		version = version_ch
 		zip = somalier_ch.zip
@@ -70,17 +70,18 @@ tag "${vcf.name}"
 afterScript "rm -rf extracted TMP"
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	val(somalier)
 	val(sites)
 	path(vcf)
 	path(pedigree)
 output:
-	path("${prefix}somalier.vcf.zip"),emit:zip
+	path("${params.prefix?:""}somalier.vcf.zip"),emit:zip
 	path("version.xml"),emit:version
 script:
-	prefix = meta.prefix?:""
-
+	def prefix = params.prefix?:""
+	def genome = params.genomes[genomeId]
+	def reference = genome.fasta
 """
 hostname 1>&2
 ${moduleLoad("bcftools")}
