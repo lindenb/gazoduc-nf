@@ -120,13 +120,14 @@ script:
 	def bam_reference = params.genomes[row.genomeId].fasta
 	def bed = row.bed?:""
 	def dbsnp =  params.genomes[row.genomeId].dbsnp?:""
+	def fix_tp_ap =  params.gatk.haplotypecaller.fix_tp_ap?:false
 """
 hostname 1>&2
-${moduleLoad("gatk4 bcftools jvarkit")}
+${moduleLoad("gatk4 bcftools jvarkit samtools")}
 
    set -o pipefail
    set -x
-   mkdir TMP 
+   mkdir -p TMP
 
    if [ "${genomeId}" != "${row.genomeId}" ] ; then
 	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/bedrenamechr.jar -R "${bam_reference}" --column 1 --convert SKIP "${bed}" > TMP/fixed.bed
@@ -137,9 +138,18 @@ ${moduleLoad("gatk4 bcftools jvarkit")}
 	ln -s "${bed}" TMP/fixed.bed
    fi
 
+   # 20231116 https://gatk.broadinstitute.org/hc/en-us/community/posts/11440622639387-Unable-to-trim-uncertain-bases-without-flow-order-information
+   #
+   if ${fix_tp_ap} ; then
+	samtools view -M -L TMP/fixed.bed -T '${bam_reference}' -h '${bam}' |\
+		sed 's/\ttp\\:A\\:P\t/\t/' |\
+		samtools view -O BAM -o TMP/jeter.bam
+	samtools index TMP/jeter.bam
+		
+   fi 
 
    gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" HaplotypeCaller \
-     -I "${bam}" \
+     -I "${fix_tp_ap?"TMP/jeter.bam":bam}" \
      -ERC GVCF \
      --seconds-between-progress-updates 600 \
      ${!isBlank(dbsnp) && genomeId.equals(row.genomeId) ?"--dbsnp ${dbsnp}":""}   \

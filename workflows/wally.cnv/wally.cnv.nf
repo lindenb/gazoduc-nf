@@ -24,7 +24,6 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
 
 
 gazoduc.build("bams", "NO_FILE").
@@ -60,7 +59,7 @@ gazoduc.make("mapq", 1).
 
 include {WALLY_DOWNLOAD_01} from '../../modules/wally/wally.download.01.nf'
 include {runOnComplete} from '../../modules/utils/functions.nf'
-include {SAMTOOLS_SAMPLES01} from '../../modules/samtools/samtools.samples.01.nf'
+include {SAMTOOLS_SAMPLES} from '../../modules/samtools/samtools.samples.03.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {moduleLoad;isBlank;isHg38;isHg19} from '../../modules/utils/functions.nf'
 include {DOWNLOAD_GNOMAD_SV_01} from '../../subworkflows/gnomad/download_gnomad_sv.01.nf'
@@ -82,7 +81,7 @@ if( params.help ) {
 
 
 workflow {
-	ch = WALLY_REGION_01(params, params.reference, file(params.vcf), params.bams, file("NO_FILE"), file("NO_FILE") )
+	ch = WALLY_REGION_01([:], params.genomeId, file(params.vcf), params.bams, file("NO_FILE"), file("NO_FILE") )
 	html = VERSION_TO_HTML(params,ch.version)
 	SIMPLE_PUBLISH_01(params, Channel.empty().mix(html.html).mix(ch.version).mix(ch.zip).collect())
 	}
@@ -92,7 +91,7 @@ runOnComplete(workflow);
 workflow WALLY_REGION_01 {
     take:
 	    meta
-	    reference
+	    genomeId
 	    vcf
 	    bams
 	    bed
@@ -101,48 +100,48 @@ workflow WALLY_REGION_01 {
 		version_ch = Channel.empty()
 
 
-		ch1_ch = SAMTOOLS_SAMPLES01([:],reference,bams)
+		ch1_ch = SAMTOOLS_SAMPLES0([:],bams)
 		version_ch = version_ch.mix(ch1_ch.version)
 
-	        wally_ch = WALLY_DOWNLOAD_01(meta)
+	        wally_ch = WALLY_DOWNLOAD_01([:])
                 version_ch = version_ch.mix(wally_ch.version)
 
-		compile_ch = COMPILE_VCF_PARSER(meta,reference)
+		compile_ch = COMPILE_VCF_PARSER([:],genomeId)
 		version_ch = version_ch.mix(compile_ch.version)
 
 
 		merge_ch = Channel.empty()
-		gnomad_ch = DOWNLOAD_GNOMAD_SV_01(meta,reference)
+		gnomad_ch = DOWNLOAD_GNOMAD_SV_01([:], genomeId)
 		version_ch = version_ch.mix(gnomad_ch.version)
 		merge_ch = merge_ch.mix(gnomad_ch.bed)
 
-		dgv_ch = DOWNLOAD_DGV_01(meta,reference)
+		dgv_ch = DOWNLOAD_DGV_01([:], genomeId)
 		version_ch = version_ch.mix(dgv_ch.version)
 		merge_ch = merge_ch.mix(dgv_ch.bed)
 
-		known_ch = MERGE_KNOWN(meta,merge_ch.collect())
+		known_ch = MERGE_KNOWN([:],merge_ch.collect())
 		version_ch = version_ch.mix(known_ch.version)
 
 
-	        splitctx_ch = SPLIT_VARIANTS(meta,vcf,excludeids, compile_ch.jar)		
+	        splitctx_ch = SPLIT_VARIANTS([:],vcf,excludeids, compile_ch.jar)		
 		version_ch = version_ch.mix(splitctx_ch.version)
 
 		ch2_ch = splitctx_ch.output.splitCsv(header:true,sep:'\t').
-			combine(ch1_ch.output).
+			combine(ch1_ch.rows.filter{T->T.genomeId.equals(genomeId)}).
 			map{T->T[0].plus([
 				"bams":T[1],
-				"max_cases":(meta.max_cases?:1000000),
-				"max_controls":(meta.max_controls?:10)
+				"max_cases":(params.max_cases?:1000000),
+				"max_controls":(params.max_controls?:10)
 				])}
 
-	        plot_ch = PLOT_WALLY(meta, reference, wally_ch.executable, known_ch.bed, ch2_ch)
+	        plot_ch = PLOT_WALLY([:], genomeId, wally_ch.executable, known_ch.bed, ch2_ch)
 		version_ch = version_ch.mix(plot_ch.version)
 
 		zip_ch = SIMPLE_ZIP_01([:],plot_ch.output.collect())
 		version_ch = version_ch.mix(zip_ch.version)
 
 
-		version_ch = MERGE_VERSION(meta, "Wally", "Wally", version_ch.collect())
+		version_ch = MERGE_VERSION("Wally", version_ch.collect())
     emit:
 	    zip = zip_ch.zip
 	    version = version_ch
@@ -154,7 +153,7 @@ executor "local"
 afterScript "rm -rf TMP"
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 output:
 	path("minikit.jar"),emit:jar
 	path("version.xml"),emit:version
@@ -184,10 +183,10 @@ import javax.xml.stream.*;
 
 public class Minikit {
 
-private final int minLenOnReference = ${meta.minCnvLength?:"1"};
-private final int maxLenOnReference = ${meta.maxCnvLength?:"250_000_000"};
-private final String prefix="${meta.prefix?:""}";
-private final int max_controls =  ${meta.max_controls?:"50"};
+private final int minLenOnReference = ${params.minCnvLength?:"1"};
+private final int maxLenOnReference = ${params.maxCnvLength?:"250_000_000"};
+private final String prefix="${params.prefix?:""}";
+private final int max_controls =  ${params.max_controls?:"50"};
 private final int large_length =  5_000;
 private final int image_size = 1024;
 
@@ -345,15 +344,15 @@ process SPLIT_VARIANTS {
 executor "local"
 afterScript "rm -rf TMP"
 input:
-    val(meta)
+	val(meta)
 	val(vcf)
 	path(excludeids)
 	val(minikit)
 output:
-       	path("${meta.prefix?:""}variants.tsv"),emit:output
+       	path("${params.prefix?:""}variants.tsv"),emit:output
         path("version.xml"),emit:version
 script:
-	def extra_filter = meta.extra_vcf_filter?:""
+	def extra_filter = params.extra_vcf_filter?:""
 """
 hostname 1>&2
 ${moduleLoad("bcftools jvarkit")}
@@ -362,7 +361,7 @@ set -o pipefail
 bcftools view "${vcf}" |\
 	${isBlank(extra_filter)?"":"${extra_filter} |"} \
 	java -cp  \${JVARKIT_DIST}/coverageplotter.jar:${minikit} Minikit --vcf "${vcf}" \
-		${excludeids.name.equals("NO_FILE")?"":"--excludeids \"${excludeids}\""} > "${meta.prefix?:""}variants.tsv"
+		${excludeids.name.equals("NO_FILE")?"":"--excludeids \"${excludeids}\""} > "${params.prefix?:""}variants.tsv"
 
 
 
@@ -419,7 +418,7 @@ afterScript "rm -rf TMP"
 memory "10g"
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
         path(wally)
 	val(known)
 	val(row)
@@ -427,6 +426,8 @@ output:
 	path("${row.title}.png"),emit:output
 	path("version.xml"),emit:version
 script:
+	def genome = params.genomes[genomeId]
+	def reference = genome.fasta
 	def num_cases = row.max_cases?:1000000
 	def num_controls = row.max_controls?:10
 	def mapq = row.mapq?:30
@@ -456,10 +457,10 @@ join -t '\t' -1 1 -2 1 -o "2.2" TMP/controls.txt TMP/samples.bams.tsv | sort | u
 cat TMP/cases.bams.list TMP/controls.bams.list  | sort | uniq > TMP/all.bams.list
 
 
-${wally.toRealPath()} region ${meta.extraCmdWallyRegion} \
+${wally.toRealPath()} region ${params.extraCmdWallyRegion} \
 	--genome "${reference}"  \
 	--bed "${known}" \
-	--map-qual ${meta.mapq} \
+	--map-qual ${params.mapq} \
 	${row.command} \
 	`cat TMP/all.bams.list`
 
