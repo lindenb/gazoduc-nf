@@ -1,6 +1,7 @@
 include {runOnComplete;moduleLoad} from '../../modules/utils/functions.nf'
 include {SAMTOOLS_SAMPLES} from '../../subworkflows/samtools/samtools.samples.03.nf'
-
+include {TRUVARI_01} from '../../subworkflows/truvari/truvari.01.nf'
+include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 
 workflow  {
 	CNVKIT([:], params.genomeId, file(params.bams), file(params.capture))
@@ -68,7 +69,7 @@ workflow CNVKIT {
 	
 		ref_vs_others_ch = CNVKIT_REFERENCE_SAMPLE_VS_OTHERS([:], genomeId, sn_vs_other_ch)
 
-		fix_vs_others_ch  = CNVKIT_REFERENCE_FIX_VS_OTHERS([:], ref_vs_others_ch.output.map{T->T[0].plus(ref_cnn:T[1])} )
+		fix_vs_others_ch  = CNVKIT_REFERENCE_FIX_VS_OTHERS([:], genomeId, ref_vs_others_ch.output.map{T->T[0].plus(ref_cnn:T[1])} )
 
 
 		MULTI_INTERSECT([:],
@@ -76,6 +77,8 @@ workflow CNVKIT {
 			mix(fix_single_ch.output.map{T->["single",T[0]+","+T[4]]}).
 			groupTuple()
 			)
+		vcfs_ch = COLLECT_TO_FILE_01([:],fix_vs_others_ch.vcf.collect())
+		truvari_ch = TRUVARI_01([:], genomeId, vcfs_ch.output)
 		
 	}
 
@@ -243,6 +246,7 @@ process CNVKIT_FIX_NO_CONTROL {
 	tag "${sample}"
         conda "${moduleDir}/../../conda/cnvkit.yml"
 	afterScript "rm -rf TMP"
+	errorStrategy "ignore" // https://github.com/etal/cnvkit/issues/436 " length of weights should be the same as the number of probes Execution halted"
 	input:
 		val(meta)
 		path(ref_cnn)
@@ -256,7 +260,8 @@ process CNVKIT_FIX_NO_CONTROL {
 			emit:output
 	script:
 	"""
-	hostname >&2
+	hostname 1>&2
+	which R 1>&2
 	mkdir -p TMP
 	export TMPDIR=\${PWD}/TMP
 
@@ -315,8 +320,10 @@ process CNVKIT_REFERENCE_FIX_VS_OTHERS {
 	tag "${row.sample}"
         conda "${moduleDir}/../../conda/cnvkit.yml"
 	afterScript "rm -rf TMP"
+	errorStrategy "ignore" // https://github.com/etal/cnvkit/issues/436 " length of weights should be the same as the number of probes Execution halted"
 	input:
 		val(meta)
+		val(genomeId)
 		val(row)
 	output:
 		tuple 	val(row),
@@ -324,9 +331,14 @@ process CNVKIT_REFERENCE_FIX_VS_OTHERS {
 			path("${row.sample}-diagram.pdf"),
 			path("${row.sample}.cns.bed.gz"),
 			path("${row.sample}.ncopy.bed.gz"),
+			path("${row.sample}.call.cns"),
 			emit:output
+		path("${row.sample}.vcf.gz"),emit:vcf
 	script:
 		def sample = row.sample
+		def reference = params.genomes[genomeId].fasta
+		def y_min = -3.0
+		def y_max = 3.0
 	"""
 	hostname >&2
 	mkdir -p TMP
@@ -340,9 +352,20 @@ process CNVKIT_REFERENCE_FIX_VS_OTHERS {
 		"${row.antitarget}" \\
 		"${row.ref_cnn}" \\
 		-o ${sample}.cnr
-	cnvkit.py segment ${sample}.cnr -o ${sample}.cns
+	cnvkit.py segment --drop-low-coverage ${sample}.cnr -o ${sample}.cns
+
+	cnvkit.py export vcf ${sample}.cns -o 'TMP/${sample}.vcf'
+
+	cnvkit.py call ${sample}.cns -v 'TMP/${sample}.vcf' -o '${sample}.call.cns'
 	
-	cnvkit.py scatter ${sample}.cnr -s ${sample}.cns -o ${sample}-scatter.pdf
+
+
+	cnvkit.py scatter ${sample}.cnr \\
+		--y-min ${y_min} \\
+		--y-max ${y_max} \\
+		-s ${sample}.cns \\
+		-o ${sample}-scatter.pdf
+
 	cnvkit.py diagram ${sample}.cnr -s ${sample}.cns -o ${sample}-diagram.pdf
 
 	# Show estimated integer copy number of all regions
@@ -354,6 +377,11 @@ process CNVKIT_REFERENCE_FIX_VS_OTHERS {
 		LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\
 		gzip --best > "${sample}.cns.bed.gz"
 
+	${moduleLoad("bcftools")}
+	echo "${sample}" > TMP/sample.txt
+	bcftools reheader --samples TMP/sample.txt --fai "${reference}.fai" -T TMP/x "TMP/${sample}.vcf" |\
+		bcftools sort -T TMP -O z -o "${sample}.vcf.gz"
+	bcftools index -ft "${sample}.vcf.gz"
 	"""
 	}
 
