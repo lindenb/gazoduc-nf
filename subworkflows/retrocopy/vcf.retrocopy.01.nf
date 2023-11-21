@@ -25,7 +25,7 @@ SOFTWARE.
 
 include { VCF_TO_BED } from '../../modules/bcftools/vcf2bed.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
-include {md5;getVersionCmd;moduleLoad;isHg38;isHg19} from '../../modules/utils/functions.nf'
+include {md5;getVersionCmd;moduleLoad} from '../../modules/utils/functions.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_CONCAT_01} from '../bcftools/bcftools.concat.01.nf'
 include {SAMTOOLS_SAMPLES_01} from '../samtools/samtools.samples.01.nf'
@@ -35,48 +35,47 @@ include {GS_SIMPLE_01} from '../../modules/gs/gs.simple.01.nf'
 workflow VCF_RETROCOPY_01 {
 	take:
 		meta	
-		reference
+		genomeId
 		vcf
-		gtf
 		bams
 	main:
 		version_ch = Channel.empty()
-		ch1_ch  = VCF_TO_BED(meta,vcf)
+		ch1_ch  = VCF_TO_BED([:],vcf)
 		version_ch = version_ch.mix(ch1_ch.version)
 
 		ch2_ch = ch1_ch.bed.splitCsv(header:false,sep:'\t').
 			map{T->[T[0],T[3]]}
 
-		ch3_ch = DOWNLOAD_KNOWN(meta,reference,gtf)
+		ch3_ch = DOWNLOAD_KNOWN([:], genomeId)
 		version_ch = version_ch.mix(ch3_ch.version)
 
-		ch4_ch = SCAN_RETROCOPY(meta,reference,ch3_ch.output,gtf,ch2_ch)
+		ch4_ch = SCAN_RETROCOPY([:],genomeId,ch3_ch.output,ch2_ch)
 		version_ch = version_ch.mix(ch4_ch.version)
 		
 
 
-		ch5_ch = COLLECT_TO_FILE_01(meta, ch4_ch.vcf.collect())
+		ch5_ch = COLLECT_TO_FILE_01([:], ch4_ch.vcf.collect())
 		version_ch = version_ch.mix(ch5_ch.version)
 
-		ch6_ch = BCFTOOLS_CONCAT_01(meta,ch5_ch.output)
+		ch6_ch = BCFTOOLS_CONCAT_01([:],ch5_ch.output)
 		version_ch = version_ch.mix(ch6_ch.version)
 
 
 		if(!bams.name.equals("NO_FILE")) {
 			samples_ch = SAMTOOLS_SAMPLES_01(
-				meta.plus("with_header":false,"allow_multiple_references":false),
-				reference,
+				["with_header":false,"allow_multiple_references":false],
+				genomeId ,
 				file("NO_FILE"),
 				bams)
 			version_ch = version_ch.mix(samples_ch.version)
 
-			join_ch=JOIN_SAMPLE_BAM(meta,reference,ch6_ch.vcf, samples_ch.output)
+			join_ch=JOIN_SAMPLE_BAM([:], genomeId ,ch6_ch.vcf, samples_ch.output)
 			version_ch = version_ch.mix(join_ch.version)
 
-			plot_ch = SAMTOOLS_DEPTH_PLOT_COVERAGE_01(meta.plus("max_bams":10,"gtf":gtf), reference, join_ch.bed.splitCsv(header:true,sep:'\t'))
+			plot_ch = SAMTOOLS_DEPTH_PLOT_COVERAGE_01(["max_bams":10], genomeId, join_ch.bed.splitCsv(header:true,sep:'\t'))
 			version_ch = version_ch.mix(plot_ch.version)
 
-			gs_ch = GS_SIMPLE_01(meta, plot_ch.output.map{T->["coverage",T[1]]}.groupTuple())
+			gs_ch = GS_SIMPLE_01([:], plot_ch.output.map{T->["coverage",T[1]]}.groupTuple())
 			version_ch = version_ch.mix(gs_ch.version)
 
 			pdf_ch= gs_ch.output
@@ -86,7 +85,7 @@ workflow VCF_RETROCOPY_01 {
 			pdf_ch = file("NO_FILE")
 			}
 
-		version_ch = MERGE_VERSION(meta, "VCF retrocopies", "VCF retrocopies", version_ch.collect())
+		version_ch = MERGE_VERSION("VCFretrocopies", version_ch.collect())
 	emit:
 		vcf = ch6_ch.vcf
 		version = version_ch
@@ -97,8 +96,7 @@ workflow VCF_RETROCOPY_01 {
 process DOWNLOAD_KNOWN {
 input:
 	val(meta)
-	val(reference)
-	val(gtf)
+	val(genomeId)
 output:
 	path("known.txt"),emit:output
 	path("names.txt"),emit:gene_names
@@ -107,13 +105,16 @@ script:
 	def agent="Mozilla/5.0 (X11; Linux i686; rv:103.0) Gecko/20100101 Firefox/103.0"
 	def url ="http://retrogenedb.amu.edu.pl/static/download/homo_sapiens.tsv"
 	def base="https://www.bioinfo.mochsl.org.br"
-if(isHg38(reference) || isHg19(reference))
+	def genome = params.genomes[genomeId]
+	def gtf = genome.gtf
+
+genome.containsKey("ucsc_name") && (genome.ucsc_name.equals("hg19") || genome.ucsc_name.equals("hg38"))
 """
 hostname 1>&2
 ${moduleLoad("jvarkit")}
 set -o pipefail
 
-java -jar \${JVARKIT_DIST}/gtf2bed.jar "${gtf}" -c gtf.feature,gene_name,gene_id | cut -f 4,5,6 |\
+java -jar \${JVARKIT_DIST}/jvarkit.jar gtf2bed "${gtf}" -c gtf.feature,gene_name,gene_id | cut -f 4,5,6 |\
 awk -F '\t' '\$1=="gene"' | cut -f 2,3 |\
 sort -t '\t' -T . -k1,1 | uniq > jeter.gene.gene_id.txt
 
@@ -193,14 +194,16 @@ afterScript "rm -rf TMP"
 memory "5g"
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	val(known)
-	val(gtf)
 	tuple val(contig),val(vcf)
 output:
 	path("${contig}.bcf"),emit:vcf
 	path("version.xml"),emit:version
 script:
+	def genome = params.genomes[genomeId]
+	def reference = genome.fasta
+	def gtf = genome.gtf
 """
 hostname 1>&2
 set -o pipefail
@@ -212,7 +215,7 @@ tabix "${gtf}" "${contig}" > TMP/jeter.gtf
 bcftools view -O z -o TMP/jeter.vcf.gz "${vcf}" "${contig}"
 bcftools index --tbi TMP/jeter.vcf.gz
 
-java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP  -jar ${JVARKIT_DIST}/gtfretrocopy.jar \
+java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP  -jar ${JVARKIT_DIST}/jvarkit.jar gtfretrocopy \
 		--gtf "TMP/jeter.gtf" \
 		--known "${known}" \
 		TMP/jeter.vcf.gz > TMP/jeter.vcf
@@ -226,7 +229,7 @@ cat << EOF > version.xml
 	<entry key="name">${task.process}</entry>
 	<entry key="description">scan vcf for retrogenes</entry>
 	<entry key="contig">${contig}</entry>
-	<entry key="versions">${getVersionCmd("jvarkit/gtfretrocopy bcftools tabix")}</entry>
+	<entry key="versions">${getVersionCmd("jvarkit/jvarkit.jar bcftools tabix")}</entry>
 </properties>
 EOF
 
@@ -237,7 +240,7 @@ process JOIN_SAMPLE_BAM {
 executor "local"
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	path(vcf)
 	path(samples)
 output:

@@ -25,47 +25,17 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults()
-
-params.conda = ""
-
-
-gazoduc.
-    make("vcf","NO_FILE").
-    description(gazoduc.Gazoduc.DESC_VCF_OR_VCF_LIST).
-    required().
-    put()
-
-gazoduc.
-    make("bed","NO_FILE").
-    description("limit analysis to that BED file").
-    put()
-
-gazoduc.
-    make("pedigree", "NO_FILE").
-    description(gazoduc.Gazoduc.DESC_JVARKIT_PEDIGREE).
-    put()
 
 include {SPLICEAI_01} from '../../subworkflows/spliceai/spliceai.01.nf'
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
-include {runOnComplete} from '../../modules/utils/functions.nf'
-
-
-if(params.help) {
-        gazoduc.usage().name("spliceai").description("spliceai").print()
-        exit 0
-        }
-else
-        {
-        gazoduc.validate()
-        }
-
+include {dumpParams;runOnComplete} from '../../modules/utils/functions.nf'
 
 if( params.help ) {
-    helpMessage()
+    dumpParams(params);
     exit 0
+}  else {
+    dumpParams(params);
 }
-
 
 workflow {
 	ch1 = SPLICEAI_01([:], params.genomeId, Channel.fromPath(params.vcf), file(params.pedigree), file(params.bed))

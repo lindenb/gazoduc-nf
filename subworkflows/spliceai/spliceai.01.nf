@@ -128,7 +128,7 @@ process DOWNLOAD_EXONS {
 
 process APPLY_SPLICEAI {
 	tag "${bed.name}"
-	conda "${params.conda}/SPLICEAI"
+        conda "${moduleDir}/../../conda/spliceai.yml"
 	afterScript "rm -rf TMP"
 	cpus 2
 	input:
@@ -311,6 +311,7 @@ for(col in c(0:3)) {
 
 	gt8 <- T1[,7+col]>0.8
 	
+	if(nrow(T1[gt8,]) > 0 ) {
 	text(
 		x=indexes[gt8],
 		y=T1[gt8,7+col],
@@ -318,6 +319,7 @@ for(col in c(0:3)) {
 		cex= 1.0,
 		col="blue"
 		)
+	}
 	n<-1
 	prev_x <- 0
 	while(n <= nrow(DICT) )  {
