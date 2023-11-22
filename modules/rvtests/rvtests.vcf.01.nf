@@ -25,13 +25,6 @@ SOFTWARE.
 
 def gazoduc = gazoduc.Gazoduc.getInstance()
 
-gazoduc.
-    make("rvtest_arguments","--burden cmc,zeggini,mb,fp,exactCMC,cmcWald,rarecover,cmat --vt price,analytic --kernel 'skat[nPerm=1000],kbac,skato'").
-    description("Parameters for rvtest. This should include the tests to be performed").
-    menu("rvtest").
-    required().
-    put()
-
 
 
 include {moduleLoad} from '../utils/functions.nf'
@@ -49,7 +42,7 @@ output:
 	path("assoc.list"),emit:output
 	path("version.xml"),emit:version
 script:
-	def rvtest_arguments = meta.rvtest_arguments?:""
+	def rvtest_arguments = params.rvtest.arguments?:""
 """
 hostname 1>&2
 ${moduleLoad("rvtests bcftools jvarkit")}

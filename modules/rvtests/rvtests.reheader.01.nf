@@ -31,15 +31,16 @@ SOFTWARE.
  *
  **/
 process RVTESTS_REHEADER_01 {
-tag "${reference}"
+tag "${genomeId}"
 executor "local"
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 output:
 	path("reheader.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
+	def reference = params.genomes[genomeId].fasta
 """
 hostname 1>&2
 

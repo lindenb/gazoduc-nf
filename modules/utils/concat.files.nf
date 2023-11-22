@@ -33,16 +33,15 @@ input:
         val(meta)
         val(L)
 output:
-        path("concat${meta.suffix?:".list"}"),emit:output
+        path("concat${suffix?:".list"}"),emit:output
 	path("version.xml"),emit:version
 script:
-	if(!meta.containsKey("suffix")) throw new IllegalArgumentException("CONCAT_FILES_01: meta.suffix undefined");
-	if(!meta.containsKey("concat_n_files")) throw new IllegalArgumentException("CONCAT_FILES_01: meta.concat_n_files undefined");
-	if(!meta.containsKey("downstream_cmd")) throw new IllegalArgumentException("CONCAT_FILES_01: meta.downstream_cmd undefined");
-	
-	def suffix = meta.suffix?:".list"
-	def concat_n_files = meta.concat_n_files?:"50"
-	def downstream_cmd = meta.downstream_cmd?:""
+	if(meta.containsKey("suffix")) log.info("deprecated CONCAT_FILES_01.suffix")
+	if(meta.containsKey("downstream_cmd")) log.info("deprecated CONCAT_FILES_01.concat_n_files")
+	if(meta.containsKey("concat_n_files")) log.info("deprecated CONCAT_FILES_01.concat_n_files")
+	suffix = (task.ext && task.ext.suffix?task.ext.suffix:(meta.suffix?:".list"))
+	def concat_n_files = (task.ext && task.ext.concat_n_files?task.ext.concat_n_files:(meta.concat_n_files?:"."))
+	def downstream_cmd  = (task.ext && task.ext.downstream_cmd?task.ext.downstream_cmd:(meta.downstream_cmd?:""))
 """
 hostname 1>&2
 

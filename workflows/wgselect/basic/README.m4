@@ -1,6 +1,6 @@
 m4_define(`MACRO_WORKFLOW',wgselect)m4_dnl
-m4_define(`MACRO_MAIN_NF',gazoduc-nf/workflows/wgselect/basic/wgselect.basic.nf)m4_dnl
-m4_define(`MACRO_MAIN_CFG',../../../confs/by_workflow/wgselect.basic.cfg)m4_dnl
+m4_define(`MACRO_MAIN_NF',gazoduc-nf/workflows/wgselect/basic/main.nf)m4_dnl
+m4_define(`MACRO_MAIN_CFG',./workflow.cfg)m4_dnl
 m4_sinclude(../../../src/main/m4/common.m4)m4_dnl
 MACRO_H1(MACRO_WORKFLOW)
 

@@ -364,8 +364,9 @@ output:
 	path("assoc.list"),emit:output
 	path("version.xml"),emit:version
 script:
-	if(!params.burden.containsKey("rvtest_arguments")) throw new IllegalArgumentException("params.burden.rvtest_arguments missing");
-	def rvtest_arguments = params.burden.rvtest_arguments
+	if(!params.containsKey("rvtests")) throw new IllegalArgumentException("params.rvtest");
+	if(!params.rvtests.containsKey("arguments")) throw new IllegalArgumentException("params.rvtest.arguments missing");
+	def rvtest_arguments = params.rvtests.arguments
 	def genome = params.genomes[genomeId]
 	def reference = genome.fasta
 """

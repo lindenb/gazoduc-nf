@@ -36,7 +36,8 @@ output:
 	path("contigs.bed"),emit:chromsbed /* uniq chromosome names as BED */
 	path("version.xml"),emit:version
 script:
-	if(!meta.containsKey("with_header")) throw new IllegalArgumentException("with_header was not specified")
+	if(meta.containsKey("with_header"))  throw new IllegalArgumentException("deprecated, use config/process");
+	def with_header = task.ext.with_header?:false
 	if(!(vcf.name.endsWith(".bed") || vcf.name.endsWith(".list") || vcf.name.endsWith(".vcf.gz") || vcf.name.endsWith(".bcf")))  throw new IllegalArgumentException("bad extension for vcf file:"+vcf);
 	"""
 	hostname 1>&2
@@ -67,7 +68,7 @@ script:
 
 
 	# add header
-	if ${parseBoolean(meta.with_header)} ; then
+	if ${with_header} ; then
 
 		echo -e 'contig\tstart\tend\tvcf' > jeter.tmp
 		cat vcf2bed.bed >> jeter.tmp
