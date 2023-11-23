@@ -28,7 +28,8 @@ nextflow.enable.dsl=2
 include {moduleLoad} from '../../modules/utils/functions.nf'
 include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
-
+include {MULTIQC_01} from '../../modules/multiqc/multiqc.01.nf'
+include {PARAMS_MULTIQC} from '../../modules/utils/params.multiqc.nf'
 
 workflow PIHAT01 {
 	take:
@@ -38,7 +39,7 @@ workflow PIHAT01 {
 	main:
 		version_ch = Channel.empty();
 		to_zip = Channel.empty();
-		vcf2contig_ch = VCF_TO_BED([with_header:false],vcf)
+		vcf2contig_ch = VCF_TO_BED([:],vcf)
 		version_ch = version_ch.mix(vcf2contig_ch.version)
 
 		ctgvcf_ch = vcf2contig_ch.bed.splitCsv(header: false,sep:'\t',strip:true).
@@ -53,7 +54,17 @@ workflow PIHAT01 {
 		pihat_ch = MERGE_PIHAT_VCF(vcf, perCtg.vcf.map{T->T.join("\t")}.collect())
 		version_ch = version_ch.mix(pihat_ch.version)
 
-		mqc_ch = MULTIQC([:],vcf,pihat_ch.pihat_png, pihat_ch.pihat_sample2avg_png, pihat_ch.pihat_removed_samples, pihat_ch.plink_genome)
+
+		to_multiqc = pihat_ch.multiqc.mix(pihat_ch.multiqc_yaml)
+
+
+		params4multiqc_ch = PARAMS_MULTIQC([:])
+		mqc_ch = MULTIQC_01(
+				["title":"${params.prefix}PIHAT"], 
+				to_multiqc.concat(params4multiqc_ch.output).collect()
+				);
+
+
 		version_ch = version_ch.mix(mqc_ch.version)
 
 		version_ch = MERGE_VERSION("pihat",version_ch.collect())
@@ -65,6 +76,8 @@ workflow PIHAT01 {
 		plink_genome = pihat_ch.plink_genome
 		pihat_sample2avg_png  = pihat_ch.pihat_sample2avg_png
 		pihat_multiqc_zip = mqc_ch.zip
+		to_multiqc = to_multiqc
+		genome_bcf = pihat_ch.genome_bcf /* optional, used for PCA */
 	}
 
 
@@ -292,14 +305,24 @@ input:
 	path(vcf)
 	val(L)
 output:
-	path("${prefix}pihat.png"),emit:pihat_png
-	path("${prefix}sample2avg.pihat.png"),emit:pihat_sample2avg_png
+	path("${prefix}plot.pihat.png"),emit:pihat_png
+	path("${prefix}plot.sample2avg.pihat.png"),emit:pihat_sample2avg_png
 	path("${prefix}removed_samples.txt"),emit:pihat_removed_samples
 	path("${prefix}plink.genome.txt.gz"),emit:plink_genome
+	path("genome.bcf"),optional:true,emit:genome_bcf
+	//multiqc 
+        path("${prefix}plot.*"),optional:true,emit:multiqc
+	path("multiqc_config.yaml"),emit:multiqc_yaml
+
+
 	path("version.xml"),emit:version
+	        
 script:
 	prefix = params.prefix?:""
 	maxPiHat = (params.pihat.pihat_max as double)
+	def save_genome_vcf = (task.ext?(task.ext.save_genome_vcf?:false):false)
+
+	def whatispihat = "The probable relatives and duplicates are detected based on pairwise identify-by-state (IBS) from which a variable called PIHAT is calculated via PLINK"
 
 if(!L.isEmpty())
 """
@@ -317,6 +340,13 @@ awk -F '\t' '(\$1 ~ /^(chr)?[0-9]+\$/ ) {print \$2}' TMP/jeter.list > TMP/autoso
 
 bcftools concat --allow-overlaps  -O b --file-list TMP/autosomes.list -o "TMP/jeter.bcf"
 plink --double-id --bcf TMP/jeter.bcf  --allow-extra-chr --genome --out TMP/plink
+
+
+## for ACP subworkflow, I may need the vcf that was used to create the genome
+if ${save_genome_vcf} ; then
+	cp -v TMP/jeter.bcf genome.bcf
+fi
+
 
 awk -F '\t' '(\$1 ~ /^(chr)?[XY]+\$/ ) {print \$2}' TMP/jeter.list > TMP/sex.list
 
@@ -342,7 +372,7 @@ awk -F '\t' '(\$2 >= ${maxPiHat})' "${prefix}sample2avg.pihat.tsv" > "${prefix}r
 test -s TMP/jeter.keep.samples.txt
 
 cat << EOF > TMP/jeter.R
-png("${prefix}pihat.png")
+png("${prefix}plot.pihat.png")
 genome <- read.table(file="TMP/jeter.tsv",sep="\\t",header=FALSE)
 plot(genome\\\$V2,ylim=c(0,1.0),xlab="Individuals Pair", ylab="PI-HAT", main="${prefix}PI-HAT")
 abline(h=${maxPiHat},col="blue");
@@ -350,7 +380,7 @@ dev.off()
 
 T1<-read.table("${prefix}sample2avg.pihat.tsv",sep="\\t",header=FALSE,col.names=c("S","X"),colClasses=c("character","numeric"))
 head(T1)
-png("${prefix}sample2avg.pihat.png")
+png("${prefix}plot.sample2avg.pihat.png")
 boxplot(T1\\\$X ,ylim=c(0,max(T1\\\$X)),main="${prefix}AVG(PIHAT)/SAMPLE",sub="${vcf.name}",xlab="Sample",ylab="pihat")
 abline(h=${maxPiHat},col="blue");
 dev.off()
@@ -363,6 +393,31 @@ R --no-save < TMP/jeter.R
 gzip --best TMP/plink.genome
 mv TMP/plink.genome.gz "${prefix}plink.genome.txt.gz"
 
+
+##
+## create MULTIQC CONFIG
+##
+cat << EOF > multiqc_config.yaml
+custom_data:
+  pihat_manhattan:
+    parent_id: pihat_section
+    parent_name: "PIHAT"
+    parent_description: "${whatispihat}"
+    section_name: "Manhattan"
+    description: "Manhattan plot of pihat"
+  pihat_qqplot:
+    parent_id: pihat_section
+    parent_name: "PIHAT"
+    parent_description: "${whatispihat}"
+    section_name: "Sample to Average pihat"
+    description: "Sample to Average pihat"
+sp:
+  pihat_manhattan:
+    fn: "${prefix}plot.pihat.png"
+  pihat_qqplot:
+    fn: "${prefix}plot.sample2avg.pihat.png"
+ignore_images: false
+EOF
 
 
 cat << EOF > version.xml
