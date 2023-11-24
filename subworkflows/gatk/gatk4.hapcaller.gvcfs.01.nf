@@ -58,7 +58,6 @@ workflow GATK4_HAPCALLER_GVCFS_01 {
 			"bam":T[1].bam,
 			"new_sample":T[1].new_sample,
 			"genomeId": T[1].genomeId,
-			"extraHC": params.extraHC,
 			"pedigree": (pedigree.name.equals("NO_FILE")?"":pedigree.toRealPath()),
 			]}
 		hapcaller_ch = HAPCALLER_GVCF([:],genomeId,hc_input_ch)
@@ -112,7 +111,7 @@ script:
 	def bam = row.bam?:""
 	def sample = row.sample?:""
 	def new_sample = row.new_sample?:""
-	def extraHC = row.extraHC?:""
+	def extraHC = params.gatk.haplotypecaller.args?:""
 	def pedigree = row.pedigree?:""
 	def mapq = params.gatk.haplotypecaller.mapq?:-1
 	def bams = row.bams?:""

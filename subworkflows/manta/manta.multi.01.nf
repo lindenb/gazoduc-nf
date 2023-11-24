@@ -23,124 +23,86 @@ SOFTWARE.
 
 */
 include {moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 
 workflow MANTA_MULTI_SV01 {
 	take:
 		meta
-		reference
+		genomeId
 		bams
 		bed
 	main:
 		version_ch = Channel.empty()
 
-		config_ch = MANTA_CONFIG(meta,reference,bams,bed)
+		config_ch = MANTA_MULTI([:], genomeId , bams,bed)
 		version_ch= version_ch.mix(config_ch.version)
-
-		
-		manta_ch = MANTA_MULTI(meta,reference,config_ch.output)
-		version_ch= version_ch.mix(manta_ch.version)
 	
 		
-		version_ch = MERGE_VERSION(meta,"manta","manta",version_ch.collect())
-		html = VERSION_TO_HTML(params, version_ch.version)
-
-		zip_ch = ZIPIT(meta, version_ch, html.html, manta_ch.output)	
-	emit:
-		version = version_ch
-		zip = zip_ch.zip
-		//vcf = manta_ch.vcf
-		//index = manta_ch.index
-	}
-
-process MANTA_CONFIG {
-    tag "${bams.name}"
-    input:
-	val(meta)
-	val(reference)
-	path(bams)
-	path(bed)
-
-    output:
-    	path("path.txt"),emit:output
-	path("version.xml"),emit:version
-
-    script:
-	def workingdir = "${workflow.workDir}/${meta.prefix?:""}MANTA"
-	log.info("MANTA WORKDIR ${workingdir}")
-	"""
-	hostname 1>&2
-	${moduleLoad("manta htslib")}
-	
-
-	rm -rvf "${workingdir}"
-
-	if ${bed.name.equals("NO_FILE")} ; then
-		awk -F '\t' '(\$1 ~ /^(chr)?[0-9XY]+\$/ ) {printf("%s\t0\t%s\\n",\$1,\$2)}' '${reference}.fai' |\
-		sort -T . -t '\t' -k1,1 -k2,2n > manta.bed
-	else
-		${bed.name.endsWith(".gz")?"gunzip -c":"cat"} ${bed} |\
-		sort -T . -t '\t' -k1,1 -k2,2n > manta.bed
-	
-	fi
-
-	bgzip manta.bed
-	tabix -p bed manta.bed.gz
-
-	configManta.py  `awk '{printf("--bam %s ",\$0);}' "${bams}" ` \
-		--referenceFasta "${reference}" \
-		--callRegions manta.bed.gz \
-		--runDir "${workingdir}"
-
-	echo "${workingdir}" > path.txt
-
-#########################
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="description">Manta configuration</entry>
-	<entry key="bams">${bams}</entry>
-	<entry key="workdir">${workingdir}</entry>
-	<entry key="manta.version">\$(configManta.py --version)</entry>
-	<entry key="versions">${getVersionCmd("tabix")}</entry>
-</properties>
-EOF
-	"""
+		version_ch = MERGE_VERSION("manta",version_ch.collect())
+		html = VERSION_TO_HTML(version_ch.version)
 	}
 
 process MANTA_MULTI {
-    cache 'lenient'
-    errorStrategy 'retry'
-    clusterOptions = "-S /bin/bash -q max-7d.q "
-    maxRetries 20
+    tag "${bams.name}"
+    afterScript "rm -rf TMP/workspace"
     cpus 16
     memory "20g"
     input:
 	val(meta)
-	val(reference)
-	path(workingdir)
+	val(genomeId)
+	path(bams)
+	path(bed)
+
     output:
-	path("paths.txt"),emit:output
+	path("*.bcf"),emit:output
+	path("*.csi")
 	path("version.xml"),emit:version
+
     script:
-	def prefix = meta.prefix?:""
+	def reference = params.genomes[genomeId].fasta
 	"""
 	hostname 1>&2
-	${moduleLoad("manta bcftools")}
-		
-	WD=`cat "${workingdir}"`
-	test -d "\${WD}"
+	${moduleLoad("manta htslib bcftools samtools")}
+	mkdir -p TMP
 
-	"\${WD}/runWorkflow.py" --quiet -m local -j ${task.cpus}
+	if ${bed.name.equals("NO_FILE")} ; then
+
+		awk -F '\t' '(\$1 ~ /^(chr)?[0-9XY]+\$/ ) {printf("%s\t0\t%s\\n",\$1,\$2)}' '${reference}.fai' |\\
+		sort -T TMP -t '\t' -k1,1 -k2,2n > manta.bed
+	else
+		${bed.name.endsWith(".gz")?"gunzip -c":"cat"} ${bed} |\\
+		sort -T TMP -t '\t' -k1,1 -k2,2n > manta.bed
 	
+	fi
 
+	bgzip manta.bed
+	tabix -fp bed manta.bed.gz
+
+	configManta.py  `awk '{printf("--bam %s ",\$0);}' "${bams}" ` \
+		--referenceFasta "${reference}" \
+		--callRegions manta.bed.gz \
+		--runDir "TMP"
+
+
+	./TMP/runWorkflow.py --quiet -m local -j ${task.cpus}
+	rm -rf TMP/workspace
+
+        # convert BND TO INVERSIONS (added 20230115 but not tested)
+        DIPLOID=`find ./TMP -type f -name "diploidSV.vcf.gz"`
+        test ! -z "\${DIPLOID}"
+        \$(ls \$( dirname \$(which configManta.py) )/../share/manta*/libexec/convertInversion.py)  `which samtools` "${reference}" "\${DIPLOID}" | bcftools sort -T TMP -O z -o TMP/jeter.vcf.gz
+
+        bcftools index -t TMP/jeter.vcf.gz
+
+        mv -v TMP/jeter.vcf.gz "\${DIPLOID}"
+        mv -v TMP/jeter.vcf.gz.tbi "\${DIPLOID}.tbi"
+
+	
 	for X in diploidSV candidateSmallIndels candidateSV
 	do
-		bcftools view -O b -o "${meta.prefix?:""}\${X}.bcf" "\${WD}/results/variants/\${X}.vcf.gz"
-		bcftools index "${meta.prefix?:""}\${X}.bcf"
-		echo "\${PWD}/${meta.prefix?:""}\${X}.bcf" >> paths.txt
-		echo "\${PWD}/${meta.prefix?:""}\${X}.bcf.csi" >> paths.txt
+		bcftools view -O b -o "${params.prefix?:""}\${X}.bcf" "\${PWD}/TMP/results/variants/\${X}.vcf.gz"
+		bcftools index "${params.prefix?:""}\${X}.bcf"
 	done
 
 
@@ -148,7 +110,6 @@ process MANTA_MULTI {
 cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
-	<entry key="workdir">\${WD}</entry>
 	<entry key="versions">${getVersionCmd("bcftools")}</entry>
 	<entry key="manta.version">\$(configManta.py --version)</entry>
 </properties>
@@ -157,22 +118,3 @@ EOF
 	}
 
 
-process ZIPIT {
-input:
-	val(meta)
-	path(version)
-	path(html)
-	path(paths)
-output:
-	path("${meta.prefix?:""}manta.zip"),emit:zip
-script:
-"""
-cat "${paths}" > x.list
-echo "${version.toRealPath()}" >> x.list
-echo "${html.toRealPath()}" >> x.list
-
-zip -9 -@ -j "${meta.prefix?:""}manta.zip" < x.list
-
-rm x.list
-"""
-}
