@@ -54,7 +54,7 @@ workflow ACP_VCF {
 			map{T->T[0].plus(clusters:T[1])})
 
 
-		to_multiqc = plot_ch.multiqc.mix(plot_ch.multiqc_yaml).mix(plot_assoc_ch.output)
+		to_multiqc = plot_ch.multiqc.mix(plot_ch.multiqc_yaml).mix(plot_assoc_ch.output.flatten())
 
 
                 params4multiqc_ch = PARAMS_MULTIQC([:])
@@ -160,7 +160,7 @@ input:
 	val(genomeId)
 	path(assoc)
 output:
-	path("multiqc_config.yaml"),emit:output
+	tuple path("multiqc_config.yaml"),path("*.png"),emit:output
 script:
 	def reference = params.genomes[genomeId].fasta
 	def title = assoc.name.replace('.','_')
@@ -343,7 +343,7 @@ custom_data:
     description: "PCA: ${assoc.name}"
 sp:
   pca_${title}:
-    fn: "\${PWD}/${title}.png"
+    fn: "${title}.png"
 ignore_images: false
 EOF
 
