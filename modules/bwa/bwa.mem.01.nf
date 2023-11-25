@@ -56,9 +56,22 @@ hostname 1>&2
 ${moduleLoad("samtools bwa")}
 set -o pipefail
 mkdir -p TMP
+set -x
 
 bwa mem ${is_interleaved?"-p":""} -t ${cpus2} -R '@RG\\tID:${ID}\\tSM:${sample}\\tLB:${LB}.R0\\tCN:${CN}\\tPL:${PL}' "${reference}" "${R1}" ${isBlank(R2)?"":"\"${R2}\""} |\
-	samtools ${isBlank(R2)?"view -O BAM -o TMP/jeter.bam -":"fixmate -mc - TMP/jeter.bam"}  
+	samtools view -O BAM -o TMP/jeter.bam
+
+if ${!isBlank(R2)} ; then
+
+	# collate
+	samtools collate -l 5 --threads ${cpus1}  --output-fmt BAM -u --no-PG --reference "${reference}" -T TMP/tmp.collate -o TMP/jeter2.bam TMP/jeter.bam
+	mv TMP/jeter2.bam TMP/jeter.bam
+
+	# fixmate
+	samtools fixmate --threads  ${cpus1} -mc --output-fmt BAM TMP/jeter.bam TMP/jeter2.bam
+	mv TMP/jeter2.bam TMP/jeter.bam
+
+fi
 
 
 samtools sort --threads ${cpus1} -o TMP/jeter2.bam -O BAM -T TMP/tmp TMP/jeter.bam
