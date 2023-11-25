@@ -36,50 +36,17 @@ params.prefix = ""
 
 include {SOMALIER_BAMS_01} from  '../../../subworkflows/somalier/somalier.bams.01.nf'
 include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
-include {runOnComplete} from '../../../modules/utils/functions.nf'
-
-def helpMessage() {
-  log.info"""
-## About
-
-
-## Author
-
-Pierre Lindenbaum
-
-## Options
-
-  * --reference (fasta) The full path to the indexed fasta reference genome. It must be indexed with samtools faidx and with picard CreateSequenceDictionary or samtools dict. [REQUIRED]
-  * --mapq (int)  min mapping quality . If it's lower than 0 (this is the default) just use the bam index as is. Otherwise, rebuild the bai
-  * --publishDir (dir) Save output in this directory
-  * --prefix (string) files prefix. default: ""
-
-## Usage
-
-```
-nextflow -C ../../confs/cluster.cfg  run -resume somalier.bams.nf \\
-	--publishDir output \\
-	--prefix "analysis." \\
-	--reference /path/to/reference.fasta \\
-	--bams /path/to/bams.list
-```
-
-## Workflow
-
-![workflow](./workflow.svg)
-  
-## See also
-
-* https://github.com/brentp/somalier
-
-"""
-}
+include {runOnComplete;dumpParams} from '../../../modules/utils/functions.nf'
 
 
 if( params.help ) {
-    helpMessage()
+    dumpParams(params);
     exit 0
+}  else {
+    dumpParams(params);
 }
+
+
 
 workflow {
 
@@ -87,33 +54,12 @@ workflow {
 		[:],
 		params.genomeId,
 		Channel.fromPath(params.bams),
-		file(params.pedigree.isEmpty()?"NO_FILE":params.pedigree)
+		file(params.pedigree),
+		file(params.user_sites)
 		)
 
-        html = VERSION_TO_HTML(params,somalier_ch.version)
-	PUBLISH(somalier_ch.zip, somalier_ch.version, html.html)
+        html = VERSION_TO_HTML(somalier_ch.version)
 	}
 
-process PUBLISH {
-tag "${zip.name}"
-publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
-input:
-	val(zip)
-	val(version)
-	val(html)
-output:
-	path("*.zip")
-	path("*.html")
-	path("*.xml")
-when:
-	!params.getOrDefault("publishDir","").trim().isEmpty()
-script:
-"""
-for F in ${zip} ${version} ${html}
-do
-	ln -s "\${F}" ./
-done
-"""
-}
 
 runOnComplete(workflow)

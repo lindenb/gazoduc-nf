@@ -27,7 +27,7 @@ include {moduleLoad;assertFileExists;isBlank} from '../../modules/utils/function
 include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {DOWNLOAD_SOMALIER} from '../../modules/somalier/somalier.download.nf'
 include {SOMALIER_DOWNLOAD_SITES} from '../../modules/somalier/somalier.download.sites.nf'
-include {SAMTOOLS_SAMPLES02} from '../samtools/samtools.samples.02.nf'
+include {SAMTOOLS_SAMPLES} from '../samtools/samtools.samples.03.nf'
 
 
 
@@ -38,14 +38,16 @@ workflow SOMALIER_BAMS_01 {
 		genomeId
 		bams
 		pedigree
+		user_sites
 	main:
-		
-		ch1 = SAMTOOLS_SAMPLES02( [with_header:true,allow_multiple_references:false,allow_duplicate_samples :false], genomeId , bams)
+		version_ch = Channel.empty()
+
+		ch1 = SAMTOOLS_SAMPLES([:], bams)
 		version_ch = version_ch.mix(ch1.version)
 
-		ch2 = ch1.output.splitCsv(header:true,sep:'\t')
+		ch2 = ch1.rows.filter{T->T.genomeId.equals(genomeId)}
 
-		som_ch = SOMALIER_BAMS_02([:], genomeId, ch2, pedigree)
+		som_ch = SOMALIER_BAMS_02([:], genomeId, ch2, pedigree, user_sites)
 		version_ch = version_ch.mix(som_ch.version)
 
 		version_ch = MERGE_VERSION( "somalier",version_ch.collect())
@@ -61,16 +63,23 @@ workflow SOMALIER_BAMS_02 {
 		genomeId
 		rows
 		pedigree
+		user_sites
 	main:
 		version_ch = Channel.empty()
 
 		exe_ch = DOWNLOAD_SOMALIER([:])
 		version_ch = version_ch.mix(exe_ch.version)
 
-		sites_ch = SOMALIER_DOWNLOAD_SITES([:],genomeId)
-		version_ch = version_ch.mix(sites_ch.version)
+		if(user_sites.name.equals("NO_FILE")) {
+			sites_ch = SOMALIER_DOWNLOAD_SITES([:],genomeId)
+			version_ch = version_ch.mix(sites_ch.version)
+			sites_vcf= sites_ch.vcf
+			}
+		else {
+			sites_vcf = user_sites
+			}
 
-		ch3 = EXTRACT_BAM([:], genomeId, exe_ch.executable , sites_ch.vcf , rows)
+		ch3 = EXTRACT_BAM([:], genomeId, exe_ch.executable , sites_vcf , rows)
 		version_ch = version_ch.mix(ch3.version)
 			
 		somalier_ch = RELATE_SOMALIER([:], genomeId, exe_ch.executable,ch3.output.collect(), pedigree)
@@ -137,7 +146,6 @@ script:
 	def max_rows_html = 50
 """
 hostname 1>&2
-set -o pipefail
 set -x
 
 mkdir -p TMP
