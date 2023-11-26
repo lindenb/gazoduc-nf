@@ -34,11 +34,11 @@ workflow DELLY2_RESOURCES {
        	genomeId
      main:
 		version_ch = Channel.empty()
-		map_ch = GET_MAPPABILITY([:],reference)
+		map_ch = GET_MAPPABILITY([:],genomeId)
 		version_ch = version_ch.mix(map_ch.version)
 
 
-		gaps_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"N","MAX_TO_MERGE":"1"], genomeId)
+		gaps_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"N","MAX_TO_MERGE":"1"], params.genomes[genomeId].fasta)
 		version_ch = version_ch.mix(gaps_ch.version)
 
 		exclude_ch = GET_EXCLUDE([:], genomeId)
@@ -52,7 +52,7 @@ workflow DELLY2_RESOURCES {
 
 	emit:
 		executable = delly2_ch.executable
-		exclude = exclude_ch.bed
+		exclude = xmerge_ch.bed
 		mappability = map_ch.mappability
 		version = version_ch
 	}
@@ -196,7 +196,7 @@ process DOWNLOAD_DELLY2 {
 		path("version.xml"),emit:version
 	script:
 		def version = params.delly2.version
-		def url = "https://github.com/dellytools/delly/releases/download/${version}/delly_${version}_linux_x86_64bit"
+		def url = "https://github.com/dellytools/delly/releases/download/v${version}/delly_v${version}_linux_x86_64bit"
 	"""
 	hostname 1>&2
 	wget -O delly "${url}"

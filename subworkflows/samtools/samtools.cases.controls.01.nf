@@ -23,37 +23,29 @@ SOFTWARE.
 
 */
 
-include { SAMTOOLS_SAMPLES01 as CASES_BAMS; SAMTOOLS_SAMPLES01 as CTRLS_BAMS} from '../../modules/samtools/samtools.samples.01.nf'
+include { SAMTOOLS_SAMPLES01 as CASES_BAMS; SAMTOOLS_SAMPLES01 as CTRLS_BAMS} from '../../modules/samtools/samtools.samples.03.nf'
 include {assertFileExists;isBlank} from '../../modules/utils/functions.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 
 workflow SAMTOOLS_CASES_CONTROLS_01 {
 	take:
 		meta
-		reference
+		genomeId
 		cases_bams
 		ctrls_bams
 	main:
-		assertFileExists(reference,"reference must be defined")
-		assertFileExists(cases_bams,"path to cases list of BAMS must be defined")
 		version_ch = Channel.empty()
 		
-		cases_ch = CASES_BAMS([:], reference, cases_bams)
+		sn_ch = CASES_BAMS([:], cases_bams).rows.map{T->T.plus("status":"case")}
 		version_ch = version_ch.mix(cases_ch.version)
 		
-		if(isBlank(ctrls_bams)) {
-			merge_ch = MERGE_SN([:],cases_ch.output,"")
-			version_ch = version_ch.mix(merge_ch.version)
-			}
-		else
-			{
-			ctrls_ch = CTRLS_BAMS([:], reference, ctrls_bams)
+		if(!ctrls_bams.name.equals("NO_FILE")) {
+			ctrls_ch = CTRLS_BAMS([:], ctrls_bams).rows.map{T->T.plus("status":"control")}
 			version_ch = version_ch.mix(ctrls_ch.version)
-			
-			merge_ch = MERGE_SN([:],cases_ch.output,ctrls_ch.output)
-			version_ch = version_ch.mix(merge_ch.version)
 			}
-		 version_ch = MERGE_VERSION(meta, "cases.controls", "get sample names for cases/controls", version_ch.collect())
+		sn_ch = sn_ch.filter{genome}
+
+		 version_ch = MERGE_VERSION("cases.controls",version_ch.collect())
 	emit:
 		output = merge_ch.output
 		version = version_ch
@@ -63,8 +55,8 @@ process MERGE_SN {
 executor "local"
 input:
 	val(meta)
-	val(cases_list)
-	val(ctrls_list)
+	path(cases_list)
+	path(ctrls_list)
 output:
 	path("cases_controls_bams.tsv"),emit:output
 	path("version.xml"),emit:version

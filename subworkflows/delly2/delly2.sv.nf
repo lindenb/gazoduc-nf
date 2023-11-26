@@ -24,8 +24,8 @@ SOFTWARE.
 */
 include {getVersionCmd;moduleLoad; getBoolean} from '../../modules/utils/functions.nf'
 include {DELLY2_RESOURCES} from './delly2.resources.nf' 
-include {SAMTOOLS_CASES_CONTROLS_01} from '../samtools/samtools.cases.controls.01.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include { SAMTOOLS_SAMPLES as CASES_BAMS; SAMTOOLS_SAMPLES as CTRLS_BAMS} from '../../subworkflows/samtools/samtools.samples.03.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 
 workflow DELLY2_SV {
 	take:
@@ -34,26 +34,50 @@ workflow DELLY2_SV {
 		cases
 		controls
 		genotype_vcf /** SV to genotype or NO_FILE */
+		user_exclude_bed /** cutsom bed exclude or NO_FILE */
+		cnv_bed /** bed for CNV or NO_FILE */
 	main:
 		version_ch = Channel.empty()
 		rsrcr_ch = DELLY2_RESOURCES([:], genomeId)
 		version_ch= version_ch.mix(rsrcr_ch.version)
 
-		cases_controls_ch = SAMTOOLS_CASES_CONTROLS_01([:], genomeId,cases,controls)
-		version_ch= version_ch.mix(cases_controls_ch.version)
 
-		each_case_control_ch = cases_controls_ch.output.
-				splitCsv(header:false,sep:'\t')
+		each_case_control_ch = CASES_BAMS([:], cases).rows.map{T->T.plus("status":"case")}
+                //version_ch = version_ch.mix(each_case_control_ch.version)
+
+                if(!controls.name.equals("NO_FILE")) {
+                        ctrls_ch = CTRLS_BAMS([:], ctrls_bams).rows.map{T->T.plus("status":"control")}
+                        //version_ch = version_ch.mix(ctrls_ch.version)
+			each_case_control_ch = each_case_control_ch.mix(ctrls_ch)
+                        }
+
+		each_case_control_ch.combine(each_case_control_ch).
+			filter{T->T[0].sample.equals(T[1].sample) && !T[0].bam.equals(T[1].bam)}.
+			map{T->{
+				throw new IllegalStateException("duplicate sample ${T}");
+				}}
+
+		each_case_control_ch = each_case_control_ch.
+			filter{T->T.genomeId.equals(genomeId)}.
+			map{T->[T.sample,T.bam,T.status]}
+
 
 		each_sample_bam = each_case_control_ch.map{T->[T[0],T[1]]}
 
-	
+		if(user_exclude_bed.name.equals("NO_FILE")) {
+			exclude_bed = rsrcr_ch.exclude
+			}
+		else {
+			exclude_bed  = user_exclude_bed
+			}
+
+
 		/* run SV discovery */
 		if( genotype_vcf.name.equals("NO_FILE")) {
 			each_cases = each_case_control_ch.filter{T->T[2].equals("case")}.map{T->[T[0],T[1]]}
 		
 		
-			delly_bcf = CALL_DELLY([:], genomeId, rsrcr_ch.executable, rsrcr_ch.exclude, each_cases)
+			delly_bcf = CALL_DELLY([:], genomeId, rsrcr_ch.executable, exclude_bed , each_cases)
 			version_ch= version_ch.mix(delly_bcf.version.first())
 
 			merge_delly = 	MERGE_DELLY([:], genomeId, rsrcr_ch.executable, delly_bcf.output.map{T->T[2]}.collect())
@@ -66,20 +90,20 @@ workflow DELLY2_SV {
 			call_vcf = genotype_vcf
 			}
 
-		genotype_ch = GENOTYPE_DELLY([:],genomeId, rsrcr_ch.executable, call_vcf, rsrcr_ch.exclude, each_sample_bam)
+		genotype_ch = GENOTYPE_DELLY([:],genomeId, rsrcr_ch.executable, call_vcf, exclude_bed, each_sample_bam)
 		version_ch= version_ch.mix(genotype_ch.version.first())
 
 	
 		merge_gt = MERGE_GENOTYPES([:], genotype_ch.output.collect())
 		version_ch= version_ch.mix(merge_gt.version)
 
-		filter_delly = FILTER_DELLY(meta.subMap(["prefix"]), rsrcr_ch.executable, cases_controls_ch.output, merge_gt.output ) 
+		filter_delly = FILTER_DELLY([:], rsrcr_ch.executable, each_case_control_ch.collect() , merge_gt.output ) 
 		version_ch= version_ch.mix(filter_delly.version)
 
-		if(getBoolean(meta,"cnv")) {
+		if(params.cnv==true) {
 			if( genotype_vcf.name.equals("NO_FILE")) {
 
-				cnv_bcf = CALL_CNV([:], genomeId, rsrcr_ch.executable,  rsrcr_ch.mappability, each_cases.combine(filter_delly.output) )
+				cnv_bcf = CALL_CNV([:], genomeId, rsrcr_ch.executable,  rsrcr_ch.mappability, cnv_bed, each_cases.combine(filter_delly.output) )
 				version_ch = version_ch.mix(cnv_bcf.version.first())
 
 				cnv_merge = MERGE_CNV([:], rsrcr_ch.executable,cnv_bcf.output.map{T->T[2]}.collect())
@@ -92,13 +116,13 @@ workflow DELLY2_SV {
 				call_cnv = genotype_vcf
 				}
 
-			cnv_genotype = GENOTYPE_CNV([:], genomeId, rsrcr_ch.executable, call_cnv, rsrcr_ch.mappability,  each_sample_bam)
+			cnv_genotype = GENOTYPE_CNV([:], genomeId, rsrcr_ch.executable, call_cnv, rsrcr_ch.mappability, cnv_bed,  each_sample_bam)
 			version_ch = version_ch.mix(cnv_genotype.version.first())
 	
 			cnv_gt_merge = MERGE_CNV_GENOTYPED([:], cnv_genotype.output.collect())			
 			version_ch = version_ch.mix(cnv_gt_merge.version)
 
-			classify = CLASSIFY_CNV(meta.subMap(["prefix"]), rsrcr_ch.executable, cnv_gt_merge.output)
+			classify = CLASSIFY_CNV([:], rsrcr_ch.executable, cnv_gt_merge.output)
 			version_ch = version_ch.mix(classify.version)
 
 			cnv_output = classify.output
@@ -177,7 +201,7 @@ process MERGE_DELLY {
     script:
         def genome = params.genomes[genomeId]
         def reference =	genome.fasta
-	def bnd = TODO CHECK THIS params.bnd
+	def bnd = params.bnd
     """
     hostname 1>&2
     ${moduleLoad("bcftools")}
@@ -353,7 +377,7 @@ EOF
     }
 
 process FILTER_DELLY {
-    tag "filter"
+    tag "N=${cases_ctrl_list.size()}"
     cache 'lenient'
     label "process_high"
     memory "5g"
@@ -373,13 +397,17 @@ process FILTER_DELLY {
     ${moduleLoad("bcftools/0.0.0")}
     export PATH=\${PWD}:\${PATH}
 
-    delly filter -f germline  -o jeter.bcf "${merged}" 1>&2
+    delly filter -t -f germline  -o jeter.bcf "${merged}" 1>&2
 
     bcftools sort --max-mem "${task.memory.giga}G" -T . -O v -o "jeter1.vcf" jeter.bcf
 
+cat << EOF > jeter.cases.txt
+${cases_ctrl_list.findAll{T->T[2].equals("case")}.collect{T->T[1]}.join("\n")}
+EOF
 
-    awk -F '\t' '(\$3=="case") {printf("%s\\n",\$1);}' "${cases_ctrl_list}" | sort | uniq > jeter.cases.txt
-    awk -F '\t' '(\$3=="control") {printf("%s\\n",\$1);}' "${cases_ctrl_list}"| sort | uniq > jeter.ctrls.txt
+cat << EOF > jeter.ctrls.txt
+${cases_ctrl_list.findAll{T->T[2].equals("control")}.collect{T->T[1]}.join("\n")}
+EOF
 
     if [ ! -s "jeter.cases.txt" ] && [ ! -s "jeter.ctrls.txt"	] ; then
 	# rajoute mais pas teste
@@ -425,6 +453,7 @@ process CALL_CNV {
 	val(genomeId)
 	path(delly)
 	val(mappability)
+	path(bed) //or NO_FILE
 	tuple val(name),val(bam),val(sv)
     output:
     	tuple val(name),val(bam),path("${name}.cnv.bcf"),emit:output
@@ -444,6 +473,7 @@ process CALL_CNV {
 		--mappability "${mappability}" \
 		--genome "${reference}" \
 		--svfile "${sv}" \
+		${bed.name.equals("NO_FILE")?"":"--bed-intervals ${bed}"} \\
 		"${bam}" 1>&2
 
 
@@ -513,6 +543,7 @@ process GENOTYPE_CNV {
         path(delly)
 	val(merged)
         val(mappability)
+	path(bed) //or NO_FILE
         tuple val(name),val(bam)
     output:
         path("genotyped.${name}.cnv.bcf"),emit:output
@@ -531,7 +562,8 @@ process GENOTYPE_CNV {
                 --vcffile "${merged}" \
 		--outfile "jeter.bcf" \
 		--mappability "${mappability}" \
-		--genome "${reference}" \
+		${bed.name.equals("NO_FILE")?"":"--bed-intervals ${bed}"} \\
+		--genome "${reference}" \\
 		${bam} 1>&2
 
     mv -v jeter.bcf "genotyped.${name}.cnv.bcf"

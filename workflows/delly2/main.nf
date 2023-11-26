@@ -24,16 +24,21 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-
+include {runOnComplete;dumpParams} from '../../modules/utils/functions.nf'
 include {DELLY2_SV} from '../../subworkflows/delly2/delly2.sv.nf' 
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 
 
-TODO print USAGE
+if( params.help ) {
+    dumpParams(params);
+    exit 0
+}  else {
+    dumpParams(params);
+}
 
 workflow {
-	delly_ch = DELLY2_SV([:], params.genomeId, file(params.cases), file(params.controls), file(params.genotype_vcf))
+	delly_ch = DELLY2_SV([:], params.genomeId, file(params.cases), file(params.controls), file(params.genotype_vcf), file(params.exclude_bed), file(params.cnv_bed))
 	html = VERSION_TO_HTML(delly_ch.version)	
 	}
 
-TODO workflow on complete
+runOnComplete(workflow)
