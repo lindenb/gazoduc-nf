@@ -23,10 +23,9 @@ SOFTWARE.
 
 */
 include { getVersionCmd;moduleLoad; getKeyValue; getModules; getBoolean; assertNotEmpty} from '../../modules/utils/functions.nf'
-include {SAMTOOLS_CASES_CONTROLS_01} from '../samtools/samtools.cases.controls.01.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include { SAMTOOLS_SAMPLES as CASES_BAMS; SAMTOOLS_SAMPLES as CTRLS_BAMS} from '../../subworkflows/samtools/samtools.samples.03.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include { SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.nf'
-include { DOWNLOAD_GFF3_01 } from '../../modules/gff3/download.gff3.01.nf'
 include {SQRT_FILE} from '../../modules/utils/sqrt.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include {CONCAT_FILES_01} from '../../modules/utils/concat.files.nf'
@@ -35,63 +34,68 @@ include {VCF_DUPHOLD_01} from '../duphold/vcf.duphold.01.nf'
 workflow SMOOVE_SV_POPULATION_01 {
 	take:
 		meta
-		reference
+		genomeId
 		cases
 		controls
+		exclude_bed
 	main:
-		assertNotEmpty(reference,"'reference' must be defined")
-		assertNotEmpty(cases,"'cases' must be defined")
 
 		version_ch = Channel.empty()
 
-		gff_ch = DOWNLOAD_GFF3_01(meta.plus([
-			"with_tabix":true,
-			"gff3url":getKeyValue(meta,"gff3","")
-			]), reference)
-		version_ch= version_ch.mix(gff_ch.version)
 	
-		cases_controls_ch = SAMTOOLS_CASES_CONTROLS_01([:],reference,cases,controls)
-		version_ch= version_ch.mix(cases_controls_ch.version)
+	
+		each_cases = CASES_BAMS([:], cases).rows.map{T->T.plus("status":"case")}
+		each_case_control_ch = each_cases
+                //version_ch = version_ch.mix(each_case_control_ch.version)
 
-		each_case_control_ch = cases_controls_ch.output.splitCsv(header:false,sep:'\t')
-	
-		each_cases = each_case_control_ch.filter{T->T[2].equals("case")}.map{T->[T[0],T[1]]}
+                each_control = CTRLS_BAMS([:], controls).rows.map{T->T.plus("status":"control")}
+		each_case_control_ch = each_case_control_ch.mix(each_control)
+
+
+
 		
 		each_sample_bam = each_case_control_ch.map{T->[T[0],T[1]]}
 		
-		gaps_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"N","MAX_TO_MERGE":"1"],reference)
-		version_ch= version_ch.mix(gaps_ch.version)
+		if(exclude_bed.name.equals("NO_FILE")) {
+			gaps_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"N","MAX_TO_MERGE":"1"],params.genomes[genomeId].fasta )
+			version_ch= version_ch.mix(gaps_ch.version)
+			xbed = gaps_ch.bed
+			}
+		else
+			{
+			xbed = exclude_bed
+			}
 
-		img_ch = INSTALL_SMOOVE_IMAGE(meta)
+		img_ch = INSTALL_SMOOVE_IMAGE([:])
 		version_ch= version_ch.mix(img_ch.version)
 
-		call_ch = CALL_SMOOVE(meta, reference, img_ch.smoove_img, gaps_ch.bed, each_cases)
+		call_ch = CALL_SMOOVE([:], genomeId, img_ch.smoove_img, xbed, each_cases)
 		version_ch= version_ch.mix(call_ch.version.first())
 	
-		merge_ch = MERGE_ALL_SAMPLES(meta, reference, img_ch.smoove_img, call_ch.vcf.collect())
+		merge_ch = MERGE_ALL_SAMPLES([:], genomeId, img_ch.smoove_img, call_ch.vcf.collect())
 		version_ch= version_ch.mix(merge_ch.version)
 
-		gt_ch = GENOTYPE_BAM(meta, reference, img_ch.smoove_img, merge_ch.vcf, each_sample_bam)
+		gt_ch = GENOTYPE_BAM([:], genomeId, img_ch.smoove_img, merge_ch.vcf, each_sample_bam)
 		version_ch= version_ch.mix(gt_ch.version.first())
 		
-		to_file_ch = COLLECT_TO_FILE_01(meta, gt_ch.vcf.collect())
-		sqrt_ch = SQRT_FILE(meta.plus(["min_file_split":100]), to_file_ch.output)
+		to_file_ch = COLLECT_TO_FILE_01([:], gt_ch.vcf.collect())
+		sqrt_ch = SQRT_FILE([:], to_file_ch.output)
 		version_ch= version_ch.mix(sqrt_ch.version)
 
 		each_cluster = sqrt_ch.output.splitCsv(header: false,sep:',',strip:true).map{T->T[0]}
 		
-		paste01_ch = PASTE01(meta, reference, img_ch.smoove_img, each_cluster)
+		paste01_ch = PASTE01([:], genomeId, img_ch.smoove_img, each_cluster)
 		version_ch= version_ch.mix(paste01_ch.version)
 
-		pasteall_ch = PASTE_ALL(meta, reference, img_ch.smoove_img, gff_ch.gff3 , paste01_ch.vcf.collect())
+		pasteall_ch = PASTE_ALL([:], genomeId, img_ch.smoove_img, paste01_ch.vcf.collect())
 		version_ch= version_ch.mix(pasteall_ch.version)
 
 		/** duphold is slow when many samples . */
-		if(meta.with_duphold) {
-			all_bams_ch = CONCAT_FILES_01(meta, Channel.from(cases,controls).collect())
+		if(params.with_duphold) {
+			all_bams_ch = CONCAT_FILES_01([:], Channel.from(cases,controls).collect())
 			version_ch= version_ch.mix(all_bams_ch.version)
 
-			duphold_ch = VCF_DUPHOLD_01(meta, reference, all_bams_ch.output , pasteall_ch.vcf, file("NO_FILE"))
+			duphold_ch = VCF_DUPHOLD_01([:], genomeId, all_bams_ch.output , pasteall_ch.vcf, file("NO_FILE"))
 			version_ch= version_ch.mix(duphold_ch.version)
 			
 			final_vcf = duphold_ch.vcf
@@ -102,7 +106,7 @@ workflow SMOOVE_SV_POPULATION_01 {
 			final_idx = pasteall_ch.index
 		}
 
-		version_ch = MERGE_VERSION(meta, "smoove", "smoove", version_ch.collect())
+		version_ch = MERGE_VERSION("smoove", version_ch.collect())
 	emit:
 		version = version_ch.version
 		vcf = final_vcf
@@ -118,11 +122,10 @@ process INSTALL_SMOOVE_IMAGE {
 		path("smoove.simg"),emit:smoove_img
 		path("version.xml"),emit:version
 	script:
-		def img = getKeyValue(meta,"smoove_image","")
-	if (!img.isEmpty())
+		def img = params.smoove.singularity_image
 	"""
 	hostname 1>&2
-	module load ${getModules("singularity/2.4.5")}
+	${moduleLoad("singularity/2.4.5")}
 	set -x
 	cp -v "${img}" "smoove.simg"
 
@@ -137,25 +140,6 @@ process INSTALL_SMOOVE_IMAGE {
 	</properties>
 	EOF
 	"""
-	else
-	""" 
-	hostname 1>&2
-	module load ${getModules("singularity/2.4.5")}
-
-	mkdir TMP CACHE
-	export SINGULARITY_TMPDIR=\${PWD}/TMP
-	export SINGULARITY_CACHEDIR=\${PWD}/CACHE
-
-	singularity --debug --verbose build "smoove.simg" "docker://brentp/smoove"
-	#######################################################################
-	cat <<- EOF > version.xml
-	<properties id="${task.process}">
-		<entry key="name">${task.process}</entry>
-		<entry key="description">smoove image</entry>
-		<entry key="smoove.version">\$(singularity run smoove.simg smoove --version)</entry>
-	</properties>
-	EOF
-	"""
 	}
 
 
@@ -165,7 +149,7 @@ process INSTALL_SMOOVE_IMAGE {
  *
  */
 process CALL_SMOOVE {
-tag "${sample}/${file(bam).name}"
+tag "${row.sample}/${file(row.bam).name}"
 cache "lenient"
 memory "5g"
 errorStrategy "finish"
@@ -173,15 +157,18 @@ afterScript  "rm -rf TMP TMP2"
 cpus 1 /* can only parallelize up to 2 or 3 threads on a single-sample and it's most efficient to use 1 thread. */
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	path(img)
 	val(exclude)
-	tuple val(sample),val(bam)
+	val(row)
 output:
-	path("${sample}-smoove.genotyped.vcf.gz"),emit:vcf
-	path("${sample}-smoove.genotyped.vcf.gz.tbi"),emit:tbi
+	path("${row.sample}-smoove.genotyped.vcf.gz"),emit:vcf
+	path("${row.sample}-smoove.genotyped.vcf.gz.tbi"),emit:tbi
 	path("version.xml"),emit:version
 script:
+	def sample = row.sample
+	def bam = row.bam
+	def reference = params.genomes[genomeId].fasta
 	def xbed = file(exclude)
 	def ref = file(reference)
 	def xbam = file(bam)
@@ -237,7 +224,7 @@ cpus 16
 afterScript  "rm -rf TMP TMP2"
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	val(img)
 	val(L)
 output:
@@ -248,6 +235,7 @@ when:
 	L.size()>0
 
 script:
+	def reference = params.genomes[genomeId].fasta
 	def ref = file(reference)
 """
 	hostname 1>&2
@@ -289,7 +277,7 @@ script:
 
 
 process GENOTYPE_BAM {
-tag "${sample}/${file(bam).name}/${file(merged).name}"
+tag "${row.sample}/${file(row.bam).name}/${file(merged).name}"
 cache "lenient"
 errorStrategy "retry"
 maxRetries 5
@@ -298,15 +286,18 @@ afterScript  "rm -rf TMP TMP2"
 cpus 1 /* can only parallelize up to 2 or 3 threads on a single-sample and it's most efficient to use 1 thread. */
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	val(img)
 	val(merged)
-	tuple val(sample),val(bam)
+	val(row)
 output:
-	path("${sample}-smoove.regenotyped.vcf.gz"),emit:vcf
-	path("${sample}-smoove.regenotyped.vcf.gz.tbi"),emit:tbi
+	path("${row.sample}-smoove.regenotyped.vcf.gz"),emit:vcf
+	path("${row.sample}-smoove.regenotyped.vcf.gz.tbi"),emit:tbi
 	path("version.xml"),emit:version
 script:
+	def reference = params.genomes[genomeId].fasta
+	def sample = row.sample
+	def bam = row.bam
 	def ref = file(reference)
 	def vcf0 = file(merged)
 	def xbam = file(bam)
@@ -358,7 +349,7 @@ cache "lenient"
 memory "10g"
 input:
 	val(val)
-	val(reference)
+	val(genomeId)
 	val(img)
 	val(L)
 output:
@@ -366,6 +357,7 @@ output:
 	path("paste.smoove.square.vcf.gz.tbi"),emit:tbi
 	path("version.xml"),emit:version
 script:
+	def reference = params.genomes[genomeId].fasta
 """
 	hostname 1>&2
 
@@ -410,14 +402,13 @@ input:
 	val(meta)
 	val(reference)
 	val(img)
-	val(gff3)
 	val(L)
 output:
-	path("${meta.prefix?:""}smoove.bcf"),emit:vcf
-	path("${meta.prefix?:""}smoove.bcf.csi"),emit:index
+	path("${params.prefix?:""}smoove.bcf"),emit:vcf
+	path("${params.prefix?:""}smoove.bcf.csi"),emit:index
 	path("version.xml"),emit:version
 script:
-	def prefix = meta.prefix?:""
+	def prefix = params.prefix?:""
 	def gff = ""//gff3
 	log.warn("JE SUPPRIME GFF POUR LE MOMENT. CA BUG POUR SOLENA OCT 2022")
 """
