@@ -24,67 +24,37 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
 
-
-gazoduc.build("vcf","NO_FILE").
-        desc("Input VCF").
-        required().
-        existingFile().
-        put()
-
-gazoduc.build("sample2pop","NO_FILE").
-        desc("optional tab delimited file: SAMPLE(tab)POPULATION").
-        put()
-
-gazoduc.build("af_tag","AF_popmax").
-        desc("INFO/TAG in gnomad").
-        put()
-
-gazoduc.build("bed","NO_FILE").
-        desc("bed file CHROM/START/END/TITLE . Results will be grouped by title").
-	required().
-	existingFile().
-        put()
-
-gazoduc.build("max_af",-1).
-        desc("max displayed frequency. Ignore if <=0").
-	setDouble().
-        put()
-
-
-params.gnomadViewOpt=""
-params.userViewOpt=""
-
-
-include {runOnComplete;moduleLoad} from '../../modules/utils/functions.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {runOnComplete;moduleLoad;dumpParams} from '../../modules/utils/functions.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {SIMPLE_PUBLISH_01} from '../../modules/utils/publish.simple.01.nf'
 
+
 if( params.help ) {
-    gazoduc.usage().
-	name("plot AF vcf vs AF gnomad").
-	desc("Compare AF in vcf vs gnomad").
-	print();
+    dumpParams(params);
     exit 0
-} else {
-   gazoduc.validate();
+}  else {
+    dumpParams(params);
 }
 
 
 
-workflow {
-	ch = AF_FREQ_GNOMAD_VS_VCF( params, params.reference, params.gnomad, params.vcf, Channel.fromPath(params.bed), params.sample2pop )
 
-	SIMPLE_PUBLISH_01(params, Channel.empty().mix(ch.zip).mix(ch.version).mix(ch.pdf).collect())
+workflow {
+	ch = AF_FREQ_GNOMAD_VS_VCF([:],
+		params.genomeId,
+		params.vcf,
+		Channel.fromPath(params.bed),
+		params.sample2pop
+		)
+
 	}
 
 
 workflow AF_FREQ_GNOMAD_VS_VCF {
 	take:
 		meta
-		reference
-		gnomad
+		genomeId
 		vcf
 		bed
 		sample2pop
@@ -96,17 +66,12 @@ workflow AF_FREQ_GNOMAD_VS_VCF {
 			map{T->[(T.size() < 4 ? "ALL":T[3]), T[0]+"\t"+T[1]+"\t"+T[2] ]}.
 			groupTuple()
 
-		plot_ch = PLOT_INTERVAL(meta, reference, gnomad, vcf, sample2pop, interval_ch)
+		plot_ch = PLOT_INTERVAL([:], genomeId, vcf, sample2pop, interval_ch)
 		version_ch = version_ch.mix(plot_ch.version)
 
 
-		version_ch = MERGE_VERSION(meta, "vsgnomad", "vs gnomad",version_ch.collect())
-
-		zip_ch = ZIP_IT(meta, plot_ch.output.collect(), plot_ch.diff.collect(), version_ch)
-
+		version_ch = MERGE_VERSION("vsgnomad",version_ch.collect())
 	emit:
-		pdf = zip_ch.pdf
-		zip = zip_ch.zip
 		version = version_ch
 	}
 
@@ -115,34 +80,41 @@ runOnComplete(workflow)
 
 process PLOT_INTERVAL {
 tag "${title} n=${L.size()}"
-afterScript "rm -rf TMP"
+// afterScript "rm -rf TMP"
 input:
 	val(meta)
-	val(reference)
-	val(gnomad)
+	val(genomeId)
 	val(vcf)
 	val(sample2pop)
 	tuple val(title),val(L)
 output:
-	path("${meta.prefix?:""}${title}.pdf"),emit:output
-	path("${meta.prefix}${title}.differences.intervals"),emit:diff
+	path("${params.prefix?:""}${title}.png"),emit:output
+	path("${params.prefix}${title}.differences.intervals"),emit:diff
 	path("version.xml"),emit:version
 script:
+	def genome = params.genomes[genomeId]
+	def reference = genome.fasta
 	def max_diff=0.1
+	def gnomad = genome.gnomad_genome
 """
 hostname 1>&2
 ${moduleLoad("bcftools bedtools jvarkit")}
 set -o pipefail
 mkdir -p TMP
+set -x
 
 # merge exon bed
 cat << EOF |  cut -f1,2,3 | sort -T TMP -t '\t' -k1,1 -k2,2n | bedtools merge > TMP/intervals.bed
 ${L.join("\n")}
 EOF
 
-# convert the bed for gnomad
+# get gnomad header
 bcftools view --header-only "${gnomad}" > TMP/header.gnomad.vcf
-grep -w -F '${meta.af_tag}' TMP/header.gnomad.vcf
+
+# check INFO/af_xx is present in header
+grep -w -F '${params.af_tag}' TMP/header.gnomad.vcf 1>&2
+
+# convert bed for gnomad
 java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f TMP/header.gnomad.vcf --column 1 --convert SKIP TMP/intervals.bed > TMP/gnomad.bed
 
 # convert the bed for the vcf
@@ -151,7 +123,7 @@ java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f TMP/header.user.vcf --column 1 --
 
 
 # extract BAD intervals for gnomad
-bcftools view -O u -G -i '(FILTER!="PASS" && FILTER!=".") || TYPE!~"snp" || N_ALT>1' \
+bcftools view -O u -G ${params.exclude_gnomad_expression} \
 		--regions-file TMP/gnomad.bed \
 		"${gnomad}" |\
 	bcftools query -f '%CHROM\t%POS0\t%END\\n' > TMP/exclude.01.bed
@@ -163,7 +135,7 @@ bcftools query -f '%CHROM\t%POS0\t%REF\\n' --regions-file TMP/gnomad.bed "${gnom
 
 
 # extract BAD intervals for vcf
-bcftools view -O u -G -i '(FILTER!="PASS" && FILTER!=".") || TYPE!~"snp" || N_ALT>1 || F_MISSING > 0.05' \
+bcftools view -O u -G ${params.exclude_vcf_expression} \
 		--regions-file TMP/user.bed \
 		"${vcf}" |\
 	bcftools query -f '%CHROM\t%POS0\t%END\\n' > TMP/exclude.02.bed
@@ -172,6 +144,12 @@ bcftools view -O u -G -i '(FILTER!="PASS" && FILTER!=".") || TYPE!~"snp" || N_AL
 cat TMP/exclude.01.bed TMP/exclude.02.bed |\
 	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f TMP/header.gnomad.vcf  --column 1 --convert SKIP > TMP/exclude.gnomad.bed
 
+# prevent empty file
+if test ! -s TMP/exclude.gnomad.bed ; then
+	echo "xxx\t0\t1" > TMP/exclude.gnomad.bed
+fi
+
+
 # merge BAD intervals for vcf
 cat TMP/exclude.01.bed TMP/exclude.02.bed |\
 	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f TMP/header.user.vcf  --column 1 --convert SKIP > TMP/exclude.user.bed
@@ -179,11 +157,11 @@ cat TMP/exclude.01.bed TMP/exclude.02.bed |\
 
 # extract gnomad
 bcftools view -O u -m 2 -M 2 --types snps \
-		${meta.gnomadViewOpt?:""} \
+		${params.gnomadViewOpt?:""} \
 		--regions-file TMP/gnomad.bed \
 		"${gnomad}" |\
 	bcftools view -O u --targets-file ^TMP/exclude.gnomad.bed --targets-overlap 1 |\
-	bcftools query -f '%CHROM\t%POS\t%REF\t%ALT,%INFO/${meta.af_tag}\\n' |\
+	bcftools query -f '%CHROM\t%POS\t%REF\t%ALT,%INFO/${params.af_tag}\\n' |\
 	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f TMP/header.user.vcf  --column 1 --convert SKIP |\
 	sort -T . -t ',' -k1,1 > TMP/gnomad.af.csv
 
@@ -212,19 +190,19 @@ do
 	fi
 
 	# extract samples
-	bcftools view -O u -m 2 -M 2 \
-		--types snps \
-		${meta.userViewOpt?:""} \
-		--samples-file TMP/pop.samples.txt \
-		--regions-file TMP/user.bed "${vcf}" |\
-	bcftools view -O u --targets-file ^TMP/exclude.user.bed --targets-overlap 1 |\
+	bcftools norm -f "${reference}" --regions-file TMP/user.bed --multiallelics -any -O u "${vcf}" |\\
+	bcftools view -O u -m 2 -M 2 \\
+		--types snps \\
+		${params.userViewOpt?:""} \\
+		--samples-file TMP/pop.samples.txt | \\
+	bcftools view -i 'ALT!="*"' -O u --targets-file ^TMP/exclude.user.bed --targets-overlap 1 |\
 	bcftools +fill-tags -O u -- -t AF |\
 	bcftools query -f '%CHROM\t%POS\t%REF\t%ALT,%INFO/AF\\n' |\
-	sort -T . -t ',' -k1,1 > TMP/user.af.csv
+	sort -T TMP -t ',' -k1,1 > TMP/user.af.csv
 	
 	join -o '1.1,2.1,1.2,2.2' -t ',' -1 1 -2 1 TMP/gnomad.af.csv TMP/user.af.csv > TMP/join.csv
 
-	# unmatched lines
+	# unmatched lines output is VAR1,VAR2,AF1,AF2
 	join -v 1 -t ',' -1 1 -2 1 TMP/gnomad.af.csv TMP/user.af.csv | awk -F, '{printf("%s,NA,%s,0.0\\n",\$1,\$2);}'  >> TMP/join.csv
 	join -v 2 -t ',' -1 1 -2 1 TMP/gnomad.af.csv TMP/user.af.csv | awk -F, '{printf("NA,%s,0.0,%s\\n",\$1,\$2);}'  >> TMP/join.csv
 	
@@ -281,11 +259,11 @@ if(maxXY==0.0 || maxXY > 0.8) {
 	}
 
 # max af was specified by user
-if(${meta.max_af} > 0) {
-	maxXY = ${meta.max_af}
+if(${params.max_af} > 0) {
+	maxXY = ${params.max_af}
 	}
 
-pdf("TMP/out.pdf")
+png("TMP/out.png")
 
 for(i in c(1:nrow(TT))) {
 	T2<-read.table(TT[i,2],header = FALSE,sep=",",comment.char="",col.names=c("X1","X2"),colClasses=c("numeric","numeric"))
@@ -295,9 +273,9 @@ for(i in c(1:nrow(TT))) {
 		plot(T2,
 			type = "p",
 			main="${title}",
-			sub ="INFO/${meta.af_tag}",
-			xlab="AF ${file(meta.gnomad).name}",
-			ylab="AF ${file(meta.vcf).name}",
+			sub ="INFO/${params.af_tag}",
+			xlab="AF ${file(gnomad).name}",
+			ylab="AF ${file(vcf).name}",
 			las=2,
 			xlim=c(0,maxXY),
 			ylim=c(0,maxXY),
@@ -341,9 +319,30 @@ R --vanilla --quiet < jeter.R
 
 
 
-mv "TMP/out.pdf" "${meta.prefix}${title}.pdf"
+mv "TMP/out.png" "${params.prefix?:""}${title}.png"
 
-cut -f 3 TMP/labels.tsv | sort | uniq > "${meta.prefix}${title}.differences.intervals"
+cut -f 3 TMP/labels.tsv | sort | uniq > "${params.prefix?:""}${title}.differences.intervals"
+
+
+
+##
+## create MULTIQC CONFIG
+##
+cat << EOF > "${title}.multiqc.${title}.multiqc_config.yaml"
+custom_data:
+  af_${title}:
+    parent_id: af_section
+    parent_name: "VCF vs Gnomad"
+    parent_description: "compare VCF allele frequencies with those in gnomad (<code>${params.af_tag}</code>)"
+    section_name: "${title}"
+    description: "Compare allele frequency for <b>${title}</b>."
+sp:
+  af_${title}:
+    fn: "${params.prefix?:""}${title}.png"
+ignore_images: false
+EOF
+
+
 
 
 ##################
@@ -355,35 +354,3 @@ cat << EOF > version.xml
 EOF
 """
 }
-
-
-process ZIP_IT {
-tag "N=${L.size()}"
-afterScript "rm -rf TMP"
-executor "local"
-input:
-	val(meta)
-	val(L)
-	val(L2)
-	path(version)
-output:
-	path("${meta.prefix}all.zip"),emit:zip
-	path("${meta.prefix}all.pdf"),emit:pdf
-script:
-"""
-mkdir -p TMP
-
-cat << EOF | awk -F '/' '{printf("%s\t%s\\n",\$NF,\$0);}' | sort -t '\t' -T. -k1,1 -k2,2 | cut -f 2- | uniq  > TMP/jeter.list
-${L.join("\n")}
-EOF
-
-
-cat ${L2.join(" ")} | sort -T . |uniq > TMP/${meta.prefix}differences.intervals
-
-gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -dPDFSETTINGS=/prepress -sOutputFile=${meta.prefix}all.pdf @TMP/jeter.list
-
-zip -0 -j ${meta.prefix}all.zip  ${meta.prefix}differences.intervals ${meta.prefix}all.pdf "${version}"
-"""
-}
-
-

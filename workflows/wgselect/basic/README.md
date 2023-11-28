@@ -1,5 +1,6 @@
 
 
+
 # wgselect
 
 
@@ -77,56 +78,11 @@ A **pedigree** is a tab delimited file without header with the following columns
 ## Parameters
 
 
-Parameters can be specified on the command line by prefixing the parameter name with a double dash character e.g. --input.
-
-| Parameters | Default Value | Description | Defined in  |
-| --- | --- | --- |
-| --vcf | "NO_FILE" |  indexed VCF or a list of vcf with the .list suffix  | ../../../confs/by_workflow/wgselect.basic.cfg |
-| --pedigree | "NO_FILE" |  pedigree  | ../../../confs/by_workflow/wgselect.basic.cfg |
-| --bed | "NO_FILE" |  limit to that bed  | ../../../confs/by_workflow/wgselect.basic.cfg |
-| --prefix | "" |  files will be generated with this prefix .eg: "20230101.hello."  | ../../../confs/default.params.cfg |
-| --help | false |  should you print the help and exit ?  | ../../../confs/default.params.cfg |
-| --publishDir | "" |  base directory where results will be written  | ../../../confs/default.params.cfg |
-| --genomeId | "" |  genome identifier in gazoduc-nf/confs/params.genomes. e.g: "hs37d5"  | ../../../confs/genomeId.params.cfg |
-| --wgselect.distance | "10mb" |  when splitting vcf into parts, make interval of that distance  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.min_distance | "100" |  when splitting vcf into parts, don't leave variant if distance lower that this value  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.bcftools_options | "" |  option for first bcftools, e.g: --apply-filters '.,PASS'  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.gatk_hardfiltering_percentile | 0.001 |  apply gatk hard filtering ignore if < 0  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.f_missing | 0.05 /* Note: setting params.pihat.f_missing raised a bug */ |  fraction of missing allele  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.with_rmsk | true  |  filter out variant overlapping repeat masker data in ucsc  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.with_encode_exclude | true |  filter out variants in encode blacklisted  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.with_lcr | true |  filter out variants in low complexity region  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.with_simple_repeats | true |  filter out variant overlapping  ucsc  simple repeat  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.max_alleles_count | 3 |  max alleles per variant  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.polyx | 10 |  max polyx for jvarkit/vcfployx  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.with_kinship | false |  use kinship : not sure it is still used  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.fisherh | -1.0 |  remove variant having a low p-value case vs controls ignore if < 0  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.soacn | "SO:0001629,SO:0001818" |  keep so consequences  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.gnomadPop | "AF_nfe" |  GNOMAD population  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.gnomadAF | 0.01  |  gnomad max allele frequency  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.minGQsingleton | 90 |  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.lowGQ | 50 |  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.annot_method | "snpeff" |  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.minDP | 10 |  remove variant mean called genotype depth is tool low  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.maxDP | 300 |  remove variant mean called genotype depth is tool high  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.lowGQ | 70 |  ALL genotypes carrying a ALT must have a Genotype Quality GQ >= x. Ignore if x <=0  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.with_count | true |  Count variants at each step of wgselect  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.with_homvar | true |  remove variant on autosome if no HET and found at least one HOM_VAR  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.maxmaf | 0.1 |  remove variant if internal MAF is too high. Disable if < 0  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.fisherh | 0.05 |  fisher horizontal : remove variant if fisher test per variant is lower than 'x'. Disable if <0.  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.hwe | 0.000000000000001 |  remove variants with HW test. Ask Floriane :-P . Disable if <0.  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.with_contrast | true |  Apply bcftools contrast on VCF  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.inverse_so | false |  inverse output of vcffilterso  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.minGQsingleton | 99 |  remove variant if singleton has bad GQ < x  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.minRatioSingleton | 0.2 |  emove variant if HET singleton has AD ratio out of x< AD/ratio < (1.0-x)  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.annot_method | "snpeff" |  how to annotate ? 'vep' or 'snpeff'  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.cadd_phred | -1.0 |  Discard variants having CADD phred treshold < 'x'. Ignore if 'x' < 0.0 or --wgselect_cadd_tabix is not defined.  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.gnomadgenomefilterexpr_hg19 | "FILTER~\"GNOMAD_GENOME_BAD_AF\"|| FILTER~\"GNOMAD_GENOME_InbreedingCoeff\"|| FILTER~\"GNOMAD_GENOME_RF\"" |  remove gnomad hg19 expression  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.gnomadgenomefilterexpr_hg38 | "FILTER~\"GNOMAD_GENOME_BAD_AF\"|| FILTER~\"GNOMAD_GENOME_InbreedingCoeff\"|| FILTER~\"GNOMAD_GENOME_AS_VQSR\"" |  remove gnomad hg38 expression  | ../../../confs/by_subworkflow/wgselect.config |
-| --wgselect.cadd_phred | -1.0 |  TODO  | ../../../confs/by_subworkflow/wgselect.config |
-
-
-
+MACRO_OPTIONS(MACRO_AWK_PARAMS(../../../confs/by_workflow/wgselect.basic.cfg,)m4_dnl
+MACRO_AWK_PARAMS(../../../confs/default.params.cfg,)m4_dnl
+MACRO_AWK_PARAMS(../../../confs/genomeId.params.cfg,)m4_dnl
+MACRO_AWK_PARAMS(../../../confs/by_subworkflow/wgselect.config,wgselect.)m4_dnl
+)
 
 
 
@@ -142,7 +98,7 @@ nextflow -c "../../gazoduc-nf/confs/${HOSTNAME}.cfg" \
 	run \
 	-resume \
 	-work-dir "/SCRATCH-BIRD/users/${USER}/WORKDIR/" \
-	gazoduc-nf/workflows/wgselect/basic/wgselect.basic.nf \
+	gazoduc-nf/workflows/wgselect/basic/main.nf \
 	--vcf /path/to/vcf \
 	--genomeId hs37d5 \
         --prefix "20230906.projectName.hs37d5." \
@@ -159,7 +115,7 @@ where
  - `/path/to/MACRO_MAIN_CONFIG`: is the config file containing all the parameters
  - `-resume` tell nextflow NOT to restart everything from scratch
  - `/SCRATCH-BIRD/users/${USER}/WORKDIR/` is the directory where nextflow will produce the results.
- - `gazoduc-nf/workflows/wgselect/basic/wgselect.basic.nf` is the main nextflow script
+ - `gazoduc-nf/workflows/wgselect/basic/main.nf` is the main nextflow script
 
 
 

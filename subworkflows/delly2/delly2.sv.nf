@@ -392,12 +392,13 @@ process FILTER_DELLY {
 	path("${params.prefix?:""}sv.bcf.csi"),emit:index
     script:
 	def prefix = params.prefix?:""
+	def tag = params.delly2.version.equals("1.1.6")?"":"-t"
     """
     export LC_ALL=C
     ${moduleLoad("bcftools/0.0.0")}
     export PATH=\${PWD}:\${PATH}
 
-    delly filter -t -f germline  -o jeter.bcf "${merged}" 1>&2
+    delly filter ${tag} -f germline  -o jeter.bcf "${merged}" 1>&2
 
     bcftools sort --max-mem "${task.memory.giga}G" -T . -O v -o "jeter1.vcf" jeter.bcf
 
