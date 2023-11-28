@@ -27,7 +27,7 @@ nextflow.enable.dsl=2
 
 include {runOnComplete;moduleLoad;dumpParams} from '../../modules/utils/functions.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
-include {SIMPLE_PUBLISH_01} from '../../modules/utils/publish.simple.01.nf'
+include {MULTIQC} from '../../subworkflows/multiqc/multiqc.nf'
 
 
 if( params.help ) {
@@ -69,6 +69,7 @@ workflow AF_FREQ_GNOMAD_VS_VCF {
 		plot_ch = PLOT_INTERVAL([:], genomeId, vcf, sample2pop, interval_ch)
 		version_ch = version_ch.mix(plot_ch.version)
 
+		MULTIQC(plot_ch.output.collect())
 
 		version_ch = MERGE_VERSION("vsgnomad",version_ch.collect())
 	emit:
@@ -80,7 +81,7 @@ runOnComplete(workflow)
 
 process PLOT_INTERVAL {
 tag "${title} n=${L.size()}"
-// afterScript "rm -rf TMP"
+afterScript "rm -rf TMP"
 input:
 	val(meta)
 	val(genomeId)
@@ -88,14 +89,14 @@ input:
 	val(sample2pop)
 	tuple val(title),val(L)
 output:
-	path("${params.prefix?:""}${title}.png"),emit:output
-	path("${params.prefix}${title}.differences.intervals"),emit:diff
+	path("${params.prefix?:""}${title}.*"),emit:output
 	path("version.xml"),emit:version
 script:
 	def genome = params.genomes[genomeId]
 	def reference = genome.fasta
 	def max_diff=0.1
 	def gnomad = genome.gnomad_genome
+	def description = "compare VCF allele frequencies with <code>${params.af_tag}</code> in gnomad."
 """
 hostname 1>&2
 ${moduleLoad("bcftools bedtools jvarkit")}
@@ -146,13 +147,19 @@ cat TMP/exclude.01.bed TMP/exclude.02.bed |\
 
 # prevent empty file
 if test ! -s TMP/exclude.gnomad.bed ; then
-	echo "xxx\t0\t1" > TMP/exclude.gnomad.bed
+	awk -F '\t' '{printf("%s\t0\t1\\n",\$1);}' '${reference}.fai' | tail -n 1  > TMP/exclude.gnomad.bed
 fi
 
 
 # merge BAD intervals for vcf
 cat TMP/exclude.01.bed TMP/exclude.02.bed |\
 	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f TMP/header.user.vcf  --column 1 --convert SKIP > TMP/exclude.user.bed
+
+# prevent empty file
+if test ! -s TMP/exclude.user.bed ; then
+	awk -F '\t' '{printf("%s\t0\t1\\n",\$1);}' '${reference}.fai' | tail -n 1  > TMP/exclude.user.bed
+fi
+
 
 
 # extract gnomad
@@ -205,10 +212,11 @@ do
 	# unmatched lines output is VAR1,VAR2,AF1,AF2
 	join -v 1 -t ',' -1 1 -2 1 TMP/gnomad.af.csv TMP/user.af.csv | awk -F, '{printf("%s,NA,%s,0.0\\n",\$1,\$2);}'  >> TMP/join.csv
 	join -v 2 -t ',' -1 1 -2 1 TMP/gnomad.af.csv TMP/user.af.csv | awk -F, '{printf("NA,%s,0.0,%s\\n",\$1,\$2);}'  >> TMP/join.csv
-	
+	tail TMP/join.csv 1>&2
+
 	# remove '.' from data, sometimes shit happens
 	awk -F, '!(\$3=="." || \$4==".")' TMP/join.csv > TMP/join.csv.bis
-	mv TMP/join.csv.bis TMP/join.csv
+	mv -v TMP/join.csv.bis TMP/join.csv
 
 
 	# high differences
@@ -230,7 +238,7 @@ do
 	rm TMP/pop.samples.txt TMP/join.csv
 done
 
-sort TMP/labels.tsv | uniq > TMP/labels.tsv.bis && mv TMP/labels.tsv.bis TMP/labels.tsv
+sort -T TMP TMP/labels.tsv | uniq > TMP/labels.tsv.bis && mv TMP/labels.tsv.bis TMP/labels.tsv
 
 cat << __EOF__ > jeter.R
 TT<-read.table("TMP/manifest.txt",header = FALSE,sep="\t",comment.char="",col.names=c("title","path","title2"),stringsAsFactors=FALSE)
@@ -319,21 +327,47 @@ R --vanilla --quiet < jeter.R
 
 
 
-mv "TMP/out.png" "${params.prefix?:""}${title}.png"
+mv -v "TMP/out.png" "${params.prefix?:""}${title}.png"
 
 cut -f 3 TMP/labels.tsv | sort | uniq > "${params.prefix?:""}${title}.differences.intervals"
 
+# extract highest AF, sort
+awk -F '\t' '{X=\$1*1.0;Y=\$2*.1.0;M=X;if(M<Y) {M=Y;}  printf("%f\t%s\\n",M,\$0);}' TMP/labels.tsv | sort -T TMP -t '\t' -k1,1gr | cut -f2- | head -n 10 | column -t > TMP/jeter1.txt
+
+
+if test -s TMP/jeter1.txt ; then
+
+
+cat << __EOF__ > TMP/jeter.html
+<!--
+parent_id: af_section
+parent_name: "VCF vs Gnomad"
+parent_description: "${description}"
+id: '${title}_table'
+section_name: '${title} differences'
+description: 'Some of the worst differences between the VCF and gnomad.'
+-->
+<pre>
+__EOF__
+
+cat TMP/jeter1.txt >> TMP/jeter.html
+
+echo "</pre>" >> TMP/jeter.html
+
+mv TMP/jeter.html "${params.prefix?:""}${title}.table_mqc.html"
+
+fi
 
 
 ##
 ## create MULTIQC CONFIG
 ##
-cat << EOF > "${title}.multiqc.${title}.multiqc_config.yaml"
+cat << EOF > "${params.prefix?:""}${title}.multiqc_config.yaml"
 custom_data:
   af_${title}:
     parent_id: af_section
     parent_name: "VCF vs Gnomad"
-    parent_description: "compare VCF allele frequencies with those in gnomad (<code>${params.af_tag}</code>)"
+    parent_description: "${description}"
     section_name: "${title}"
     description: "Compare allele frequency for <b>${title}</b>."
 sp:
