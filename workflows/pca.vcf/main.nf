@@ -6,8 +6,9 @@ Thank you Floriane Simonet for the Help
 
 include {moduleLoad;runOnComplete;dumpParams} from '../../modules/utils/functions.nf'
 include {PIHAT01} from '../../subworkflows/pihat/pihat.01.nf'
-include {MULTIQC_01} from '../../modules/multiqc/multiqc.01.nf'
-include {PARAMS_MULTIQC} from '../../modules/utils/params.multiqc.nf'
+include {MULTIQC} from '../../subworkflows/multiqc/multiqc.nf'
+
+def whatisapca = "<cite><b>PCA</b> is a statistical technique for reducing the dimensionality of a dataset. This is accomplished by linearly transforming the data into a new coordinate system where (most of) the variation in the data can be described with fewer dimensions than the initial data.</cite>"
 
 
 if( params.help ) {
@@ -21,7 +22,7 @@ if( params.help ) {
 runOnComplete(workflow)
 
 workflow {
-	ACP_VCF([:], params.genomeId, file(params.vcf))
+	ACP_VCF([:], params.genomeId, file(params.vcf), file(params.sample2collection))
 	}
 
 workflow ACP_VCF {
@@ -29,6 +30,7 @@ workflow ACP_VCF {
 		meta
 		genomeId
 		vcf
+		sample2collection
 	main:
 		pihat_ch = PIHAT01(genomeId, vcf, Channel.fromPath("NO_FILE"))
 		cluster_ch = PLINK_CLUSTER( pihat_ch.genome_bcf, pihat_ch.plink_genome)
@@ -42,7 +44,8 @@ workflow ACP_VCF {
 
 		headers = cluster_ch.header.splitCsv(header:true,sep:'\t')
 		
-		plot_ch = PLOT_IT(headers.combine(headers).
+		plot_ch = PLOT_IT(
+			headers.combine(headers).
 			filter{T->T[0].label.compareTo(T[1].label)<0}.
 			map{T->[
 				column1:T[0].column,
@@ -51,20 +54,15 @@ workflow ACP_VCF {
 				label2:T[1].label,
 				]}.
 			combine(cluster_ch.output).
-			map{T->T[0].plus(clusters:T[1])})
+			map{T->T[0].plus(clusters:T[1])},
+			sample2collection
+			)
 
 
-		to_multiqc = plot_ch.multiqc.mix(plot_ch.multiqc_yaml).mix(plot_assoc_ch.output.flatten())
+		to_multiqc = plot_ch.output.mix(plot_assoc_ch.output.flatten()).mix(pihat_ch.to_multiqc)
 
 
-                params4multiqc_ch = PARAMS_MULTIQC([:])
-                mqc_ch = MULTIQC_01(
-                                ["title":"${params.prefix}PCA"],
-                                to_multiqc.
-				concat(params4multiqc_ch.output).
-				concat(pihat_ch.to_multiqc).
-				collect()
-                                );
+                mqc_ch = MULTIQC(to_multiqc)
 
 	}
 
@@ -160,8 +158,9 @@ input:
 	val(genomeId)
 	path(assoc)
 output:
-	tuple path("multiqc_config.yaml"),path("*.png"),emit:output
+	path("${prefix}.multiqc.*"),emit:output
 script:
+	prefix = "plotassoc"
 	def reference = params.genomes[genomeId].fasta
 	def title = assoc.name.replace('.','_')
 """
@@ -197,7 +196,7 @@ import htsjdk.variant.utils.SAMSequenceDictionaryExtractor;
 
 
 public class Minikit {
-
+private final static double MIN_P = 1E-10;
 private int doWork() {
     final String REF="${reference}";
     final String input = "${assoc}";
@@ -220,6 +219,7 @@ private int doWork() {
                 final String[] tokens = ws.split(line.trim());
                 if(tokens[tokens.length-1].equals("P")) continue;
                 double p = Double.parseDouble(tokens[tokens.length-1]);
+		if(p< MIN_P) p = MIN_P;
                 p = - Math.log10(p);
                 max_p = Math.max(max_p, p);
                 min_p = Math.min(min_p, p);
@@ -263,6 +263,11 @@ private int doWork() {
                 String[] tokens = ws.split(line.trim());
                 if(tokens[tokens.length-1].equals("P")) continue;
                 double p = Double.parseDouble(tokens[tokens.length-1]);
+		boolean low_pvalue = false;
+		if( p < MIN_P) {
+			low_pvalue = true;
+			p = MIN_P;
+			}
                 p = - Math.log10(p);
                 tokens = colon.split(tokens[1]);
                 final String contig = tokens[0];
@@ -294,7 +299,12 @@ private int doWork() {
                 double y = height - ((p-min_p)/(max_p-min_p))*height;
                 g.setColor(col);
 		final Composite oldcomposite = g.getComposite();
-                if(p> p_treshold) {
+		if(low_pvalue) {
+			final int radius2=5;
+			g.setColor(Color.MAGENTA);
+			g.fill(new Ellipse2D.Double(x-radius2,0-radius2,radius2*2,radius2*2));
+			}
+                else if(p> p_treshold) {
                     g.fill(new Ellipse2D.Double(x-radius,y-radius,radius*2,radius*2));
                     }
                 else {
@@ -309,7 +319,7 @@ private int doWork() {
 	g.setColor(Color.BLACK);        
         g.draw(new Rectangle2D.Double(left_margin,0,width,height));
         g.dispose();
-        ImageIO.write(img, "PNG", new File("${title}.png"));
+        ImageIO.write(img, "PNG", new File("${prefix}.multiqc.${title}.png"));
         return 0;
         }
     catch(final Throwable err) {
@@ -330,20 +340,39 @@ javac -d TMP -cp \${JVARKIT_DIST}/jvarkit.jar TMP/Minikit.java
 java -cp \${JVARKIT_DIST}/jvarkit.jar:TMP Minikit
 
 
+cat << __EOF__ > TMP/jeter.html
+<!--
+parent_id: pihat_section
+parent_name: "PCA"
+parent_description: "${whatisapca}"
+id: '${title}_table'
+section_name: '${title} table'
+description: '${assoc} first lines.'
+-->
+<pre>
+__EOF__
+
+
+tr -s " " < "${assoc}" | LC_ALL=C sort -T TMP -t ' ' -k10,10g  | head -n 10 | column -t  >> TMP/jeter.html
+echo "</pre></body></html>" >> TMP/jeter.html
+
+mv TMP/jeter.html "${prefix}.multiqc.${title}.table_mqc.html"
+
+
 ##
 ## create MULTIQC CONFIG
 ##
-cat << EOF > multiqc_config.yaml
+cat << EOF > "${prefix}.multiqc.${title}.multiqc_config.yaml"
 custom_data:
   pca_${title}:
     parent_id: pihat_section
     parent_name: "PCA"
-    parent_description: "PCA"
+    parent_description: "${whatisapca}"
     section_name: "PCA: ${assoc.name}"
     description: "PCA: ${assoc.name}"
 sp:
   pca_${title}:
-    fn: "${title}.png"
+    fn: "${prefix}.multiqc.${title}.png"
 ignore_images: false
 EOF
 
@@ -354,11 +383,11 @@ process PLOT_IT {
 	tag "${row.label1} vs ${row.label2}"
 	input:
 		val(row)
+                path(sample2collection)
 	output:
-		path("*.png"),emit:multiqc
-	        path("multiqc_config.yaml"),emit:multiqc_yaml
+		path("${prefix}.multiqc.*"),emit:output
 	script:
-
+		prefix = "plot"
 		def title = row.label1+"_"+row.label2
 	"""
 	hostname 2>&1
@@ -373,7 +402,7 @@ colX <- data[, ${row.column1}]
 colY <- data[, ${row.column2}]
 
 # Créer le nuage de points
-png("${title}.pca.png") 
+png("${prefix}.multiqc.${title}.pca.png") 
 plot(colX, colY, main = "${row.label1} vs ${row.label2}",
 	sub= "${row.clusters}",
 	xlab = "${row.label1}",
@@ -389,17 +418,17 @@ R --vanilla < TMP/jeter.R
 ##
 ## create MULTIQC CONFIG
 ##
-cat << EOF > multiqc_config.yaml
+cat << EOF > "${prefix}.multiqc.config.yaml"
 custom_data:
   pca_${title}:
     parent_id: pihat_section
     parent_name: "PCA"
-    parent_description: "PCA"
+    parent_description: "${whatisapca}"
     section_name: "PCA: ${row.label1} ${row.label2}"
-    description: "PCA: ${row.label1} ${row.label2}"
+    description: "PCA: ${row.label1} vs ${row.label2}"
 sp:
   pca_${title}:
-    fn: "${title}.pca.png"
+    fn: "${prefix}.multiqc.${title}.pca.png"
 ignore_images: false
 EOF
 
