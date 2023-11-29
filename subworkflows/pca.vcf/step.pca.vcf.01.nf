@@ -4,8 +4,19 @@ Thank you Floriane Simonet for the Help
 
 */
 
+
+/**
+
+step_id and step_name are used to get a unique id for multiqc when using this submodule multiple times
+
+*/
+if(!params.containsKey("step_id")) throw new IllegalStateException("undefined params.step_id with include+addParams");
+if(!params.containsKey("step_name")) throw new IllegalStateException("undefined params.step_name with include+addParams");
+
+
 include {moduleLoad;runOnComplete;dumpParams} from '../../modules/utils/functions.nf'
-include {PIHAT01} from '../../subworkflows/pihat/pihat.01.nf'
+include {PIHAT01} from '../../subworkflows/pihat/pihat.01.nf' 
+
 
 def whatisapca = "<cite><b>PCA</b> is a statistical technique for reducing the dimensionality of a dataset. This is accomplished by linearly transforming the data into a new coordinate system where (most of) the variation in the data can be described with fewer dimensions than the initial data.</cite>"
 
@@ -16,8 +27,9 @@ workflow ACP_VCF_STEP {
 		genomeId
 		vcf
 		sample2collection
+		blacklisted_bed
 	main:
-		pihat_ch = PIHAT01(genomeId, vcf, Channel.fromPath("NO_FILE"))
+		pihat_ch = PIHAT01(genomeId, vcf, Channel.fromPath("NO_FILE"), blacklisted_bed)
 		cluster_ch = PLINK_CLUSTER( pihat_ch.genome_bcf, pihat_ch.plink_genome)
 		
 		assoc_ch = PLINK_ASSOC( genomeId, pihat_ch.genome_bcf, cluster_ch.output)

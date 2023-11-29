@@ -25,17 +25,25 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 
+/**
+
+step_id and step_name are used to get a unique id for multiqc when using this submodule multiple times
+
+*/
+if(!params.containsKey("step_id")) throw new IllegalStateException("undefined params.step_id with include+addParams");
+if(!params.containsKey("step_name")) throw new IllegalStateException("undefined params.step_name with include+addParams");
+
 include {moduleLoad} from '../../modules/utils/functions.nf'
 include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
-include {MULTIQC_01} from '../../modules/multiqc/multiqc.01.nf'
-include {PARAMS_MULTIQC} from '../../modules/utils/params.multiqc.nf'
+
 
 workflow PIHAT01 {
 	take:
 		genomeId
 		vcf
 		samples
+		blacklisted_bed
 	main:
 		version_ch = Channel.empty();
 		to_zip = Channel.empty();
@@ -47,7 +55,7 @@ workflow PIHAT01 {
 				combine(samples)
 
 
-		perCtg = PLINK_PER_CONTIG(genomeId, ctgvcf_ch)
+		perCtg = PLINK_PER_CONTIG(genomeId, blacklisted_bed, ctgvcf_ch)
 		version_ch = version_ch.mix(perCtg.version.collect())
 
 
@@ -55,27 +63,13 @@ workflow PIHAT01 {
 		version_ch = version_ch.mix(pihat_ch.version)
 
 
-		to_multiqc = pihat_ch.multiqc.mix(pihat_ch.multiqc_yaml)
-
-
-		params4multiqc_ch = PARAMS_MULTIQC([:])
-		mqc_ch = MULTIQC_01(
-				["title":"${params.prefix}PIHAT"], 
-				to_multiqc.concat(params4multiqc_ch.output).collect()
-				);
-
-
-		version_ch = version_ch.mix(mqc_ch.version)
+		to_multiqc = pihat_ch.images.mix(pihat_ch.multiqc)
 
 		version_ch = MERGE_VERSION("pihat",version_ch.collect())
 
 	emit:
 		version = version_ch
-		pihat_png = pihat_ch.pihat_png
-		pihat_removed_samples = pihat_ch.pihat_removed_samples
 		plink_genome = pihat_ch.plink_genome
-		pihat_sample2avg_png  = pihat_ch.pihat_sample2avg_png
-		pihat_multiqc_zip = mqc_ch.zip
 		to_multiqc = to_multiqc
 		genome_bcf = pihat_ch.genome_bcf /* optional, used for PCA */
 	}
@@ -89,6 +83,7 @@ afterScript "rm -rf TMP"
 memory "3g"
 input:
 	val(genomeId)
+	path("BLACKLISTED/*")
         tuple val(contig),path(vcf),path(samples)
 output:
 	tuple val(contig),path("${contig}.bcf"),emit:vcf
@@ -102,7 +97,6 @@ script:
 	def filters = params.pihat.filters
 	def pihatmaf = (params.pihat.MAF as double)
 	def pihatMinGQ = (params.pihat.min_GQ as int)
-	def blacklisted = params.pihat.blacklisted
 	def f_missing= (params.pihat.f_missing as double)
 	def minDP= (params.pihat.min_DP as int)
 	def maxDP= (params.pihat.max_DP as int)
@@ -126,9 +120,9 @@ function countIt {
 
 
 # reduce size of exclude bed
-if [ -f "${blacklisted}" ] ; then
+if test ! -L "BLACKLISTED/NO_FILE" ; then
 
-	awk -F '\t' '(\$1=="${contig}")' "${blacklisted}" > TMP/jeter.x.bed
+	awk -F '\t' '(\$1=="${contig}")' BLACKLISTED/*.bed > TMP/jeter.x.bed
 
 else
 
@@ -252,7 +246,7 @@ mkdir TMP
 
 # reduce size of exclude bed
 
-if [ -s "${blacklisted}" ] ; then
+if ${!blacklisted.name.equals("NO_FILE")}  ; then
 awk -F '\t' '(\$1=="${contig}")' "${blacklisted}" > TMP/jeter.x.bed
 fi
 
@@ -305,22 +299,18 @@ input:
 	path(vcf)
 	val(L)
 output:
-	path("${prefix}plot.pihat.png"),emit:pihat_png
-	path("${prefix}plot.sample2avg.pihat.png"),emit:pihat_sample2avg_png
-	path("${prefix}removed_samples.txt"),emit:pihat_removed_samples
 	path("${prefix}plink.genome.txt.gz"),emit:plink_genome
 	path("genome.bcf"),optional:true,emit:genome_bcf
 	//multiqc 
-        path("${prefix}plot.*"),optional:true,emit:multiqc
-	path("multiqc_config.yaml"),emit:multiqc_yaml
-
-
+	path("${prefix}*.png"),emit:images
+        path("${prefix}multiqc.*"),emit:multiqc
 	path("version.xml"),emit:version
 	        
 script:
-	prefix = params.prefix?:""
+	prefix = (params.prefix?:"")+params.step_id+"."
+
 	maxPiHat = (params.pihat.pihat_max as double)
-	def save_genome_vcf = (task.ext?(task.ext.save_genome_vcf?:false):false)
+	def save_genome_vcf = task.ext.save_genome_vcf
 
 	def whatispihat = "The probable relatives and duplicates are detected based on pairwise identify-by-state (IBS) from which a variable called PIHAT is calculated via PLINK"
 
@@ -330,7 +320,7 @@ hostname 2>&1
 ${moduleLoad("plink bcftools r/3.6.3")}
 set -x
 
-mkdir TMP
+mkdir -p TMP
 
 cat << EOF > TMP/jeter.list
 ${L.join("\n")}
@@ -338,6 +328,7 @@ EOF
 
 awk -F '\t' '(\$1 ~ /^(chr)?[0-9]+\$/ ) {print \$2}' TMP/jeter.list > TMP/autosomes.list 
 
+# concat autosomes
 bcftools concat --allow-overlaps  -O b --file-list TMP/autosomes.list -o "TMP/jeter.bcf"
 plink --double-id --bcf TMP/jeter.bcf  --allow-extra-chr --genome --out TMP/plink
 
@@ -348,6 +339,7 @@ if ${save_genome_vcf} ; then
 fi
 
 
+# extract VCF for sexual chromsomes
 awk -F '\t' '(\$1 ~ /^(chr)?[XY]+\$/ ) {print \$2}' TMP/jeter.list > TMP/sex.list
 
 if [ -s "TMP/sex.list" ] ; then
@@ -361,15 +353,14 @@ awk '(NR>1) {printf("%s_%s\\t%s\\n",\$1,\$3,\$10);}' TMP/plink.genome > TMP/jete
 
 
 # create table sample/avg(pihat)/status
-awk '(NR>1) {P[\$1]+=1.0*(\$10);P[\$3]+=1.0*(\$10);C[\$1]++;C[\$3]++;} END{for(S in P) printf("%s\t%f\\n",S,P[S]/C[S]);}' TMP/plink.genome |\
-	LC_ALL=C sort -T . -t '\t' -k2,2gr > "${prefix}sample2avg.pihat.tsv"
+awk '(NR>1) {P[\$1]+=1.0*(\$10);P[\$3]+=1.0*(\$10);C[\$1]++;C[\$3]++;} END{for(S in P) printf("%s\t%f\\n",S,P[S]/C[S]);}' TMP/plink.genome |\\
+	LC_ALL=C sort -T . -t '\t' -k2,2gr > "TMP/sample2avg.pihat.tsv"
 
-
-awk -F '\t' '(\$2 < ${maxPiHat}) {print \$1;}' "${prefix}sample2avg.pihat.tsv" | sort -T TMP > TMP/jeter.keep.samples.txt
-awk -F '\t' '(\$2 >= ${maxPiHat})' "${prefix}sample2avg.pihat.tsv" > "${prefix}removed_samples.txt"
+# create table with KEEP / DISCARD status
+awk -F '\t' 'function sn(SN) {nuscore=split(SN,a,/_/); nuscore=nuscore/4; sample="";for(i=1;i<=nuscore;i++) sample=sprintf("%s%s%s",sample,(i==1?"":"_"),a[i]); return sample;}  {printf("%s\t%s\t%s\\n",sn(\$1),\$2,(\$2 < ${maxPiHat} ? "KEEP":"DISCARD"));}' TMP/sample2avg.pihat.tsv > TMP/samples.keep.status
 
 # the following test will fail if all samples are above maxPiHat
-test -s TMP/jeter.keep.samples.txt
+cut -f 3 TMP/samples.keep.status | grep -F -w KEEP -m1 1>&2
 
 cat << EOF > TMP/jeter.R
 png("${prefix}plot.pihat.png")
@@ -378,7 +369,7 @@ plot(genome\\\$V2,ylim=c(0,1.0),xlab="Individuals Pair", ylab="PI-HAT", main="${
 abline(h=${maxPiHat},col="blue");
 dev.off()
 
-T1<-read.table("${prefix}sample2avg.pihat.tsv",sep="\\t",header=FALSE,col.names=c("S","X"),colClasses=c("character","numeric"))
+T1<-read.table("TMP/sample2avg.pihat.tsv",sep="\\t",header=FALSE,col.names=c("S","X"),colClasses=c("character","numeric"))
 head(T1)
 png("${prefix}plot.sample2avg.pihat.png")
 boxplot(T1\\\$X ,ylim=c(0,max(T1\\\$X)),main="${prefix}AVG(PIHAT)/SAMPLE",sub="${vcf.name}",xlab="Sample",ylab="pihat")
@@ -390,43 +381,79 @@ EOF
 R --no-save < TMP/jeter.R
 
 
-gzip --best TMP/plink.genome
-mv TMP/plink.genome.gz "${prefix}plink.genome.txt.gz"
 
 
 ##
 ## create MULTIQC CONFIG
 ##
-cat << EOF > multiqc_config.yaml
+cat << EOF > "${prefix}multiqc.config.yaml"
 custom_data:
-  pihat_manhattan:
-    parent_id: pihat_section
-    parent_name: "PIHAT"
+  pihat_plot1_${params.step_id}:
+    parent_id: pihat_section_${params.step_id}
+    parent_name: "PIHAT ${params.step_name}"
     parent_description: "${whatispihat}"
-    section_name: "Manhattan"
-    description: "Manhattan plot of pihat"
-  pihat_qqplot:
-    parent_id: pihat_section
-    parent_name: "PIHAT"
+    section_name: "Pihat  ${params.step_name}"
+    description: "plot of pihat"
+  pihat_plot2_${params.step_id}:
+    parent_id: pihat_section_${params.step_id}
+    parent_name: "PIHAT  ${params.step_name}"
     parent_description: "${whatispihat}"
     section_name: "Sample to Average pihat"
     description: "Sample to Average pihat"
 sp:
-  pihat_manhattan:
+  pihat_plot1_${params.step_id}:
     fn: "${prefix}plot.pihat.png"
-  pihat_qqplot:
+  pihat_plot2_${params.step_id}:
     fn: "${prefix}plot.sample2avg.pihat.png"
 ignore_images: false
 EOF
 
 
+
+cat << EOF > TMP/${prefix}multiqc.genome_mqc.html
+<!--
+id: 'highpihat_${params.step_id}'
+parent_id: pihat_section_${params.step_id}
+parent_name: "PIHAT ${params.step_name}"
+parent_description: "${whatispihat}"
+section_name: 'High Pihat ${params.step_name}'
+description: ' 10 higher pihat pairs.'
+-->
+EOF
+
+awk '(NR>1) {printf("%s\t%s\t%s\\n",\$1,\$3,\$10);}' TMP/plink.genome |\
+	LC_ALL=C sort -t '\t' -T TMP -k3,3gr |\
+	head -n 10 |\
+	awk -F '\t' 'function sn(SN) {nuscore=split(SN,a,/_/); nuscore = nuscore/4; sample="";for(i=1;i<=nuscore;i++) sample=sprintf("%s%s%s",sample,(i==1?"":"_"),a[i]); return sample;} BEGIN {printf("<table><tr><th>SN1</th><th>SN2</th><th>PIHAT</th></tr>\\n");} {printf("<tr><td>%s</td><td>%s</td><td>%s</td></tr>\\n",sn(\$1),sn(\$2),\$3);} END {printf("</table>\\n");}' >> TMP/${prefix}multiqc.genome_mqc.html
+
+
+cat << EOF > TMP/${prefix}multiqc.removed_samples_mqc.html
+<!--
+id: 'rmsamples_${params.step_id}'
+parent_id: pihat_section_${params.step_id}
+parent_name: "PIHAT ${params.step_name}"
+parent_description: "${whatispihat}"
+section_name: 'Removed Samples ${params.step_name}'
+description: 'Samples that would be removed with max.pihat=${params.pihat.pihat_max}.'
+-->
+EOF
+
+awk -F '\t' 'BEGIN {printf("<table><tr><th>Sample</th><th>Pihat</th></tr>\\n");} (\$3=="DISCARD") {printf("<tr><td>%s</td><td>%s</td></tr>\\n",\$1,\$2);} END {printf("</table>\\n");}' TMP/samples.keep.status  >> TMP/${prefix}multiqc.removed_samples_mqc.html
+
+
+gzip --best TMP/plink.genome
+mv TMP/plink.genome.gz "${prefix}plink.genome.txt.gz"
+
+mv TMP/${prefix}multiqc.genome_mqc.html ./
+mv TMP/${prefix}multiqc.removed_samples_mqc.html ./
+
+###########################################################################
 cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry id="name">${task.process}</entry>
 	<entry key="description">merge pihat data per contig, create pihat data</entry>
 </properties>
 EOF
-
 """
 
 stub:
@@ -436,85 +463,3 @@ echo "<properties/>" > version.xml
 """
 }
 
-process MULTIQC {
-input:
-	val(meta)
-	path(vcf)
-        path(pihat_png)
-        path(pihat_sample2avg_png)
-        path(pihat_removed_samples)
-	path(genome_tsv_gz)
-output:
-	path("${params.prefix?:""}multiqc.zip"),emit:zip
-	path("version.xml"),emit:version
-script:
-	def m = 20
-	def prefix =params.prefix?:""
-	def prefix0 = prefix.endsWith(".")?prefix.substring(0,prefix.length()-1):prefix
-"""
-${moduleLoad("multiqc")}
-hostname 1>&2
-mkdir -p TMP
-
-cat << EOF > multiqc_config.yaml
-custom_data:
-  pihat01:
-    section_name: "Pihat"
-    description: "Pihat"
-  pihat02:
-    section_name: "Sample to Average Pihat"
-    description: "Sample to Average Pihat"
-sp:
-  pihat01:
-    fn: "${pihat_png.name}"
-  pihat02:
-    fn: "${pihat_sample2avg_png.name}"
-ignore_images: false
-EOF
-
-
-cat << EOF > TMP/genome_mqc.html
-<!--
-id: 'mytable'
-section_name: 'High Pihat'
-description: '${m} higher pihat pairs.'
--->
-EOF
-
-
-
-gunzip -c '${genome_tsv_gz}' |\
-	awk '(NR>1) {printf("%s\t%s\t%s\\n",\$1,\$3,\$10);}' |\
-	LC_ALL=C sort -t '\t' -T TMP -k3,3gr |\
-	head -n ${m} |\
-	awk -F '\t' 'BEGIN {printf("<table><tr><th>SN1</th><th>SN2</th><th>PIHAT</th></tr>\\n");} {printf("<tr><td>%s</td><td>%s</td><td>%s</td></tr>\\n",\$1,\$2,\$3);} END {printf("</table>\\n");}' >> TMP/genome_mqc.html
-
-
-cat << EOF > TMP/removed_samples_mqc.html
-<!--
-id: 'rmsamples'
-section_name: 'Removed Samples'
-description: 'Samples that would be removed with max.pihat=${params.pihat.pihat_max}.'
--->
-EOF
-
-awk -F '\t' 'BEGIN {printf("<ol>\\n");} {printf("<li>%s</li>\\n",\$0);} END {printf("</ol>\\n");}' '${pihat_removed_samples}'  >> TMP/removed_samples_mqc.html
-
-mkdir -p "${params.prefix}multiqc"
-
-multiqc   --outdir "${params.prefix}multiqc"  --filename "${prefix0}.multiqc"  --title "${params.prefix}PIHAT for ${vcf.name}" \
-	--comment "  PLINK --genome estimates relatedness of all pairs of samples and reports identify by decent (IBD, a measure of whether identical regions of two genomes were inherited from the same ancestry) in the PI_HAT (actually, proportional IBD, i.e. P(IBD=2) + 0.5*P(IBD=1)) column of the result file. A PI_HAT value close to 1 would indicate a duplicate sample. VCF was ${vcf}." \
-	--interactive --force --verbose --module custom_content .
-
-zip -9 -r "${params.prefix}multiqc.zip" "${params.prefix}multiqc"
-
-##################################################################################
-cat <<- EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">MultiQC</entry>
-        <entry key="wget.version">\$( multiqc --version )</entry>
-</properties>
-EOF
-"""
-}
