@@ -20,7 +20,7 @@ workflow ACP_VCF_STEP {
 		pihat_ch = PIHAT01(genomeId, vcf, Channel.fromPath("NO_FILE"))
 		cluster_ch = PLINK_CLUSTER( pihat_ch.genome_bcf, pihat_ch.plink_genome)
 		
-		assoc_ch = PLINK_ASSOC( genomeId, pihat_ch.genome_bcf, cluster_ch.mds)
+		assoc_ch = PLINK_ASSOC( genomeId, pihat_ch.genome_bcf, cluster_ch.output)
 
 		plot_assoc_ch = PLOT_ASSOC(genomeId, assoc_ch.assoc.flatten())
 
@@ -33,9 +33,7 @@ workflow ACP_VCF_STEP {
 			headers.combine(headers).
 			filter{T->T[0].label.compareTo(T[1].label)<0}.
 			map{T->[
-				column1:T[0].column,
 				label1:T[0].label,
-				column2:T[1].column,
 				label2:T[1].label,
 				]}.
 			combine(cluster_ch.output).
@@ -57,9 +55,8 @@ process PLINK_CLUSTER {
 		path(genome_bcf)
 		path(genome_plink)
 	output:
-		path("cluster.tsv"),emit:output
+		path("cluster.mds"),emit:output
 		path("header.tsv"),emit:header
-		path("cluster.mds"),emit:mds
 	script:
 		def num_components = 3
 	"""
@@ -74,13 +71,16 @@ process PLINK_CLUSTER {
 		--cluster \\
 		--out TMP/cluster
 
-	mv TMP/cluster.mds ./
+	# reformat mds, normalize spaces, replace with tab
+	tr -s " " < TMP/cluster.mds | sed -e 's/^[ ]*//' -e 's/[ ]*\$//' | tr " " "\t" > cluster.mds
 
-	awk '(NR==1) {split(\$0,header);next;} {X=0; for(i=1;i<=NF;i++) {if(header[i] ~ /^C[0-9]+\$/) {printf("%s%s",(X==0?"":"\t"),\$i);X=1;}} printf("\\n");}' cluster.mds > cluster.tsv
+	# column 1 is FID
+	# column 2 is IID
+	# remaining are 
 
-	head -n1 cluster.tsv |\\
+	head -n1 cluster.mds |\\
 		tr "\t" "\\n" |\\
-		awk -F '\t' 'BEGIN {printf("column\tlabel\\n");} {printf("%d\tC%d\\n",NR,NR)}' > header.tsv
+		awk -F '\t' 'BEGIN {printf("label\\n");} (\$1 ~ /^C[0-9]*\$/ ) {printf("%s\\n",\$1)}' > header.tsv
 	"""
 	}
 
@@ -379,12 +379,35 @@ process PLOT_IT {
 	${moduleLoad("r/3.6.3")}
 	mkdir -p TMP
 
-cat << 'EOF' > TMP/jeter.R
-data <- read.table("${row.clusters}", header = FALSE, sep = "\t")
+echo "IID\tcollection" > TMP/sn2col.tsv
 
-# Sélectionner les colonnes 3 et 5
-colX <- data[, ${row.column1}]
-colY <- data[, ${row.column2}]
+if ${!sample2collection.name.equals("NO_FILE")} ; then
+
+	#  plink asshole for naming samples...
+	awk -F '\t' '/^#/ {next} {printf("%s_%s_%s_%s\t%s\\n",\$1,\$1,\$1,\$1,\$2);}' '${sample2collection}' |\\
+		sort | uniq >> TMP/sn2col.tsv
+
+fi
+
+
+cat << 'EOF' > TMP/jeter.R
+# load sample/collection
+sn2col <- read.table("TMP/sn2col.tsv", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+data <- read.table("${row.clusters}", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+mergedata <- merge(data, sn2col, by = "IID", all.x = TRUE)
+
+mergedata\$collection[is.na(mergedata\$collection)] <- "OTHER"
+
+head(mergedata)
+
+COLORS <- rainbow(length(unique(mergedata\$collection)))
+
+# Sélectionner les colonnes C*
+colX <- mergedata\$${row.label1}
+colY <- mergedata\$${row.label2}
+pigments <- COLORS[as.factor(mergedata\$collection)]
 
 # Créer le nuage de points
 png("${prefix}.multiqc.${title}.pca.png") 
@@ -393,8 +416,15 @@ plot(colX, colY, main = "${row.label1} vs ${row.label2}",
 	xlab = "${row.label1}",
 	ylab = "${row.label2}",
 	pch = 16,
-	col = "blue"
+	col = pigments
 	)
+
+if (${!sample2collection.name.equals("NO_FILE")?"TRUE":"FALSE"})  {
+
+	legend("topright", legend = levels(as.factor(mergedata\$collection)), col = COLORS, pch = 16, title = "Collection", cex = 0.7)
+}
+
+
 dev.off()  # Fermeture du fichier de sortie
 EOF
 
