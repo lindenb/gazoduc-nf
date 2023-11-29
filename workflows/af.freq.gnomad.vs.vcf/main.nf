@@ -95,8 +95,9 @@ script:
 	def genome = params.genomes[genomeId]
 	def reference = genome.fasta
 	def max_diff=0.1
+	def image_size = 600
 	def gnomad = genome.gnomad_genome
-	def description = "compare VCF allele frequencies with <code>${params.af_tag}</code> in gnomad."
+	def description = "compare VCF allele frequencies with <code>${params.af_tag}</code> in gnomad (<code>${gnomad}</code>)."
 """
 hostname 1>&2
 ${moduleLoad("bcftools bedtools jvarkit")}
@@ -271,7 +272,7 @@ if(${params.max_af} > 0) {
 	maxXY = ${params.max_af}
 	}
 
-png("TMP/out.png")
+png("TMP/out.png",width=${image_size},height=${image_size})
 
 for(i in c(1:nrow(TT))) {
 	T2<-read.table(TT[i,2],header = FALSE,sep=",",comment.char="",col.names=c("X1","X2"),colClasses=c("numeric","numeric"))
@@ -350,7 +351,7 @@ description: 'Some of the worst differences (&Delta;AF greater than <code>${max_
 <pre>
 __EOF__
 
-awk '(NR==1) {print "GNOMAD\tUSER\tVARIANT";} {print}'  TMP/jeter1.txt | column -t >> TMP/jeter.html
+awk 'BEGIN {print "GNOMAD\tUSER\tVARIANT";} {print}'  TMP/jeter1.txt | column -t >> TMP/jeter.html
 
 echo "</pre>" >> TMP/jeter.html
 

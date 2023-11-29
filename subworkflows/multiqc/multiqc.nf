@@ -40,6 +40,8 @@ process APPLY_MULTIQC {
 		${moduleLoad("multiqc")}
 		mkdir -p TMP
 
+		export TMPDIR=\${PWD}/TMP
+
 cat << EOF > TMP/jeter.list
 ${files.findAll{!isConfigFile(it)}.join("\n")}
 EOF
