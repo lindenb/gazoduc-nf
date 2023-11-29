@@ -163,7 +163,7 @@ fi
 
 
 # extract gnomad
-bcftools view -O u -m 2 -M 2 --types snps \
+bcftools view -O u -m 2 -M 2 --types '${params.variant_types}' \
 		${params.gnomadViewOpt?:""} \
 		--regions-file TMP/gnomad.bed \
 		"${gnomad}" |\
@@ -199,7 +199,7 @@ do
 	# extract samples
 	bcftools norm -f "${reference}" --regions-file TMP/user.bed --multiallelics -any -O u "${vcf}" |\\
 	bcftools view -O u -m 2 -M 2 \\
-		--types snps \\
+		--types '${params.variant_types}' \\
 		${params.userViewOpt?:""} \\
 		--samples-file TMP/pop.samples.txt | \\
 	bcftools view -i 'ALT!="*"' -O u --targets-file ^TMP/exclude.user.bed --targets-overlap 1 |\
@@ -220,7 +220,7 @@ do
 
 
 	# high differences
-	awk -F, '{T=\$1;if(T=="NA") T=\$2; split(T,a,/[\t]/); W=sprintf("%s:%d",a[1],a[2]);A=\$3*1.0;B=\$4*1.0;D=A-B; if(D<0) D=D*-1;if(D>=${max_diff}) {printf("%f\t%f\t%s\\n",\$3,\$4,W);}  }' TMP/join.csv |\
+	awk -vPOP=\${POP} -F, '{T=\$1;if(T=="NA") T=\$2; split(T,a,/[\t]/); W=sprintf("%s:%d:%s",a[1],a[2],POP);A=\$3*1.0;B=\$4*1.0;D=A-B; if(D<0) D=D*-1;if(D>=${max_diff}) {printf("%f\t%f\t%s\\n",\$3,\$4,W);}  }' TMP/join.csv |\
 		sort | uniq >> TMP/labels.tsv
 	
 
@@ -332,7 +332,7 @@ mv -v "TMP/out.png" "${params.prefix?:""}${title}.png"
 cut -f 3 TMP/labels.tsv | sort | uniq > "${params.prefix?:""}${title}.differences.intervals"
 
 # extract highest AF, sort
-awk -F '\t' '{X=\$1*1.0;Y=\$2*.1.0;M=X;if(M<Y) {M=Y;}  printf("%f\t%s\\n",M,\$0);}' TMP/labels.tsv | sort -T TMP -t '\t' -k1,1gr | cut -f2- | head -n 10 | column -t > TMP/jeter1.txt
+awk -F '\t' '{M=(\$1*1.0 - \$2*1.0);if(M<0) {M=-M;}  printf("%f\t%s\\n",M,\$0);}' TMP/labels.tsv | sort -T TMP -t '\t' -k1,1gr | cut -f2- | head -n 10  > TMP/jeter1.txt
 
 
 if test -s TMP/jeter1.txt ; then
@@ -340,17 +340,17 @@ if test -s TMP/jeter1.txt ; then
 
 cat << __EOF__ > TMP/jeter.html
 <!--
-parent_id: af_section
-parent_name: "VCF vs Gnomad"
-parent_description: "${description}"
-id: '${title}_table'
+parent_id: af_section_diff
+parent_name: "VCF vs Gnomad. Major AF differences"
+parent_description: "A few points for each gene where the AF in the VCF was different from the AF in Gnomad"
+id: '${title}_table_diff'
 section_name: '${title} differences'
-description: 'Some of the worst differences between the VCF and gnomad.'
+description: 'Some of the worst differences (&Delta;AF greater than <code>${max_diff}</code>) between the VCF and gnomad in <b>${title}</b>.'
 -->
 <pre>
 __EOF__
 
-cat TMP/jeter1.txt >> TMP/jeter.html
+awk '(NR==1) {print "GNOMAD\tUSER\tVARIANT";} {print}'  TMP/jeter1.txt | column -t >> TMP/jeter.html
 
 echo "</pre>" >> TMP/jeter.html
 
@@ -369,7 +369,7 @@ custom_data:
     parent_name: "VCF vs Gnomad"
     parent_description: "${description}"
     section_name: "${title}"
-    description: "Compare allele frequency for <b>${title}</b>."
+    description: "Compare allele frequencies for <b>${title}</b> in <code>${vcf}</code> ${params.max_af>0?"max AF:<code>${params.max_af}</code>":""}."
 sp:
   af_${title}:
     fn: "${params.prefix?:""}${title}.png"
