@@ -221,14 +221,15 @@ do
 
 
 	# high differences
-	awk -vPOP=\${POP} -F, '{T=\$1;if(T=="NA") T=\$2; split(T,a,/[\t]/); W=sprintf("%s:%d:%s",a[1],a[2],POP);A=\$3*1.0;B=\$4*1.0;D=A-B; if(D<0) D=D*-1;if(D>=${max_diff}) {printf("%f\t%f\t%s\\n",\$3,\$4,W);}  }' TMP/join.csv |\
+	awk -vPOP=\${POP} -F, '{T=\$1;if(T=="NA") T=\$2; split(T,a,/[\t]/); W=sprintf("%s:%d:%s:%s:%s",a[1],a[2],a[3],a[4],POP);A=\$3*1.0;B=\$4*1.0;D=A-B; if(D<0) D=D*-1;if(D>=${max_diff}) {printf("%f\t%f\t%s\\n",\$3,\$4,W);}  }' TMP/join.csv |\\
 		sort | uniq >> TMP/labels.tsv
 	
 
 	# publish if not empty
 	if [ -s "TMP/join.csv" ] ; then
 
-		cut -d, -f3,4  "TMP/join.csv" > "TMP/\${POP}.join.csv"
+		echo "gnomad,local" > TMP/\${POP}.join.csv
+		cut -d, -f3,4  "TMP/join.csv" >> "TMP/\${POP}.join.csv"
 
 		echo -n "\${POP}\tTMP/\${POP}.join.csv" >> TMP/manifest.txt
 
@@ -239,13 +240,14 @@ do
 	rm TMP/pop.samples.txt TMP/join.csv
 done
 
-sort -T TMP TMP/labels.tsv | uniq > TMP/labels.tsv.bis && mv TMP/labels.tsv.bis TMP/labels.tsv
+echo "gnomad\tlocal\tlabel" > TMP/labels.tsv.bis
+sort -T TMP TMP/labels.tsv | uniq >> TMP/labels.tsv.bis && mv TMP/labels.tsv.bis TMP/labels.tsv
 
-cat << __EOF__ > jeter.R
+cat << '__EOF__' > jeter.R
 TT<-read.table("TMP/manifest.txt",header = FALSE,sep="\t",comment.char="",col.names=c("title","path","title2"),stringsAsFactors=FALSE)
 head(TT)
 
-labels <-read.table("TMP/labels.tsv",header = FALSE,sep="\t",comment.char="",col.names=c("x","y","label"),stringsAsFactors=FALSE,colClasses=c("numeric","numeric","character"))
+labels <-read.table("TMP/labels.tsv",header = TRUE,sep="\t",comment.char="", stringsAsFactors=FALSE,colClasses=c("numeric","numeric","character"))
 head(labels)
 
 colors <-  rainbow(nrow(TT),alpha=0.6)
@@ -254,7 +256,7 @@ maxXY <- 0.0
 
 # get max AF in all files
 for(i in c(1:nrow(TT))) {
-        T2 <- read.table(TT[i,2],header = FALSE,sep=",",comment.char="",col.names=c("X1","X2"),colClasses=c("numeric","numeric"))
+        T2 <- read.table(TT[i,2],header = TRUE,sep=",",comment.char="",colClasses=c("numeric","numeric"))
         if(nrow(T2)==0) continue;
 	maxXY = max(T2[,1])
 	maxXY = max(T2[,2])
@@ -275,11 +277,11 @@ if(${params.max_af} > 0) {
 png("TMP/out.png",width=${image_size},height=${image_size})
 
 for(i in c(1:nrow(TT))) {
-	T2<-read.table(TT[i,2],header = FALSE,sep=",",comment.char="",col.names=c("X1","X2"),colClasses=c("numeric","numeric"))
+	T2<-read.table(TT[i,2],header = TRUE,sep=",",comment.char="",colClasses=c("numeric","numeric"))
 	if(nrow(T2)==0) continue;
-	T2<-as.matrix(T2)
 	if(i==1) {
-		plot(T2,
+		plot(x=T2\$gnomad,
+			y=T2\$local,
 			type = "p",
 			main="${title}",
 			sub ="INFO/${params.af_tag}",
@@ -301,11 +303,12 @@ for(i in c(1:nrow(TT))) {
 
 		# labels
 		if(nrow(labels)>0) {
-			text(x=labels[,1],y=labels[,2],labels=labels[,3], cex=0.4)
+			text(x=labels\$gnomad,y=labels\$local,labels\$label, cex=0.4)
 			}
 	} else {
 		par(new = TRUE)
-		plot(T2,
+		plot(x=T2\$gnomad,
+			y=T2\$local,
 			type = "p",
 			axes=FALSE,
 			ann=FALSE,
@@ -333,7 +336,7 @@ mv -v "TMP/out.png" "${params.prefix?:""}${title}.png"
 cut -f 3 TMP/labels.tsv | sort | uniq > "${params.prefix?:""}${title}.differences.intervals"
 
 # extract highest AF, sort
-awk -F '\t' '{M=(\$1*1.0 - \$2*1.0);if(M<0) {M=-M;}  printf("%f\t%s\\n",M,\$0);}' TMP/labels.tsv | sort -T TMP -t '\t' -k1,1gr | cut -f2- | head -n 10  > TMP/jeter1.txt
+awk -F '\t' '(NR>1) {M=(\$1*1.0 - \$2*1.0);if(M<0) {M=-M;}  printf("%f\t%s\\n",M,\$0);}' TMP/labels.tsv | sort -T TMP -t '\t' -k1,1gr | cut -f2- | head -n 10  > TMP/jeter1.txt
 
 
 if test -s TMP/jeter1.txt ; then
