@@ -25,9 +25,6 @@ SOFTWARE.
 
 include {moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
-include {GET_LIFTOVER_CHAINS_02} from '../../modules/ucsc/liftover.chains.02.nf'
-
-def gazoduc = gazoduc.Gazoduc.getInstance(params)
 
 
 workflow DOWNLOAD_GNOMAD_SV_01 {
@@ -37,10 +34,11 @@ workflow DOWNLOAD_GNOMAD_SV_01 {
      main:
         version_ch = Channel.empty()
 
-	ch0 = DOWNLOAD_BED(meta)
-	version_ch = version_ch.mix(ch0.version)
 
 	if(params.genomes[genomeId].ucsc_name.equals("hg19")) {
+		ch0 = DOWNLOAD_BED_HG19(meta)
+		version_ch = version_ch.mix(ch0.version)
+
 		ch1 = RENAME_CONTIGS_HG19([:], ch0.output, genomeId)
 		version_ch = version_ch.mix(ch1.version)
 
@@ -48,14 +46,13 @@ workflow DOWNLOAD_GNOMAD_SV_01 {
 		dest_idx = ch1.index
 		}
 	else if(params.genomes[genomeId].ucsc_name.equals("hg38")) {
-		chain = GET_LIFTOVER_CHAINS_02([:],"hg19","hg38")
-		version_ch = version_ch.mix(chain.version)
 
-		ch2 = LIFT_GNOMAD_SV_TO_HG38([:], ch0.output, chain.chain, genomeId)
-		version_ch = version_ch.mix(ch2.version)
+		ch0 = DOWNLOAD_BED_HG38(meta)
+		version_ch = version_ch.mix(ch0.versionn genomeId)
 
-		dest_bed = ch2.bed
-		dest_idx = ch2.index
+
+		dest_bed = ch0.bed
+		dest_idx = ch0.index
 		}
 	else
 		{
@@ -75,7 +72,7 @@ workflow DOWNLOAD_GNOMAD_SV_01 {
 		version = version_ch
 	}
 
-process DOWNLOAD_BED {
+process DOWNLOAD_BED_HG19 {
 input:
 	val(meta)
 output:
@@ -95,6 +92,65 @@ cat << EOF > version.xml
         <entry key="description">Download gnomad sv</entry>
         <entry key="gnomad.sv.url"><a>${url}</a></entry>
         <entry key="versions">${getVersionCmd("wget")}</entry>
+</properties>
+EOF
+"""
+}
+
+
+process DOWNLOAD_BED_HG38 {
+afterScript "rm -rf TMP"
+input:
+	val(meta)
+	val(genomeId)
+output:
+	path("gnomad.38.sv.bed.gz"),emit:bed
+	path("gnomad.38.sv.bed.gz.tbi"),emit:index
+	path("version.xml"),emit:version
+script:
+	def genome = params.genomes[genomeId]
+	def reference = genome.fasta
+"""
+hostname 1>&2
+${moduleLoad("bcftools htslib jvarkit")}
+set -o pipefail
+
+mkdir -p TMP
+for C in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X Y
+do
+	 wget  "https://storage.googleapis.com/gcp-public-data--gnomad/release/4.0/genome_sv/gnomad.v4.0.sv.chr${C}.vcf.gz" |\
+		bcftools view -O b -o "TMP/chr${C}.bcf"
+	bcftools index -f TMP/chr${C}.bcf
+ 
+	echo "TMP/chr${C}.bcf" >> TMP/jeter.list
+done
+
+test -s TMP/jeter.list
+
+
+
+bcftools concat --file-list TMP/jeter.list -O b -o TMP/all.bcf
+echo -n "%CHROM\t%POS0\t%END\t%REF\t%ALT\t%FILTER" > TMP/jeter.query
+
+bcftools view --header-only TMP/all.bcf | grep "^##INFO=" | tr "<>" "\\n" | grep "^ID=" | sed 's/,.*//' | cut -d '=' -f 2- | awk '{printf("\t%INFO/%s",\$1);} END(printf("\\n")};}' >> TMP/jeter.query
+
+sed 's%INFO/%%g' < TMP/jeter.query | tr "a-z" "A-Z" | sed 's/CHROM\tPOS0\tEND/chrom\tstart\tend/'  | tr -d '%' | awk '{printf("#%s\\n",\$0);}' > TMP/gnomad.hg38.bed
+bcftools query -f <(cat TMP/jeter.query) |\\
+	java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 1 --convert SKIP |\
+	LC_ALL=C sort -T TMP -k1,1 -k2,2n >> TMP/gnomad.38.sv.bed
+
+
+bgzip -f TMP/gnomad.38.sv.bed
+tabix --comment '#'  -p bed -f TMP/gnomad.38.sv.bed.gz
+
+mv TMP/gnomad.38.sv.bed.gz ./
+mv TMP/gnomad.38.sv.bed.gz.tbi ./
+
+#########################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="Name">${task.process}</entry>
+        <entry key="description">download for hg38</entry>
 </properties>
 EOF
 """
@@ -144,55 +200,6 @@ EOF
 }
 
 
-process LIFT_GNOMAD_SV_TO_HG38 {
-tag "=> ${genomeId}"
-afterScript "rm -rf TMP"
-input:
-	val(meta)
-	path(bed)
-	path(chain)
-	val(genomeId)
-output:
-	path("gnomad.38.sv.bed.gz"),emit:bed
-	path("gnomad.38.sv.bed.gz.tbi"),emit:index
-	path("version.xml"),emit:version
-script:
-	def genome = params.genomes[genomeId]
-	def reference = genome.fasta
-"""
-${moduleLoad("ucsc jvarkit htslib")}
-# set -o pipefail no because gunzip
-mkdir -p TMP
-
-gunzip -c "${bed}" | head -n1  > TMP/gnomad.38.sv.bed
-
-
-gunzip -c "${bed}" |\
-	tail -n +2 |\
-	sed 's/^/chr/' |\
-	liftOver -bedPlus=3 stdin "${chain}" stdout TMP/unmapped.bed |\
-	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 1 --convert SKIP |\
-	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n >> TMP/lifted.bed
-
-test -s TMP/lifted.bed
-
-cat TMP/lifted.bed >> TMP/gnomad.38.sv.bed
-
-bgzip -f TMP/gnomad.38.sv.bed
-tabix --comment '#'  -p bed -f TMP/gnomad.38.sv.bed.gz
-
-mv TMP/gnomad.38.sv.bed.gz ./
-mv TMP/gnomad.38.sv.bed.gz.tbi ./
-
-#########################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="Name">${task.process}</entry>
-        <entry key="description">liftover gnomad sv to 38</entry>
-</properties>
-EOF
-"""
-}
 
 process OTHER_REF {
 input:
