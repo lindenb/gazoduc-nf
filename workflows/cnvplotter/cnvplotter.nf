@@ -24,7 +24,6 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults()
 
 gazoduc.make("vcf","NO_FILE").
 	description("path to an indexed VCF or BCF file").

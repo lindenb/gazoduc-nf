@@ -49,7 +49,7 @@ script:
 	// bug in samtools ?
 	def fetch_pairs = task.attempt==1?" --fetch-pairs ":""
 	def reference = row.reference?:params.genomes[row.genomeId].fasta
-	def level = task.ext.compression_level?:5
+	def level = task.ext.compression_level?:1
 	def sample = row.sample
 """
 hostname 1>&2

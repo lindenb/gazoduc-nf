@@ -38,7 +38,7 @@ workflow TRUVARI_01 {
      main:
         version_ch = Channel.empty()
 
-	vcf2bed_ch = VCF_TO_BED([with_header:false] ,vcfs)
+	vcf2bed_ch = VCF_TO_BED([:] ,vcfs)
 	version_ch = version_ch.mix( vcf2bed_ch.version)
 
 	perctg_ch = PER_CONTIG([:], genomeId, vcf2bed_ch.chromosomes.splitText().map{it.trim()},vcfs)
@@ -85,7 +85,7 @@ process PER_CONTIG {
 	mkdir -p TMP
 
 	# bug FORMAT pour dragen
-	bcftools merge --filter-logic '+' --regions "${contig}" --file-list "${vcfs}" -m none -O u |\
+	bcftools merge --force-samples --filter-logic '+' --regions "${contig}" --file-list "${vcfs}" -m none -O u |\
 		${extraBcftools.isEmpty()?"":"bcftools view -O u ${extraBcftools} |"} \
 		bcftools annotate --force -x 'FORMAT/SR' -O z -o TMP/merged.vcf.gz
 	bcftools index --tbi TMP/merged.vcf.gz

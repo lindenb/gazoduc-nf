@@ -24,35 +24,6 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
-
-gazoduc.make("bams","NO_FILE").
-        description("File containing the paths to the BAM/CRAMS files. One path per line").
-	required().
-	existingFile().
-        put()
-
-gazoduc.make("vcf","NO_FILE").
-        description("initial vcf file or use --bams").
-        put()
-
-gazoduc.make("bed","NO_FILE").
-        description("limit to that bed file").
-        put()
-
-gazoduc.make("mapq",-1).
-        description("mapping quality").
-	setInteger().
-        put()
-
-gazoduc.make("vcf2interval_distance","25mb").
-        description("split VCF per region of 'x' size").
-        put()
-
-gazoduc.make("gatkjar","/LAB-DATA/BiRD/users/lindenbaum-p/packages/gatk/gatk-4.3.0.0/gatk-package-4.3.0.0-local.jar").
-        description("path to gatk jar").
-	existingFile().
-        put()
 
 include {ULTRA_RARES_ITERATION as ITER_FIRST} from './iteration.part.nf'
 include {ULTRA_RARES_ITERATION as ITER_SECOND} from './iteration.part.nf'
@@ -76,7 +47,7 @@ if( params.help ) {
 
 
 workflow {
-	ch1 = ULTRA_RARES_GATK(params, params.reference, params.vcf, file(params.bams), file(params.bed) )
+	ch1 = ULTRA_RARES_GATK([:], params.genomeId, params.vcf, file(params.bams), file(params.bed) )
 	html = VERSION_TO_HTML(params,ch1.version)
 	}
 
@@ -86,7 +57,7 @@ runOnComplete(workflow);
 workflow ULTRA_RARES_GATK {
 take:
 	meta
-	reference
+	genomeId
 	vcf
 	bams
 	bed
@@ -96,16 +67,16 @@ main:
 	splitbams_ch = SPLIT_BAMS([:], bams)
         version_ch = version_ch.mix(splitbams_ch.version)
 
-	iter1_ch  = ITER_FIRST(meta.plus([split_vcf_method:" --variants-count  100000 "]), reference,vcf, splitbams_ch.output1, bed)
+	iter1_ch  = ITER_FIRST([split_vcf_method:" --variants-count  100000 "], genomeId, vcf, splitbams_ch.output1, bed)
         version_ch = version_ch.mix(iter1_ch.version)
 
-	iter2_ch  = ITER_SECOND(meta.plus([split_vcf_method:" --variants-count  10000 "]), reference, iter1_ch.vcf, splitbams_ch.output2, bed)
+	iter2_ch  = ITER_SECOND([split_vcf_method:" --variants-count  10000 "], genomeId, iter1_ch.vcf, splitbams_ch.output2, bed)
         version_ch = version_ch.mix(iter2_ch.version)
 
-	iter3_ch  = ITER_THIRD(meta.plus([split_vcf_method:" --variants-count  100 "]), reference, iter2_ch.vcf, splitbams_ch.output3, bed)
+	iter3_ch  = ITER_THIRD([split_vcf_method:" --variants-count  100 "], genomeId, iter2_ch.vcf, splitbams_ch.output3, bed)
         version_ch = version_ch.mix(iter3_ch.version)
 
-        version_ch = MERGE_VERSION(meta, "rare-gatk", "rare-gatk",version_ch.collect())
+        version_ch = MERGE_VERSION("rare-gatk",version_ch.collect())
 
 emit:
         vcf = iter1_ch.vcf

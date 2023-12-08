@@ -35,7 +35,7 @@ include {JVARKIT_VCF_TO_INTERVALS_01} from '../../subworkflows/jvarkit/jvarkit.v
 workflow ULTRA_RARES_ITERATION {
 take:
 	meta
-	reference
+	genomeId
 	vcf
 	bams
 	bed  /* limit to that BED or NO_FILE */
@@ -46,10 +46,10 @@ main:
 	version_ch = version_ch.mix(compile_ch.version)
 
                         
-	split_n_variants_ch = JVARKIT_VCF_SPLIT_N_VARIANTS_01(meta, reference, vcf, bed)
+	split_n_variants_ch = JVARKIT_VCF_SPLIT_N_VARIANTS_01(meta, genomeId, vcf, bed)
         version_ch = version_ch.mix(split_n_variants_ch.version)
 
-        perctg_ch = PER_VCF(meta, reference, compile_ch.jar, bams, split_n_variants_ch.output.splitText().map{it.trim()})
+        perctg_ch = PER_VCF(meta, genomeId, compile_ch.jar, bams, split_n_variants_ch.output.splitText().map{it.trim()})
         version_ch = version_ch.mix(perctg_ch.version)
 
 
@@ -486,7 +486,7 @@ memory "10g"
 cpus 1
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	path(minikit)
 	path(bams)
 	path(vcf)
@@ -495,6 +495,7 @@ output:
 	path("report.tsv"),emit:report
 	path("version.xml"),emit:version
 script:
+	def reference = params.genomes[genomeId].fasta
 """
 hostname 1>&2
 ${moduleLoad("openjdk/11.0.8 bcftools")}

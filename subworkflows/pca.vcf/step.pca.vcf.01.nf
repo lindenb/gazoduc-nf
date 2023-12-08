@@ -160,6 +160,7 @@ script:
 	prefix = "plotassoc"
 	def reference = params.genomes[genomeId].fasta
 	def title = assoc.name.replace('.','_')
+	def nhead = 10
 """
 hostname 1>&2
 ${moduleLoad("jvarkit")}
@@ -340,18 +341,29 @@ java -cp \${JVARKIT_DIST}/jvarkit.jar:TMP Minikit
 cat << __EOF__ > TMP/jeter.html
 <!--
 parent_id: pihat_section
-parent_name: "PCA"
+parent_name: "PCA ${params.step_name}"
 parent_description: "${whatisapca}"
 id: '${title}_table'
 section_name: '${title} table'
-description: '${assoc} first lines.'
+description: '${assoc} :  ${nhead} first lines. Number of variants per Chromosome.'
 -->
-<pre>
 __EOF__
 
 
-tr -s " " < "${assoc}" | LC_ALL=C sort -T TMP -t ' ' -k10,10g  | head -n 10 | column -t  >> TMP/jeter.html
-echo "</pre></body></html>" >> TMP/jeter.html
+tr -s " " < "${assoc}" | LC_ALL=C sort -T TMP -t ' ' -k10,10g  | head -n ${nhead} |\\
+	awk 'BEGIN{printf("<table class=\\"table\\">");} {t=(NR==1?"th":"td");print("<tr>");for(i=1;i<=NF;i++) printf("<%s>%s</%s>",t,\$i,t);printf("</tr>\\n");} END{printf("</table>\\n");}'  >> TMP/jeter.html
+
+#
+# Floriane suggested to also add the number of variants per chromosome
+#
+awk '(\$2!="SNP") {print \$2}' '${assoc}' |\\
+	cut -d ':' -f 1 | sort -T TMP | uniq -c |\\
+	awk '{printf("%s\t%s\\n",\$2,\$1);}' |\\
+	sort -T TMP -t '\t' -k1,1 |\\
+	join -t '\t' -1 1 -2 1 - <(sort -t '\t' -k1,1 '${reference}.fai' ) |\\
+	awk 'BEGIN{printf("<table class=\\"table\\"><thead><caption>Number of variants per contig</caption><tr><th>CHROM</th><th>Length</th><th>VARIANTS</th><th>Variants per base</th></tr></thead><tbody>\\n");} {printf("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\\n",\$1,\$3,\$2,\$2/\$3);} END {printf("</tbody></table>\\n");}' >> TMP/jeter.html
+
+
 
 mv TMP/jeter.html "${prefix}.multiqc.${title}.table_mqc.html"
 
@@ -363,7 +375,7 @@ cat << EOF > "${prefix}.multiqc.${title}.multiqc_config.yaml"
 custom_data:
   pca_${title}:
     parent_id: pihat_section
-    parent_name: "PCA"
+    parent_name: "PCA ${params.step_name}"
     parent_description: "${whatisapca}"
     section_name: "PCA: ${assoc.name}"
     description: "PCA: ${assoc.name}"
@@ -449,7 +461,7 @@ cat << EOF > "${prefix}.multiqc.config.yaml"
 custom_data:
   pca_${title}:
     parent_id: pihat_section
-    parent_name: "PCA"
+    parent_name: "PCA ${params.step_name}"
     parent_description: "${whatisapca}"
     section_name: "PCA: ${row.label1} ${row.label2}"
     description: "PCA: ${row.label1} vs ${row.label2}"

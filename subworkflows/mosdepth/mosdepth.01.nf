@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {SAMTOOLS_SAMPLES_01} from '../../subworkflows/samtools/samtools.samples.01.nf'
+include {SAMTOOLS_SAMPLES_01} from '../../subworkflows/samtools/samtools.samples.03.nf'
 include {SCATTER_TO_BED} from '../../subworkflows/picard/picard.scatter2bed.nf'
 include {MOSDEPTH_DOWNLOAD_01} from '../../modules/mosdepth/mosdepth.downoad.01.nf'
 include {MOSDEPTH_RUN_01} from '../../modules/mosdepth/mosdepth.run.01.nf'
@@ -35,16 +35,16 @@ include {moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
 workflow MOSDEPTH_BAMS_01 {
 	take:
 		meta
-		reference
+		genomeId
 		bams
 		bed
 	main:
 		version_ch  = Channel.empty()
-		bams_ch = SAMTOOLS_SAMPLES_01(meta.plus(["with_header":true,"allow_multiple_references":false,"allow_duplicate_samples":false]),reference,file("NO_FILE"),bams)
+		bams_ch = SAMTOOLS_SAMPLES([], bams)
 		version_ch = version_ch.mix(bams_ch.version)
 
 		if(bed.name.equals("NO_FILE")) {
-			acgt_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"ACGT","MAX_TO_MERGE":"1"],reference)
+			acgt_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"ACGT","MAX_TO_MERGE":"1"],params.genomes[genomeId].fasta)
                         version_ch = version_ch.mix(acgt_ch.version)
                         bed2 = acgt_ch.bed
 			}
@@ -53,36 +53,38 @@ workflow MOSDEPTH_BAMS_01 {
 			bed2 = Channel.fromPath(bed) // rechanged ? changed 20230517 ... for graphtyper ?? Channel.fromPath(bed)
 			}
 
-		ch1 = bams_ch.output.splitCsv(header:true,sep:'\t').combine(bed2).map{T->T[0].plus([
-			"mapq": (meta.mapq?:1),
+		ch1 = bams_ch.rows.
+			filter{T->T.genomeId.equals(genomeId)}.
+			combine(bed2).map{T->T[0].plus([
+			"mapq": (params.mapq?:1),
 			"bed": T[1]
 			])}
-		mosdepth_ch = MOSDEPTH_DOWNLOAD_01(meta)
+		mosdepth_ch = MOSDEPTH_DOWNLOAD_01([:])
 		version_ch = version_ch.mix(mosdepth_ch.version)	
 	
-		ch2 = MOSDEPTH_RUN_01(meta, mosdepth_ch.executable,ch1)
+		ch2 = MOSDEPTH_RUN_01([:], mosdepth_ch.executable,ch1)
 		version_ch = version_ch.mix(ch2.version)
 
-		merge_ch = MERGE_MOSDEPTH_SUMMARY(meta,ch2.summary.map{T->T[0].sample+"\t"+T[0].bam+"\t"+T[0].reference+"\t"+T[1]}.collect())
+		merge_ch = MERGE_MOSDEPTH_SUMMARY([:], ch2.summary.map{T->T[0].sample+"\t"+T[0].bam+"\t"+T[0].reference+"\t"+T[1]}.collect())
 		version_ch = version_ch.mix(merge_ch.version)
 
 		file_list_ch = COLLECT_TO_FILE_01([:],ch2.regiondist.map{T->T[1]}.collect())
 		version_ch = version_ch.mix(file_list_ch.version)
 
-		regdist_ch = ZIP_REGION_DIST(meta, file_list_ch.output)
+		regdist_ch = ZIP_REGION_DIST([:], file_list_ch.output)
 		version_ch = version_ch.mix(regdist_ch.version)
 
-		multiqc_ch = MULTIQC_01(meta,ch2.regiondist.map{T->T[1]}.collect())
+		multiqc_ch = MULTIQC_01([:],ch2.regiondist.map{T->T[1]}.collect())
 		version_ch = version_ch.mix(multiqc_ch.version)
 
 		pdf_ch = Channel.empty()
-		plot_ch = PLOT_IT(meta, merge_ch.output)
+		plot_ch = PLOT_IT([:], merge_ch.output)
 		version_ch = version_ch.mix(plot_ch.version)
 		pdf_ch = pdf_ch.mix(plot_ch.coverage)
 		pdf_ch = pdf_ch.mix(plot_ch.coverage_region)
 
 
-		ch3 = MERGE_VERSION(meta, "Mosdepth", "Mosdepth", version_ch.collect())
+		ch3 = MERGE_VERSION("Mosdepth", version_ch.collect())
 	emit:
 		version = ch3
 		summary = merge_ch.output
@@ -100,7 +102,7 @@ input:
 	val(meta)
 	val(L)
 output:
-	path("${meta.prefix?:""}summary.tsv"),emit:output
+	path("${params.prefix?:""}summary.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
 """
@@ -124,7 +126,7 @@ do
 	echo >> TMP/jeter2.txt
 done
 
-mv TMP/jeter2.txt "${meta.prefix?:""}summary.tsv"
+mv TMP/jeter2.txt "${params.prefix?:""}summary.tsv"
 
 ##################
 cat << EOF > version.xml
@@ -143,13 +145,13 @@ input:
 	val(meta)
 	path(files)
 output:
-	path("${meta.prefix?:""}regions.dist.zip"),emit:zip
+	path("${params.prefix?:""}regions.dist.zip"),emit:zip
 	path("version.xml"),emit:version
 script:
 """
 hostname 1>&2
 
-zip -9@j "${meta.prefix?:""}regions.dist.zip" < "${files}"
+zip -9@j "${params.prefix?:""}regions.dist.zip" < "${files}"
 
 ##################
 cat << EOF > version.xml
@@ -168,11 +170,11 @@ input:
 	val(meta)
 	path(summary)
 output:
-	path("${meta.prefix?:""}coverage.pdf"),emit:coverage
-	path("${meta.prefix?:""}coverage_region.pdf"),optional:true,emit:coverage_region
+	path("${params.prefix?:""}coverage.pdf"),emit:coverage
+	path("${params.prefix?:""}coverage_region.pdf"),optional:true,emit:coverage_region
 	path("version.xml"),emit:version
 script:
-	def prefix = meta.prefix?:""
+	def prefix = params.prefix?:""
 """
 hostname 1>&2
 ${moduleLoad("r")}

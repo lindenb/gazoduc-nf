@@ -24,40 +24,24 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
-
-gazoduc.build("vcfs","NO_FILE").
-	desc("file containing the path to the VCF files. One per line.").
-	existingFile().
-	required().
-	put()
 
 
-
-
-include {SURVIVOR_01} from '../../subworkflows/survivor/survivor.01.nf'
+include {TRUVARI_01} from '../../subworkflows/truvari/truvari.01.nf'
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
-include {runOnComplete;moduleLoad} from '../../modules/utils/functions.nf'
-include {SIMPLE_PUBLISH_01} from '../../modules/utils/publish.simple.01.nf'
-
+include {runOnComplete;moduleLoad;dumpParams} from '../../modules/utils/functions.nf'
 
 if( params.help ) {
-    gazoduc.usage().
-	name("survivor").
-	desc("merge vcfs using survivor https://github.com/fritzsedlazeck/SURVIVOR").
-	print();
+    dumpParams(params);
     exit 0
-} else {
-   gazoduc.validate();
+}  else {
+    dumpParams(params);
 }
 
 
-workflow {
-	ch1 = SURVIVOR_01(params,params.reference,file(params.vcfs))
-	html = VERSION_TO_HTML(params,ch1.version)
 
-	pub_ch = Channel.empty().mix(ch1.vcf).mix(ch1.version).mix(html.html)
-	SIMPLE_PUBLISH_01(params, pub_ch.collect())
+workflow {
+	ch1 = TRUVARI_01(params, params.genomeId, file(params.vcfs))
+	html = VERSION_TO_HTML(ch1.version)
 	}
 
 runOnComplete(workflow)

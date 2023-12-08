@@ -72,7 +72,8 @@ output:
 	path("vcfs.list"),emit:output
 	path("version.xml"),emit:version
 script:
-	def method = params.split_vcf_method ?:" --vcf-count  1000"
+	TODO set in config
+	def method = task.ext.split_vcf_method ?:" --vcf-count  1000"
 """
 hostname 1>&2
 ${moduleLoad("bcftools jvarkit bedtools")}
