@@ -216,7 +216,7 @@ EOF
 SQRT=`awk 'END{X=NR;if(${min_file_split} > 0 && X <= ${min_file_split}){print(X);} else {z=sqrt(X); print (z==int(z)?z:int(z)+1);}}' TMP/jeter.list`
 split -a 9 --additional-suffix=.list --lines=\${SQRT} TMP/jeter.list TMP/chunck.
 
-find TMP -type f -name "chunck.*.list" | while read F
+find TMP -type f -name "chunck.*.list" | sort | while read F
 do
 	echo "\${F}" 1>&2
 	bcftools merge --threads ${task.cpus} --file-list "\${F}" --missing-to-ref  -O b -o "\${F}.bcf"
