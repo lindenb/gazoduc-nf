@@ -202,6 +202,7 @@ output:
 	path("${params.prefix?:""}${contig}.merged.bcf"),emit:vcf
 	path("${params.prefix?:""}${contig}.merged.bcf.csi"),emit:index
 script:
+	def min_file_split = 75;
 """
 hostname 1>&2
 ${moduleLoad("bcftools")}
@@ -212,8 +213,18 @@ cat << EOF | sort -T TMP -t '\t' -k1,1 | cut -f 2 > TMP/jeter.list
 ${L.join("\n")}
 EOF
 
+SQRT=`awk 'END{X=NR;if(${min_file_split} > 0 && X <= ${min_file_split}){print(X);} else {z=sqrt(X); print (z==int(z)?z:int(z)+1);}}' TMP/jeter.list`
+split -a 9 --additional-suffix=.list --lines=\${SQRT} TMP/jeter.list TMP/chunck.
 
-bcftools merge --threads ${task.cpus} --file-list TMP/jeter.list --missing-to-ref  -O u |\
+find TMP -type f -name "chunck.*.list" | while read F
+do
+	echo "\${F}" 1>&2
+	bcftools merge --threads ${task.cpus} --file-list "\${F}" --missing-to-ref  -O b -o "\${F}.bcf"
+	bcftools index --threads ${task.cpus} "\${F}.bcf"
+	echo "\${F}.bcf" >> TMP/jeter2.list
+done
+
+bcftools merge --threads ${task.cpus} --file-list TMP/jeter2.list --missing-to-ref  -O u |\
 	bcftools +fill-tags -O b  -o "${params.prefix?:""}${contig}.merged.bcf"  -- -t AN,AC,AF
 bcftools index --threads ${task.cpus} "${params.prefix?:""}${contig}.merged.bcf"
 
