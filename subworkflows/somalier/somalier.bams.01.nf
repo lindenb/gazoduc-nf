@@ -54,6 +54,7 @@ workflow SOMALIER_BAMS_01 {
 	emit:
 		version = version_ch
 		zip = som_ch.zip
+		output = som_ch.output
 		qc = som_ch.qc /** input for multiqc */
 	}
 
@@ -87,6 +88,7 @@ workflow SOMALIER_BAMS_02 {
 	
 		version_ch = MERGE_VERSION( "somalier",version_ch.collect())
 	emit:
+		output = somalier_ch.output
 		version = version_ch
 		zip = somalier_ch.zip
 		qc = somalier_ch.qc
@@ -137,6 +139,7 @@ input:
 	val(L)
 	path(pedigree)
 output:
+	path("${params.prefix?:""}somalier.bams/*"),emit:output
 	path("${params.prefix?:""}somalier.bams.zip"),emit:zip
 	path("${params.prefix?:""}somalier_mqc.html"),emit:qc
 	path("version.xml"),emit:version
@@ -167,7 +170,7 @@ section_name: 'Somalier'
 description: 'Somalier: relatedness among samples from extracted, genotype-like information'
 -->
 <div>
-<table>
+<table class="table">
 <caption>${max_rows_html} higher relatedness</caption>
 <thead>
 	<th>sample1</th>
@@ -182,6 +185,23 @@ cut -f1,2,3  "${prefix}somalier.bams"/*.pairs.tsv |\
 	LC_ALL=C sort -T TMP -t '\t' -k3,3gr |\
 	head -n '${max_rows_html}' |\
 	awk -F '\t' '{printf("<tr><td>%s</td><td>%s</td><td>%s</td></tr>\\n",\$1,\$2,\$3);}' >> TMP/jeter.html
+cat << EOF >> TMP/jeter.html
+</tbody>
+</table>
+<br/>
+
+<table class="table">
+<caption>mean relatedness by sample</caption>
+<thead>
+        <th>sample</th>
+        <th>AVG(relatedness)</th>
+</thead>
+<tbody>
+EOF
+
+awk '(NR>1) {P[\$1]+=1.0*(\$3);P[\$2]+=1.0*(\$3);C[\$1]++;C[\$2]++;} END{for(S in P) printf("%s\t%f\\n",S,P[S]/C[S]);}' "${prefix}somalier.bams"/*.pairs.tsv  |\
+	LC_ALL=C sort -T TMP -t \$'\\t' -k2,2gr |\
+	awk -F '\t' '{printf("<tr><td>%s</td><td>%s</td></tr>\\n",\$1,\$2);}'  >> TMP/jeter.html
 
 cat << EOF >> TMP/jeter.html
 </tbody>

@@ -26,8 +26,8 @@ nextflow.enable.dsl=2
 
 
 include {dumpParams;runOnComplete} from '../../../modules/utils/functions.nf'
-include {PIHAT01} from '../../../subworkflows/pihat/pihat.01.nf'
-
+include {PIHAT01} from '../../../subworkflows/pihat/pihat.01.nf' addParams([step_id:"pihat01",step_name:"Step 01"])
+include {MULTIQC} from '../../../subworkflows/multiqc/multiqc.nf'
 
 if( params.help ) {
     dumpParams(params);
@@ -40,8 +40,11 @@ workflow {
 	pihat_ch = PIHAT01(
 		params.genomeId,
 		file(params.vcf),
-		Channel.fromPath(params.samples)
+		Channel.fromPath(params.samples),
+		file(params.pihat.blacklisted)
 		)
+	to_multiqc = pihat_ch.to_multiqc
+	mqc_ch = MULTIQC(to_multiqc)
 	}
 
 runOnComplete(workflow);

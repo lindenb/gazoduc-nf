@@ -35,6 +35,7 @@ params.publishDir = ""
 params.prefix = ""
 
 include {SOMALIER_BAMS_01} from  '../../../subworkflows/somalier/somalier.bams.01.nf'
+include {MULTIQC} from '../../../subworkflows/multiqc/multiqc.nf'
 include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
 include {runOnComplete;dumpParams} from '../../../modules/utils/functions.nf'
 
@@ -57,7 +58,7 @@ workflow {
 		file(params.pedigree),
 		file(params.user_sites)
 		)
-
+	multiqc =  MULTIQC(somalier_ch.output.mix(somalier_ch.qc).flatten().collect())
         html = VERSION_TO_HTML(somalier_ch.version)
 	}
 
