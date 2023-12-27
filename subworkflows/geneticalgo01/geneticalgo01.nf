@@ -1,12 +1,15 @@
 include {moduleLoad} from '../../modules/utils/functions.nf'
 
+if(!params.containsKey("step_id")) throw new IllegalArgumentException("params.step_id missing");
+if(!params.containsKey("step_name")) throw new IllegalArgumentException("params.step_name missing");
+
 workflow GENETICALGO {
 	take:
 		genomeId
         	vcf
 		cases
 		controls
-		exclude_bed_ch
+		exclude_bed_ch /** array  [selid, vcf] */
 	main:
 		intervals_ch = Channel.empty()		
 		
@@ -21,14 +24,11 @@ workflow GENETICALGO {
 			).
 			map{T->[ selid:T[0], selname:T[1], slop:T[2], selexpr:T[3] ]}
 
-
-
-
-	
 		sel0b_ch  = SELECT01(
 			genomeId,
 			sel0a_ch.map{T->[T.selid,T]}.
-				join(exclude_bed_ch.map{T->[T.selid,T]},remainder:true).
+				join(exclude_bed_ch,remainder:true).
+				filter{it[1]!=null}.
 				map{T->T[1].plus("exclude_bed":T[2])}
 			)
 
@@ -38,10 +38,12 @@ workflow GENETICALGO {
 		/** Whole genome */
 		sel1a_ch = Channel.of([selid:"whole",selname:"All"])
 	
+
 		sel1b_ch  = WHOLE_GENOME(
 			genomeId,
 			sel1a_ch.map{T->[T.selid,T]}.
-				join(exclude_bed_ch.map{T->[T.selid,T]},remainder:true).
+				join(exclude_bed_ch,remainder:true).
+				filter{it[1]!=null}.
 				map{T->T[1].plus("exclude_bed":T[2])}
 			)
 		
@@ -52,7 +54,8 @@ workflow GENETICALGO {
 		sel2b_ch  = INTRONS(
 			genomeId,
 			sel2a_ch.map{T->[T.selid,T]}.
-				join(exclude_bed_ch.map{T->[T.selid,T]},remainder:true).
+				join(exclude_bed_ch,remainder:true).
+				filter{it[1]!=null}.
 				map{T->T[1].plus("exclude_bed":T[2])}
 			)
 
@@ -74,17 +77,23 @@ workflow GENETICALGO {
 		sel3b_ch = XXSTREAM (
 			genomeId,
 			sel3a_ch.map{T->[T.selid,T]}.
-				join(exclude_bed_ch.map{T->[T.selid,T]},remainder:true).
+				join(exclude_bed_ch,remainder:true).
+				filter{it[1]!=null}.
 				map{T->T[1].plus("exclude_bed":T[2])}
 			)
 		intervals_ch = intervals_ch.mix(sel3b_ch.output)
 
-		APPLY(  genomeId,
+		apply_ch = APPLY(  genomeId,
 			vcf,
 			cases,
 			controls,
 			intervals_ch.map{T->T[0].plus(bed:T[1])}
 			)
+
+	emit:
+		mqc = apply_ch.mqc
+		tsv = apply_ch.tsv.map{T->[T[0].plus(step_id:params.step_id,step_name:params.step_name),T[1]]}
+		exclude_bed = apply_ch.exclude.map{T->[T[0].selid,T[1]]}
 	}
 
 
@@ -148,6 +157,7 @@ process SELECT01 {
 		bedtools merge > jeter.bed
 
 	if ${!exclude_bed.name.equals("NO_FILE")} ; then
+
 		bedtools subtract -a jeter.bed -b "${exclude_bed}" |\\
 		awk -F '\t' 'int(\$2) < int(\$3)' |\\
 		sort -T . -t '\t' -k1,1 -k2,2n > jeter2.bed
@@ -266,7 +276,7 @@ process XXSTREAM {
 
 
 process APPLY {
-	tag "${row.selid}"
+	tag "${row.selid} exclude:${row.exclude_bed}"
 	afterScript "rm -rf TMP"
 	cpus 10
 	memory "10g"
@@ -278,8 +288,9 @@ process APPLY {
 		val(row)
 	output:
 		path("${row.selid}.${params.step_id}.vcf.gz"),emit:vcf
-		path("${row.selid}.${params.step_id}.tsv"),emit:tsv
-		tuple val(row),path("${selid}.${params.step_id}.exclude.bed"),emit:exclude
+		tuple val(row),path("${row.selid}.${params.step_id}.tsv"),emit:tsv
+		tuple val(row),path("${row.selid}.${params.step_id}.exclude.bed"),emit:exclude
+		path("${row.selid}.${params.step_id}.best_mqc.html"),emit:mqc
 	script:
 		def genome = params.genomes[genomeId]
 		def fasta = genome.fasta
@@ -291,6 +302,7 @@ process APPLY {
 	hostname 1>&2
 	${moduleLoad("bedtools bcftools jvarkit")}
 	set -o pipefail
+	set -x
 	mkdir -p TMP
 
 	cat ${cases} ${controls} > TMP/all.samples.txt
@@ -307,25 +319,45 @@ process APPLY {
 	
 	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar optimizefisher \\
 		--threads ${task.cpus}  \\
+		--duration '${params.duration}' \\
 		--cases '${cases}' \\
-		--controls '${controls}' -o TMP TMP/mini.vcf.gz
+		--controls '${controls}' -o TMP TMP/mini.vcf.gz 2> fisher.log
 	
 	# first and last line
 	head -n1 TMP/best.tsv > TMP/best2.tsv
 	tail -n 1 TMP/best.tsv >> TMP/best2.tsv
 
 	touch TMP/exclude2.bed
-	if ${row.exclude_bed==null} ; then
+	if ${row.exclude_bed!=null} ; then
 		cat "${row.exclude_bed}" >> TMP/exclude2.bed
 	fi
 
 	# best hist as table
-	echo "<pre>" > TMP/jeter.html
-	paste	<(head -n 1 | TMP/best2.tsv | tr "\t" "\\n") \\
-		<(tail -n 1 | TMP/best2.tsv | tr "\t" "\\n") |\\
-		column -t -s '\t'  >> TMP/jeter.html
-	echo "</pre>" > TMP/jeter.html
 
+cat << __EOF__ > TMP/jeter.html
+<!--
+parent_id: ${params.step_id}
+parent_name: "${params.step_name}"
+parent_description: "Genetic Algorithm to find best set of parameters to optimize fisher test. VCF was <code>${vcf}</code>"
+id: '${params.step_id}_${selid}_best'
+section_name: '${row.selname}'
+description: '${row.selname} ${params.step_name} : Best parameters.'
+-->
+__EOF__
+
+	awk '(NR==1){for(i=0;i<=NF;i++) if(\$i=="INTERVAL") C=i;next;} {print \$C;}' TMP/best2.tsv |\\
+		awk -F '[:-]' '{printf("<div>Best interval : <a target=\\"_blank\\" href=\\"https://genome-euro.ucsc.edu/cgi-bin/hgTracks?db=${genome.ucsc_name}&position=%s%%3A%s-%s\\">%s</a></div>\\n",\$1,int(\$2),\$3,\$0)}' >> TMP/jeter.html
+
+
+	echo '<table class="table">' >> TMP/jeter.html
+	paste	<(head -n 1 TMP/best2.tsv | tr "\t" "\\n") \\
+		<(tail -n 1 TMP/best2.tsv | tr "\t" "\\n") |\\
+		sed 's/&/\\&amp;/g; s/</\\&lt;/g; s/>/\\&gt;/g; s/"/\\&quot;/g; s/'"'"'/\\&#39;/g' |\\
+		awk -F '\t' '{printf("<tr><th>%s</th><td>%s</td></tr>\\n",\$1,\$2);}'  >> TMP/jeter.html
+	echo "</table>" >> TMP/jeter.html
+
+	mv TMP/jeter.html "${selid}.${params.step_id}.best_mqc.html"
+	
 	# append best hit to exclude bed
 	awk '(NR==1){for(i=0;i<=NF;i++) if(\$i=="INTERVAL") C=i;next;} {print \$C;}' TMP/best2.tsv |\\
 		awk -F '[:-]' '{printf("%s\t%d\t%s\\n",\$1,int(\$2)-1,\$3)}' >> TMP/exclude2.bed
