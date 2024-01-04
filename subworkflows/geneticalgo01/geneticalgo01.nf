@@ -83,6 +83,19 @@ workflow GENETICALGO {
 			)
 		intervals_ch = intervals_ch.mix(sel3b_ch.output)
 
+		sel4a_ch = Channel.of(1,10,100,500,1_000).
+			map{T->[ selid:"intergenic"+T, selname:"Intergenic Gene slop "+T+"bp", slop:T]}
+
+		sel4b_ch = INTERGENIC(
+			genomeId,
+			sel4a_ch.map{T->[T.selid,T]}.
+				join(exclude_bed_ch,remainder:true).
+				filter{it[1]!=null}.
+				map{T->T[1].plus("exclude_bed":T[2])}
+			)
+		intervals_ch = intervals_ch.mix(sel4b_ch.output)
+
+
 		apply_ch = APPLY(  genomeId,
 			vcf,
 			cases,
@@ -113,7 +126,8 @@ process WHOLE_GENOME {
 	hostname 1>&2
 	${moduleLoad("bedtools")}
 	mkdir -p TMP
-	awk -F '\t' '{printf("%s\t0\t%d\\n",\$1,\$2);}' '${fasta}.fai' > TMP/jeter.bed
+	awk -F '\t' '{printf("%s\t0\t%d\\n",\$1,\$2);}' '${fasta}.fai' |\\
+		sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter.bed
 
 
 	if ${!exclude_bed.name.equals("NO_FILE")} ; then
@@ -219,6 +233,58 @@ process INTRONS {
 	"""
 	}
 
+
+
+process INTERGENIC {
+	tag "${row.selid}"
+	afterScript "rm -rf TMP"
+	input:
+		val(genomeId)
+		val(row)
+	output:
+		tuple val(row),path("select.bed"),emit:output
+	script:
+		def genome = params.genomes[genomeId]
+		def fasta = genome.fasta
+		def gtf = genome.gtf
+		def slop = row.slop
+		def exclude_bed = row.exclude_bed==null?file("NO_FILE"):row.exclude_bed
+	"""
+	hostname 1>&2
+	${moduleLoad("bedtools")}
+	set -o pipefail
+	mkdir -p TMP
+
+	awk -F '\t' '{printf("%s\t0\t%d\\n",\$1,\$2);}' '${fasta}.fai' |\\
+		sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/genome.bed
+
+
+	gunzip -c "${gtf}" |\\
+		awk -F '\t' '(\$3=="gene") { printf("%s\t%d\t%s\\n",\$1,int(\$4)-1,\$5);}' |\\
+		bedtools slop -b ${slop} -g "${fasta}.fai" |\\
+		sort -T TMP -t '\t' -k1,1 -k2,2n |\\
+		bedtools merge > TMP/genes.bed
+
+	bedtools subtract -a TMP/genome.bed -b TMP/genes.bed |\\
+		sort -T TMP -t '\t' -k1,1 -k2,2n |\\
+		awk -F '\t' 'int(\$2) < int(\$3)' > TMP/jeter.bed
+
+
+	if ${!exclude_bed.name.equals("NO_FILE")} ; then
+
+		bedtools subtract -a TMP/jeter.bed -b "${exclude_bed}" |\\
+		awk -F '\t' 'int(\$2) < int(\$3)' |\\
+		sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter2.bed
+
+		mv -v TMP/jeter2.bed TMP/jeter.bed
+	fi
+
+	mv -v TMP/jeter.bed select.bed
+	test -s select.bed
+	"""
+	}
+
+
 /** upstream / downstream gene */
 process XXSTREAM {
 	tag "${row.selid}"
@@ -278,8 +344,6 @@ process XXSTREAM {
 process APPLY {
 	tag "${row.selid} exclude:${row.exclude_bed}"
 	afterScript "rm -rf TMP"
-	cpus 10
-	memory "10g"
 	input:
 		val(genomeId)
 		path(vcf)
