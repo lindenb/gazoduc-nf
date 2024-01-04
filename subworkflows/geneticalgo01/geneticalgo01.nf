@@ -103,8 +103,12 @@ workflow GENETICALGO {
 			intervals_ch.map{T->T[0].plus(bed:T[1])}
 			)
 
+		to_mqc = apply_ch.mqc
+		mqc_table_ch= MQC_TABLE(genomeId, apply_ch.tsv.map{T->T[0].selid+"\t"+T[1]}.collect())
+		to_mqc = to_mqc.mix(mqc_table_ch.mqc)
+
 	emit:
-		mqc = apply_ch.mqc
+		mqc = to_mqc
 		tsv = apply_ch.tsv.map{T->[T[0].plus(step_id:params.step_id,step_name:params.step_name),T[1]]}
 		exclude_bed = apply_ch.exclude.map{T->[T[0].selid,T[1]]}
 	}
@@ -435,3 +439,59 @@ __EOF__
 	}
 
 
+process MQC_TABLE {
+tag "N=${L.size()}"
+executor "local"
+input:
+	val(genomeId)
+	val(L)
+output:
+	path("table_mqc.html"),emit:mqc
+script:
+	def genome = params.genomes[genomeId]
+"""
+mkdir -p TMP
+export LC_ALL=C
+
+
+cat << EOF > TMP/jeter.tsv
+${L.join("\n")}
+EOF
+
+
+cat << EOF > TMP/jeter.txt
+<!--
+id: "table_for_${params.step_id}"
+parent_id: "${params.step_id}"
+parent_name: "${params.step_name}"
+section_name: "Summary for ${params.step_name}"
+description: "Summary for ${params.step_name}"
+-->
+<table class='table'><thead><caption>Summary ${params.step_name}</caption><tr><th>id</th>
+EOF
+
+# print header
+head -n1 TMP/jeter.tsv | while IFS="\t" read N F
+do
+	head -n 1 "\${F}" |\
+	tr "\t" "\\n" |\
+	sed 's/&/\\&amp;/g; s/</\\&lt;/g; s/>/\\&gt;/g; s/"/\\&quot;/g; s/'"'"'/\\&#39;/g' |\\
+	awk '{printf("<th>%s</th>\\n",\$0);}' >> TMP/jeter.txt
+done
+echo "</tr></thead><tbody>" >> TMP/jeter.txt
+
+cat TMP/jeter.tsv | while IFS="\t" read N F
+do
+	# header and last line for best score
+	head -n1 "\${F}" >  TMP/best2.tsv
+	tail -n1 "\${F}" >> TMP/best2.tsv
+
+	awk  -F '\t' -vN="\${N}" 'BEGIN{printf("<tr><td>%s</td>",N);} (NR==1){for(i=0;i<=NF;i++) if(\$i=="INTERVAL") C=i;next;} {for(i=1;i<=NF;i++) {S=\$i;if(i==C) { S=sprintf("<a target=\\"_blank\\" href=\\"https://genome.ucsc.edu/cgi-bin/hgTracks?org=Human&db=${genome.ucsc_name}&position=%s\\">%s</a>",S,S);} else {gsub(/^.*[<>]= /,"",S);} printf("<td>%s</td>",S);}} END {printf("</tr>\\n");}' TMP/best2.tsv  >> TMP/jeter.txt
+
+done
+
+echo "</tbody></table>" >> TMP/jeter.txt
+
+mv TMP/jeter.txt table_mqc.html
+"""
+}

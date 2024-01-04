@@ -104,7 +104,7 @@ parent_id: custom_section
 parent_name: "Digest"
 parent_description: "All steps are summarized here"
 section_name: "PValue per generation"
-description: "Plot each pvalue per generation"
+description: "Plot each pvalue per generation. WARNING FOR NOW THERE IS A PROBLEM WITH THE X AXIS I NEED TO FIX IT"
 plot_type: "linegraph"
 pconfig:
       id: "example_coverage_lineplot"
