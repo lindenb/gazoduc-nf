@@ -66,11 +66,9 @@ workflow GENETICALGO {
 			["upstream1kb","Upstream 1Kb","upstream",1_000],
 			["upstream10kb","Upstream 10Kb","upstream",10_000],
 			["upstream100kb","Upstream 100Kb","upstream",100_000],
-			["upstream1Mb","Upstream 1M","upstream",1_000_000],
                         ["downstream1kb","Downstream 1Kb","downstream",1_000],
                         ["downstream10kb","Downstream 10Kb","downstream",10_000],
                         ["downstream100kb","Downstream 100Kb","downstream",100_000],
-                        ["downstream1Mb","Downstream 1M","downstream",1_000_000]
 			).
 			map{T->[ selid:T[0], selname:T[1], side:T[2], extend:T[3]]}
 
@@ -83,7 +81,9 @@ workflow GENETICALGO {
 			)
 		intervals_ch = intervals_ch.mix(sel3b_ch.output)
 
-		sel4a_ch = Channel.of(1,10,100,500,1_000).
+		/** INTERGENIC **/
+
+		sel4a_ch = Channel.of(0,10,100).
 			map{T->[ selid:"intergenic"+T, selname:"Intergenic Gene slop "+T+"bp", slop:T]}
 
 		sel4b_ch = INTERGENIC(
@@ -94,6 +94,21 @@ workflow GENETICALGO {
 				map{T->T[1].plus("exclude_bed":T[2])}
 			)
 		intervals_ch = intervals_ch.mix(sel4b_ch.output)
+
+		/** regulation */
+		reg_ch  = DOWNLOAD_GFF_REF(genomeId)
+		sel5a_ch = reg_ch.types.splitText().
+			map{it.trim()}.
+			map{T->[ selid:T, selname:T]}
+
+		sel5b_ch = REGULATORY(
+			reg_ch.output,
+			sel5a_ch.map{T->[T.selid,T]}.
+				join(exclude_bed_ch,remainder:true).
+				filter{it[1]!=null}.
+				map{T->T[1].plus("exclude_bed":T[2])}
+			)
+		intervals_ch = intervals_ch.mix(sel5b_ch.output)
 
 
 		apply_ch = APPLY(  genomeId,
@@ -289,6 +304,44 @@ process INTERGENIC {
 	}
 
 
+
+process REGULATORY {
+	tag "${row.selid}"
+	afterScript "rm -rf TMP"
+	input:
+		val(bed)
+		val(row)
+	output:
+		tuple val(row),path("select.bed"),emit:output
+	script:
+		def exclude_bed = row.exclude_bed==null?file("NO_FILE"):row.exclude_bed
+	"""
+	hostname 1>&2
+	${moduleLoad("bedtools")}
+	set -o pipefail
+	mkdir -p TMP
+
+	gunzip -c "${bed}" |\\
+		awk -F '\t' '(\$4=="${row.selid}" || "${row.selid}" == "ALL_REG" )' |\\
+		cut -f 1,2,3 |\\
+		sort -T TMP -t '\t' -k1,1 -k2,2n |\\
+		bedtools merge > TMP/jeter.bed
+
+	if ${!exclude_bed.name.equals("NO_FILE")} ; then
+
+		bedtools subtract -a TMP/jeter.bed -b "${exclude_bed}" |\\
+		awk -F '\t' 'int(\$2) < int(\$3)' |\\
+		sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter2.bed
+
+		mv -v TMP/jeter2.bed TMP/jeter.bed
+	fi
+
+	mv -v TMP/jeter.bed select.bed
+	test -s select.bed
+	"""
+	}
+
+
 /** upstream / downstream gene */
 process XXSTREAM {
 	tag "${row.selid}"
@@ -345,9 +398,39 @@ process XXSTREAM {
 	}
 
 
+process DOWNLOAD_GFF_REF {
+	input:
+		val(genomeId)
+	output:
+		path("reg.gff.gz"),emit:output
+		path("types.txt"),emit:types
+	script:
+		def genome = params.genomes[genomeId]
+		def reference = genome.fasta
+		def u = genome.ensembl_regulatory_gff_url
+	"""
+	hostname 1>&2
+	${moduleLoad("jvarkit")}
+	mkdir -p TMP
+	set -o pipefail
+	wget -O - "${u}" | gunzip -c |\\
+		grep -v '^#' |\\
+		java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 1 --convert SKIP |\\
+		awk -F '\t' '{printf("%s\t%d\t%s\t%s\\n",\$1,int(\$4)-1,\$5,\$3);}' |\\
+		LC_ALL=C sort -t '\t' -T TMP -k1,1 -k2,2n | uniq > reg.gff
+	test -s reg.gff
+	cut -f 4 reg.gff | sort | uniq > types.txt
+	echo 'ALL_REG' >> types.txt
+	test -s types.txt
+	gzip reg.gff
+	"""
+}
+
+
 process APPLY {
 	tag "${row.selid} exclude:${row.exclude_bed}"
 	afterScript "rm -rf TMP"
+	errorStrategy "ignore"
 	input:
 		val(genomeId)
 		path(vcf)
@@ -359,6 +442,8 @@ process APPLY {
 		tuple val(row),path("${row.selid}.${params.step_id}.tsv"),emit:tsv
 		tuple val(row),path("${row.selid}.${params.step_id}.exclude.bed"),emit:exclude
 		path("${row.selid}.${params.step_id}.best_mqc.html"),emit:mqc
+	when:
+		row.selid.matches(params.selid_regex)	
 	script:
 		def genome = params.genomes[genomeId]
 		def fasta = genome.fasta
@@ -429,12 +514,13 @@ __EOF__
 	# append best hit to exclude bed
 	awk '(NR==1){for(i=0;i<=NF;i++) if(\$i=="INTERVAL") C=i;next;} {print \$C;}' TMP/best2.tsv |\\
 		awk -F '[:-]' '{printf("%s\t%d\t%s\\n",\$1,int(\$2)-1,\$3)}' >> TMP/exclude2.bed
+
 	
 	mv TMP/best.vcf.gz ${selid}.${params.step_id}.vcf.gz
 	mv TMP/best.tsv ${selid}.${params.step_id}.tsv
 	mv TMP/best.properties ${selid}.${params.step_id}.properties
 
-	mv "TMP/exclude2.bed" "${selid}.${params.step_id}.exclude.bed"
+	sort -T TMP -t '\t' -k1,1 -k2,2n  "TMP/exclude2.bed" > "${selid}.${params.step_id}.exclude.bed"
 	"""
 	}
 
@@ -467,7 +553,7 @@ parent_name: "${params.step_name}"
 section_name: "Summary for ${params.step_name}"
 description: "Summary for ${params.step_name}"
 -->
-<table class='table'><thead><caption>Summary ${params.step_name}</caption><tr><th>id</th>
+<table class='table'><thead><caption>Summary ${params.step_name}. SOME COLUMNS MAY BE MISSING/SHIFTED BECAUSE JVARKIT REMOVES PARAMS IF THERE IS NO VARIANCE; NEED TO BE FIXED. </caption><tr><th>id</th>
 EOF
 
 # print header
@@ -480,7 +566,7 @@ do
 done
 echo "</tr></thead><tbody>" >> TMP/jeter.txt
 
-cat TMP/jeter.tsv | while IFS="\t" read N F
+cat TMP/jeter.tsv | sort -t '\t' -k1,1V -T TMP| while IFS="\t" read N F
 do
 	# header and last line for best score
 	head -n1 "\${F}" >  TMP/best2.tsv
