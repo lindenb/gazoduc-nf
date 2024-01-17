@@ -271,9 +271,9 @@ tabix -s 1 -b 2 -e 2 tommo.bed.gz
 
 
 process APPLY_ANNOTATION {
-tag "${row.vcf} ${row.interval?:row.bed?:""}"
+tag "${row.vcf} ${row.interval?:(row.bed?:"")}"
 afterScript "rm -rf TMP"
-memory '5 g'
+memory '5g'
 maxForks 30
 
 input:
@@ -288,7 +288,7 @@ script:
 	def genome = params.genomes[genomeId]
 	def reference = genome.fasta
 	def vcf=row.vcf
-	def pedigree = row.pedigree?:file("NO_FILE")
+	def pedigree = (row.pedigree?:file("NO_FILE"))
 	def extraBcfTools=""
 """
 	hostname 1>&2

@@ -29,7 +29,7 @@ include {SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.nf'
 include {BCFTOOLS_MERGE_BED_01} from '../../modules/bcftools/bcftools.merge.bed.01.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
-include {ANNOTATE_VCF_01} from '../annotation/annotation.vcf.01.nf'
+//include {ANNOTATE_VCF_01} from '../annotation/annotation.vcf.01.nf'
 
 workflow GATK4_HAPCALLER_DIRECT_01 {
 	take:
@@ -81,9 +81,13 @@ workflow GATK4_HAPCALLER_DIRECT_01 {
 		version_ch = version_ch.mix(bedvcf_ch.version)
 
 		if(params.with_annotations) {
+			throw new IllegalStateException("TODO");
+			/*
 			ann_ch = ANNOTATE_VCF_01([:], genomeId, bedvcf_ch.bedvcf.map{T->[vcf:T[1],bed:T[0]]})
 			version_ch = version_ch.mix(ann_ch.version)		
 			vcfs_ch = ann_ch.output.map{T->T.annot_vcf}
+			*/
+			vcfs_ch = Channel.empty();
 			}
 		else
 			{

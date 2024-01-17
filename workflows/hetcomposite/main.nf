@@ -53,7 +53,7 @@ workflow SCAN_HET_COMPOSITES {
     main:
 		version_ch = Channel.empty()
 
-		ch1 = VCF_TO_BED([with_header:false], vcf)
+		ch1 = VCF_TO_BED([:], vcf)
 		version_ch = version_ch.mix(ch1.version)
 
 		ch4= INTER_VCF_GTF([:], genomeId, ch1.bed)
