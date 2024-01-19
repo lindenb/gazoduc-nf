@@ -44,7 +44,6 @@ if( params.help ) {
 
 workflow {
 	ch1 = AF_SPECTRUM(params.genomeId, file(params.vcf), file(params.sample2population))
-	html = VERSION_TO_HTML(ch1.version)
 	}
 
 workflow AF_SPECTRUM {
@@ -53,8 +52,10 @@ workflow AF_SPECTRUM {
 		vcf
 		sample2population
 	main:
-		pop_ch = sample2population.splitCsv(sep:'\t',header:false).map{T->T[1]}.unique()
-		by_ch = BY_POP(genomeId,vcf,sample2population,pop_ch)
+		pop_ch = Channel.fromPath(sample2population).splitCsv(sep:'\t',header:false).map{T->T[1]}.unique()
+
+		sn1_ch = SAMPLES_IN_VCF(vcf)
+		by_ch = BY_POP(genomeId,vcf,sn1_ch.output,sample2population,pop_ch)
 
 		pairs_ch = by_ch.output.
 			combine(by_ch.output).
@@ -66,11 +67,30 @@ workflow AF_SPECTRUM {
 }
 
 
+process SAMPLES_IN_VCF {
+input:
+	path(vcf)
+output:
+	path("sn.txt"),emit:output
+script:
+"""
+hostname 1>&2
+${moduleLoad("bcftools")}
+
+bcftools ${vcf.name.endsWith(".list")?"merge -a ":"view"} -O u "${vcf}" |\
+	bcftools query -l |\
+	sort -T . | uniq > sn.txt
+
+test -s sn.txt
+"""
+}
+
 process BY_POP {
 tag "${pop}"
 input:
 	val(genomeId)
 	path(vcf)
+	path(sn_in_vcf)
 	path(sample2population)
 	val(pop)
 output:
@@ -84,12 +104,15 @@ ${moduleLoad("bcftools")}
 set -o pipefail
 mkdir -p TMP
 
-awk -F '\t' '(\$2=="${pop}") {print \$1;}' '${sample2population}' | sort -T TMP | uniq > TMP/jeter.samples.txt
+
+
+awk -F '\t' '(\$2=="${pop}") {print \$1;}' '${sample2population}' | sort -T TMP | uniq > TMP/a
+comm -12 TMP/a "${sn_in_vcf}" > TMP/jeter.samples.txt
 test -s TMP/jeter.samples.txt
 
-bcftools ${vcf.name.endsWith(".list")?"merge -a ":"view" -O u "${vcf}" |\
+bcftools ${vcf.name.endsWith(".list")?"merge -a ":"view"} -O u "${vcf}" |\
 	bcftools view -m2 -M2 --samples-file  TMP/jeter.samples.txt --trim-alt-alleles -O u |\
-	bcftools norm -i 'AC>0' --fasta-ref "${reference}" --multiallelics -both -Ou |\
+	bcftools norm  --fasta-ref "${reference}" --multiallelics -both -Ou |\
 	bcftools query -i 'AC>0' -f '%INFO/AC\\n' |\
 	sort -T TMP -t '\t' -k1,1 |\
 	uniq -c |\
@@ -102,12 +125,12 @@ mv TMP/jeter.count "${pop}.count"
 }
 
 process PLOT {
-tag '${pop1} vs ${pop2}"
+tag "${pop1} vs ${pop2}"
 input:
 	path(vcf)
 	tuple val(pop1),path(count1),val(pop2),path(count2)
 output:
-	path("${pop1}_${pop2}.yaml"),emit:output
+	path("${pop1}_${pop2}_mqc.yaml"),emit:output
 script:
 """
 
@@ -124,11 +147,13 @@ pconfig:
 data:
 EOF
 
-join -t '\t' -1 1 -2 1 -a 0 -a 1 -e 0 -o '1.1,1.2,2.2' "${count1}" "${count2}" |\
-	awk '{printf("  AC_%s: { x: %d, y: %d }\\n,",\$1,\$2,\$3);}' >> jeter.yaml
+join -t \$'\t' -1 1 -2 1 -o '1.1,1.2,2.2' "${count1}" "${count2}" > jeter.tsv
+join -t \$'\t' -1 1 -2 1 -v 1 -e 0 -o '1.1,1.2,2.2' "${count1}" "${count2}" >> jeter.tsv
+join -t \$'\t' -1 1 -2 1 -v 2 -e 0 -o '2.1,1.2,2.2' "${count1}" "${count2}" >> jeter.tsv
 
+awk -F '\t' '{printf("  AC_%s:\\n    x: %d\\n    y: %d\\n",\$1,\$2,\$3);}' jeter.tsv >> jeter.yaml
 
-mv jeter.yaml "${pop1}_${pop2}.yaml"
+mv jeter.yaml "${pop1}_${pop2}_mqc.yaml"
 """
 }
 
