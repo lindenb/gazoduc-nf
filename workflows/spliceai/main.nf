@@ -40,25 +40,8 @@ if( params.help ) {
 workflow {
 	ch1 = SPLICEAI_01([:], params.genomeId, Channel.fromPath(params.vcf), file(params.pedigree), file(params.bed))
 	html = VERSION_TO_HTML(ch1.version)
-	//PUBLISH(ch1.version,html.html,ch1.summary,ch1.pdf.collect())
 	}
 
-process PUBLISH {
-publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
-input:
-	path(version)
-	path(html)
-	path(summary)
-	path(pdfs)
-output:
-	path("${params.prefix}mosdepth.zip")
-when:
-	!params.getOrDefault("publishDir","").trim().isEmpty()
-script:
-"""
-zip -j "${params.prefix}mosdepth.zip" ${version} ${html} ${summary} ${pdfs.join(" ")}
-"""
-}
 
 runOnComplete(workflow);
 

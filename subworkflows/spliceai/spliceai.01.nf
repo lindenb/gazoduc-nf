@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 
-include { moduleLoad; isHg19; isHg38} from '../../modules/utils/functions.nf'
+include { moduleLoad } from '../../modules/utils/functions.nf'
 include {BED_CLUSTER_01 } from '../../modules/jvarkit/jvarkit.bedcluster.01.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_CONCAT_01} from '../bcftools/bcftools.concat.01.nf'
@@ -128,7 +128,8 @@ process DOWNLOAD_EXONS {
 
 process APPLY_SPLICEAI {
 	tag "${bed.name}"
-        conda "${moduleDir}/../../conda/spliceai.yml"
+        // conda "${moduleDir}/../../conda/spliceai.yml" BROKEN on our cluster
+	conda "${params.conda.envs_path}/SPLICEAI"
 	afterScript "rm -rf TMP"
 	cpus 2
 	input:
@@ -147,7 +148,7 @@ process APPLY_SPLICEAI {
 		def distance = params.spliceai.splice_distance?:50
 	"""
 	hostname 1>&2
-	module load bcftools/0.0.0
+	${moduleLoad("bcftools jvarkit")}
 	set -o pipefail
 
 	export OMP_NUM_THREADS=${task.cpus}
@@ -163,6 +164,7 @@ process APPLY_SPLICEAI {
 
 	if ${!pedigree.name.equals("NO_FILE")} ; then
  
+
 		grep -v '^#' "${pedigree}" | cut -f 2 | sort -T TMP | uniq > TMP/a
 		bcftools query -l TMP/jeter.bcf  | sort -T TMP | uniq > TMP/b
 		comm -12 TMP/a TMP/b > TMP/jeter.samples
@@ -173,8 +175,9 @@ process APPLY_SPLICEAI {
 		comm -12 TMP/b TMP/cases1.txt > TMP/cases.txt
 		comm -12 TMP/b TMP/controls1.txt > TMP/controls.txt
 
-		bcftools view --samples-file TMP/jeter.samples -O b -o TMP/jeter2.bcf TMP/jeter.bcf
+		bcftools view -O b -o TMP/jeter2.bcf TMP/jeter.bcf
 		mv TMP/jeter2.bcf TMP/jeter.bcf
+
 	fi
 
 	
@@ -197,6 +200,12 @@ process APPLY_SPLICEAI {
 		     -O b -o TMP/jeter2.bcf TMP/jeter.bcf
 
 		mv TMP/jeter2.bcf TMP/jeter.bcf
+
+		bcftools view TMP/jeter.bcf |\
+		java -jar  \${JVARKIT_DIST}/jvarkit.jar vcftrio --pedigree "${pedigree}" |\
+		bcftools view -O b -o TMP/jeter2.bcf
+		mv TMP/jeter2.bcf TMP/jeter.bcf
+
 	fi
 
 
