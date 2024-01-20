@@ -51,7 +51,7 @@ workflow BCFTOOLS_CONCAT_PER_CONTIG_01 {
 
 		file_list_ch = COLLECT_TO_FILE_01([:],c3_ch.vcf.map{T->T.toRealPath()}.collect())
 
-		c4_ch = VCF_TO_BED([with_header:false],file_list_ch.output)
+		c4_ch = VCF_TO_BED([:],file_list_ch.output)
 		version_ch = version_ch.mix(c4_ch.version)
 
                 version_ch = MERGE_VERSION("concat / contig", version_ch.collect())

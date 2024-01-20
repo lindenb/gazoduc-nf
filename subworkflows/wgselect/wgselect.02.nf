@@ -42,7 +42,7 @@ workflow WGSELECT_02 {
 		version_ch = Channel.empty()
 		
 		if( (params.wgselect.gatk_hardfiltering_percentile as double) > 0 ) {
-			vcf2bed_ch = VCF_TO_BED([with_header: false],vcf)
+			vcf2bed_ch = VCF_TO_BED([:],vcf)
 			version_ch = version_ch.mix(vcf2bed_ch.version)
 		
 			in_ch = vcf2bed_ch.bed.splitCsv(header:false,sep:'\t').map{T->[
@@ -61,7 +61,7 @@ workflow WGSELECT_02 {
 			hard_filters = file("NO_FILE")
 			}
 		
-		tobed_ch = JVARKIT_VCF_TO_INTERVALS_01([with_header:false,distance: params.wgselect.distance ,min_distance: params.wgselect.min_distance], vcf, bed)
+		tobed_ch = JVARKIT_VCF_TO_INTERVALS_01([distance: params.wgselect.distance ,min_distance: params.wgselect.min_distance], vcf, bed)
 		version_ch = version_ch.mix(tobed_ch.version)
 
 		wch1_ch = WGSELECT_01(

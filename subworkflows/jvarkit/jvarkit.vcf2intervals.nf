@@ -41,12 +41,12 @@ workflow JVARKIT_VCF_TO_INTERVALS_01 {
 		vcf /* path to vcf, or file with .list suffix */
 		bed /* limit to that BED or NO_FILE */
 	main:
-		if(!meta.containsKey("with_header")) throw new RuntimeException("meta.with_header missing")
+		if(meta.containsKey("with_header")) throw new RuntimeException("meta.with_header defined but now use config please")
 		if(!meta.containsKey("distance")) throw new RuntimeException("meta.distance missing")
 		if(!meta.containsKey("min_distance")) throw new RuntimeException("meta.min_distance missing")
 	
 		version_ch = Channel.empty()
-		bed_ch = VCF_TO_BED([with_header:false],vcf)
+		bed_ch = VCF_TO_BED([:],vcf)
 		version_ch = version_ch.mix(bed_ch.version)
 	
 		bed2ch = INTERSECT_BED(bed_ch.bed, bed)
