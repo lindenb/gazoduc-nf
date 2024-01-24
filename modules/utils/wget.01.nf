@@ -37,8 +37,8 @@ script:
 	if(!row.containsKey("output")) throw new IllegalArgumentException("row.output is missing");
 	def url = row.url;
 	def output = row.output;
-	if(url.isEmtpy())  throw new IllegalArgumentException("row.url is empty");
-	if(output.isEmtpy())  throw new IllegalArgumentException("row.output is empty");
+	if(url.isEmpty())  throw new IllegalArgumentException("row.url is empty");
+	if(output.isEmpty())  throw new IllegalArgumentException("row.output is empty");
 
 """
 hostname 1>&2

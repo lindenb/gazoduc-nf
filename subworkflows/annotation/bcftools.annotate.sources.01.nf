@@ -141,6 +141,14 @@ workflow BCFTOOLS_ANNOTATE_SOURCES {
 			}
 
 
+		if (hasFeature("avada") && params.genomes[genomeId].ucsc_name.equals("hg38")) {
+			db15_ch = DOWNLOAD_AVADA([:], genomeId, sorted_bed)
+			version_ch = version_ch.mix(db15_ch.version)
+			annot_ch = annot_ch.mix(db15_ch.output)
+			}
+
+
+
 		if (params.genomes[genomeId].containsKey("gtf")) {
 	
 			bed4genes_ch = BED_FOR_GENES([:], genomeId , sorted_bed)
@@ -468,7 +476,7 @@ wget -O - "https://stringdb-downloads.org/download/protein.links.${version}/${ta
 	sort -T TMP  -k1,1 -t '\t'  |\
 	uniq > TMP/link.k1.txt
 
-join -t $'\t' -1 1 -2 1 -o '1.2,2.2' TMP/link.k1.txt TMP/info.k1.txt |\
+join -t \$'\t' -1 1 -2 1 -o '1.2,2.2' TMP/link.k1.txt TMP/info.k1.txt |\
 	sort -T TMP -t '\t' -k1,1 |\
 	join -t '\t' -1 1 -2 1 -o '1.2,2.2' - TMP/info.k1.txt |\
 	sort -T TMP -t '\t' -k1,1 |\
@@ -477,7 +485,7 @@ join -t $'\t' -1 1 -2 1 -o '1.2,2.2' TMP/link.k1.txt TMP/info.k1.txt |\
 	sort -T TMP -k1,1 -k2,2n |\
 	bgzip > TMP/string.bed.gz
 
-tabix -p ped TMP/string.bed.gz
+tabix -p bed TMP/string.bed.gz
 
 mv TMP/string.bed.gz ./
 mv TMP/string.bed.gz.tbi ./
@@ -1114,15 +1122,13 @@ cat << EOF > version.xml
         <entry key="versions">${getVersionCmd("bcftools")}</entry>
 </properties>
 EOF
-
 """
 }
-
-
 
 /**   ALPHA MISSENSE */
 process DOWNLOAD_ALPHAMISSENSE {
 afterScript "rm -rf TMP"
+memory "3g"
 input:
 	val(meta)
 	val(genomeId)
@@ -1140,19 +1146,29 @@ hostname 1>&2
 ${moduleLoad("htslib bedtools jvarkit")}
 set -o pipefail
 mkdir -p TMP
+set -x
 
-wget -O - "${url}" |\
-	gunzip -c |\
+wget -O TMP/jeter.tsv.gz "${url}"
+
+gunzip -c TMP/jeter.tsv.gz |\
 	grep -v '^#' |\
-	 cut -f 1-4,9,10 |\
-	java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 1 --convert SKIP  |\
-	${sortedbed.name.equals("NO_FILE")?"":" sort -T TMP -t '\t' -k1,1 -k2,2n | bedtools intersect -u -a - -b '${sortedbed}' | "} \
-	LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n |\
+	cut -f 1 | uniq | sort -T TMP | uniq |\
+	awk '{printf("%s\t%s\\n",\$1,\$1);}' |\
+	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 2 --convert SKIP |\
+	awk -F '\t' '{printf("s|^%s\t|%s\t|\\n",\$1,\$2);}' > TMP/jeter.sed
+
+
+gunzip -c TMP/jeter.tsv.gz |\
+	grep -v '^#'  |\
+	cut -f 1-4,9,10 |\
+	sed -f TMP/jeter.sed |\
+	${sortedbed.name.equals("NO_FILE")?"":" sort  --buffer-size=1000M -T TMP -t '\t' -k1,1 -k2,2n | bedtools intersect -u -a - -b '${sortedbed}' | "} \
+	LC_ALL=C sort --buffer-size=1000M -T TMP -t '\t' -k1,1 -k2,2n |\
 	uniq |\
 	bgzip > TMP/alphamissense.tsv.gz
 
 
-tabix -s 1 -b 2 -e 2  TMP/alphamissense..bed.gz
+tabix -s 1 -b 2 -e 2  TMP/alphamissense.tsv.gz
 
 mv TMP/alphamissense.tsv.gz ./
 mv TMP/alphamissense.tsv.gz.tbi ./
@@ -1167,6 +1183,61 @@ cat << EOF > version.xml
 	<entry key="description">${whatis}</entry>
         <entry key="url"><a>${url}</a></entry>
         <entry key="versions">${getVersionCmd("tabix wget awk")}</entry>
+</properties>
+EOF
+"""
+}
+
+
+
+/**  AVADA: The AVADA database includes unvalidated (see disclaimer) variant evidence data, automatically retrieved from 61,116 full text papers deposited in PubMed until 07-2016.  */
+process DOWNLOAD_AVADA {
+afterScript "rm -rf TMP"
+memory "3g"
+input:
+	val(meta)
+	val(genomeId)
+	path(sortedbed)
+output:
+	tuple val("AVADA"),path("avada.tsv.gz"),path("avada.header"),val("AVADA_PMID"),val("AVADA_PMID:unique"),emit:output
+	path("version.xml"),emit:version
+when:
+	params.genomes[genomeId].ucsc_name.equals("hg38")
+script:
+	def genome = params.genomes[genomeId]
+	def reference = genome.fasta
+	def url = "http://bejerano.stanford.edu/AVADA/avada_v1.00_2016.vcf.gz"
+	def whatis = "pubmedid in avada. The AVADA database includes unvalidated (see disclaimer) variant evidence data, automatically retrieved from 61,116 full text papers deposited in PubMed until 07-2016"
+"""
+hostname 1>&2
+${moduleLoad("bcftools jvarkit")}
+set -o pipefail
+mkdir -p TMP
+
+wget -O - "${url}" |\
+	gunzip -c |\
+	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfsetdict -R "${reference}"  -n SKIP |\
+	bcftools sort -T TMP/tmp -O b -o TMP/avada.bcf
+
+bcftools view --header-only TMP/avada.bcf | grep "^##INFO" | cut -d '=' -f3 | cut -d ',' -f1 | grep -v '^PMID' | awk '{printf("INFO/%s\tAVADA_%s\\n",\$1,\$1);}' > TMP/rename.tsv
+bcftools annotate --rename-annots TMP/rename.tsv -O b -o TMP/jeter.bcf TMP/avada.bcf
+mv TMP/jeter.bcf TMP/avada.bcf
+
+bcftools index --force TMP/avada.bcf
+
+mv TMP/avada.bcf ./
+mv TMP/avada.bcf.csi ./
+
+#useless because vcf
+touch avada.header
+
+#########################################
+cat << EOF > version.xml
+<properties id="${task.process}">
+        <entry key="Name">${task.process}</entry>
+        <entry key="description">${whatis}</entry>
+        <entry key="url"><a>${url}</a></entry>
+        <entry key="versions">${getVersionCmd("bcftools")}</entry>
 </properties>
 EOF
 """

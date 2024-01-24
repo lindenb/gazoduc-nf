@@ -31,6 +31,8 @@ include {MERGE_VERSION} from '../../../modules/version/version.merge.02.nf'
 include {JVARKIT_VCF_TO_INTERVALS_01} from '../../../subworkflows/jvarkit/jvarkit.vcf2intervals.nf'
 include {COLLECT_TO_FILE_01} from '../../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_CONCAT_01} from '../../../subworkflows/bcftools/bcftools.concat.01.nf'
+include {VCF_TO_BED} from '../../../modules/bcftools/vcf2bed.01.nf'
+
 
 workflow {
 	ann_ch = ANNOTATE_VCF([:], params.genomeId, file(params.vcf), file(params.bed), file(params.pedigree) )
@@ -62,16 +64,17 @@ workflow ANNOTATE_VCF {
 			{
 			vcf2bed_ch = VCF_TO_BED([:], vcf)
 			version_ch = version_ch.mix(vcf2bed_ch.version)
-			ch1_ch =  vcf2bed_ch.bed.splitCsv(sep:'\t',header:false).map{T->{
+			ch1_ch =  vcf2bed_ch.bed.splitCsv(sep:'\t',header:false).map{T->[
                                 contig: T[0],
 				vcf: T[3]
-                                }}
+                                ]}
 
 			
-			intervals_ch =Channel.fromPath(bed).splitCsv(sep:'\t',header:false).map{T->{
+			intervals_ch =Channel.fromPath(bed).splitCsv(sep:'\t',header:false).map{T->[
 				contig: T[0],
 				interval : T[0]+":"+((T[1] as int)+1)+"-"+T[2]
-				}}
+				]}
+
 			row_ch = ch1_ch.combine(intervals_ch).
 				filter{T->T[0].contig.equals(T[1].contig)}.
 				map{T->T[0].plus(T[1])}

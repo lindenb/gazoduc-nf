@@ -453,6 +453,7 @@ script:
 		fi
 	fi
 
+
 	#
 	# VEP
 	#
@@ -479,7 +480,7 @@ script:
 	# phastCons
 	#
 	#
-	if ${hasFeature("phastCons") && ${!isBlank(row,"phastCons_bigwig")} : then
+	if ${hasFeature("phastCons") && !isBlank(row,"phastCons_bigwig")} : then
 		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfbigwig  \
 			--bigwig '${row.phastCons_bigwig?:"NO_FILE"}' \
 			TMP/jeter1.vcf > TMP/jeter2.vcf
@@ -492,7 +493,7 @@ script:
 	# phyloP
 	#
 	#
-	if ${hasFeature("phyloP") && ${!isBlank(row,"phyloP_bigwig")} : then
+	if ${hasFeature("phyloP") && !isBlank(row,"phyloP_bigwig")} : then
 
 		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfbigwig  \
 			--bigwig '${row.phyloP_bigwig?:"NO_FILE"}' \
@@ -500,7 +501,6 @@ script:
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
 
 	fi
-
 
 
 	#
@@ -571,11 +571,7 @@ cat <<- EOF > version.xml
 EOF
 """
 }
-
-/*
-
-
-*/ 		
+ 		
 
 
 process TODOO {
