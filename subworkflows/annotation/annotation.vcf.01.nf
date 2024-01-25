@@ -292,7 +292,7 @@ script:
 	def extraBcfTools=""
 """
 	hostname 1>&2
-	${moduleLoad("bcftools jvarkit snpEff bedtools htslib")}
+	${moduleLoad("bcftools snpEff jvarkit bedtools htslib")}
 	set -o pipefail
 	set -x
 	mkdir -p TMP
@@ -352,7 +352,7 @@ script:
 	#
 	# MICRO ORF
 	#
-	if ${hasFeature("gff3_uorf") && !isBlank(genome,"gtf")} then
+	if ${hasFeature("gff3_uorf") && !isBlank(genome,"gtf")} ; then
 
 		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar  \${JVARKIT_DIST}/jvarkit.jar vcfscanupstreamorf \
 			--canonical --exclude-cds --gtf "${genome.gtf}" -R "${reference}" --strong TMP/jeter1.vcf > TMP/jeter2.vcf
@@ -480,7 +480,7 @@ script:
 	# phastCons
 	#
 	#
-	if ${hasFeature("phastCons") && !isBlank(row,"phastCons_bigwig")} : then
+	if ${hasFeature("phastCons") && !isBlank(row,"phastCons_bigwig")} ; then
 		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfbigwig  \
 			--bigwig '${row.phastCons_bigwig?:"NO_FILE"}' \
 			TMP/jeter1.vcf > TMP/jeter2.vcf
@@ -493,7 +493,7 @@ script:
 	# phyloP
 	#
 	#
-	if ${hasFeature("phyloP") && !isBlank(row,"phyloP_bigwig")} : then
+	if ${hasFeature("phyloP") && !isBlank(row,"phyloP_bigwig")} ; then
 
 		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfbigwig  \
 			--bigwig '${row.phyloP_bigwig?:"NO_FILE"}' \

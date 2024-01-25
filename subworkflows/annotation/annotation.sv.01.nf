@@ -23,15 +23,8 @@ SOFTWARE.
 
 */
 
-def gazoduc = gazoduc.Gazoduc.getInstance()
 
-gazoduc.make("sv_annot_gtf","NO_FILE").
-        description("Location of TABIX indexed GTF for annotation").
-	setBoolean().
-        put()
-
-
-include {getVersionCmd;jvarkit;isHg19;isHg38;isBlank;hasFeature;moduleLoad;getGnomadGenomePath;getGnomadExomePath} from '../../modules/utils/functions.nf'
+include {getVersionCmd;moduleLoad} from '../../modules/utils/functions.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include {DOWNLOAD_GNOMAD_SV_01} from '../gnomad/download_gnomad_sv.01.nf'
@@ -45,43 +38,41 @@ include {CONCAT_FILES_01} from '../../modules/utils/concat.files.nf'
 workflow ANNOTATE_SV_VCF_01 {
 	take:
 		meta
-		reference
+		genomeId
 		vcf
 	main:
 		version_ch = Channel.empty()
 	
-		gtf_file = file(params.sv_annot_gtf)
 
-
-		gnomad_ch = DOWNLOAD_GNOMAD_SV_01(meta, reference)
+		gnomad_ch = DOWNLOAD_GNOMAD_SV_01([:], genomeId)
 		version_ch = version_ch.mix(gnomad_ch.version)		
 
-		dgv_ch = DOWNLOAD_DGV_01([:], reference) 
+		dgv_ch = DOWNLOAD_DGV_01([:], genomeId) 
 		version_ch = version_ch.mix(dgv_ch.version)
 
-		ensemblreg_ch = DOWNLOAD_ENSEMBL_REG([:], reference)
+		ensemblreg_ch = DOWNLOAD_ENSEMBL_REG([:], genomeId)
 		version_ch = version_ch.mix(ensemblreg_ch.version)
 
-		diseases_ch = JENSENLAB_DISEASES_01([:], reference, gtf_file )
+		diseases_ch = JENSENLAB_DISEASES_01([:], genomeId )
 
-		ch1_ch  = VCF_TO_BED(meta,vcf)
+		ch1_ch  = VCF_TO_BED([:],vcf)
 		version_ch = version_ch.mix(ch1_ch.version)
 
 		ch2_ch = ch1_ch.bed.splitCsv(header:false,sep:'\t').
 			map{T->[T[0],T[3]]}
 
 
-		db2_ch = CONCAT_FILES_01(meta, Channel.empty().mix(diseases_ch.output).collect())
+		db2_ch = CONCAT_FILES_01([:], Channel.empty().mix(diseases_ch.output).collect())
 		version_ch = version_ch.mix(db2_ch.version)
 	
 
-		ann_ch= ANNOTATE(meta, reference, gnomad_ch.bed, dgv_ch.bed, ensemblreg_ch.output, db2_ch.output, gtf_file, ch2_ch)
+		ann_ch= ANNOTATE([:], genomeId, gnomad_ch.bed, dgv_ch.bed, ensemblreg_ch.output, db2_ch.output, ch2_ch)
 		version_ch = version_ch.mix(ann_ch.version)
 	
-		ch5_ch = COLLECT_TO_FILE_01(meta, ann_ch.vcf.collect())
+		ch5_ch = COLLECT_TO_FILE_01([:], ann_ch.vcf.collect())
 		version_ch = version_ch.mix(ch5_ch.version)
 
-		ch6_ch = BCFTOOLS_CONCAT_01(meta,ch5_ch.output)
+		ch6_ch = BCFTOOLS_CONCAT_01([:],ch5_ch.output, file("NO_FILE"))
 		version_ch = version_ch.mix(ch6_ch.version)
 
 
@@ -96,20 +87,19 @@ workflow ANNOTATE_SV_VCF_01 {
 process DOWNLOAD_ENSEMBL_REG {
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 output:
 	path("ensembl.reg.gff.gz"),emit:output
 	path("version.xml"),emit:version
 	path("ensembl.reg.gff.gz.tbi"),emit:index
 script:
-	def hg19url = "https://ftp.ensembl.org/pub/grch37/current/regulation/homo_sapiens/homo_sapiens.GRCh37.Regulatory_Build.regulatory_features.20201218.gff.gz"
-	def hg38url = "https://ftp.ensembl.org/pub/release-109/regulation/homo_sapiens/homo_sapiens.GRCh38.Regulatory_Build.regulatory_features.20221007.gff.gz"
-	def url=isHg19(reference)? hg19url :(isHg38(reference)? hg38url:"")
+	def genome = params.genomes[genomeId]
+	def url = genome.ensembl_regulatory_gff_url
 """
 hostname 1>&2
 ${moduleLoad("htslib")}
 
-if ${url.isEmpty()} ; then
+if ${url==null || url.isEmpty()} ; then
 
 	touch ensembl.reg.gff
 
@@ -140,21 +130,25 @@ memory "3g"
 afterScript "rm -rf TMP"
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	val(gnomad_sv_bed)
 	val(dgv_bed)
 	val(ensembl_reg)
 	path(annotations_files)
-	val(gtf)
 	tuple val(contig),val(vcf)
 output:
 	path("output.bcf"),emit:vcf
 	path("version.xml"),emit:version
 script:
+	def genome = params.genomes[genomeId]
+	def gtf =  genome.gtf
+	def reference = genome.fasta
+
 """
 hostname 1>&2
 ${moduleLoad("jvarkit bedtools bcftools")}
 mkdir -p TMP
+set -x
 
 bcftools view "${vcf}" "${contig}" |\
 	java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar \
@@ -165,7 +159,7 @@ bcftools view "${vcf}" "${contig}" |\
 			--gtf '${gtf}' |\
 	bcftools view -O u -o TMP/output.bcf
 
-	sed -e 's/,GENE_NAME,DOID,/,-,-,/' "${annotations_files}" | while IFS='\t' read DATABASE COLS HEADER
+	sed -e 's/,GENE_NAME,DOID,/,-,-,/' "${annotations_files}" | while IFS='\t' read DATABASE COLS HEADER MERGELOGIC
         do
                 test -f "\${DATABASE}"
                 test -f "\${HEADER}"
@@ -173,12 +167,14 @@ bcftools view "${vcf}" "${contig}" |\
 
                 bcftools annotate --force --annotations "\${DATABASE}" \
                         -h "\${HEADER}" \
-                        -c "\${COLS}" `echo "\${COLS}" | tr "," "\\n" | awk '(\$1!="." && \$1!="-" && NR>3) {S="unique"; printf(" --merge-logic %s:%s ",\$1,S);}'  ` -O u -o TMP/jeter2.bcf TMP/output.bcf
+                        -c "\${COLS}" \
+			\${MERGELOGIC} \
+			-O u -o TMP/jeter2.bcf TMP/output.bcf
                 mv TMP/jeter2.bcf TMP/output.bcf
         done
 
 
-bcftools index TMP/output.bcf
+bcftools index -f  TMP/output.bcf
 
 mv TMP/output.bcf ./
 mv TMP/output.bcf.csi ./
