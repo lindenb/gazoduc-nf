@@ -445,11 +445,13 @@ script:
 			java -Djava.io.tmpdir=TMP -jar "\${SNPEFF_JAR}" eff -config "\${SNPEFF_CONFIG}" \
 				-nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf '${genome.snpeff_database_name}' < TMP/jeter1.vcf > TMP/jeter2.vcf
 			mv -v TMP/jeter2.vcf TMP/jeter1.vcf
+			module unload snpEff
 		elif ${row.containsKey("snpeff_data")} ; then
 			module load snpEff
 			java -Djava.io.tmpdir=TMP -jar "\${SNPEFF_JAR}" eff -config '${row.snpeff_data}' \
 				-nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf '${genomeId}' < TMP/jeter1.vcf > TMP/jeter2.vcf
 			mv -v TMP/jeter2.vcf TMP/jeter1.vcf
+			module unload snpEff
 		fi
 	fi
 
