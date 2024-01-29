@@ -46,7 +46,7 @@ workflow DELLY2_SV {
                 //version_ch = version_ch.mix(each_case_control_ch.version)
 
                 if(!controls.name.equals("NO_FILE")) {
-                        ctrls_ch = CTRLS_BAMS([:], ctrls_bams).rows.map{T->T.plus("status":"control")}
+                        ctrls_ch = CTRLS_BAMS([:], controls).rows.map{T->T.plus("status":"control")}
                         //version_ch = version_ch.mix(ctrls_ch.version)
 			each_case_control_ch = each_case_control_ch.mix(ctrls_ch)
                         }
