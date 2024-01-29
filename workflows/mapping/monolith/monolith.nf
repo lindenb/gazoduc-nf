@@ -169,6 +169,9 @@ do
 		-R "@RG\\\\tID:\${ID}\\\\tSM:${sample}\\\\tLB:\${LB}\\\\tCN:\${CN}\\\\tPL:\${PL}" \
 		"${bwa_reference}" \
 		`find TMP  -name "*q.gz"| sort -V  ` | ${filterbed}  \
+
+TODO add collate
+
 		samtools fixmate -m -c -O BAM - TMP/jeter.bam
 
 	rm -vf TMP/*q.gz 1>&2
