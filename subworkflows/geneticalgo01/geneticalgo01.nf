@@ -96,7 +96,7 @@ workflow GENETICALGO {
 		intervals_ch = intervals_ch.mix(sel4b_ch.output)
 
 		/** regulation */
-		reg_ch  = DOWNLOAD_GFF_REF(genomeId)
+		reg_ch  = DOWNLOAD_GFF_REG(genomeId)
 		sel5a_ch = reg_ch.types.splitText().
 			map{it.trim()}.
 			map{T->[ selid:T, selname:T]}
@@ -110,6 +110,17 @@ workflow GENETICALGO {
 			)
 		intervals_ch = intervals_ch.mix(sel5b_ch.output)
 
+
+		/** first intron */
+		sel6a_ch = Channel.of([selid:"firstintron",selname:"FirstIntron"])
+		sel6b_ch  = FIRST_INTRON(
+			genomeId,
+			sel6a_ch.map{T->[T.selid,T]}.
+				join(exclude_bed_ch,remainder:true).
+				filter{it[1]!=null}.
+				map{T->T[1].plus("exclude_bed":T[2])}
+			)
+		intervals_ch = intervals_ch.mix(sel6b_ch.output)
 
 		apply_ch = APPLY(  genomeId,
 			vcf,
@@ -204,6 +215,119 @@ process SELECT01 {
 	}
 
 
+process FIRST_INTRON {
+	tag "${row.selid}"
+	afterScript "rm -rf TMP"
+	input:
+		val(genomeId)
+		val(row)
+	output:
+		tuple val(row),path("select.bed"),emit:output
+	script:
+		def genome = params.genomes[genomeId]
+		def fasta = genome.fasta
+		def gtf = genome.gtf
+		def exclude_bed = row.exclude_bed==null?file("NO_FILE"):row.exclude_bed
+	"""
+	hostname 1>&2
+	mkdir -p TMP
+	${moduleLoad("bedtools")}
+	
+cat << __EOF__ > TMP/jeter.py
+import sys
+class Transcript:
+    def __init__(self, chrom,strand, transcript_id):
+        self.chrom = chrom
+        self.strand = strand
+        self.transcript_id = transcript_id
+        self.exons = []
+
+    def print_first_intron(self):
+        # Trier les exons par position
+        sorted_exons = sorted(self.exons, key=lambda exon: exon[0])
+
+        # Si le transcript a au moins deux exons, calculer l'intron entre le premier et le deuxième exon
+        if len(sorted_exons) >= 2:
+            # En fonction de la direction (strand), retourner les coordonnées de l'intron
+            if self.strand == '+':
+                intron_start, intron_end = sorted_exons[0][1] +1 ,sorted_exons[1][0] - 1
+            elif self.strand == '-':
+                intron_start, intron_end = sorted_exons[-2][1]+1 ,sorted_exons[-1][0]- 1
+            else:
+                raise ValueError("Invalid value for 'strand'. Must be '+' or '-'.")
+
+            print(f"{self.chrom}\t{intron_start -1}\t{intron_end}")
+
+def filter_gtf_by_type():
+    transcripts = {}
+
+    for line in sys.stdin:
+        if line.startswith('#'):
+            continue
+
+        fields = line.strip().split('\\t')
+        if len(fields) < 9:
+            continue
+
+        feature = fields[2]
+        if feature == "exon":
+            transcript_id = None
+            strand = fields[6]  # La colonne 7 (index 6) contient l'information sur le strand
+
+            attributes = fields[8].split(';')
+            for attr in attributes:
+                if 'transcript_id' in attr:
+                    transcript_id = attr.split('"')[1]
+
+            if transcript_id:
+                if transcript_id not in transcripts:
+                    transcripts[transcript_id] = Transcript(fields[0],strand,transcript_id)
+
+                start, end = int(fields[3]), int(fields[4])
+                transcripts[transcript_id].exons.append((start, end))
+
+    return transcripts
+
+# Exemple d'utilisation
+exon_transcripts = filter_gtf_by_type()
+
+for tr   in exon_transcripts.values():
+    tr.print_first_intron()
+__EOF__
+
+
+gunzip -c "${gtf}" | python3 |\
+	sort -T TMP -t '\t' -k1,1 -k2,2n |\\
+	bedtools merge > TMP/intron0.bed
+
+
+
+	gunzip -c "${gtf}" |\\
+		awk -F '\t' '(\$3=="exon") { printf("%s\t%d\t%s\\n",\$1,int(\$4)-1,\$5);}' |\\
+		sort -T TMP -t '\t' -k1,1 -k2,2n |\\
+		bedtools merge > TMP/exons.bed
+
+	bedtools subtract -a TMP/intron0.bed -b TMP/exons.bed |\\
+		sort -T TMP -t '\t' -k1,1 -k2,2n |\\
+		awk -F '\t' 'int(\$2) < int(\$3)' > TMP/jeter.bed
+
+
+	if ${!exclude_bed.name.equals("NO_FILE")} ; then
+
+		bedtools subtract -a TMP/jeter.bed -b "${exclude_bed}" |\\
+		awk -F '\t' 'int(\$2) < int(\$3)' |\\
+		sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter2.bed
+
+		mv -v TMP/jeter2.bed TMP/jeter.bed
+	fi
+
+	mv -v TMP/jeter.bed select.bed
+	test -s select.bed
+
+
+	"""
+	}
+
 process INTRONS {
 	tag "${row.selid}"
 	afterScript "rm -rf TMP"
@@ -229,7 +353,7 @@ process INTRONS {
 		bedtools merge > TMP/genes.bed
 
 	gunzip -c "${gtf}" |\\
-		awk -F '\t' '(\$3=="exons") { printf("%s\t%d\t%s\\n",\$1,int(\$4)-1,\$5);}' |\\
+		awk -F '\t' '(\$3=="exon") { printf("%s\t%d\t%s\\n",\$1,int(\$4)-1,\$5);}' |\\
 		sort -T TMP -t '\t' -k1,1 -k2,2n |\\
 		bedtools merge > TMP/exons.bed
 
@@ -398,7 +522,7 @@ process XXSTREAM {
 	}
 
 
-process DOWNLOAD_GFF_REF {
+process DOWNLOAD_GFF_REG {
 	input:
 		val(genomeId)
 	output:
