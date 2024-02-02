@@ -24,77 +24,24 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-/** path to indexed fasta reference */
-params.fastqs = ""
-params.help = false
-params.publishDir = ""
-params.prefix = ""
-
 include {FASTQC_01} from '../../subworkflows/fastqc/fastqc.01.nf'
-include {runOnComplete} from '../../modules/utils/functions.nf'
-
-def helpMessage() {
-  log.info"""
-## About
-
-run FASTC for a list of bams
-
-## Author
-
-Pierre Lindenbaum
-
-## Options
-
-  * --fastqs (file) list of fastqs one per line [REQUIRED]
-  * --publishDir (dir) Save output in this directory
-  * --prefix (string) files prefix. default: ""
-
-## Usage
-
-```
-nextflow -C ../../confs/cluster.cfg  run -resume fastqc.nf \\
-	--publishDir output \\
-	--prefix "analysis." \\
-	--reference /path/to/reference.fasta \\
-	--fastqs paths.list
-```
-
-## Workflow
-
-![workflow](./workflow.svg)
-  
-## See also
-
-
-"""
-}
+include {dumpParams;runOnComplete} from '../../modules/utils/functions.nf'
 
 
 if( params.help ) {
-    helpMessage()
+    dumpParams(params);
     exit 0
+}  else {
+    dumpParams(params);
 }
+
+
 
 
 workflow {
-	ch1 = FASTQC_01(params,Channel.fromPath(params.fastqs))
-	PUBLISH(ch1.zip)
+	ch1 = FASTQC_01([:],Channel.fromPath(params.fastqs))
 	}
 
-process PUBLISH {
-executor "local"
-publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
-input:
-	val(zip)
-output:
-	path("*.zip")
-when:
-	!params.getOrDefault("publishDir","").trim().isEmpty()
-script:
-"""
-ln -s ${zip} ./
-"""
-}
 
 runOnComplete(workflow);
 
