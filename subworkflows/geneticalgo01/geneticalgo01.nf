@@ -296,7 +296,8 @@ for tr   in exon_transcripts.values():
 __EOF__
 
 
-gunzip -c "${gtf}" | python3 |\
+gunzip -c "${gtf}" |\\
+	 python3 TMP/jeter.py |\\
 	sort -T TMP -t '\t' -k1,1 -k2,2n |\\
 	bedtools merge > TMP/intron0.bed
 

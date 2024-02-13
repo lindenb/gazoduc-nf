@@ -22,32 +22,29 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {getVersionCmd;moduleLoad;runOnComplete} from '../../modules/utils/functions.nf'
-include {SAMTOOLS_SAMPLES} from '../samtools/samtools.samples.04.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
-include {SEX_GUESS_01} from './sex.guess.01.nf'
+nextflow.enable.dsl=2
 
-/**
-guess sex from list of bams
-*/
-workflow SEX_GUESS_02 {
-	take:
-		bams
-	main:
-		version_ch = Channel.empty()
+/** path to indexed fasta reference */
 
-		bams_ch = SAMTOOLS_SAMPLES(bams)
-		version_ch = version_ch.mix(bams_ch.version)
-		
-		sex_ch= SEX_GUESS_01(bams_ch.rows)
-		version_ch = version_ch.mix(sex_ch.version)
+include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
+include {runOnComplete;dumpParams} from '../../modules/utils/functions.nf'
+include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {SEX_GUESS_02} from '../../subworkflows/sex/sex.guess.02.nf'
 
-		version_ch = MERGE_VERSION("SexGuess", version_ch.collect())
-	emit:
-		/* version */
-		version= version_ch
-		pdf = sex_ch.pdf
-//		rows = sex_ch.rows
+if( params.help ) {
+    dumpParams(params);
+    exit 0
+}  else {
+    dumpParams(params);
+}
+
+
+workflow {	
+	ch1 = SEX_GUESS_02(file(params.bams))
+	html = VERSION_TO_HTML(ch1.version)
 	}
 
+
+
+runOnComplete(workflow);
 
