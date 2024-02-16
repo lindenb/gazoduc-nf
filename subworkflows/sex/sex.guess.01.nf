@@ -69,20 +69,15 @@ script:
 """
 hostname 1>&2
 ${moduleLoad("samtools")}
-set -o pipefail
 
 function countIt {
-
+	# find the name of chromosome X or Y
 	awk -F '\t' -vC=\$1 '{if(\$1==C || sprintf("chr%s",C)==\$1) {printf("%s\t0\t%s\\n",\$1,\$2);}}' "${reference}.fai" > "TMP/jeter.bed"
 	test -s "TMP/jeter.bed"
 
+	# get coverage on this contig
+	samtools coverage -q "${mapq}" --reference "${reference}" -r `cut -f 1 TMP/jeter.bed` --no-header "${bam}" | cut -f 7 > TMP/depth.txt
 
-	samtools view -@ ${task.cpus} -c  -F 3844 --min-MQ "${mapq}" \\
-		-M -L "TMP/jeter.bed" \\
-		--reference "${reference}" \\
-		"${bam}"  > TMP/count.txt
-	test -s TMP/count.txt
-	paste TMP/jeter.bed TMP/count.txt | cut -f 1,3,4 > TMP/count2.txt
 	}
 
 mkdir -p TMP
@@ -90,9 +85,9 @@ mkdir -p TMP
 test -s "${reference}.fai"
 
 countIt X
-mv TMP/count2.txt TMP/countX.txt
+mv TMP/depth.txt TMP/countX.txt
 countIt Y
-mv TMP/count2.txt TMP/countY.txt
+mv TMP/depth.txt TMP/countY.txt
 
 paste TMP/countX.txt TMP/countY.txt | awk -F '\t' '{printf("${row.sample}\t${row.bam}\t%s\\n",\$0);}' > samples.sex.tsv
 
@@ -129,11 +124,11 @@ hostname 1>&2
 ${moduleLoad("R")}
 set -o pipefail
 
-echo "sample\tbam\tchrX\tchrX_len\tchrX_count\tchrY\tchrY_len\tchrY_count\tfx\tfy\tsex" > samples.sex.tsv
+echo "sample\tbam\tchrX\tdpx\tchrY\tdpy\tsex" > samples.sex.tsv
 
 cat ${L.join(" ")} |\
 	sort -T . -t '\t' -k1,1 |\
-	awk -F '\t' '{FX=int(\$5)/(int(\$4)*1.0);S="male";FY=int(\$8)/(int(\$7)*1.0);if(FX > (FY * ${treshold} )) {S="female"};printf("%s\t%f\t%f\t%s\\n",\$0,FX,FY,S);next;}' >> samples.sex.tsv
+	awk -F '\t' '{FX=\$4;FY=\$6;if(FX > (FY * ${treshold} )) {S="female"};printf("%s\t%s\\n",\$0,S);next;}' >> samples.sex.tsv
 
 
 
@@ -147,23 +142,23 @@ head(female)
 
 pdf("${params.prefix?:""}sex.pdf")
 plot(1,
-	xlab="chrX: count n-reads / chrom-length",
-	ylab="chrY: count n-reads / chrom-length",
+	xlab="Depth chrX",
+	ylab="Depth chrY",
 	main="Sex guessed from BAMs.",
 	sub="${params.prefix?:""}",
-	xlim=c(0,max(T1\$fx)),
-	ylim=c(0,max(T1\$fy))
+	xlim=c(0,max(T1\$dpx)),
+	ylim=c(0,max(T1\$dpy))
 	)
 
 mc <- rgb(0,0,1.0,alpha=0.5)
-points(x=male\$fx,y=male\$fy,type='p',col=mc,pch=16,
-	xlim=c(0,max(T1\$fx)),
-	ylim=c(0,max(T1\$fy))
+points(x=male\$dpx,y=male\$dpy,type='p',col=mc,pch=16,
+	xlim=c(0,max(T1\$dpx)),
+	ylim=c(0,max(T1\$dpy))
 	)
 fc <- rgb(1.0,0,0,alpha=0.5)
-points(x=female\$fx,y=female\$fy,type='p',col=fc,pch=16,
-	xlim=c(0,max(T1\$fx)),
-	ylim=c(0,max(T1\$fy))
+points(x=female\$dpx,y=female\$dpy,type='p',col=fc,pch=16,
+	xlim=c(0,max(T1\$dpx)),
+	ylim=c(0,max(T1\$dpy))
 	)
 legend("topright",legend=c("male","female"),title="Sex",pch=16,col=c(mc,fc)) 
 dev.off()
