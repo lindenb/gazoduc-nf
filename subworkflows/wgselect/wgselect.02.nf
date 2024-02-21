@@ -58,7 +58,7 @@ workflow WGSELECT_02 {
 			}
 		else
 			{
-			hard_filters = file("NO_FILE")
+			hard_filters = Channel.fromPath(file("NO_FILE"))
 			}
 		
 		tobed_ch = JVARKIT_VCF_TO_INTERVALS_01([distance: params.wgselect.distance ,min_distance: params.wgselect.min_distance], vcf, bed)
