@@ -34,11 +34,12 @@ workflow INDEXCOV {
         meta /* meta */
         genomeId
         bams /* file containing the path to the bam/cram files . One per line */
+	bai_samplesheet /** tsv file containing sample and bai for BAI only files */
      main:
         ch_version = Channel.empty()
 
 
-    	if ( (params.mapq  as int)> 0) {
+    	if ( (params.mapq  as int)> 0 || !bai_samplesheet.name.equals("NO_FILE") ) {
  		log.info("mapq ${params.mapq} is greater than 0. rebuilding bam indexes... ${bams} ${genomeId}")
 		bams_ch = SAMTOOLS_SAMPLES([:], bams)
 		ch_version = ch_version.mix( bams_ch.version)
@@ -48,12 +49,24 @@ workflow INDEXCOV {
 		rebuild_bai_ch = REBUILD_BAI([:], sample_bam_fasta_ch)
 		ch_version = ch_version.mix( rebuild_bai_ch.version.first() ) 
 
-		bams2_ch = COLLECT_TO_FILE_01([:], rebuild_bai_ch.bam.collect()).output
+		if( !bai_samplesheet.name.equals("NO_FILE") ) {
+			bai_only0 = FROM_BAI_ONLY(genomeId,Channel.fromPath(bai_samplesheet).splitCsv(header:true,sep:'\t'))
+			bai_only = bai_only0.bam
+			}
+		else
+			{
+			bai_only = Channel.empty()
+			}
+
+
+
+		bams2_ch = COLLECT_TO_FILE_01([:], rebuild_bai_ch.bam.mix(bai_only).collect()).output
         	}
     	else
 		{
 		bams2_ch = Channel.fromPath(bams)
 		}
+
 
 	executable_ch = DOWNLOAD_GOLEFT([:])
 	ch_version = ch_version.mix( executable_ch.version)
@@ -96,6 +109,37 @@ process DOWNLOAD_GOLEFT {
 	EOF
 	"""
 	}
+
+process FROM_BAI_ONLY {
+    tag "${row.sample}"
+    afterScript "rm -rf TMP"
+    memory "5g"
+    input:	
+	val(genomeId)
+	tuple val(row)
+    output:
+	path("OUT/${row.sample}.bam"),     emit: bam
+	path("OUT/${row.sample}.bam.bai"), emit: bai
+
+script:
+	def genomeId = row.genomeId
+        def reference = params.genomes[genomeId].fasta
+	def sample  = row.sample
+	def dict = "${file(reference.toRealPath()).getParent()}/${reference.getSimpleName()}.dict"
+"""
+	hostname 1>&2
+	${moduleLoad("samtools")}
+
+	mkdir -p TMP
+	test -s "${dict}"
+	cat "${dict}" > TMP/tmp.sam
+	echo "@RG\tID:${sample}\tSM:${sample}\tLB:${sample}" >> TMP/tmp.sam
+	samtools sort --reference "${reference}" -O BAM -o TMP/${sample}.bam -T TMP/tmp TMP/tmp.sam
+	rm TMP/tmp.sam
+	cp -v "${row.bai}" TMP/${sample}.bam.bai
+	mv TMP OUT	
+"""
+}
 
 
 /**
