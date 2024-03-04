@@ -40,6 +40,7 @@ workflow GATK4_HAPCALLER_GVCFS_01 {
         main:
                 version_ch = Channel.empty()
 
+		ploidy_ch = CREATE_PLOIDY_FILE(genomeId)
 
 		samples_bams_ch = SAMTOOLS_SAMPLES(
 			[allow_multiple_references:true,allow_duplicate_samples:true],
@@ -60,6 +61,9 @@ workflow GATK4_HAPCALLER_GVCFS_01 {
 			"genomeId": T[1].genomeId,
 			"pedigree": (pedigree.name.equals("NO_FILE")?"":pedigree.toRealPath()),
 			]}
+
+		hc_input_ch = hc_input_ch.combine(ploidy_ch.output).map{T->T[0].plus("ploidy_file":T[1])}
+
 		hapcaller_ch = HAPCALLER_GVCF([:],genomeId,hc_input_ch)
 		version_ch = version_ch.mix(hapcaller_ch.version.first())
 
@@ -89,6 +93,73 @@ workflow GATK4_HAPCALLER_GVCFS_01 {
 		region_vcf = genotyped_ch.region_vcf
 }
 
+process CREATE_PLOIDY_FILE {
+afterScript 'rm -rf TMP'
+input:
+	val(genomeId)
+output:
+	path("ploidy.bed"),emit:output
+script:
+	def genome = params.genomes[genomeId]
+	def reference = genome.fasta	
+	def hg =  genome.ucsc_name?:"NO"
+"""
+hostname 1>&2
+${moduleLoad("bedtools jvarkit")}
+mkdir -p TMP
+awk -F '\t' '{P=2;if(\$1=="chrEBV" ||  \$1 ~ /^(chr)?[XY]_/ ||  \$1 ~ /^(chr)?[XYM]\$/ || \$1 ~ /^(chr)MT\$/) P=1; printf("%s\t0\t%s\t%d\\n",\$1,\$2,P);}' "${reference}.fai" |\
+	sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter1.bed
+
+
+
+# https://en.wikipedia.org/wiki/Pseudoautosomal_region
+if ${hg.equals("hg19")} ; then
+
+cat << EOF  > TMP/tmp1.txt
+X 	60001 	2699520
+Y 	10001 	2649520
+X 	154931044 	155260560
+Y 	59034050 	59363566
+EOF
+
+elif ${hg.equals("hg38")} ; then
+
+cat << EOF  > TMP/tmp1.txt
+X 	10001 	2781479
+Y 	10001 	2781479
+X 	155701383 	156030895
+Y 	56887903 	57217415
+EOF
+
+fi
+
+if test -f TMP/tmp1.txt
+then
+	# convert to BED with ploidy is PAR=2
+	cat TMP/tmp1.txt | awk '{printf("%s\t%d\t%s\t2\\n",\$1,int(\$2)-1,\$3);}' |\
+	java  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/bedrenamechr.jar -R "${reference}" --column 1 --convert SKIP  |\
+	sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter2.bed
+
+	# extract diploid chroms
+	awk -F '\t' '(\$4==2)' TMP/jeter1.bed > TMP/ploidy.xxx.bed
+	# extract non diploid chroms
+	awk -F '\t' '(\$4==1)' TMP/jeter1.bed > TMP/ploidy1.bed
+
+	# remove PAR and mark as ploidy = 1
+	bedtools subtract -a TMP/ploidy1.bed -b TMP/jeter2.bed | awk -F '\t' '{printf("%s\t%s\t%s\t1\\n",\$1,\$2,\$3);}' >> TMP/ploidy.xxx.bed
+	# add PAR
+	cat TMP/jeter2.bed >> TMP/ploidy.xxx.bed
+
+	sort -T TMP -t '\t' -k1,1 -k2,2n TMP/ploidy.xxx.bed | awk -F '\t' '(int(\$2) < int(\$3))' > TMP/jeter1.bed
+
+fi
+
+mv TMP/jeter1.bed  ploidy.bed
+
+
+"""
+
+}
 
 
 process HAPCALLER_GVCF {
@@ -122,19 +193,22 @@ script:
 	def fix_tp_ap =  params.gatk.haplotypecaller.fix_tp_ap?:false
 """
 hostname 1>&2
-${moduleLoad("gatk4 bcftools jvarkit samtools")}
+${moduleLoad("gatk/0.0.0 bcftools jvarkit samtools")}
 
    set -o pipefail
    set -x
    mkdir -p TMP
 
    if [ "${genomeId}" != "${row.genomeId}" ] ; then
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/bedrenamechr.jar -R "${bam_reference}" --column 1 --convert SKIP "${bed}" > TMP/fixed.bed
+	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -R "${bam_reference}" --column 1 --convert SKIP "${bed}" > TMP/fixed.bed
 	if [ ! -s TMP/fixed.bed ] ; then
 		tail -n 1 "\${REF}.fai" | awk -F '\t' '{printf("%s\t0\t1\\n",\$1);}' > TMP/fixed.bed
    	fi 
+
+	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -R "${bam_reference}" --column 1 --convert SKIP "${row.ploidy_file}" > TMP/ploidy.bed
    else
 	ln -s "${bed}" TMP/fixed.bed
+	cp '${row.ploidy_file}' TMP/ploidy.bed
    fi
 
    # 20231116 https://gatk.broadinstitute.org/hc/en-us/community/posts/11440622639387-Unable-to-trim-uncertain-bases-without-flow-order-information
@@ -151,6 +225,7 @@ ${moduleLoad("gatk4 bcftools jvarkit samtools")}
      -I "${fix_tp_ap?"TMP/jeter.bam":bam}" \
      -ERC GVCF \
      --seconds-between-progress-updates 600 \
+     --ploidy-regions TMP/ploidy.bed \
      ${!isBlank(dbsnp) && genomeId.equals(row.genomeId) ?"--dbsnp ${dbsnp}":""}   \
      -L TMP/fixed.bed \
      -R "${bam_reference}" \
@@ -368,7 +443,7 @@ script:
          def region = row.interval
 """
 hostname 1>&2
-${moduleLoad("gatk4 bcftools")}
+${moduleLoad("gatk/0.0.0 bcftools")}
 
 touch vcfs.list
 mkdir BEDS TMP

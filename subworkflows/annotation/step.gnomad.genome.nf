@@ -1,13 +1,14 @@
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
+def TAG="GNOMAD_GENOME"
 
-def TAG="BCSQ"
-
-workflow ANNOTATE_BCSQ {
+workflow ANNOTATE_GNOMAD_GENOME {
 	take:
 		genomeId
 		vcfs /** tuple vcf,vcf_index */
 	main:
-		if(params.genomes[genomeId].containsKey("gff3")) {
+
+	
+		if(params.genomes[genomeId].containsKey("gnomad_genome") ) {
 			annotate_ch = ANNOTATE(genomeId,vcfs)
 			out1 = annotate_ch.output
 			out2 = annotate_ch.count
@@ -23,32 +24,39 @@ workflow ANNOTATE_BCSQ {
 	}
 
 
+
 process ANNOTATE {
 tag "${json.name}"
 afterScript "rm -rf TMP"
+memory "5g"
 input:
 	val(genomeId)
-	path(json)
 	//tuple path(vcf),path(vcf_idx),path(bed)
+	path(json)
 output:
 	//tuple path("OUTPUT/${TAG}.bcf"),path("OUTPUT/${TAG}.bcf.csi"),path(bed),emit:output
 	path("OUTPUT/${TAG}.json"),emit:output
-	path("OUTPUT/count.tsv"),emit:count
+	path("OUTPUT/${TAG}.count"),emit:count
 script:
-	def genome= params.genomes[genomeId]
-	def reference = genome.fasta
+	def genome = params.genomes[genomeId]
 	def row = slurpJsonFile(json)
+	def max_AF = 0.01
+	def pop =  "AF_NFE"
+
 """
 hostname 1>&2
-${moduleLoad("bcftools")}
-mkdir -p TMP
-
-                
-bcftools csq -O b --force --local-csq --ncsq 10000 --fasta-ref "${reference}" --gff-annot "${genome.gff3}" -o TMP/${TAG}.bcf '${row.vcf}'
-bcftools index TMP/${TAG}.bcf
+${moduleLoad("bcftools jvarkit")}
+mkdir -p TMP OUTPUT
 
 
-rm -fv "${row.vcf}" "${row.index}"
+bcftools view "${row.vcf}" |\
+	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfgnomad \
+			--bufferSize 10000 \
+			--max-af ${max_AF} \
+			--gnomad "${genome.gnomad_genome}" --fields "${pop}" |\
+	bcftools view -O b -o TMP/${TAG}.bcf
+
+bcftools index --force TMP/${TAG}.bcf
 
 cat << EOF > TMP/${TAG}.json
 {
@@ -58,10 +66,9 @@ cat << EOF > TMP/${TAG}.json
 }
 EOF
 
-
 ###
-
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/count.tsv
-mv TMP OUTPUT
+bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
+mv TMP/${TAG}.* OUTPUT/
+rm -fv "${row.vcf}" "${row.index}"
 """
 }

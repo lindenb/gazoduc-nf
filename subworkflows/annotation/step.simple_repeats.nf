@@ -1,11 +1,11 @@
-include {moduleLoad} from '../../modules/utils/functions.nf'
+include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
 
 def TAG="SREPEAT"
 
 workflow ANNOTATE_SIMPLE_REPEATS {
 	take:
 		genomeId
-		vcfs /** tuple vcf,vcf_index */
+		vcfs /** json: tuple vcf,vcf_index */
 	main:
 		if(params.genomes[genomeId].containsKey("simple_repeats_url")) {
 			source_ch =  DOWNLOAD(genomeId)
@@ -61,26 +61,40 @@ echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${whatis}">' > ${TAG}.
 }
 
 process ANNOTATE {
-tag "${vcf.name}"
+tag "${json.name}"
 afterScript "rm -rf TMP"
 input:
 	path(tabix)
 	path(tbi)
 	path(header)
-	tuple path(vcf),path(vcf_idx),path(bed)
+	//tuple path(vcf),path(vcf_idx),path(bed)
+	path(json)
 output:
-	tuple path("OUTPUT/${TAG}.bcf"),path("OUTPUT/${TAG}.bcf.csi"),path(bed),emit:output
+	//tuple path("OUTPUT/${TAG}.bcf"),path("OUTPUT/${TAG}.bcf.csi"),path(bed),emit:output
+	path("OUTPUT/${TAG}.json"),emit:output
 	path("OUTPUT/count.tsv"),emit:count
 script:
+	def row = slurpJsonFile(json)
 """
 hostname 1>&2
 ${moduleLoad("bcftools")}
 mkdir -p TMP
 
-bcftools annotate -a "${tabix}" -h "${header}" -c "CHROM,FROM,TO,${TAG}"  --merge-logic '${TAG}:unique' -O b -o TMP/${TAG}.bcf '${vcf}'
+bcftools annotate -a "${tabix}" -h "${header}" -c "CHROM,FROM,TO,${TAG}"  --merge-logic '${TAG}:unique' -O b -o TMP/${TAG}.bcf '${row.vcf}'
 bcftools index TMP/${TAG}.bcf
+
+
+cat << EOF > TMP/${TAG}.json
+{
+"vcf"   : "\${PWD}/OUTPUT/${TAG}.bcf",
+"index" : "\${PWD}/OUTPUT/${TAG}.bcf.csi",
+"bed"   : "\${PWD}/OUTPUT/${TAG}.bed"
+}
+EOF
 
 bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/count.tsv
 mv TMP OUTPUT
+
+rm -fv "${row.vcf}" "${row.index}"
 """
 }

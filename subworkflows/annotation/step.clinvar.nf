@@ -1,4 +1,4 @@
-include {moduleLoad} from '../../modules/utils/functions.nf'
+include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
 
 def TAG="CLINVAR"
 
@@ -10,7 +10,7 @@ workflow ANNOTATE_CLINVAR {
 
 	
 		if(params.genomes[genomeId].containsKey("clinvar_vcf_url")) {
-			source_ch = DOWNLOAD_CLINVAR(genomeId)
+			source_ch = DOWNLOAD(genomeId)
 			annotate_ch = ANNOTATE(source_ch.vcf, source_ch.index,vcfs)
 			out1 = annotate_ch.output
 			out2 = annotate_ch.count
@@ -26,7 +26,7 @@ workflow ANNOTATE_CLINVAR {
 	}
 
 
-process DOWNLOAD_CLINVAR {
+process DOWNLOAD {
 afterScript "rm -rf TMP"
 memory "3g"
 input:
@@ -63,28 +63,40 @@ mv TMP/clinvar.bcf.csi ./${TAG}.db.bcf.csi
 
 
 process ANNOTATE {
-tag "${vcf.name}"
+tag "${json.name}"
 afterScript "rm -rf TMP"
 input:
 	path(clinvar)
 	path(clinvar_idx)
-	tuple path(vcf),path(vcf_idx),path(bed)
+	path(json)
+	//tuple path(vcf),path(vcf_idx),path(bed)
 output:
-	tuple path("OUTPUT/${TAG}.bcf"),path("OUTPUT/${TAG}.bcf.csi"),path(bed),emit:output
+	//tuple path("OUTPUT/${TAG}.bcf"),path("OUTPUT/${TAG}.bcf.csi"),path(bed),emit:output
+	path("OUTPUT/${TAG}.json"),emit:output
 	path("OUTPUT/count.tsv"),emit:count
 script:
+	def row = slurpJsonFile(json)
 """
 hostname 1>&2
 ${moduleLoad("bcftools")}
 mkdir -p TMP
 
 
-bcftools annotate -a "${clinvar}" -c "CLNSIG,CLN_ALLELEID" -O b -o TMP/${TAG}.bcf '${vcf}'
+bcftools annotate -a "${clinvar}" -c "CLNSIG,CLN_ALLELEID" -O b -o TMP/${TAG}.bcf '${row.vcf}'
 bcftools index --force TMP/${TAG}.bcf
-                
+
+cat << EOF > TMP/${TAG}.json
+{
+"vcf"   : "\${PWD}/OUTPUT/${TAG}.bcf",
+"index" : "\${PWD}/OUTPUT/${TAG}.bcf.csi",
+"bed"   : "\${PWD}/OUTPUT/${TAG}.bed"
+}
+EOF
+
 
 ###  
 bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/count.tsv
 mv TMP OUTPUT
+rm -fv "${row.vcf}" "${row.index}"
 """
 }

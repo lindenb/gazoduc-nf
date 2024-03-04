@@ -1,4 +1,4 @@
-include {moduleLoad} from '../../modules/utils/functions.nf'
+include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
 
 def TAG="SNPEFF"
 
@@ -59,30 +59,44 @@ rm  data/${dbName}/genes.gtf
 }
 
 process ANNOTATE {
-tag "${vcf.name}"
+tag "${json.name}"
 afterScript "rm -rf TMP"
 memory '3g'
 input:
 	val(genomeId)
 	path(config)
-	tuple path(vcf),path(vcf_idx),path(bed)
+	//tuple path(vcf),path(vcf_idx),path(bed)
+	path(json)
 output:
-	tuple path("OUTPUT/${TAG}.bcf"),path("OUTPUT/${TAG}.bcf.csi"),path(bed),emit:output
+	//tuple path("OUTPUT/${TAG}.bcf"),path("OUTPUT/${TAG}.bcf.csi"),path(bed),emit:output
+	path("OUTPUT/${TAG}.json"),emit:output
 	path("OUTPUT/count.tsv"),emit:count
 script:
+	def row = slurpJsonFile(json)
 """
 hostname 1>&2
 ${moduleLoad("snpEff bcftools")}
 mkdir -p TMP
 
-bcftools view '${vcf}' -O v |\
+bcftools view '${row.vcf}' -O v |\
 java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar "\${SNPEFF_JAR}" eff -config '${config}' \
                                 -nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf '${genomeId}' > TMP/jeter1.vcf
 
 bcftools sort --max-mem '${task.memory.giga}G' -T TMP/tmp -O b -o TMP/${TAG}.bcf TMP/jeter1.vcf
 bcftools index TMP/${TAG}.bcf
+rm TMP/jeter1.vcf
+
+cat << EOF > TMP/${TAG}.json
+{
+"vcf"   : "\${PWD}/OUTPUT/${TAG}.bcf",
+"index" : "\${PWD}/OUTPUT/${TAG}.bcf.csi",
+"bed"   : "\${PWD}/OUTPUT/${TAG}.bed"
+}
+EOF
+
 
 bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/count.tsv
 mv TMP OUTPUT
+rm -fv "${row.vcf}" "${row.index}"
 """
 }

@@ -431,6 +431,14 @@ String paramsToString(final java.util.Map map) {
 	}
 
 
+Object slurpJsonFile(f) {
+	if(f instanceof nextflow.processor.TaskPath) {
+		return slurpJsonFile(f.toRealPath())
+		}
+	def slurper = new groovy.json.JsonSlurper();
+	return slurper.parse(f)
+	}
+
 void runOnComplete(def wf) {
 wf.onComplete {
     println ( workflow.success ? """

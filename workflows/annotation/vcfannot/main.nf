@@ -35,14 +35,13 @@ include {VCF_TO_BED} from '../../../modules/bcftools/vcf2bed.01.nf'
 
 
 workflow {
-	ann_ch = ANNOTATE_VCF([:], params.genomeId, file(params.vcf), file(params.bed), file(params.pedigree) )
+	ann_ch = ANNOTATE_VCF(params.genomeId, file(params.vcf), file(params.bed), file(params.pedigree) )
 	html = VERSION_TO_HTML(ann_ch.version)	
 	}
 
 
 workflow ANNOTATE_VCF {
 	take:
-		meta
 		genomeId
 		vcf
 		bed
@@ -55,8 +54,9 @@ workflow ANNOTATE_VCF {
 			version_ch = version_ch.mix(vcf2intervals_ch.version)
 
 			row_ch = vcf2intervals_ch.bed.splitCsv(sep:'\t',header:false).map{T->[
-				vcf: T[3],
-				contig: T[0],
+				vcf: file(T[3]),
+				vcf_index: file(T[3]+ (T[3].endsWith(".vcf.gz")?".tbi":".csi")),
+				bed: file("NO_FILE"),
 				interval : T[0]+":"+((T[1] as int)+1)+"-"+T[2]
 				]}
 			}
@@ -65,23 +65,14 @@ workflow ANNOTATE_VCF {
 			vcf2bed_ch = VCF_TO_BED([:], vcf)
 			version_ch = version_ch.mix(vcf2bed_ch.version)
 			ch1_ch =  vcf2bed_ch.bed.splitCsv(sep:'\t',header:false).map{T->[
-                                contig: T[0],
-				vcf: T[3]
-                                ]}
-
-			
-			intervals_ch =Channel.fromPath(bed).splitCsv(sep:'\t',header:false).map{T->[
-				contig: T[0],
+				vcf: T[3],
+				vcf_index: file(T[3]+ (T[3].endsWith(".vcf.gz")?".tbi":".csi")),
+				bed: file("NO_FILE"),
 				interval : T[0]+":"+((T[1] as int)+1)+"-"+T[2]
-				]}
-
-			row_ch = ch1_ch.combine(intervals_ch).
-				filter{T->T[0].contig.equals(T[1].contig)}.
-				map{T->T[0].plus(T[1])}
+                                ]}
 			}
-		row_ch = row_ch.map{T->T.plus([pedigree:pedigree,genomeId:genomeId])}
 
-		ann_ch = ANNOTATE_VCF_01([:], genomeId, row_ch)
+		ann_ch = ANNOTATE_VCF_01(genomeId, ch1_ch)
 		version_ch = version_ch.mix(ann_ch.version)
 
 		tofile_ch = COLLECT_TO_FILE_01([suffix:".list"], ann_ch.output.map{T->T.annot_vcf}.collect())

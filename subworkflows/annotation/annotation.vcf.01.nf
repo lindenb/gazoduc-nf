@@ -30,7 +30,12 @@ include {ANNOTATE_CLINVAR} from './step.clinvar.nf'
 include {ANNOTATE_VISTA} from './step.vista.nf'
 include {ANNOTATE_SNPEFF} from './step.snpeff.nf'
 include {ANNOTATE_SIMPLE_REPEATS} from './step.simple_repeats.nf'
-
+include {ANNOTATE_REMAP} from './step.remap.nf'
+include {ANNOTATE_GNOMADSV} from './step.gnomadsv.nf'
+include {ANNOTATE_REGFEATURES} from './step.regfeatures.nf'
+include {ANNOTATE_AVADA} from './step.avada.nf'
+include {ANNOTATE_VEP} from './step.vep.nf'
+include {ANNOTATE_GNOMAD_GENOME} from './step.gnomad.genome.nf'
 workflow ANNOTATE_VCF_01 {
 	take:
 		genomeId
@@ -39,10 +44,20 @@ workflow ANNOTATE_VCF_01 {
 		version_ch = Channel.empty()
 		step_ch = STEP_FIRST(rows)
 		step_ch = ANNOTATE_RMSK(genomeId, step_ch.output)
+		step_ch = ANNOTATE_VISTA(genomeId, step_ch.output)
 		step_ch = ANNOTATE_BCSQ(genomeId, step_ch.output)
 		step_ch = ANNOTATE_CLINVAR(genomeId, step_ch.output)
-		step_ch = ANNOTATE_SNPEFF(genomeId, step_ch.output)
 		step_ch = ANNOTATE_SIMPLE_REPEATS(genomeId, step_ch.output)
+		step_ch = ANNOTATE_SNPEFF(genomeId, step_ch.output)
+		step_ch = ANNOTATE_REMAP(genomeId, step_ch.output)
+		step_ch = ANNOTATE_GNOMAD_GENOME(genomeId, step_ch.output)
+		step_ch = ANNOTATE_GNOMADSV(genomeId, step_ch.output)
+
+/*
+		step_ch = ANNOTATE_REGFEATURES(genomeId, step_ch.output)
+		step_ch = ANNOTATE_AVADA(genomeId, step_ch.output)
+		step_ch = ANNOTATE_VEP(genomeId, step_ch.output)
+*/
 		
 		rows=Channel.empty()
 
