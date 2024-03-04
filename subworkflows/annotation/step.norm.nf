@@ -25,17 +25,16 @@ SOFTWARE.
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
 include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
 
-def TAG="RMSK"
+def TAG="NORM"
 
-workflow ANNOTATE_RMSK {
+workflow ANNOTATE_NORM {
 	take:
 		genomeId
 		vcfs /** json: vcf,index,bed */
 	main:
 
-             if(hasFeature("rmsk") && !isBlank(params.genomes[genomeId],"rmsk_url")) {
-                        source_ch = DOWNLOAD(genomeId)
-						annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
+             if(hasFeature("bcftools_norm")) {
+						annotate_ch = ANNOTATE(genomeId,vcfs)
                         out1 = annotate_ch.output
                         out2 = annotate_ch.count
                         out3 = MAKE_DOC(genomeId).output
@@ -52,43 +51,6 @@ workflow ANNOTATE_RMSK {
 		doc = out3
 }
 
-process DOWNLOAD {
-afterScript "rm -rf TMP"
-memory "2g"
-input:
-	val(genomeId)
-output:
-	path("${TAG}.bed.gz"),emit:bed
-	path("${TAG}.bed.gz.tbi"),emit:tbi
-	path("${TAG}.header"),emit:header
-script:
-	def genome = params.genomes[genomeId]
-	def reference = genome.fasta
-	def url = genome.rmsk_url
-	def whatis="Repeat Masker from ${url}"
-"""
-hostname 1>&2
-mkdir -p TMP
-${moduleLoad("htslib jvarkit bedtools")}
-
-set -o pipefail
-wget -O - "${url}" |\
-	gunzip -c |\
-	cut -f6-8 |\
-	java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 1 --convert SKIP  |\
-		sort  -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\
-		bedtools merge |\
-		sed 's/\$/\t1/' |\
-		bgzip > TMP/${TAG}.bed.gz && \
-	tabix -p bed -f TMP/${TAG}.bed.gz
-
-
-mv TMP/${TAG}.bed.gz ./
-mv TMP/${TAG}.bed.gz.tbi ./
-
-echo '##INFO=<ID=${TAG},Number=0,Type=Flag,Description="${whatis}">' > ${TAG}.header
-"""
-}
 
 
 
@@ -100,12 +62,11 @@ output:
 	path("${TAG}.html"),emit:output
 script:
 	def genome = params.genomes[genomeId]
-	def url = genome.rmsk_url
 """
 cat << __EOF__ > ${TAG}.html
 <dl>
 <dt>${TAG}</dt>
-<dd>UCSC repeat masker intervals. <a href="${url}">${url}</a></dd>
+<dd>normalize variants with <code>bcftools norm</code></dd>
 </dl>
 __EOF__
 """
@@ -116,22 +77,25 @@ process ANNOTATE {
 tag "${json.name}"
 afterScript "rm -rf TMP"
 input:
-	path(tabix)
-	path(tbi)
-	path(header)
+	val(genomeId)
 	path(json)
 output:
 	path("OUTPUT/${TAG}.json"),emit:output
 	path("OUTPUT/${TAG}.count"),emit:count
 script:
 	def row = slurpJsonFile(json)
+	def genome = params.genomes[genomeId]
+	def args = "--remove-duplicates --multiallelics -both"
 """
 hostname 1>&2
 ${moduleLoad("bcftools")}
 mkdir -p TMP OUTPUT
 
-bcftools annotate -a "${tabix}" -h "${header}" -c "CHROM,FROM,TO,${TAG}" -O b -o TMP/${TAG}.bcf '${row.vcf}'
-bcftools index TMP/${TAG}.bcf
+bcftools view --trim-alt-alleles -o u '${row.vcf}' |\\
+	bcftools norm ${args} --fasta-ref '${genome.fasta}'  -O u |\\
+	bcftools view -i 'ALT!="*"' -o TMP/${TAG}.bcf
+
+bcftools index --force TMP/${TAG}.bcf
 
 
 cat << EOF > TMP/${TAG}.json

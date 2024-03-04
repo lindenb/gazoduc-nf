@@ -27,18 +27,16 @@ include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
 include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
 
 
-def TAG="STRINGDB"
+def TAG="SPLICEAI"
 
  
-workflow ANNOTATE_STRINGDB {
+workflow ANNOTATE_SPLICEAI {
 	take:
 		genomeId
 		vcfs /** json vcf,vcf_index */
 	main:
-		if(hasFeature("stringdb") && !isBlank(params.genomes[genomeId],"gtf")) {
-			source_ch =  DOWNLOAD(genomeId)
-			annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
-
+		if(hasFeature("spliceai") && !isBlank(params.genomes[genomeId],"gtf")) {
+			annotate_ch = ANNOTATE(genomeId,vcfs)
 			out1 = annotate_ch.output
 			out2 = annotate_ch.count
 			out3 = MAKE_DOC(genomeId).output
@@ -55,72 +53,6 @@ workflow ANNOTATE_STRINGDB {
 		doc = out3
 }
 
-process DOWNLOAD{
-afterScript "rm -rf TMP"
-memory "2g"
-input:
-	val(genomeId)
-output:
-	path("${TAG}.bed.gz"),emit:bed
-	path("${TAG}.bed.gz.tbi"),emit:tbi
-	path("${TAG}.header"),emit:header
-script:
-	def genome = params.genomes[genomeId]
-    def reference = genome.fasta
-    
-    def version = params.annotations.stringdb_version
-	def genome = params.genomes[genomeId]
-	def taxon = genome.taxon_id?:9606
-	def treshold = params.annotations.stringdb_treshold
-"""
-hostname 1>&2
-${moduleLoad("htslib bedtools jvarkit")}
-set -o pipefail
-mkdir -p TMP
-
-
-java -jar \${JVARKIT_DIST}/jvarkit.jar gtf2bed --columns "gtf.feature,gene_name" -R "${reference}" "$genome.{gtf}" |\\
-	awk -F '\t' '(\$4=="gene")' |\\
-	cut -f1,2,3,5 |\\
-	LC_ALL=C sort -T TMP -t '\t' -k4,4 |\\
-	uniq > TMP/genes.bed
-
-
-wget -O - "https://stringdb-downloads.org/download/protein.info.${version}/${taxon}.protein.info.${version}.txt.gz" |\
-	gunzip -c |\\
-	cut -f 1,2 |\\
-	LC_ALL=C sort  -T TMP -t '\t' -k1,1 > TMP/info.k1.txt
-
-
-# download linked, ouput ID1,ID2  sorted on ID1
-wget -O - "https://stringdb-downloads.org/download/protein.links.${version}/${taxon}.protein.links.${version}.txt.gz" |\
-	gunzip -c |\\
-	tr " " "\t" |\\
-	awk '(\$3>=${treshold})' |\\
-	cut -f1,2 |\\
-	LC_ALL=C sort -T TMP  -k1,1 -t '\t'  |\\
-	uniq > TMP/link.k1.txt
-
-join -t \$'\t' -1 1 -2 1 -o '1.2,2.2' TMP/link.k1.txt TMP/info.k1.txt |\\
-	LC_ALL=C sort -T TMP -t '\t' -k1,1 |\\
-	LC_ALL=C join -t '\t' -1 1 -2 1 -o '1.2,2.2' - TMP/info.k1.txt |\\
-	LC_ALL=C sort -T TMP -t '\t' -k1,1 |\\
-	LC_ALL=C join -t '\t' -1 1 -2 4 -o '2.1,2.2,2.3,2.4,1.2' - TMP/genes.bed |\\
-	cut -f 1,2,3,5 |\\
-	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\\
-	uniq |\\
-	bgzip > TMP/${TAG}.bed.gz
-
-
-tabix --force -p bed TMP/${TAG}.bed.gz
-
-mv TMP/${TAG}.bed.gz ./
-mv TMP/${TAG}.bed.gz.tbi ./
-
-echo '##INFO=<ID=STRINGDB,Number=.,Type=String,Description="Possible interactors from StringDB ${version} treshold:${treshold}.">' >  ${TAG}.header
-"""
-}
-
 
 process MAKE_DOC {
 executor "local"
@@ -130,12 +62,11 @@ output:
 	path("${TAG}.html"),emit:output
 script:
 	def genome = params.genomes[genomeId]
-	def url = genome.greendb_url
 """
 cat << __EOF__ > ${TAG}.html
 <dl>
 <dt>${TAG}</dt>
-<dd>${WHATIZ} <a href="${URL}">${URL}</a></dd>
+<dd>SpliceAI Prediction</dd>
 </dl>
 __EOF__
 """
@@ -144,10 +75,9 @@ __EOF__
 process ANNOTATE {
 tag "${json.name}"
 afterScript "rm -rf TMP"
+cpus 5
 input:
-	path(tabix)
-	path(tbi)
-	path(header)
+	val(genomeId)
 	//tuple path(vcf),path(vcf_idx),path(bed)
 	path(json)
 output:
@@ -155,13 +85,45 @@ output:
 	path("OUTPUT/${TAG}.json"),emit:output
 	path("OUTPUT/${TAG}.count"),emit:count
 script:
+	def genome = params.genomes[genomeId]
+	def gtf = genome.gtf
+	def db =genome.spliceai_annotation_type
+	def distance = params.spliceai.splice_distance?:50
 	def row = slurpJsonFile(json)	
 """
 hostname 1>&2
-${moduleLoad("bcftools")}
+${moduleLoad("bcftools bedtools htslib")}
 mkdir -p TMP OUTPUT
 
-bcftools annotate -a "${tabix}" -h "${header}" -c "CHROM,FROM,TO,${TAG}"  --merge-logic '${TAG}:unique'  -O b -o TMP/${TAG}.bcf '${row.vcf}'
+
+
+tabix --regions "${row.bed}" "${gtf}" |\\
+	awk -F '\t' '(\3=="exon") {for(i=0;i<2;i++) { {P=(i==0?int(\$4)-1:int(\$5));printf("%s\t%d\t%d\\n",\$1,P,P+1);}}' |\
+	bedtools slop -b "${distance}" -g "${reference}.fai" |\
+	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\
+	bedtools merge |\
+	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n  > TMP/junctions.bed
+	
+if ! test -s TMP/junctions.bed
+then
+	tail -n1 "${reference}.fai"  '{printf("%s\t0\t1\\n",\$1);}' > TMP/junctions.bed
+fi
+
+bzip --force TMP/junctions.bed
+tabix index --force -p bed TMP/junctions.bed.gz
+
+bcftools view -O b --regions-file ^TMP/junctions.bed.gz -o TMP/off.bcf 
+bcftools index --force TMP/off.bcf 
+
+export OMP_NUM_THREADS=${task.cpus}
+
+bcftools view --regions-file TMP/junctions.bed.gz |\\
+	spliceai -R "${genome.fasta}"  -A "${db}" -D ${distance} |\
+	bcftools view -O b -o TMP/in.bcf
+	
+bcftools index --force TMP/in.bcf 	
+
+bcftools concat --allow-overlaps -O b -o  TMP/${TAG}.bcf  TMP/in.bcf  TMP/off.bcf
 bcftools index --force TMP/${TAG}.bcf
 
 cat << EOF > TMP/${TAG}.json
