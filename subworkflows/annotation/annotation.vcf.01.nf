@@ -36,26 +36,79 @@ include {ANNOTATE_REGFEATURES} from './step.regfeatures.nf'
 include {ANNOTATE_AVADA} from './step.avada.nf'
 include {ANNOTATE_VEP} from './step.vep.nf'
 include {ANNOTATE_GNOMAD_GENOME} from './step.gnomad.genome.nf'
+include {ANNOTATE_CONTRAST} from './step.contrast.nf'
+include {ANNOTATE_POLYX} from './step.polyx.nf'
+include {ANNOTATE_ELSEWHERE} from './step.elsewhere.nf'
+
 workflow ANNOTATE_VCF_01 {
 	take:
 		genomeId
 		rows /* vcf, idx, bed, interval */
 	main:
 		version_ch = Channel.empty()
+		count_ch = Channel.empty()
+		doc_ch = Channel.empty()
+		
 		step_ch = STEP_FIRST(rows)
 		step_ch = ANNOTATE_RMSK(genomeId, step_ch.output)
+		count_ch = count_ch.mix(step_ch.count)
+		doc_ch = count_ch.mix(step_ch.doc)
+		
 		step_ch = ANNOTATE_VISTA(genomeId, step_ch.output)
+		count_ch = count_ch.mix(step_ch.count)
+		doc_ch = count_ch.mix(step_ch.doc)
+		
 		step_ch = ANNOTATE_BCSQ(genomeId, step_ch.output)
+		count_ch = count_ch.mix(step_ch.count)
+		doc_ch = count_ch.mix(step_ch.doc)
+		
 		step_ch = ANNOTATE_CLINVAR(genomeId, step_ch.output)
+		count_ch = count_ch.mix(step_ch.count)
+		doc_ch = count_ch.mix(step_ch.doc)
+		
 		step_ch = ANNOTATE_SIMPLE_REPEATS(genomeId, step_ch.output)
+		count_ch = count_ch.mix(step_ch.count)
+		doc_ch = count_ch.mix(step_ch.doc)		
+		
 		step_ch = ANNOTATE_SNPEFF(genomeId, step_ch.output)
+		count_ch = count_ch.mix(step_ch.count)
+		doc_ch = count_ch.mix(step_ch.doc)		
+		
 		step_ch = ANNOTATE_REMAP(genomeId, step_ch.output)
+		count_ch = count_ch.mix(step_ch.count)
+		doc_ch = count_ch.mix(step_ch.doc)
+		
 		step_ch = ANNOTATE_GNOMAD_GENOME(genomeId, step_ch.output)
+		count_ch = count_ch.mix(step_ch.count)
+		doc_ch = count_ch.mix(step_ch.doc)
+		
 		step_ch = ANNOTATE_GNOMADSV(genomeId, step_ch.output)
-
-/*
-		step_ch = ANNOTATE_REGFEATURES(genomeId, step_ch.output)
+		count_ch = count_ch.mix(step_ch.count)
+		doc_ch = count_ch.mix(step_ch.doc)
+		
+		step_ch = ANNOTATE_CONTRAST(genomeId, step_ch.output)
+		count_ch = count_ch.mix(step_ch.count)
+		doc_ch = count_ch.mix(step_ch.doc)
+	
+		step_ch = ANNOTATE_POLYX(genomeId, step_ch.output)
+		count_ch = count_ch.mix(step_ch.count)
+		doc_ch = count_ch.mix(step_ch.doc)
+		
 		step_ch = ANNOTATE_AVADA(genomeId, step_ch.output)
+		count_ch = count_ch.mix(step_ch.count)
+		doc_ch = count_ch.mix(step_ch.doc)		
+		
+		step_ch = ANNOTATE_REGFEATURES(genomeId, step_ch.output)
+		count_ch = count_ch.mix(step_ch.count)
+		doc_ch = count_ch.mix(step_ch.doc)			
+		
+		step_ch = ANNOTATE_ELSEWHERE(genomeId, step_ch.output, file("NO_FILE"))
+		count_ch = count_ch.mix(step_ch.count)
+		doc_ch = count_ch.mix(step_ch.doc)		
+		
+/*
+		step_ch = (genomeId, step_ch.output)
+
 		step_ch = ANNOTATE_VEP(genomeId, step_ch.output)
 */
 		

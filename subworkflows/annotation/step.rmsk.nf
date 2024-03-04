@@ -1,4 +1,29 @@
+/*
+
+Copyright (c) 2024 Pierre Lindenbaum
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+The MIT License (MIT)
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
+include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
 
 def TAG="RMSK"
 
@@ -8,20 +33,23 @@ workflow ANNOTATE_RMSK {
 		vcfs /** json: vcf,index,bed */
 	main:
 
-             	if(params.genomes[genomeId].containsKey("rmsk_url")) {
+             if(hasFeature("rmsk") && !isBlank(params.genomes[genomeId],"rmsk_url")) {
                         source_ch = DOWNLOAD(genomeId)
-			annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
+						annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
                         out1 = annotate_ch.output
                         out2 = annotate_ch.count
+                        out3 = MAKE_DOC(genomeId).output
                         }
                 else
                     	{
                         out1 = vcfs
                         out2 = Channel.empty()
+                        out3 = Channel.empty()
                         }
 	emit:
-		output = annotate_ch.output
-		count = annotate_ch.count
+		output = out1
+		count = out2
+		doc = out3
 }
 
 process DOWNLOAD {
@@ -62,6 +90,28 @@ echo '##INFO=<ID=${TAG},Number=0,Type=Flag,Description="${whatis}">' > ${TAG}.he
 """
 }
 
+
+
+process MAKE_DOC {
+executor "local"
+input:
+        val(genomeId)
+output:
+	path("${TAG}.html"),emit:output
+script:
+	def genome = params.genomes[genomeId]
+	def url = genome.rmsk_url
+"""
+cat << __EOF__ > ${TAG}.html
+<dl>
+<dt>${TAG}</dt>
+<dd>UCSC repeat masker intervals. <a href="${url}">${url}</a></dd>
+</dl>
+__EOF__
+"""
+}
+
+
 process ANNOTATE {
 tag "${json.name}"
 afterScript "rm -rf TMP"
@@ -72,13 +122,13 @@ input:
 	path(json)
 output:
 	path("OUTPUT/${TAG}.json"),emit:output
-	path("OUTPUT/count.tsv"),emit:count
+	path("OUTPUT/${TAG}.count"),emit:count
 script:
 	def row = slurpJsonFile(json)
 """
 hostname 1>&2
 ${moduleLoad("bcftools")}
-mkdir -p TMP
+mkdir -p TMP OUTPUT
 
 bcftools annotate -a "${tabix}" -h "${header}" -c "CHROM,FROM,TO,${TAG}" -O b -o TMP/${TAG}.bcf '${row.vcf}'
 bcftools index TMP/${TAG}.bcf
@@ -95,8 +145,8 @@ cat << EOF > TMP/${TAG}.json
 EOF
 
 ###
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/count.tsv
-mv TMP OUTPUT
-
+bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
+mv -v TMP/${TAG}.* OUTPUT/
+${backDelete(row)}
 """
 }
