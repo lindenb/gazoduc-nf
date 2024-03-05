@@ -35,7 +35,7 @@ workflow ANNOTATE_SPLICEAI {
 		genomeId
 		vcfs /** json vcf,vcf_index */
 	main:
-		if(hasFeature("spliceai") && !isBlank(params.genomes[genomeId],"gtf")) {
+		if(hasFeature("spliceai") && !isBlank(params.genomes[genomeId],"gtf") && !isBlank(params.genomes[genomeId],"spliceai_annotation_type")) {
 			annotate_ch = ANNOTATE(genomeId,vcfs)
 			out1 = annotate_ch.output
 			out2 = annotate_ch.count
@@ -76,6 +76,7 @@ process ANNOTATE {
 tag "${json.name}"
 afterScript "rm -rf TMP"
 cpus 5
+conda "/CONDAS/users/lindenbaum-p/SPLICEAI"
 input:
 	val(genomeId)
 	//tuple path(vcf),path(vcf_idx),path(bed)
@@ -88,40 +89,62 @@ script:
 	def genome = params.genomes[genomeId]
 	def gtf = genome.gtf
 	def db =genome.spliceai_annotation_type
-	def distance = params.spliceai.splice_distance?:50
-	def row = slurpJsonFile(json)	
+	def distance = params.annotations.spliceai_distance?:50
+	def treshold = params.annotations.spliceai_highscore?:0.9
+	def row = slurpJsonFile(json)
 """
 hostname 1>&2
 ${moduleLoad("bcftools bedtools htslib")}
 mkdir -p TMP OUTPUT
 
+echo "\${PATH}"
+which conda 1>&2 | cat
 
+set -x
 
 tabix --regions "${row.bed}" "${gtf}" |\\
-	awk -F '\t' '(\3=="exon") {for(i=0;i<2;i++) { {P=(i==0?int(\$4)-1:int(\$5));printf("%s\t%d\t%d\\n",\$1,P,P+1);}}' |\
-	bedtools slop -b "${distance}" -g "${reference}.fai" |\
+	awk -F '\t' '(\$3=="exon") {for(i=0;i<2;i++) {P=(i==0?int(\$4)-1:int(\$5));printf("%s\t%d\t%d\\n",\$1,P,P+1);}}' |\
+	bedtools slop -b "${distance}" -g "${genome.fasta}.fai" |\
 	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\
 	bedtools merge |\
 	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n  > TMP/junctions.bed
 	
 if ! test -s TMP/junctions.bed
 then
-	tail -n1 "${reference}.fai"  '{printf("%s\t0\t1\\n",\$1);}' > TMP/junctions.bed
+	tail -n1 "${genome.fasta}.fai"  | awk -F '\t' '{printf("%s\t0\t1\\n",\$1);}' >  TMP/junctions.bed
 fi
 
-bzip --force TMP/junctions.bed
-tabix index --force -p bed TMP/junctions.bed.gz
+bgzip --force TMP/junctions.bed
+tabix --force -p bed TMP/junctions.bed.gz
 
-bcftools view -O b --regions-file ^TMP/junctions.bed.gz -o TMP/off.bcf 
+bcftools view -O b --targets-file ^TMP/junctions.bed.gz -o TMP/off.bcf  "${row.vcf}"
 bcftools index --force TMP/off.bcf 
 
 export OMP_NUM_THREADS=${task.cpus}
 
-bcftools view --regions-file TMP/junctions.bed.gz |\\
-	spliceai -R "${genome.fasta}"  -A "${db}" -D ${distance} |\
+bcftools view --targets-file TMP/junctions.bed.gz "${row.vcf}" |\\
+	spliceai -R "${genome.fasta}"  -A "${db}" -D ${distance} |\\
 	bcftools view -O b -o TMP/in.bcf
+
+
+# search high spliceai scores
+bcftools  query -f '%CHROM\t%POS\t%REF\t%ALT\t%SpliceAI\\n'  TMP/in.bcf |\\
+	LC_ALL=C awk -F '\t' '{n1=split(\$5,a,/,/);for(i=1;i<=n1;i++) {split(a[i],b,/\\|/);if (b[3] >= ${treshold} || b[4] >= ${treshold} || b[5] >= ${treshold} || b[6]>= ${treshold}) {printf("%s\t%s\t%s\t%s\t1\\n",\$1,\$2,\$3,\$4); break;}}}' |\\
+	LC_ALL=C sort -t '\t' -k1,1 -k2,2n -T TMP |\\
+	bgzip > TMP/high.tsv.gz
+
+gunzip -c TMP/high.tsv.gz | head 1>&2
+
+tabix --force -s 1 -b 2 -e 2 TMP/high.tsv.gz
+
+echo '##INFO=<ID=${TAG}_HIGH,Number=0,Type=Flag,Description="SpliceAI score>=${treshold} .">' > TMP/high.header
+
+# annotate high scores with FLAG
+bcftools annotate -a TMP/high.tsv.gz -h TMP/high.header -c "CHROM,POS,REF,ALT,${TAG}_HIGH" -O b -o TMP/in2.bcf TMP/in.bcf
+mv TMP/in2.bcf TMP/in.bcf
 	
 bcftools index --force TMP/in.bcf 	
+
 
 bcftools concat --allow-overlaps -O b -o  TMP/${TAG}.bcf  TMP/in.bcf  TMP/off.bcf
 bcftools index --force TMP/${TAG}.bcf

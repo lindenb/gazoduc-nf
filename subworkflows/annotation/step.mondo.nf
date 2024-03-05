@@ -26,6 +26,7 @@ include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
 include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
 
 def TAG="MONDO"
+def WHATIZ = "The Mondo Disease Ontology (Mondo) aims to harmonize disease definitions across the world. It is a global community effort to reconcile and curate the very many disease resources within a coherent merged ontology. Original versions of Mondo were constructed entirely automatically and used the IDs of source databases and ontologies. Later, additional manually curated cross-ontology axioms were added, and a native Mondo ID system was used to avoid confusion with source databases."
 
 workflow ANNOTATE_MONDO {
 	take:
@@ -35,7 +36,7 @@ workflow ANNOTATE_MONDO {
 
              if(hasFeature("mondo")) {
                         source_ch = DOWNLOAD(genomeId)
-						annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
+			annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
                         out1 = annotate_ch.output
                         out2 = annotate_ch.count
                         out3 = MAKE_DOC(genomeId).output
@@ -65,7 +66,7 @@ script:
 	def genome = params.genomes[genomeId]
 	def reference = genome.fasta
 	def url = params.annotations,mondo_owl_url
-	def jena_version = "5.0.0"
+	def jena_version = "5.0.0-rc1"
 	def mondo_version = "2024-03-04"
 	def ro = "RO:0004021,RO:0004028,RO:0004001,RO:0004004,RO:0004025,RO:0004020,RO:0004003"
 	def whatis="MONDO from ${url}"
@@ -73,8 +74,9 @@ script:
 hostname 1>&2
 mkdir -p TMP/TDB
 ${moduleLoad("htslib jvarkit bedtools")}
+set -x
 
-wget -O TMP/jeter.zip "https://archive.apache.org/dist/jena/binaries/apache-jena-${jena_version}-rc1.zip"
+wget -O TMP/jeter.zip "https://archive.apache.org/dist/jena/binaries/apache-jena-${jena_version}.zip"
 (cd TMP && unzip jeter.zip && rm jeter.zip)
 
 
@@ -91,11 +93,13 @@ prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 prefix mondo: <http://purl.obolibrary.org/obo/mondo#>
 prefix RO: <http://purl.obolibrary.org/obo/RO_>
 PREFIX obo: <http://purl.obolibrary.org/obo/>
+PREFIX oboInOwl: <http://www.geneontology.org/formats/oboInOwl#>
+
 
 SELECT DISTINCT
-	?gene_name ?gene
-	?property_label ?property
-	?entity_label  ?entity
+	?gene_name
+	?entity_label
+	?entity_id
 WHERE 
 {
 
@@ -113,10 +117,11 @@ WHERE
   owl:onProperty ?property ;
   owl:someValuesFrom ?gene ] . 
   ?entity rdfs:label ?entity_label .
+  ?entity oboInOwl:id ?entity_id .
 
 
   ?entity rdfs:subClassOf* obo:MONDO_0000001 .
-
+  
   
  OPTIONAL {
   ?property rdfs:label ?property_label .
@@ -130,14 +135,35 @@ WHERE
 FILTER (isIRI(?entity) && STRSTARTS(str(?entity), "http://purl.obolibrary.org/obo/MONDO_"))
 FILTER (isIRI(?gene) && regex(str(?gene), "hgnc"))
 }
-
 __EOF__
 
 
-./TMP/apache-jena-${jena_version}/bin/tdbquery --loc=./TMP/TDB --query=TMP/jeter.sparql  --results=TSV > TMP/output.tsv
+
+./TMP/apache-jena-5.0.0-rc1/bin/tdbquery --loc=./TMP/TDB --query=TMP/jeter.sparql  --results=TSV |\
+	tail -n +2 |\
+	tr -d '"' |\
+	tr --complement "|A-Za-z0-9._\t\\n" "_" |\
+	tr -s "_" |\
+	LC_ALL=C sort -T TMP -t \$'\t' -k1,1 > TMP/output.tsv
 
 
-echo '##INFO=<ID=${TAG},Number=0,Type=Flag,Description="${whatis}">' > ${TAG}.header
+java -jar \${JVARKIT_DIST}/jvarkit.jar gtf2bed --columns "gtf.feature,gene_name" -R "${reference}" "${genome.gtf}" |\\
+	awk -F '\t' '(\$4=="gene")' |\\
+	cut -f1,2,3,5 |\\
+	LC_ALL=C sort -T TMP -t '\t' -k4,4 |\\
+	uniq > TMP/genes.bed
+
+LC_ALL=C  join -t '\t' -1 4 -2 1 -o '1.1,1.2,1.3,2.2,2.3' TMP/genes.bed TMP/output.tsv |\\
+	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\\
+	bgzip > TMP/${TAG}.bed.gz
+
+tabix --force -p bed TMP/${TAG}.bed.gz
+
+mv TMP/${TAG}.bed.gz ./
+mv TMP/${TAG}.bed.gz.tbi ./
+
+echo '##INFO=<ID=${TAG}_DISEASE,Number=0,Type=String,Description="Disease names ${WHATIZ}">' > ${TAG}.header
+echo '##INFO=<ID=${TAG}_ID,Number=0,Type=String,Description="Diseases ID ${WHATIZ}">' >> ${TAG}.header
 """
 }
 
@@ -151,12 +177,11 @@ output:
 	path("${TAG}.html"),emit:output
 script:
 	def genome = params.genomes[genomeId]
-	def url = genome.rmsk_url
 """
 cat << __EOF__ > ${TAG}.html
 <dl>
 <dt>${TAG}</dt>
-<dd>UCSC repeat masker intervals. <a href="${url}">${url}</a></dd>
+<dd>${WHATIZ}</dd>
 </dl>
 __EOF__
 """
@@ -181,7 +206,7 @@ hostname 1>&2
 ${moduleLoad("bcftools")}
 mkdir -p TMP OUTPUT
 
-bcftools annotate -a "${tabix}" -h "${header}" -c "CHROM,FROM,TO,${TAG}" -O b -o TMP/${TAG}.bcf '${row.vcf}'
+bcftools annotate -a "${tabix}" -h "${header}" -c "CHROM,FROM,TO,${TAG}_DISEASE,${TAG}_ID" -O b -o TMP/${TAG}.bcf  --merge-logic '${TAG}_DISEASE:unique,${TAG}_ID:unique' '${row.vcf}'
 bcftools index TMP/${TAG}.bcf
 
 

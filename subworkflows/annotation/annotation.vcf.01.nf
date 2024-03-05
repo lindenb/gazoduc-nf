@@ -48,8 +48,8 @@ include {ANNOTATE_BHFUCL} from './step.bhfucl.nf'
 include {ANNOTATE_NORM} from './step.norm.nf'
 include {ANNOTATE_SPLICEAI} from './step.spliceai.nf'
 include {ANNOTATE_STRINGDB} from './step.stringdb.nf'
-include {ANNOTATE_MONDO} from './step.mondo.nf'
 include {ANNOTATE_ALPHAMISSENSE} from './step.alphamissense.nf'
+include {ANNOTATE_MONDO} from './step.mondo.nf'
 
 workflow ANNOTATE_VCF_01 {
 	take:
@@ -135,15 +135,20 @@ workflow ANNOTATE_VCF_01 {
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 		
-		step_ch = ANNOTATE_SPLICEAI(genomeId, step_ch.output)
-		count_ch = count_ch.mix(step_ch.count)
-		doc_ch = count_ch.mix(step_ch.doc)
 		
 		step_ch = ANNOTATE_STRINGDB(genomeId, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 		
 		step_ch = ANNOTATE_ALPHAMISSENSE(genomeId, step_ch.output)
+		count_ch = count_ch.mix(step_ch.count)
+		doc_ch = count_ch.mix(step_ch.doc)
+
+		step_ch = ANNOTATE_SPLICEAI(genomeId, step_ch.output)
+		count_ch = count_ch.mix(step_ch.count)
+		doc_ch = count_ch.mix(step_ch.doc)
+
+		step_ch = ANNOTATE_MONDO(genomeId, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 		
