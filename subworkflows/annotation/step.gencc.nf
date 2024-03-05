@@ -77,7 +77,7 @@ set -o pipefail
 mkdir -p TMP
 
 
-java -jar \${JVARKIT_DIST}/jvarkit.jar gtf2bed --columns "gtf.feature,gene_name" -R "${reference}" "$genome.{gtf}" |\\
+java -jar \${JVARKIT_DIST}/jvarkit.jar gtf2bed --columns "gtf.feature,gene_name" -R "${reference}" "${genome.gtf}" |\\
 	awk -F '\t' '(\$4=="gene")' |\\
 	cut -f1,2,3,5 |\\
 	LC_ALL=C sort -T TMP -t '\t' -k4,4 |\\

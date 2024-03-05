@@ -66,10 +66,8 @@ output:
 	path("${TAG}.header"),emit:header
 script:
 	def genome = params.genomes[genomeId]
-    def reference = genome.fasta
-    
-    def version = params.annotations.stringdb_version
-	def genome = params.genomes[genomeId]
+        def reference = genome.fasta
+	def version = params.annotations.stringdb_version
 	def taxon = genome.taxon_id?:9606
 	def treshold = params.annotations.stringdb_treshold
 """
@@ -77,13 +75,15 @@ hostname 1>&2
 ${moduleLoad("htslib bedtools jvarkit")}
 set -o pipefail
 mkdir -p TMP
+set -x
 
-
-java -jar \${JVARKIT_DIST}/jvarkit.jar gtf2bed --columns "gtf.feature,gene_name" -R "${reference}" "$genome.{gtf}" |\\
+java -jar \${JVARKIT_DIST}/jvarkit.jar gtf2bed --columns "gtf.feature,gene_name" -R "${reference}" "${genome.gtf}" |\\
 	awk -F '\t' '(\$4=="gene")' |\\
 	cut -f1,2,3,5 |\\
 	LC_ALL=C sort -T TMP -t '\t' -k4,4 |\\
 	uniq > TMP/genes.bed
+
+head TMP/genes.bed 1>&2
 
 
 wget -O - "https://stringdb-downloads.org/download/protein.info.${version}/${taxon}.protein.info.${version}.txt.gz" |\
@@ -92,8 +92,10 @@ wget -O - "https://stringdb-downloads.org/download/protein.info.${version}/${tax
 	LC_ALL=C sort  -T TMP -t '\t' -k1,1 > TMP/info.k1.txt
 
 
+head TMP/info.k1.txt 1>&2
+
 # download linked, ouput ID1,ID2  sorted on ID1
-wget -O - "https://stringdb-downloads.org/download/protein.links.${version}/${taxon}.protein.links.${version}.txt.gz" |\
+wget -q -O - "https://stringdb-downloads.org/download/protein.links.${version}/${taxon}.protein.links.${version}.txt.gz" |\
 	gunzip -c |\\
 	tr " " "\t" |\\
 	awk '(\$3>=${treshold})' |\\
@@ -101,11 +103,20 @@ wget -O - "https://stringdb-downloads.org/download/protein.links.${version}/${ta
 	LC_ALL=C sort -T TMP  -k1,1 -t '\t'  |\\
 	uniq > TMP/link.k1.txt
 
-join -t \$'\t' -1 1 -2 1 -o '1.2,2.2' TMP/link.k1.txt TMP/info.k1.txt |\\
-	LC_ALL=C sort -T TMP -t '\t' -k1,1 |\\
-	LC_ALL=C join -t '\t' -1 1 -2 1 -o '1.2,2.2' - TMP/info.k1.txt |\\
-	LC_ALL=C sort -T TMP -t '\t' -k1,1 |\\
-	LC_ALL=C join -t '\t' -1 1 -2 4 -o '2.1,2.2,2.3,2.4,1.2' - TMP/genes.bed |\\
+head TMP/link.k1.txt 1>&2
+
+LC_ALL=C join -t \$'\t' -1 1 -2 1 -o '1.2,2.2' TMP/link.k1.txt TMP/info.k1.txt |\\
+	LC_ALL=C sort -T TMP -t '\t' -k1,1 > TMP/join1.tsv
+
+head TMP/join1.tsv 1>&2
+
+LC_ALL=C join -t '\t' -1 1 -2 1 -o '1.2,2.2' TMP/join1.tsv  TMP/info.k1.txt |\\
+	LC_ALL=C sort -T TMP -t '\t' -k1,1 > TMP/join2.tsv
+
+head TMP/join2.tsv 1>&2
+
+
+LC_ALL=C join -t '\t' -1 1 -2 4 -o '2.1,2.2,2.3,2.4,1.2' TMP/join2.tsv TMP/genes.bed |\\
 	cut -f 1,2,3,5 |\\
 	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\\
 	uniq |\\
@@ -130,12 +141,11 @@ output:
 	path("${TAG}.html"),emit:output
 script:
 	def genome = params.genomes[genomeId]
-	def url = genome.greendb_url
 """
 cat << __EOF__ > ${TAG}.html
 <dl>
 <dt>${TAG}</dt>
-<dd>${WHATIZ} <a href="${URL}">${URL}</a></dd>
+<dd>Interactions with stringdn</dd>
 </dl>
 __EOF__
 """

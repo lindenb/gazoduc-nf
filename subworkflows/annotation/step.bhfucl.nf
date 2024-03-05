@@ -77,7 +77,7 @@ set -o pipefail
 mkdir -p TMP
 
 
-java -jar \${JVARKIT_DIST}/jvarkit.jar gtf2bed --columns "gtf.feature,gene_name" -R "${reference}" "$genome.{gtf}" |\\
+java -jar \${JVARKIT_DIST}/jvarkit.jar gtf2bed --columns "gtf.feature,gene_name" -R "${reference}" "${genome.gtf}" |\\
 	awk -F '\t' '(\$4=="gene")' |\\
 	cut -f1,2,3,5 |\\
 	LC_ALL=C sort -T TMP -t '\t' -k4,4 |\\
@@ -89,7 +89,7 @@ wget -O - "${URL}" |\
 	uniq | LC_ALL=C sort -T TMP | uniq |
 	sed 's/\$/\t1/' > TMP/genes.txt
 
-LC_ALL=C  join -t '\t' -1 4 -2 1 -o '1.1,1.2,1.3,2.2' genes.bed TMP/genes.txt |\\
+LC_ALL=C  join -t '\t' -1 4 -2 1 -o '1.1,1.2,1.3,2.2' TMP/genes.bed TMP/genes.txt |\\
 	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\\
 	bgzip > TMP/${TAG}.bed.gz
 

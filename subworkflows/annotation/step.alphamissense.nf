@@ -79,11 +79,11 @@ set -x
 
 wget -O TMP/jeter.tsv.gz "${url}"
 
-gunzip -c TMP/jeter.tsv.gz |\
-	grep -v '^#' |\
-	cut -f 1 | uniq | sort -T TMP | uniq |\
-	awk '{printf("%s\t%s\\n",\$1,\$1);}' |\
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${genome.reference}" --column 2 --convert SKIP |\
+gunzip -c TMP/jeter.tsv.gz |\\
+	grep -v '^#' |\\
+	cut -f 1 | uniq | LC_ALL=C sort -T TMP | uniq |\\
+	awk '{printf("%s\t%s\\n",\$1,\$1);}' |\\
+	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${genome.fasta}" --column 2 --convert SKIP |\\
 	awk -F '\t' '{printf("s|^%s\t|%s\t|\\n",\$1,\$2);}' > TMP/jeter.sed
 
 
@@ -137,13 +137,14 @@ output:
 	path("OUTPUT/${TAG}.json"),emit:output
 	path("OUTPUT/${TAG}.count"),emit:count
 script:
+	
 	def row = slurpJsonFile(json)
 """
 hostname 1>&2
 ${moduleLoad("bcftools")}
 mkdir -p TMP OUTPUT
 
-bcftools annotate -a "${tabix}" -h "${header}" -c "CHROM,POS,REF,ALT,${TAG}_PATHOGENOCITY,${TAG}_CLASS" --merge-logic "${TAG}_PATHOGENOCITY:max,{TAG}_CLASS:unique" -O b -o TMP/${TAG}.bcf '${row.vcf}'
+bcftools annotate -a "${tabix}" -h "${header}" -c "CHROM,POS,REF,ALT,${TAG}_PATHOGENOCITY,${TAG}_CLASS" --merge-logic "${TAG}_PATHOGENOCITY:max,${TAG}_CLASS:unique" -O b -o TMP/${TAG}.bcf '${row.vcf}'
 bcftools index TMP/${TAG}.bcf
 
 

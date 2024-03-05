@@ -53,5 +53,6 @@ boolean isSoftFilter(key) {
         }
 
 String backDelete(json) {
-	return "## rm -f \"${json.vcf}\"  \"${json.index}\" ";
+	//return "## rm -f \"${json.vcf}\"  \"${json.index}\" ";
+	return "\n### TODO\n";
 	}

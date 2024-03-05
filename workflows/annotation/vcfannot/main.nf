@@ -24,7 +24,6 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
 include {moduleLoad;runOnComplete} from '../../../modules/utils/functions.nf'
 include {ANNOTATE_VCF_01} from '../../../subworkflows/annotation/annotation.vcf.01.nf'
 include {MERGE_VERSION} from '../../../modules/version/version.merge.02.nf'
@@ -35,8 +34,7 @@ include {VCF_TO_BED} from '../../../modules/bcftools/vcf2bed.01.nf'
 
 
 workflow {
-	ann_ch = ANNOTATE_VCF(params.genomeId, file(params.vcf), file(params.bed), file(params.pedigree) )
-	html = VERSION_TO_HTML(ann_ch.version)	
+	ann_ch = ANNOTATE_VCF(params.genomeId, file(params.vcf), file(params.bed), file(params.pedigree), file(params.external_vcfs) )
 	}
 
 
@@ -46,6 +44,7 @@ workflow ANNOTATE_VCF {
 		vcf
 		bed
 		pedigree
+		external_vcfs
 	main:
 		version_ch = Channel.empty()
 
@@ -72,7 +71,7 @@ workflow ANNOTATE_VCF {
                                 ]}
 			}
 
-		ann_ch = ANNOTATE_VCF_01(genomeId, ch1_ch)
+		ann_ch = ANNOTATE_VCF_01(genomeId, external_vcfs, ch1_ch)
 		version_ch = version_ch.mix(ann_ch.version)
 
 		tofile_ch = COLLECT_TO_FILE_01([suffix:".list"], ann_ch.output.map{T->T.annot_vcf}.collect())

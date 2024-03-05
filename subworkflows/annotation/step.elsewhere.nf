@@ -22,8 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {moduleLoad;isBlank} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
+include {moduleLoad} from '../../modules/utils/functions.nf'
+include {hasFeature;backDelete} from './annot.functions.nf'
 def TAG="ELSEWHERE"
 
 workflow ANNOTATE_ELSEWHERE {
@@ -37,15 +37,18 @@ workflow ANNOTATE_ELSEWHERE {
 			annotate_ch = ANNOTATE(genomeId,other_vcfs,vcfs)
 			out1 = annotate_ch.output
 			out2 = annotate_ch.count
+			out3 = MAKE_DOC(genomeId).output
 			}
 		else
 			{
 			out1 = vcfs
 			out2 = Channel.empty()
+			out3 = Channel.empty()
 			}
 	emit:
 		output = out1
 		count = out2
+		doc = out3
 	}
 
 process MAKE_DOC {

@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
+include {hasFeature;isSoftFilter;isBlank;backDelete} from './annot.functions.nf'
 def TAG="GNOMAD_GENOME"
 
 workflow ANNOTATE_GNOMAD_GENOME {

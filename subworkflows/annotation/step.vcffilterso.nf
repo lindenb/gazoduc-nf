@@ -23,17 +23,17 @@ SOFTWARE.
 
 */
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
+include {hasFeature;isBlank;backDelete;isSoftFilter} from './annot.functions.nf'
 
-def TAG="POLYX"
+def TAG="FILTERSO"
 
-workflow ANNOTATE_POLYX {
+workflow ANNOTATE_FILTERSO {
 	take:
 		genomeId
 		vcfs /** json: vcf,index,bed */
 	main:
 
-		 if(hasFeature("polyx") && (params.annotations.polyx as int)>0) {
+		 if(hasFeature("vcffilterso") && !isBlank(params.annotations,"soacn")) {
 			    annotate_ch = ANNOTATE(genomeId,vcfs)
 		            out1 = annotate_ch.output
 		            out2 = annotate_ch.count
@@ -61,12 +61,11 @@ output:
 	path("${TAG}.html"),emit:output
 script:
 	def genome = params.genomes[genomeId]
-	def url = genome.rmsk_url
 """
 cat << __EOF__ > ${TAG}.html
 <dl>
 <dt>${TAG}</dt>
-<dd>Poly-X with jvarkit </dd>
+<dd>vcffilter variant predication with jvarkit filter sequence ontology . accession(s): ${params.annotations.soacn}</dd>
 </dl>
 __EOF__
 """
@@ -88,18 +87,17 @@ output:
 script:
 	def genome = params.genomes[genomeId]
 	def row = slurpJsonFile(json)
-
+	def filterName= "BAD_SO"
 """
 hostname 1>&2
 ${moduleLoad("bcftools jvarkit")}
 mkdir -p TMP OUTPUT
 set -o pipefail
 
-bcftools view "${row.vcf}" |\
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfpolyx \
-			-n '${params.annotations.polyx}' \
-			--reference '${genome.fasta}' \
-			--tag POLYX   |\
+bcftools view "${row.vcf}" |\\
+	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterso \\
+	${isSoftFilter("vcffilterso")?"--filterout  ${filterName}":""} \\
+        --acn "${params.annotations.soacn}" |\\
 	bcftools view -O b -o TMP/${TAG}.bcf
 
 bcftools index --force TMP/${TAG}.bcf

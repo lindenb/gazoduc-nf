@@ -39,16 +39,19 @@ workflow ANNOTATE_VISTA {
                         annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
                         out1 = annotate_ch.output
                         out2 = annotate_ch.count
+			out3 =  MAKE_DOC(genomeId).output
                         }
                 else
                     	{
                         out1 = vcfs
                         out2 = Channel.empty()
+                        out3 = Channel.empty()
                         }
 
 	emit:
 		output = annotate_ch.output
 		count = annotate_ch.count
+		doc = out3
 }
 
 process DOWNLOAD{
@@ -87,6 +90,25 @@ echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${whatis}">' > ${TAG}.
 """
 }
 
+process MAKE_DOC {
+executor "local"
+input:
+        val(genomeId)
+output:
+	path("${TAG}.html"),emit:output
+script:
+	def genome = params.genomes[genomeId]
+	def url = genome.vista_enhancers_url
+"""
+cat << __EOF__ > ${TAG}.html
+<dl>
+<dt>${TAG}</dt>
+<dd>VISTA enhancers. <a href="${url}">${url}</a></dd>
+</dl>
+__EOF__
+"""
+}
+
 process ANNOTATE {
 tag "${json.name}"
 afterScript "rm -rf TMP"
@@ -108,7 +130,7 @@ ${moduleLoad("bcftools")}
 mkdir -p TMP OUTPUT
 
 bcftools annotate -a "${tabix}" -h "${header}" -c "CHROM,FROM,TO,${TAG}" --merge-logic '${TAG}:unique' -O b -o TMP/${TAG}.bcf '${row.vcf}'
-bcftools --force index TMP/${TAG}.bcf
+bcftools index --force TMP/${TAG}.bcf
 
 
 
