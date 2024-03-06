@@ -49,10 +49,10 @@ workflow ANNOTATE_VCF {
 		version_ch = Channel.empty()
 
 		if(bed.name.equals("NO_FILE")) {
-			vcf2intervals_ch = JVARKIT_VCF_TO_INTERVALS_01([with_header:false,distance:"1mb",min_distance:200], vcf,file("NO_FILE"))
+			vcf2intervals_ch = JVARKIT_VCF_TO_INTERVALS_01([distance: params.vcf2interval_distance,min_distance:200], vcf,file("NO_FILE"))
 			version_ch = version_ch.mix(vcf2intervals_ch.version)
 
-			row_ch = vcf2intervals_ch.bed.splitCsv(sep:'\t',header:false).map{T->[
+			ch1_ch = vcf2intervals_ch.bed.splitCsv(sep:'\t',header:false).map{T->[
 				vcf: file(T[3]),
 				vcf_index: file(T[3]+ (T[3].endsWith(".vcf.gz")?".tbi":".csi")),
 				bed: file("NO_FILE"),

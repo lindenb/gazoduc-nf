@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {moduleLoad} from '../../modules/utils/functions.nf'
+include {moduleLoad;slurpJsonFile} from '../../modules/utils/functions.nf'
 include {hasFeature;backDelete} from './annot.functions.nf'
 def TAG="ELSEWHERE"
 
@@ -34,10 +34,10 @@ workflow ANNOTATE_ELSEWHERE {
 	main:
 
 		if(hasFeature("elsewhere") && !other_vcfs.name.equals("NO_FILE")) {
-			annotate_ch = ANNOTATE(genomeId,other_vcfs,vcfs)
+			annotate_ch = ANNOTATE(genomeId, other_vcfs, vcfs)
 			out1 = annotate_ch.output
 			out2 = annotate_ch.count
-			out3 = MAKE_DOC(genomeId).output
+			out3 = MAKE_DOC(other_vcfs).output
 			}
 		else
 			{
@@ -54,12 +54,10 @@ workflow ANNOTATE_ELSEWHERE {
 process MAKE_DOC {
 executor "local"
 input:
-        val(other_vcfs)
+        path(other_vcfs)
 output:
 	path("${TAG}.html"),emit:output
 script:
-	def genome = params.genomes[genomeId]
-	def url = genome.remap_url
 """
 cat << __EOF__ > ${TAG}.html
 <dl>
@@ -67,7 +65,7 @@ cat << __EOF__ > ${TAG}.html
 <dd>Sample with ALT genotypes found in the following file(s):<ul>
 __EOF__
 
-awk '{printf("<li>%s</li>\\n",\$0);}' '${other_vcfs}' >> ${TAG}.html
+grep -v "#"  '${other_vcfs}' | awk '{printf("<li>%s</li>\\n",\$0);}'  >> ${TAG}.html
 
 cat << __EOF__ >> ${TAG}.html
 </ul>
@@ -77,7 +75,7 @@ __EOF__
 }
 
 process ANNOTATE {
-tag "${vcf.name} ${bed.name}"
+tag "${json.name} ${others.name}"
 afterScript "rm -rf TMP"
 input:
 	val(genomeId)
@@ -91,54 +89,58 @@ output:
 script:
 	def genome = params.genomes[genomeId]
 	def reference = genome.fasta
+        def row = slurpJsonFile(json)
+	def ac= (params.annotations.elsewhere_max_ac?:10)
 """
 hostname 1>&2
-${moduleLoad("bcftools")}
+${moduleLoad("bcftools bedtools htslib")}
 mkdir -p TMP OUTPUT
+set -x
 
-
-echo -n '##INFO=<ID=${TAG},Number=.,Type=String,Description="Samples found in other files: '>  TMP/${TAG}.header
+echo -n '##INFO=<ID=${TAG},Number=.,Type=String,Description="Only for set for VCF having INFO/AC < ${ac}. Max displayed=${ac}. Samples found in other files: '>  TMP/${TAG}.header
 sort "${others}" | paste -sd ' ' | tr -d '\\n' >>   TMP/${TAG}.header
 echo '">' >> TMP/${TAG}.header
 
 
 bcftools query -l "${row.vcf}" | sort -T TMP | uniq > TMP/samples.1.txt
+bcftools query -f "%CHROM\t%POS0\t%END\\n"  "${row.vcf}" | bedtools merge > TMP/roi.bed
 
-
-cat "${others}" | while read F
+grep -v '^#' "${others}" | grep -E '\\.(vcf\\.gz|bcf)\$' | grep -v '\\.g\\.vcf\\.gz\$' | while read F
 do
 	# samples in other file
 	bcftools query -l "\${F}" |  sort -T TMP | uniq > TMP/samples.2.txt
 	
 	# remove common samples
 	comm -13 TMP/samples.1.txt TMP/samples.2.txt > TMP/samples.3.txt
-	if test -s TMP/samples.3.txt
+	if test -s TMP/samples.3.txt && test -s TMP/roi.bed
 	then
-		bcftools view --regions-file "${row.vcf}" --samples-file TMP/samples.3.txt -O u "\${F}" |\\
+		bcftools view --regions-file TMP/roi.bed --samples-file TMP/samples.3.txt -O u "\${F}" |\\
 		bcftools view -c 1 -O u |\\
 		bcftools norm -f '${reference}' --multiallelics -any -O u |\\
-		bcftools query -i 'ALT!="*"' -f '[%CHROM\t%POS\t%REF\t%ALT\t%SAMPLE\t%GT\\n]' |\
-		awk -F '\t' '{G=\$NF;if(G ~ /^[0\\.][|/][0\\.]\$/ || G=="0" || G==".") next; print;}' |\
-		cut -f 1-5 |\
+		bcftools query -i 'ALT!="*"' -f '[%CHROM\t%POS\t%REF\t%ALT\t%SAMPLE\t%GT\\n]' |\\
+		awk -F '\t' '{G=\$NF;if(G ~ /^[0\\.][|/][0\\.]\$/ || G=="0" || G==".") next; print;}' |\\
+		awk -F '\t' 'BEGIN{PREV="";N=0;} {S=sprintf("%s:%s:%s:%s",\$1,\$2,\$3,\$4);if(S!=PREV) {print;N=0;PREV=S;} else if(N< ${ac}) {print;} N++;}' |\\
+		cut -f 1-5 |\\
 		LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n -k3,3 -k4,4 > TMP/jeter2.bed
 
 		# merge with previous bed if any
 		if test -s TMP/jeter.bed
 		then
-			LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n -k3,3 -k4,4  --merge TMP/jeter.bed TMP/jeter2.bed | uniq > TMP/jeter3.bed
+			LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n -k3,3 -k4,4  --merge TMP/jeter.bed TMP/jeter2.bed | uniq |\\
+			awk -F '\t' 'BEGIN{PREV="";N=0;} {S=sprintf("%s:%s:%s:%s",\$1,\$2,\$3,\$4);if(S!=PREV) {print;N=0;PREV=S;} else if(N< ${ac}) {print;} N++;}' > TMP/jeter3.bed
 			mv TMP/jeter3.bed TMP/jeter.bed
 			rm TMP/jeter2.bed
 		else
 			mv TMP/jeter2.bed TMP/jeter.bed
 		fi	
-	done
+	fi
 done
 
 if test -s TMP/jeter.bed
 then
 	bgzip TMP/jeter.bed
 	tabix --force -s 1 -b 2 -e 2 TMP/jeter.bed.gz
-	bcftools annotate -a TMP/jeter.bed.gz --columns 'CHROM,POS,REF,ALT,${TAG}' --header-lines TMP/${TAG}.header --merge-logic '${TAG}:unique' -O b -o  TMP/${TAG}.bcf 
+	bcftools annotate --keep-sites -i 'AC<${ac}' -a TMP/jeter.bed.gz --columns 'CHROM,POS,REF,ALT,${TAG}' --header-lines TMP/${TAG}.header --merge-logic '${TAG}:unique' -O b -o  TMP/${TAG}.bcf "${row.vcf}"
 else
 
 	bcftools view -O b -o TMP/${TAG}.bcf "${row.vcf}"
@@ -155,7 +157,7 @@ EOF
 
 
 ###  
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > ${TAG}.count
+bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
 mv TMP/${TAG}.* OUTPUT/
 ${backDelete(row)}
 """

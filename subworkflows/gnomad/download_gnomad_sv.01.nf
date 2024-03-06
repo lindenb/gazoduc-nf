@@ -47,8 +47,8 @@ workflow DOWNLOAD_GNOMAD_SV_01 {
 		}
 	else if(params.genomes[genomeId].ucsc_name.equals("hg38")) {
 
-		ch0 = DOWNLOAD_BED_HG38(meta)
-		version_ch = version_ch.mix(ch0.versionn genomeId)
+		ch0 = DOWNLOAD_BED_HG38([:],genomeId)
+		version_ch = version_ch.mix(ch0.version)
 
 
 		dest_bed = ch0.bed
@@ -99,7 +99,9 @@ EOF
 
 
 process DOWNLOAD_BED_HG38 {
+tag "${genomeId}"
 afterScript "rm -rf TMP"
+memory "5g"
 input:
 	val(meta)
 	val(genomeId)
@@ -113,32 +115,41 @@ script:
 """
 hostname 1>&2
 ${moduleLoad("bcftools htslib jvarkit")}
-set -o pipefail
+set -x
+
 
 mkdir -p TMP
 for C in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X Y
 do
-	 wget  "https://storage.googleapis.com/gcp-public-data--gnomad/release/4.0/genome_sv/gnomad.v4.0.sv.chr${C}.vcf.gz" |\
-		bcftools view -O b -o "TMP/chr${C}.bcf"
-	bcftools index -f TMP/chr${C}.bcf
+	wget -q -O "TMP/chr\${C}.vcf.gz"  "https://storage.googleapis.com/gcp-public-data--gnomad/release/4.0/genome_sv/gnomad.v4.0.sv.chr\${C}.vcf.gz"
+	bcftools index -f "TMP/chr\${C}.vcf.gz"
  
-	echo "TMP/chr${C}.bcf" >> TMP/jeter.list
+	echo "TMP/chr\${C}.vcf.gz" >> TMP/jeter.list
 done
 
 test -s TMP/jeter.list
 
 
 
-bcftools concat --file-list TMP/jeter.list -O b -o TMP/all.bcf
+bcftools concat --file-list TMP/jeter.list -O u | bcftools view --header-only -O b -o TMP/header.bcf
+
 echo -n "%CHROM\t%POS0\t%END\t%REF\t%ALT\t%FILTER" > TMP/jeter.query
 
-bcftools view --header-only TMP/all.bcf | grep "^##INFO=" | tr "<>" "\\n" | grep "^ID=" | sed 's/,.*//' | cut -d '=' -f 2- | awk '{printf("\t%INFO/%s",\$1);} END(printf("\\n")};}' >> TMP/jeter.query
+bcftools view --header-only TMP/header.bcf | grep "^##INFO=" | tr "<>" "\\n" | grep "^ID=" | sed 's/,.*//' | cut -d '=' -f 2- | awk '{printf("\t%INFO/%s",\$1);} END {printf("\\n");}' >> TMP/jeter.query
 
-sed 's%INFO/%%g' < TMP/jeter.query | tr "a-z" "A-Z" | sed 's/CHROM\tPOS0\tEND/chrom\tstart\tend/'  | tr -d '%' | awk '{printf("#%s\\n",\$0);}' > TMP/gnomad.hg38.bed
-bcftools query -f <(cat TMP/jeter.query) |\\
-	java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 1 --convert SKIP |\
-	LC_ALL=C sort -T TMP -k1,1 -k2,2n >> TMP/gnomad.38.sv.bed
+sed 's%INFO/%%g' < TMP/jeter.query | tr "a-z" "A-Z" | sed 's/CHROM\tPOS0\tEND/chrom\tstart\tend/'  | tr -d '%' | awk '{printf("#%s\\n",\$0);}' > TMP/gnomad.38.sv.bed
 
+QUERY=`cat TMP/jeter.query`
+
+echo "\${QUERY}" 1>&2
+
+cat TMP/jeter.list | while read F
+do
+	bcftools query -f "\${QUERY}"  "\${F}" |\\
+		java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 1 --convert SKIP >> TMP/gnomad.38.sv.bed
+done
+
+test -s TMP/gnomad.38.sv.bed
 
 bgzip -f TMP/gnomad.38.sv.bed
 tabix --comment '#'  -p bed -f TMP/gnomad.38.sv.bed.gz

@@ -110,7 +110,7 @@ tabix  --force -p bed -f TMP/gnomad.sv.bed.gz
 echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${whatis}">' > TMP/header.txt
 
 
-bcftools annotate -a "${tabix}" -h TMP/header.txt -c "CHROM,FROM,TO,${TAG}"  --merge-logic '${TAG}:unique'  -O b -o TMP/${TAG}.bcf '${row.vcf}'
+bcftools annotate -a "TMP/gnomad.sv.bed.gz" -h TMP/header.txt -c "CHROM,FROM,TO,${TAG}"  --merge-logic '${TAG}:unique'  -O b -o TMP/${TAG}.bcf '${row.vcf}'
 bcftools index TMP/${TAG}.bcf
 
 

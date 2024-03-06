@@ -22,36 +22,53 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-
-include {slurpJsonFile;parseBoolean;moduleLoad} from '../../modules/utils/functions.nf'
+include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
 include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
 
-def TAG="VISTA_ENHANCER"
 
-workflow ANNOTATE_VISTA {
+
+def TAG="CCRE"
+def WHATIZ = "ENCODE Registry of candidate cis-Regulatory Elements (cCREs) in the human genome, a total of 926,535 elements identified and classified by the ENCODE Data Analysis Center according to biochemical signatures."
+workflow ANNOTATE_CCRE {
 	take:
 		genomeId
-		vcfs /** json: vcf,vcf_index */
+		vcfs /** json vcf,vcf_index */
 	main:
+		if(hasFeature("encode_ccre") && !isBlank(params.genomes[genomeId],"encode_ccre_url")) {
+			source_ch =  DOWNLOAD(genomeId)
+			annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
 
-             	if(hasFeature("vista") && !isBlank(params.genomes[genomeId],"vista_enhancers_url") ) {
-                        source_ch = DOWNLOAD(genomeId)
-                        annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
-                        out1 = annotate_ch.output
-                        out2 = annotate_ch.count
-			out3 =  MAKE_DOC(genomeId).output
-                        }
-                else
-                    	{
-                        out1 = vcfs
-                        out2 = Channel.empty()
-                        out3 = Channel.empty()
-                        }
-
+			out1 = annotate_ch.output
+			out2 = annotate_ch.count
+			out3 = MAKE_DOC(genomeId).output
+			}
+		else
+			{
+			out1 = vcfs
+			out2 = Channel.empty()
+			out3 = Channel.empty()
+			}
 	emit:
 		output = out1
 		count = out2
 		doc = out3
+}
+
+process MAKE_DOC {
+executor "local"
+input:
+        val(genomeId)
+output:
+	path("${TAG}.html"),emit:output
+script:
+"""
+cat << __EOF__ > ${TAG}.html
+<dl>
+<dt>${TAG}</dt>
+<dd>${WHATIZ}</dd>
+</dl>
+__EOF__
+"""
 }
 
 process DOWNLOAD{
@@ -65,47 +82,36 @@ output:
 	path("${TAG}.header"),emit:header
 script:
 	def genome = params.genomes[genomeId]
-	def url = genome.vista_enhancers_url
-        def reference = genome.fasta
-        def whatis = "Vista Enhancers from ${url}"
+	def url = genome.encode_ccre_url
+    def reference = genome.fasta
 """
 hostname 1>&2
 mkdir -p TMP
 ${moduleLoad("htslib jvarkit bedtools")}
 
+
+hostname 1>&2
+${moduleLoad("htslib jvarkit bedtools ucsc")}
 set -o pipefail
-wget -O - "${url}" |\
-        gunzip -c |\
-        cut -f2-5 |\
-        java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 1 --convert SKIP  |\
-        LC_ALL=C sort -t '\t' -k1,1 -k2,2n -T TMP |\
+mkdir -p TMP/CACHE
+
+
+wget -O TMP/jeter.bb "${url}"
+
+bigBedToBed -udcDir=TMP/CACHE TMP/jeter.bb stdout |\\
+        awk -F '\t' '{printf("%s\t%s\t%s\t%s|%s|%s\\n",\$1,\$2,\$3,\$4,\$5,\$11)}' |\\
+        java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 1 --convert SKIP  |\\
+        LC_ALL=C sort --buffer-size=${task.memory.mega}M -t '\t' -k1,1 -k2,2n -T TMP |\
         bgzip > TMP/${TAG}.bed.gz
+
 
 tabix -p bed -f TMP/${TAG}.bed.gz
 
 mv TMP/${TAG}.bed.gz ./
 mv TMP/${TAG}.bed.gz.tbi ./
 
-echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${whatis}">' > ${TAG}.header
-"""
-}
 
-process MAKE_DOC {
-executor "local"
-input:
-        val(genomeId)
-output:
-	path("${TAG}.html"),emit:output
-script:
-	def genome = params.genomes[genomeId]
-	def url = genome.vista_enhancers_url
-"""
-cat << __EOF__ > ${TAG}.html
-<dl>
-<dt>${TAG}</dt>
-<dd>VISTA enhancers. <a href="${url}">${url}</a></dd>
-</dl>
-__EOF__
+echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="format=NAME|SCORE|LABEL  .${WHATIZ}">' > ${TAG}.header
 """
 }
 
@@ -117,21 +123,22 @@ input:
 	path(tbi)
 	path(header)
 	path(json)
-	// tuple path(vcf),path(vcf_idx),path(bed)
+	//tuple path(vcf),path(vcf_idx),path(bed)
 output:
-	path("OUTPUT/${TAG}.json"),emit:output
 	//tuple path("OUTPUT/${TAG}.bcf"),path("OUTPUT/${TAG}.bcf.csi"),path(bed),emit:output
+	path("OUTPUT/${TAG}.json"),emit:output
 	path("OUTPUT/${TAG}.count"),emit:count
 script:
-	def  row = slurpJsonFile(json)
+	def row = slurpJsonFile(json)
 """
 hostname 1>&2
 ${moduleLoad("bcftools")}
 mkdir -p TMP OUTPUT
 
-bcftools annotate -a "${tabix}" -h "${header}" -c "CHROM,FROM,TO,${TAG}" --merge-logic '${TAG}:unique' -O b -o TMP/${TAG}.bcf '${row.vcf}'
+bcftools annotate -a "${tabix}" -h "${header}" -c "CHROM,FROM,TO,${TAG}"  --merge-logic '${TAG}:unique' -O b -o TMP/${TAG}.bcf '${row.vcf}'
 bcftools index --force TMP/${TAG}.bcf
 
+bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
 
 
 cat << EOF > TMP/${TAG}.json
@@ -142,9 +149,7 @@ cat << EOF > TMP/${TAG}.json
 }
 EOF
 
-
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
-mv TMP/${TAG}.* OUTPUT/
+mv -v TMP/${TAG}.* OUTPUT
 ${backDelete(row)}
 """
 }

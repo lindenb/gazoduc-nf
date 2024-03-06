@@ -33,7 +33,7 @@ workflow ANNOTATE_AVADA {
 	main:
 
 	
-		if(hasFeature("avada") && !isBlank(params.genomes[genomeId],"ucsc_name") && params.genomes[genomeId].ucsc_name.equals("hg38") ) {
+		if(hasFeature("avada") && !isBlank(params.genomes[genomeId],"ucsc_name") && params.genomes[genomeId].ucsc_name.equals("hg19") ) {
 			source_ch = DOWNLOAD(genomeId)
 			annotate_ch = ANNOTATE(source_ch.vcf, source_ch.index,vcfs)
 			out1 = annotate_ch.output
@@ -72,9 +72,11 @@ ${moduleLoad("bcftools jvarkit")}
 set -o pipefail
 mkdir -p TMP
 
-wget -O - "${url}" |\
-	gunzip -c |\
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfsetdict -R "${reference}"  -n SKIP |\
+wget -O - "${url}" |\\
+	gunzip -c |\\
+	awk -F '\t' '/^#CHROM/ {printf("##INFO=<ID=PMID,Number=.,Type=String,Description=\\"AVADA PMID\\">\\n##INFO=<ID=GENE_SYMBOL,Number=.,Type=String,Description=\\"AVADA GENE_SYMBOL\\">\\n##INFO=<ID=ENSEMBL_ID,Number=.,Type=String,Description=\\"AVADA ENSEMBL_ID\\">\\n##INFO=<ID=ENTREZ_ID,Number=.,Type=String,Description=\\"AVADA ENTREZ_ID\\">\\n##INFO=<ID=REFSEQ_ID,Number=.,Type=String,Description=\\"AVADA REFSEQ_ID\\">\\n##INFO=<ID=STRAND,Number=.,Type=String,Description=\\"AVADA STRAND\\">\\n##INFO=<ID=ORIGINAL_VARIANT_STRING,Number=.,Type=String,Description=\\"AVADA ORIGINAL_VARIANT_STRING\\">\\n\\n");} {print;}' |\\
+	sed 's/PMID/${TAG}_PMID/g' |\
+	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfsetdict -R "${reference}"  -n SKIP |\\
 	bcftools sort -T TMP/tmp -O b -o TMP/${TAG}.db.bcf
 
 bcftools view --header-only TMP/${TAG}.db.bcf | grep "^##INFO" | cut -d '=' -f3 | cut -d ',' -f1 | grep -v '^PMID' | awk '{printf("INFO/%s\t${TAG}_%s\\n",\$1,\$1);}' > TMP/rename.tsv
@@ -110,18 +112,20 @@ afterScript "rm -rf TMP"
 input:
 	path(database)
 	path(database_idx)
+	path(json)
 	//tuple path(vcf),path(vcf_idx),path(bed)
 output:
 	//tuple path("OUTPUT/${TAG}.bcf"),path("OUTPUT/${TAG}.bcf.csi"),path(bed),emit:output
 	path("OUTPUT/${TAG}.json"),emit:output
 	path("OUTPUT/${TAG}.count"),emit:count
 script:
+	 def row = slurpJsonFile(json)
 """
 hostname 1>&2
 ${moduleLoad("bcftools")}
 mkdir -p TMP OUTPUT
 
-bcftools annotate -a "${database}" -c "${TAG}_PMID" --merge-logic '${TAG}_PMID:unique' -O b -o TMP/${TAG}.bcf '${vcf}'
+bcftools annotate -a "${database}" -c "${TAG}_PMID" --merge-logic '${TAG}_PMID:unique' -O b -o TMP/${TAG}.bcf '${row.vcf}'
 bcftools index --force TMP/${TAG}.bcf
 
 
@@ -134,7 +138,7 @@ cat << EOF > TMP/${TAG}.json
 EOF
 
 ###
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/count.tsv
+bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
 mv TMP/${TAG}.* OUTPUT/
 ${backDelete(row)}
 """

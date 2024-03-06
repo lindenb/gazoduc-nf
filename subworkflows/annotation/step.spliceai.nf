@@ -72,35 +72,59 @@ __EOF__
 """
 }
 
-process ANNOTATE {
+
+String prefixFor(f) {
+	String s = f.getName();
+	if(s.endsWith(".tbi") || s.endsWith(".csi")) s=s.substring(0,s.length()-4);
+	if(s.endsWith(".bcf")) s=s.substring(0,s.length()-4);
+	else if(s.endsWith(".vcf.gz")) s=s.substring(0,s.length()-7);
+	return ""+f.getParent()+"/"+s;
+	}
+
+workflow ANNOTATE {
+	take:
+		genomeId
+		json
+	main:
+		ch1 = SPLIT(genomeId, json)
+
+		ch1a = ch1.vcfs.flatten().map{T->[prefixFor(T),T]}
+		ch1b = ch1.tbis.flatten().map{T->[prefixFor(T),T]}
+
+
+		ch2 = APPLY_SPLICEAI(genomeId, json, ch1a.join(ch1b,failOnDuplicate:true, failOnMismatch:true) )
+		ch3 = JOIN(ch1.off.mix(ch2.output).groupTuple() )
+	emit:
+		
+		output = ch3.output
+		count  = ch3.count
+	}
+
+
+process SPLIT {
 tag "${json.name}"
 afterScript "rm -rf TMP"
-cpus 5
+memory "3g"
 conda "/CONDAS/users/lindenbaum-p/SPLICEAI"
 input:
 	val(genomeId)
 	//tuple path(vcf),path(vcf_idx),path(bed)
 	path(json)
 output:
-	//tuple path("OUTPUT/${TAG}.bcf"),path("OUTPUT/${TAG}.bcf.csi"),path(bed),emit:output
-	path("OUTPUT/${TAG}.json"),emit:output
-	path("OUTPUT/${TAG}.count"),emit:count
+	path("OUTPUT/CHUNCKS/*.vcf.gz"),emit:vcfs
+	path("OUTPUT/CHUNCKS/*.vcf.gz.tbi"),emit:tbis
+	tuple path(json),path("OUTPUT/off.bcf"),path("OUTPUT/off.bcf.csi"),emit:off
 script:
 	def genome = params.genomes[genomeId]
 	def gtf = genome.gtf
-	def db =genome.spliceai_annotation_type
 	def distance = params.annotations.spliceai_distance?:50
-	def treshold = params.annotations.spliceai_highscore?:0.9
+	def count = 1000
 	def row = slurpJsonFile(json)
 """
 hostname 1>&2
-${moduleLoad("bcftools bedtools htslib")}
-mkdir -p TMP OUTPUT
+${moduleLoad("bcftools bedtools htslib jvarkit")}
+mkdir -p TMP/CHUNCKS
 
-echo "\${PATH}"
-which conda 1>&2 | cat
-
-set -x
 
 tabix --regions "${row.bed}" "${gtf}" |\\
 	awk -F '\t' '(\$3=="exon") {for(i=0;i<2;i++) {P=(i==0?int(\$4)-1:int(\$5));printf("%s\t%d\t%d\\n",\$1,P,P+1);}}' |\
@@ -120,10 +144,44 @@ tabix --force -p bed TMP/junctions.bed.gz
 bcftools view -O b --targets-file ^TMP/junctions.bed.gz -o TMP/off.bcf  "${row.vcf}"
 bcftools index --force TMP/off.bcf 
 
-export OMP_NUM_THREADS=${task.cpus}
-
 bcftools view --targets-file TMP/junctions.bed.gz "${row.vcf}" |\\
-	spliceai -R "${genome.fasta}"  -A "${db}" -D ${distance} |\\
+	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfsplitnvariants --variants-count ${count} --index -o TMP/CHUNCKS/split
+
+
+mkdir -p OUTPUT
+mv TMP/off* OUTPUT/
+mv TMP/CHUNCKS OUTPUT/
+
+"""
+}
+
+process APPLY_SPLICEAI {
+tag "${vcf.name}"
+afterScript "rm -rf TMP"
+cpus 5
+conda "/CONDAS/users/lindenbaum-p/SPLICEAI"
+input:
+	val(genomeId)
+	path(json)
+	tuple val(_ignore),path(vcf),path(tbi)
+output:
+	tuple path(json),path("OUTPUT/${TAG}.bcf"),path("OUTPUT/${TAG}.bcf.csi"),emit:output
+script:
+	def genome = params.genomes[genomeId]
+	def db =genome.spliceai_annotation_type
+	def distance = params.annotations.spliceai_distance?:50
+	def treshold = params.annotations.spliceai_highscore?:0.9
+"""
+hostname 1>&2
+${moduleLoad("bcftools htslib")}
+mkdir -p TMP OUTPUT
+
+echo "\${PATH}"
+which conda 1>&2 | cat
+
+set -x
+
+spliceai -R "${genome.fasta}"  -A "${db}" -D ${distance} -I '${vcf}' |\\
 	bcftools view -O b -o TMP/in.bcf
 
 
@@ -141,12 +199,30 @@ echo '##INFO=<ID=${TAG}_HIGH,Number=0,Type=Flag,Description="SpliceAI score>=${t
 
 # annotate high scores with FLAG
 bcftools annotate -a TMP/high.tsv.gz -h TMP/high.header -c "CHROM,POS,REF,ALT,${TAG}_HIGH" -O b -o TMP/in2.bcf TMP/in.bcf
-mv TMP/in2.bcf TMP/in.bcf
+mv TMP/in2.bcf TMP/${TAG}.bcf
 	
-bcftools index --force TMP/in.bcf 	
+bcftools index --force TMP/${TAG}.bcf
+mv TMP/${TAG}.* OUTPUT/
+"""
+}
 
 
-bcftools concat --allow-overlaps -O b -o  TMP/${TAG}.bcf  TMP/in.bcf  TMP/off.bcf
+process JOIN {
+tag "${json.name} N=${vcfs}+${vcfs_idx}"
+afterScript "rm -rf TMP"
+input:
+	tuple path(json),path(vcfs, stageAs: "?/*"),path(vcfs_idx, stageAs: "?/*")
+output:
+	path("OUTPUT/${TAG}.json"),emit:output
+	path("OUTPUT/${TAG}.count"),emit:count
+script:
+	def row = slurpJsonFile(json)
+"""
+hostname 1>&2
+${moduleLoad("bcftools bedtools htslib")}
+mkdir -p TMP OUTPUT
+
+bcftools concat --allow-overlaps -O b -o  TMP/${TAG}.bcf  ${vcfs}
 bcftools index --force TMP/${TAG}.bcf
 
 cat << EOF > TMP/${TAG}.json
