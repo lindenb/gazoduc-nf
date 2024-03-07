@@ -38,8 +38,26 @@ workflow INDEXCOV {
      main:
         ch_version = Channel.empty()
 
+	if(bams.name.equals("NO_FILE") && bai_samplesheet.name.equals("NO_FILE")) {
+		throw new IllegalArgumentException("bams and bai_samplesheet are both NO_FILE");
+		}
 
-    	if ( (params.mapq  as int)> 0 || !bai_samplesheet.name.equals("NO_FILE") ) {
+
+	/** BAI only part */
+	if( !bai_samplesheet.name.equals("NO_FILE") ) {
+		bai_only0 = FROM_BAI_ONLY(genomeId, Channel.fromPath(bai_samplesheet).splitCsv(header:true,sep:'\t'))
+		bai_only = bai_only0.bam
+		}
+	else
+		{
+		bai_only = Channel.empty()
+		}
+
+	/** WHOLE BAM PRovided */
+	if( bams.name.equals("NO_FILE")) {
+		bams_only = Channel.empty()
+		}
+    	else if ( (params.mapq  as int)> 0 ) {
  		log.info("mapq ${params.mapq} is greater than 0. rebuilding bam indexes... ${bams} ${genomeId}")
 		bams_ch = SAMTOOLS_SAMPLES([:], bams)
 		ch_version = ch_version.mix( bams_ch.version)
@@ -49,23 +67,17 @@ workflow INDEXCOV {
 		rebuild_bai_ch = REBUILD_BAI([:], sample_bam_fasta_ch)
 		ch_version = ch_version.mix( rebuild_bai_ch.version.first() ) 
 
-		if( !bai_samplesheet.name.equals("NO_FILE") ) {
-			bai_only0 = FROM_BAI_ONLY(genomeId,Channel.fromPath(bai_samplesheet).splitCsv(header:true,sep:'\t'))
-			bai_only = bai_only0.bam
-			}
-		else
-			{
-			bai_only = Channel.empty()
-			}
 
+		bams_only = rebuild_bai_ch.bam
 
-
-		bams2_ch = COLLECT_TO_FILE_01([:], rebuild_bai_ch.bam.mix(bai_only).collect()).output
         	}
     	else
 		{
-		bams2_ch = Channel.fromPath(bams)
+		bams_only  = Channel.fromPath(bams).splitText().map{it.trim()}
 		}
+
+
+	bams2_ch = COLLECT_TO_FILE_01([:], bams_only.mix(bai_only).collect()).output
 
 
 	executable_ch = DOWNLOAD_GOLEFT([:])
@@ -116,16 +128,16 @@ process FROM_BAI_ONLY {
     memory "5g"
     input:	
 	val(genomeId)
-	tuple val(row)
+	val(row)
     output:
 	path("OUT/${row.sample}.bam"),     emit: bam
 	path("OUT/${row.sample}.bam.bai"), emit: bai
 
 script:
-	def genomeId = row.genomeId
-        def reference = params.genomes[genomeId].fasta
+        def fasta = params.genomes[genomeId].fasta
+	def reference = file(file(fasta).toRealPath())
 	def sample  = row.sample
-	def dict = "${file(reference.toRealPath()).getParent()}/${reference.getSimpleName()}.dict"
+	def dict = "${reference.getParent()}/${reference.getSimpleName()}.dict"
 """
 	hostname 1>&2
 	${moduleLoad("samtools")}
@@ -134,9 +146,13 @@ script:
 	test -s "${dict}"
 	cat "${dict}" > TMP/tmp.sam
 	echo "@RG\tID:${sample}\tSM:${sample}\tLB:${sample}" >> TMP/tmp.sam
-	samtools sort --reference "${reference}" -O BAM -o TMP/${sample}.bam -T TMP/tmp TMP/tmp.sam
+	samtools sort --reference "${fasta}" -O BAM -o TMP/${sample}.bam -T TMP/tmp TMP/tmp.sam
 	rm TMP/tmp.sam
 	cp -v "${row.bai}" TMP/${sample}.bam.bai
+
+	#just test
+	samtools idxstat TMP/${sample}.bam
+	
 	mv TMP OUT	
 """
 }
