@@ -73,13 +73,6 @@ __EOF__
 }
 
 
-String prefixFor(f) {
-	String s = f.getName();
-	if(s.endsWith(".tbi") || s.endsWith(".csi")) s=s.substring(0,s.length()-4);
-	if(s.endsWith(".bcf")) s=s.substring(0,s.length()-4);
-	else if(s.endsWith(".vcf.gz")) s=s.substring(0,s.length()-7);
-	return ""+f.getParent()+"/"+s;
-	}
 
 workflow ANNOTATE {
 	take:
@@ -88,12 +81,31 @@ workflow ANNOTATE {
 	main:
 		ch1 = SPLIT(genomeId, json)
 
-		ch1a = ch1.vcfs.flatten().map{T->[prefixFor(T),T]}
-		ch1b = ch1.tbis.flatten().map{T->[prefixFor(T),T]}
+		/** https://nextflow.slack.com/archives/C02T98A23U7/p1709801086681969 */
+		ch1a = ch1.vcfs.
+			map{it[1] instanceof List?it:[it[0],Collections.singletonList(it[1])]}.
+			flatMap(KV->KV[1].collect{VCF->[KV[0],VCF]})
 
+		ch1b = ch1.tbis.
+			map{it[1] instanceof List?it:[it[0],Collections.singletonList(it[1])]}.
+			flatMap(KV->KV[1].collect{TBI->[KV[0],TBI]})
 
-		ch2 = APPLY_SPLICEAI(genomeId, json, ch1a.join(ch1b,failOnDuplicate:true, failOnMismatch:true) )
-		ch3 = JOIN(ch1.off.mix(ch2.output).groupTuple() )
+		/*
+		ch1a.view{"#DEBUGA "+ it+"\n"}
+		ch1b.view{"#DEBUGB "+ it+"\n"}
+		ch1c = ch1a.join(ch1b,failOnMismatch:true).view{"#DEBUGC "+ it+"\n"}
+		ch1c = Channel.empty()
+		*/
+		
+		ch1c = ch1a.join(ch1b,failOnMismatch:true , failOnDuplicate:false /* ah ? */)
+		
+		ch2 = APPLY_SPLICEAI(genomeId,ch1c )
+		
+		ch3 = JOIN(ch1.off.
+				mix(ch2.output).
+				groupTuple().
+				map{T->[T[0], T[1].sort(), T[2].sort()]} 
+			)
 	emit:
 		
 		output = ch3.output
@@ -111,8 +123,8 @@ input:
 	//tuple path(vcf),path(vcf_idx),path(bed)
 	path(json)
 output:
-	path("OUTPUT/CHUNCKS/*.vcf.gz"),emit:vcfs
-	path("OUTPUT/CHUNCKS/*.vcf.gz.tbi"),emit:tbis
+	tuple path(json),path("OUTPUT/CHUNCKS/*.vcf.gz"),emit:vcfs
+	tuple path(json),path("OUTPUT/CHUNCKS/*.vcf.gz.tbi"),emit:tbis
 	tuple path(json),path("OUTPUT/off.bcf"),path("OUTPUT/off.bcf.csi"),emit:off
 script:
 	def genome = params.genomes[genomeId]
@@ -120,6 +132,7 @@ script:
 	def distance = params.annotations.spliceai_distance?:50
 	def count = 1000
 	def row = slurpJsonFile(json)
+	def ac = params.annotations.spliceai_max_ac?:0
 """
 hostname 1>&2
 ${moduleLoad("bcftools bedtools htslib jvarkit")}
@@ -141,29 +154,39 @@ fi
 bgzip --force TMP/junctions.bed
 tabix --force -p bed TMP/junctions.bed.gz
 
-bcftools view -O b --targets-file ^TMP/junctions.bed.gz -o TMP/off.bcf  "${row.vcf}"
-bcftools index --force TMP/off.bcf 
+bcftools view -O b --targets-file ^TMP/junctions.bed.gz -o TMP/off1.bcf  "${row.vcf}"
+bcftools index --force TMP/off1.bcf 
 
-bcftools view --targets-file TMP/junctions.bed.gz "${row.vcf}" |\\
+bcftools view -O b --targets-file TMP/junctions.bed.gz --min-ac '${(ac as int)+1}:nref'  -o TMP/off2.bcf "${row.vcf}"
+bcftools index --force TMP/off2.bcf 
+
+bcftools concat --remove-duplicates --allow-overlaps -O b -o  TMP/off.bcf TMP/off1.bcf TMP/off2.bcf
+bcftools index --force TMP/off.bcf
+
+bcftools view --targets-file TMP/junctions.bed.gz "${row.vcf}" --max-ac '${ac}:nref' |\\
 	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfsplitnvariants --variants-count ${count} --index -o TMP/CHUNCKS/split
 
+# create one if no VCF above
+ls TMP/CHUNCKS/split.*.vcf.gz > /dev/null || ( bcftools view --header-only -O z -o TMP/CHUNCKS/split.0.vcf.gz '${row.vcf}' && bcftools index -t TMP/CHUNCKS/split.0.vcf.gz )
+
+find . -type f -name "*.bcf" -o -name "*.vcf.gz" |while read F; do echo -n "\${F}: " 1>&2 && bcftools query -f '.' "\${F}" | wc -c 1>&2 ; done
 
 mkdir -p OUTPUT
-mv TMP/off* OUTPUT/
+mv TMP/off.bcf OUTPUT/
+mv TMP/off.bcf.csi OUTPUT/
 mv TMP/CHUNCKS OUTPUT/
 
 """
 }
 
 process APPLY_SPLICEAI {
-tag "${vcf.name}"
+tag "${vcf.name} ${json.name}"
 afterScript "rm -rf TMP"
 cpus 5
 conda "/CONDAS/users/lindenbaum-p/SPLICEAI"
 input:
 	val(genomeId)
-	path(json)
-	tuple val(_ignore),path(vcf),path(tbi)
+	tuple path(json),path(vcf),path(tbi)
 output:
 	tuple path(json),path("OUTPUT/${TAG}.bcf"),path("OUTPUT/${TAG}.bcf.csi"),emit:output
 script:
@@ -171,6 +194,7 @@ script:
 	def db =genome.spliceai_annotation_type
 	def distance = params.annotations.spliceai_distance?:50
 	def treshold = params.annotations.spliceai_highscore?:0.9
+	def ac = params.annotations.spliceai_max_ac?:0
 """
 hostname 1>&2
 ${moduleLoad("bcftools htslib")}
@@ -195,7 +219,7 @@ gunzip -c TMP/high.tsv.gz | head 1>&2
 
 tabix --force -s 1 -b 2 -e 2 TMP/high.tsv.gz
 
-echo '##INFO=<ID=${TAG}_HIGH,Number=0,Type=Flag,Description="SpliceAI score>=${treshold} .">' > TMP/high.header
+echo '##INFO=<ID=${TAG}_HIGH,Number=0,Type=Flag,Description="SpliceAI score>=${treshold} evaluated only when INFO/AC <= ${ac} .">' > TMP/high.header
 
 # annotate high scores with FLAG
 bcftools annotate -a TMP/high.tsv.gz -h TMP/high.header -c "CHROM,POS,REF,ALT,${TAG}_HIGH" -O b -o TMP/in2.bcf TMP/in.bcf
@@ -211,7 +235,7 @@ process JOIN {
 tag "${json.name} N=${vcfs}+${vcfs_idx}"
 afterScript "rm -rf TMP"
 input:
-	tuple path(json),path(vcfs, stageAs: "?/*"),path(vcfs_idx, stageAs: "?/*")
+	tuple path(json),path("dir??/*"),path("dir??/*")
 output:
 	path("OUTPUT/${TAG}.json"),emit:output
 	path("OUTPUT/${TAG}.count"),emit:count
@@ -222,7 +246,9 @@ hostname 1>&2
 ${moduleLoad("bcftools bedtools htslib")}
 mkdir -p TMP OUTPUT
 
-bcftools concat --allow-overlaps -O b -o  TMP/${TAG}.bcf  ${vcfs}
+find ./dir* -name "*.vcf.gz" -o -name "*.bcf" > TMP/jeter.list
+
+bcftools concat --allow-overlaps -O b -o  TMP/${TAG}.bcf --file-list TMP/jeter.list
 bcftools index --force TMP/${TAG}.bcf
 
 cat << EOF > TMP/${TAG}.json
