@@ -46,7 +46,7 @@ workflow INDEXCOV {
 	/** BAI only part */
 	if( !bai_samplesheet.name.equals("NO_FILE") ) {
 		bai_only0 = FROM_BAI_ONLY(genomeId, Channel.fromPath(bai_samplesheet).splitCsv(header:true,sep:'\t'))
-		bai_only = bai_only0.bam
+		bai_only = bai_only0.output.map{T->T[0]}
 		}
 	else
 		{
@@ -73,17 +73,26 @@ workflow INDEXCOV {
         	}
     	else
 		{
-		bams_only  = Channel.fromPath(bams).splitText().map{it.trim()}
+		bams_only  = Channel.fromPath(bams).splitText().map{file(it.trim())}
 		}
 
 
-	bams2_ch = COLLECT_TO_FILE_01([:], bams_only.mix(bai_only).collect()).output
+	def collate_size = ((params.batch_size?:10000) as int)
 
+	bams2_ch = bams_only.
+		mix(bai_only).
+		toSortedList({a,b->a.name.compareTo(b.name)}).
+		flatten().
+		collate(collate_size).
+		map{T->["batch."+T.collect{V->V.toString()}.join(" ").md5().substring(0,7) , T]}
+		
 
 	executable_ch = DOWNLOAD_GOLEFT([:])
 	ch_version = ch_version.mix( executable_ch.version)
-    	indexcov_ch = RUN_GOLEFT_INDEXCOV([:], executable_ch.executable ,genomeId , bams2_ch, ch_version.collect())
+    	indexcov_ch = RUN_GOLEFT_INDEXCOV(executable_ch.executable ,genomeId , bams2_ch)
 	ch_version = ch_version.mix( indexcov_ch.version)
+
+	mergebed_ch= MERGE_BEDS(indexcov_ch.output.map{T->T[0]}.collect())
 
 	ch_version = MERGE_VERSION("Indexcov",ch_version.collect())		
 
@@ -130,8 +139,7 @@ process FROM_BAI_ONLY {
 	val(genomeId)
 	val(row)
     output:
-	path("OUT/${row.sample}.bam"),     emit: bam
-	path("OUT/${row.sample}.bam.bai"), emit: bai
+	tuple path("OUT/${row.sample}.bam"),path("OUT/${row.sample}.bam.bai"), emit: output
 
 script:
         def fasta = params.genomes[genomeId].fasta
@@ -216,62 +224,67 @@ process REBUILD_BAI {
 
 
 process RUN_GOLEFT_INDEXCOV {
-    tag "${bams.name}"
+    tag "${name} N=${L.size()}"
+    afterScript "rm -rf TMP"
     label "process_high"
     input:
-	val meta
 	val executable
 	val genomeId
-	path bams
-	val(versions)
+	tuple val(name),val(L)
     output:
     	path "*indexcov.zip"       , emit: zip
     	path "*files.list"          , emit: files
+	tuple path("*.indexcov.bed.gz"), path("*.indexcov.bed.gz.tbi"),emit:output
     	path "version.xml"        , emit: version
 
     script:
 	def fasta = params.genomes[genomeId].fasta
-    	def prefix = params.prefix.replaceAll("[\\.]+\$","")
+    	def prefix = params.prefix.replaceAll("[\\.]+\$","")+"."+name
     	def prefix2 = prefix +"."
     """
 	hostname 1>&2
 	${moduleLoad("htslib")}
 	set -o pipefail
-	mkdir -p "${prefix}"
+	mkdir -p "${prefix}" TMP
+
+cat << EOF > TMP/jeter.list
+${L.join("\n")}
+EOF
 
 	# test not empty
-	test -s "${bams}"
+	test -s TMP/jeter.list
 
 	# test all files exist
-	xargs -a "${bams}" -L1 --verbose test -f
+	xargs -a TMP/jeter.list -L1 --verbose test -f
 
-	sed 's/\\.cram/.cram.crai/' "${bams}" > tmp.bams.list
+	sed 's/\\.cram/.cram.crai/' TMP/jeter.list > TMP/tmp.bams.list
 
 	# test all files exist
-	xargs -a tmp.bams.list -L1 --verbose test -f
+	xargs -a TMP/tmp.bams.list -L1 --verbose test -f
 
-	
 
 	${executable} indexcov \
 		--fai "${fasta}.fai"  \
 		--excludepatt `awk -F '\t' '(!(\$1 ~ /^(chr)?[0-9XY]+\$/)) {print \$1;}' "${fasta}.fai" | paste -s -d '|' `  \
 		--sex `awk -F '\t' '(\$1 ~ /^(chr)?[XY]\$/) {print \$1;}' "${fasta}.fai" | paste -s -d, ` \
 		--directory "${prefix}" \
-		`awk '/.crai\$/ {X=1;} END {if(X==1) printf(" --extranormalize ");}' tmp.bams.list` \
-		`cat tmp.bams.list`
+		`awk '/.crai\$/ {X=1;} END {if(X==1) printf(" --extranormalize ");}' TMP/tmp.bams.list` \
+		`cat TMP/tmp.bams.list`
 
-	rm tmp.bams.list
 
 	#create tabix index
 	tabix -p bed "${prefix}/${prefix}-indexcov.bed.gz"
+
+	ln -s "${prefix}/${prefix}-indexcov.bed.gz" "${prefix}.indexcov.bed.gz"
+	ln -s "${prefix}/${prefix}-indexcov.bed.gz.tbi" "${prefix}.indexcov.bed.gz.tbi"
 
 
 	cat <<- EOF > version.xml
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
 		<entry key="description">run go left indexcov</entry>
-		<entry key="bams">${bams}</entry>
-		<entry key="count-bams">\$(wc -l < {bams})</entry>
+		<entry key="bams">${L.join( " ")}</entry>
+		<entry key="count-bams">${L.size()}</entry>
 		<entry key="goleft">\$(${executable} -h |  head -n 1 | sed 's/.*: //')</entry>
 		<entry key="versions">${getVersionCmd("tabix")}</entry>
 	</properties>
@@ -285,3 +298,58 @@ process RUN_GOLEFT_INDEXCOV {
     """
 }
 
+process MERGE_BEDS {
+tag "${L.size()}"
+afterScript "rm -rf TMP"
+input:
+	val(L)
+output:
+	tuple path("${params.prefix?:""}indexcov.merged.bed.gz"),path("${params.prefix?:""}indexcov.merged.bed.gz.tbi"),emit:output
+script:
+"""
+hostname 1>&2
+${moduleLoad("htslib")}
+mkdir -p TMP
+
+# when I test in local
+rm -f TMP/jeter.bed
+
+for F in ${L.join(" ")}
+do
+	if ! test -f TMP/jeter.bed
+	then
+
+		gunzip -c "\${F}" | head -n 1 > TMP/header.txt
+		gunzip -c "\${F}" | tail -n +2 | cut -f 1,2,3 > TMP/signature1.txt
+		gunzip -c "\${F}" | tail -n +2 > TMP/jeter.bed
+
+	else
+		gunzip -c "\${F}" | tail -n +2 | cut -f 1,2,3 > TMP/signature2.txt
+		# check all files have the same intervals in the same order
+		cmp TMP/signature1.txt TMP/signature2.txt
+
+		paste TMP/header.txt <(gunzip -c "\${F}" | head -n 1 | cut -f4-)  > TMP/jeter2.txt
+		mv TMP/jeter2.txt TMP/header.txt
+
+		paste TMP/jeter.bed <(gunzip -c "\${F}" | tail -n +2 | cut -f4-) > TMP/jeter2.txt
+		mv TMP/jeter2.txt TMP/jeter.bed
+	fi
+done
+
+cat TMP/header.txt TMP/jeter.bed > TMP/jeter2.txt
+mv TMP/jeter2.txt TMP/jeter.bed
+
+# check there is only one number of cols
+test \$(awk '{print NF}' TMP/jeter.bed | uniq | sort | uniq | wc -l) -eq 1
+
+mv TMP/jeter.bed "TMP/${params.prefix?:""}indexcov.merged.bed"
+
+
+bgzip "TMP/${params.prefix?:""}indexcov.merged.bed"
+
+tabix -p bed "TMP/${params.prefix?:""}indexcov.merged.bed.gz"
+
+mv TMP/*.gz ./
+mv TMP/*.gz.tbi ./
+"""
+}
