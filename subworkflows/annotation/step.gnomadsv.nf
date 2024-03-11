@@ -23,8 +23,7 @@ SOFTWARE.
 
 */
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
-include {DOWNLOAD_GNOMAD_SV_01} from '../gnomad/download_gnomad_sv.01.nf'
+include {hasFeature;isBlank;backDelete;isHg19;isHg38} from './annot.functions.nf'
 
 
 def TAG="GNOMADSV"
@@ -34,9 +33,19 @@ workflow ANNOTATE_GNOMADSV {
 		genomeId
 		vcfs /** json vcf,vcf_index */
 	main:
-		if(hasFeature("gnomadsv")) {
-			source_ch =  DOWNLOAD_GNOMAD_SV_01([:], genomeId)
-			annotate_ch = ANNOTATE(source_ch.bed, source_ch.index, vcfs)
+		if(hasFeature("gnomadsv") && (isHg19(genomeId) || isHg38(genomeId)) ) {
+			if(isHg19(genomeId)) {
+				source_ch =  DOWNLOAD19(genomeId)
+				}
+			else if((isHg38(genomeId)) {
+				source_ch =  DOWNLOAD38(genomeId)
+				}
+			else
+				{
+				throw new IllegalArgumentException("gnomad.sv:" + genomeId);
+				}
+			
+			annotate_ch = ANNOTATE(source_ch.vcf, source_ch.index, vcfs)
 
 			out1 = annotate_ch.output
 			out2 = annotate_ch.count
@@ -73,12 +82,110 @@ __EOF__
 """
 }
 
+
+process DOWNLOAD19 {
+afterScript "rm -rf TMP"
+memory "3G"
+input:
+	val(genomeId)
+output:
+	path("${TAG}.db.bcf"),emit:vcf
+	path("${TAG}.db.bcf.csi"),emit:index
+script:
+	def genome = params.genomes[genomeId]
+	def AF=params.annotations.gnomadsv_min_AF?:0.1
+	def pop = params.annotations.gnomadsv_population?:"POPMAX_AF"
+"""
+hostname 1>&2
+${moduleLoad("bcftools jvarkit")}
+mkdir -p TMP
+
+
+wget -O - "https://storage.googleapis.com/gcp-public-data--gnomad/papers/2019-sv/gnomad_v2.1_sv.sites.vcf.gz" |\
+	bcftools annotate --include 'INFO/${tag} >= ${af}' -x '^INFO/${tag}' -O v |\
+	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfsetdict -R "${genome.fasta}"  -n SKIP |\
+	bcftools view -O b -o TMP/${TAG}.db.bcf
+
+bcftools index --force TMP/${TAG}.db.bcf
+
+mv TMP/${TAG}.* ./
+"""
+}
+
+
+workflow DOWNLOAD38 {
+take:
+	genomeId
+main:
+	all_chr = Channel.of("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "X", "Y")
+	ch1 = DOWNLOAD38_CHR(genomeId,all_chr)
+	ch2 = MERGE38(ch1.output.collect())
+emit:
+	vcf = ch2.vcf
+	index = ch2.index
+}
+
+
+process DOWNLOAD38_CHR {
+tag "${chr}"
+afterScript "rm -rf TMP"
+memory "3G"
+input:
+	val(genomeId)
+	val(chr)
+output:
+	path("${TAG}.${chr}.db.bcf"),emit:output
+script:
+	def genome = params.genomes[genomeId]
+	def AF=params.annotations.gnomadsv_min_AF?:0.1
+	def pop = params.annotations.gnomadsv_population?:"POPMAX_AF"
+"""
+hostname 1>&2
+${moduleLoad("bcftools jvarkit")}
+mkdir -p TMP
+
+wget -O - "https://storage.googleapis.com/gcp-public-data--gnomad/release/4.0/genome_sv/gnomad.v4.0.sv.chr${chr}.vcf.gz" |\
+	bcftools annotate --include 'INFO/${tag} >= ${af}' -x '^INFO/${tag}' -O v |\
+	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfsetdict -R "${genome.fasta}"  -n SKIP |\
+	bcftools view -O b -o TMP/${TAG}.${chr}.db.bcf
+
+bcftools index --force TMP/${TAG}.${chr}.db.bcf
+
+mv TMP/${TAG}.* ./
+"""
+}
+
+process MERGE38 {
+tag "${L}"
+afterScript "rm -rf TMP"
+input:
+	val(L)
+output:
+	path("${TAG}.db.bcf"),emit:vcf
+	path("${TAG}.db.bcf.csi"),emit:index
+script:
+	def pop = params.annotations.gnomadsv_population?:"POPMAX_AF"
+"""
+hostname 1>&2
+${moduleLoad("bcftools")}
+mkdir -p TMP
+
+
+bcftools merge -a -O b  -o TMP/${TAG}.db.bcf ${L.join( " ")}
+bcftools index --force TMP/${TAG}.db.bcf
+
+mv TMP/${TAG}.* ./
+
+"""
+}
+
+
 process ANNOTATE {
 tag "${json.name}"
 afterScript "rm -rf TMP"
 input:
-	path(tabix)
-	path(tbi)
+	path(vcf)
+	path(index)
 	path(json)
 	//tuple path(vcf),path(vcf_idx),path(bed)
 output:
@@ -86,8 +193,8 @@ output:
 	path("OUTPUT/${TAG}.json"),emit:output
 	path("OUTPUT/${TAG}.count"),emit:count
 script:
-	def AF=params.annotations.gnomadsv_min_AF?:0.1
 	def pop = params.annotations.gnomadsv_population?:"POPMAX_AF"
+	def AF=params.annotations.gnomadsv_min_AF?:0.1
 	def whatis = "GNOMAD SV with ${pop} > ${AF}"
 	def row = slurpJsonFile(json)
 """
@@ -100,17 +207,14 @@ gunzip -c "${tabix}" | head -n 1 | tr "\t" "\\n" | grep -F '${pop}'
 
 set -o pipefail
 
-tabix --print-header --region "${row.bed}" "${tabix}" |\
-	awk '(NR==1) {C=-1;for(i=1;i<=NF;i++) if(\$i=="${pop}") C=i;next;} {if(\$C!="NA" && \$C*1.0 > ${AF} ) printf("%s\t%s\t%s\t%s\\n",\$1,\$2,\$3,\$4);}'  |\
-        LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\
-        bgzip > TMP/gnomad.sv.bed.gz
+bcftools query --regions-file '${row.bed}' -f '%CHROM\t%POS0\t%END\t%ID|INFO/${pop}\\n' '${vcf}' > TMP/gnomad.bed
+bgzip TMP/gnomad.bed
+tabix --force -p bed TMP/gnomad.bed.gz
 
-tabix  --force -p bed -f TMP/gnomad.sv.bed.gz
-
-echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${whatis}">' > TMP/header.txt
+echo '##INFO=<ID=${TAG}_${pop},Number=.,Type=String,Description="Frequent SV in gnomad FORMAT: ID|AF . treshold AF>=:${AF}.">' >  TMP/${TAG}.header
 
 
-bcftools annotate -a "TMP/gnomad.sv.bed.gz" -h TMP/header.txt -c "CHROM,FROM,TO,${TAG}"  --merge-logic '${TAG}:unique'  -O b -o TMP/${TAG}.bcf '${row.vcf}'
+bcftools annotate -a TMP/gnomad.bed.gz -c "CHROM,FROM,TO,${TAG}_${pop}" -h TMP/${TAG}.header  --merge-logic '${TAG}_${pop}:unique'  -O b -o TMP/${TAG}.bcf '${row.vcf}'
 bcftools index TMP/${TAG}.bcf
 
 

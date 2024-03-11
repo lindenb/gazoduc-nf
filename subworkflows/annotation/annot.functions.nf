@@ -56,3 +56,15 @@ String backDelete(json) {
 	//return "## rm -f \"${json.vcf}\"  \"${json.index}\" ";
 	return "\n### TODO\n";
 	}
+
+boolean isHg19(genomeId) {
+	if(isBlank(params.genomes[genomeId],"ucsc_name")) return false;
+	def u = params.genomes[genomeId].ucsc_name;
+	return u.equals("hg19");
+	}
+
+boolean isHg38(genomeId) {
+	if(isBlank(params.genomes[genomeId],"ucsc_name")) return false;
+	def u = params.genomes[genomeId].ucsc_name;
+	return u.equals("hg38");
+	}
