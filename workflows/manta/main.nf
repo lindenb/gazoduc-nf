@@ -24,22 +24,21 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-
-
-include {runOnComplete} from '../../modules/utils/functions.nf'
+include {runOnComplete;dumpParams} from '../../modules/utils/functions.nf'
 include {MANTA_SINGLE_SV01} from '../../subworkflows/manta/manta.single.01.nf' 
-include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
-
 
 if( params.help ) {
+    dumpParams(params);
     exit 0
+}  else {
+    dumpParams(params);
+}
+
 
 
 workflow {
 	manta_ch = MANTA_SINGLE_SV01([:], params.genomeId , file(params.bams))
-	html = VERSION_TO_HTML(manta_ch.version)	
 	}
-
 runOnComplete(workflow)
 
 
