@@ -162,8 +162,8 @@ tabix --force -p bed TMP/${TAG}.bed.gz
 mv TMP/${TAG}.bed.gz ./
 mv TMP/${TAG}.bed.gz.tbi ./
 
-echo '##INFO=<ID=${TAG}_DISEASE,Number=0,Type=String,Description="Disease names ${WHATIZ}">' > ${TAG}.header
-echo '##INFO=<ID=${TAG}_ID,Number=0,Type=String,Description="Diseases ID ${WHATIZ}">' >> ${TAG}.header
+echo '##INFO=<ID=${TAG}_DISEASE,Number=.,Type=String,Description="Disease names ${WHATIZ}">' > ${TAG}.header
+echo '##INFO=<ID=${TAG}_ID,Number=.,Type=String,Description="Diseases ID ${WHATIZ}">' >> ${TAG}.header
 """
 }
 
