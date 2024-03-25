@@ -24,159 +24,27 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference()
 
-gazoduc.make("bams","NO_FILE").
-        description("File containing the paths to the BAM/CRAMS files. One path per line").
-	required().
-	existingFile().
-        put()
-
-gazoduc.make("beds","NO_FILE").
-        description("a list of BED files. Variants will be called for each bed file. If not set, the whole genome will be used and split into parts").
-        put()
-
-gazoduc.make("dbsnp","").
-        description("optional path to dbnsp").
-        put()
-
-gazoduc.make("mapq",-1).
-        description("mapping quality").
-	setInteger().
-        put()
-
-
-gazoduc.make("makewindows_size",100_000).
-	description("if no --beds is provided, the reference is split using windows of 'x' bp").
-	setInteger().
-	put()
-
-
-gazoduc.make("makewindows_overlap",100).
-	description("if no --beds is provided, each window will overlap 'x' bp with the next one").
-	setInteger().
-	put()
-
-
-gazoduc.make("gatkjar","/LAB-DATA/BiRD/users/lindenbaum-p/packages/gatk/gatk-4.3.0.0/gatk-package-4.3.0.0-local.jar").
-        description("path to gatk jar").
-	existingFile().
-        put()
-
-include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
-include {isBlank;runOnComplete;moduleLoad;getVersionCmd} from '../../../modules/utils/functions.nf'
-include {SIMPLE_PUBLISH_01} from '../../../modules/utils/publish.simple.01.nf'
-include {MERGE_VERSION} from '../../../modules/version/version.merge.nf'
-include {SCATTER_TO_BED} from '../../../subworkflows/picard/picard.scatter2bed.nf'
-include {COLLECT_TO_FILE_01} from '../../../modules/utils/collect2file.01.nf'
-include {BCFTOOLS_CONCAT_PER_CONTIG_01} from '../../../subworkflows/bcftools/bcftools.concat.contigs.01.nf'
-
-
-if( params.help ) {
-    gazoduc.usage().
-        name("gatk.hc.minikit").
-        desc("gatk.hc.minikit").
-        print();
-    exit 0
-} else {
-   gazoduc.validate();
-}
-
-
-
-workflow {
-	ch1 = GATK_HC_MINIKIT(params, params.reference, file(params.bams), file(params.beds) )
-	html = VERSION_TO_HTML(params,ch1.version)
-	}
 
 runOnComplete(workflow);
 
 
-workflow GATK_HC_MINIKIT {
+workflow GATK4_HC_MINIKIT {
 take:
-	meta
-	reference
+	genomeId
 	bams
 	beds
 main:
-	version_ch = Channel.empty()
-
-	if(beds.name.equals("NO_FILE")) {
-		scatter_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"ACGT","MAX_TO_MERGE":"1000"], reference) 
-		version_ch = version_ch.mix(scatter_ch.version)
-
-		mkwin_ch = MAKE_WINDOWS(meta, scatter_ch.bed)
-		version_ch = version_ch.mix(mkwin_ch.version)
-		each_bed  = mkwin_ch.output.splitText().map{it.trim()}
-		}
-	else	{
-		each_bed  = Channel.fromPath(beds).splitText().map{it.trim()}
-		}
-
-
 	compile_ch = COMPILE(meta)
 
-	call_ch = PER_BED(meta, reference, compile_ch.jar, bams, each_bed)
+	call_ch = PER_BED(meta, genomeId, compile_ch.jar, bams, each_bed)
 	version_ch = version_ch.mix(call_ch.version)
-
-	ch1 = COLLECT_TO_FILE_01([:], call_ch.output.collect())
-	version_ch = version_ch.mix(ch1.version)
-
-	ch2 = BCFTOOLS_CONCAT_PER_CONTIG_01([:], ch1.output)
-	version_ch = version_ch.mix(ch2.version)
-
-        version_ch = MERGE_VERSION(meta, "hc-gatk-minikit", "hc-gatk-minikit",version_ch.collect())
-
 emit:
-        vcfs = ch2.vcfs
+        output = ch2.call_ch.output
         version= version_ch
 
 }
 
-
-process MAKE_WINDOWS {
-tag "${bed}"
-executor "local"
-input:
-	val(meta)
-	path(bed)
-output:
-	path("windows.beds.list"),emit:output
-	path("version.xml"),emit:version
-script:
-	def w = ((meta.makewindows_size?:100_000) as int)
-	def s = w - ((meta.makewindows_overlap?:100) as int)
-"""
-hostname 1>&2
-${moduleLoad("bedtools")}
-set -o pipefail
-
-mkdir -p BEDS
-
-bedtools makewindows -b "${bed}" -w ${w} -s ${s} |\
-	grep -vE '^(hs37d5|chrM|chrMT|MT|chrEBV)' |\
-	LC_ALL=C sort -T . -t '\t' -k1,1V -k2,2n |\
-	split -a 9  --lines=1 --additional-suffix=.bed - BEDS/window
-
-find \${PWD}/BEDS -type f -name "window*.bed"  > windows.beds.list
-
-test -s windows.bed.list
-
-sleep 5
-
-##################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">split bed genome into parts</entry>
-        <entry key="bed">${bed}</entry>
-        <entry key="win.size">${w}</entry>
-        <entry key="shift.size">${s}</entry>
-	<entry key="versions">${getVersionCmd("bedtools")}</entry>
-</properties>
-EOF
-"""
-}
 
 process COMPILE {
 executor "local"
@@ -421,7 +289,7 @@ public static void main(String[] args)
 __EOF__
 
 
-javac -d TMP -cp ${meta.gatkjar} -sourcepath . Minikit.java
+javac -d TMP -cp ${params.gatkjar} -sourcepath . Minikit.java
 jar cvf minikit.jar -C TMP .
 rm -rf TMP
 
@@ -445,7 +313,7 @@ memory "10g"
 cpus 3
 input:
 	val(meta)
-	val(reference)
+	val(genomeId)
 	path(minikit)
 	path(bams)
 	val(bed)
@@ -453,19 +321,22 @@ output:
 	path("genotyped.bcf"),emit:output
 	path("version.xml"),emit:version
 script:
+	def genome = params.genomes[genomeId]
+	def reference = genome.fasta
+
 """
 hostname 1>&2
 ${moduleLoad("openjdk/11.0.8 bcftools/0.0.0")}
 
 mkdir -p TMP
 
-java -Xmx${task.memory.giga}g -Dsamjdk.compression_level=1 -Djava.io.tmpdir=TMP -cp ${meta.gatkjar}:${minikit} Minikit \
+java -Xmx${task.memory.giga}g -Dsamjdk.compression_level=1 -Djava.io.tmpdir=TMP -cp ${params.gatkjar}:${minikit} Minikit \
                 -I "${bams}" \
                 -L "${bed}" \
-                ${meta.mapq && ((meta.mapq as int)>0)?"--minimum-mapq ${meta.mapq}":""} \
+                ${params.mapq && ((params.mapq as int)>0)?"--minimum-mapq ${params.mapq}":""} \
                 --output TMP/selection.vcf.gz \
                 --reference "${reference}" \
-                ${isBlank(meta.dbsnp)?"":"--dbsnp ${meta.dbsnp}"}
+                ${isBlank(genome.dbsnp)?"":"--dbsnp ${genome.dbsnp}"}
 
 
 bcftools view --threads ${task.cpus} --compression-level 9 -O b -o genotyped.bcf TMP/selection.vcf.gz 
@@ -478,8 +349,8 @@ cat << EOF > version.xml
         <entry key="description">call bed</entry>
         <entry key="bed">${bed}</entry>
         <entry key="bams">${bams}</entry>
-        <entry key="mapq">${meta.mapq?:""}</entry>
-        <entry key="dbsnp">${meta.dbsnp}</entry>
+        <entry key="mapq">${params.mapq?:""}</entry>
+        <entry key="dbsnp">${genome.dbsnp}</entry>
 </properties>
 EOF
 """
