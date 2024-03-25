@@ -147,6 +147,8 @@ else
 
 fi
 
+bcftools index --force TMP/${TAG}.bcf
+
 cat << EOF > TMP/${TAG}.json
 {
 "vcf"   : "\${PWD}/OUTPUT/${TAG}.bcf",

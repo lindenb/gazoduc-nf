@@ -23,7 +23,6 @@ SOFTWARE.
 
 */
 
-def gazoduc = gazoduc.Gazoduc.getInstance()
 
 
 
@@ -41,7 +40,7 @@ process MANTA_SINGLE_01 {
 	val(genomeId)
 	val(row)
     output:
-    	tuple val(row),path("${name}.txt"),emit:output
+    	tuple val(row),path("${row.sample}.txt"),emit:output
 	path("version.xml"),emit:version
     script:
 	def bam = row.bam
