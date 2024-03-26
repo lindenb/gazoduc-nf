@@ -25,26 +25,24 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 
+
 include {isBlank;moduleLoad;getVersionCmd} from '../../../modules/utils/functions.nf'
 
 
-
-workflow GATK4_HC_MINIKIT {
+workflow GATK3_HC_MINIKIT {
 take:
 	genomeId
 	bams
-	beds
+	each_bed
 main:
-
+	version_ch = Channel.empty()
 	call_ch = PER_BED(genomeId, bams, each_bed)
 	version_ch = version_ch.mix(call_ch.version)
 emit:
-        output = ch2.call_ch.output
+        output = call_ch.output
         version= version_ch
 
 }
-
-
 
 
 process PER_BED {
@@ -62,21 +60,49 @@ output:
 script:
 	def genome = params.genomes[genomeId]
 	def reference = genome.fasta
-
 """
 hostname 1>&2
-${moduleLoad("openjdk/11.0.8 bcftools/0.0.0")}
+module purge
+${moduleLoad("java-jdk/8.0.112")}
+${moduleLoad("gatk/3.8 bcftools/0.0.0 samtools/0.0.0")}
 
-mkdir -p TMP
+mkdir -p TMP/BAMS TMP/TMP
 
-TODO COMPILE LIKE GATK3.8
+java -version 1>&2
 
-java -Xmx${task.memory.giga}g -Dsamjdk.compression_level=1 -Djava.io.tmpdir=TMP -cp ${params.gatkjar}:${minikit} Minikit \
-                -I "${bams}" \
+cp -v "${moduleDir}/Minikit3.java" TMP/TMP/Minikit.java
+javac -d TMP/TMP -cp ${params.gatkjar} -sourcepath 'TMP/TMP' 'TMP/TMP/Minikit.java'
+
+cat << EOF > TMP/TMP/log4j.properties
+# Set root logger level to DEBUG and its only appender to A1.
+log4j.rootLogger=ALL, A1
+
+# A1 is set to be a ConsoleAppender.
+log4j.appender.A1=org.apache.log4j.ConsoleAppender
+
+# A1 uses PatternLayout.
+log4j.appender.A1.layout=org.apache.log4j.PatternLayout
+log4j.appender.A1.layout.ConversionPattern=%-4r [%t] %-5p %c %x - %m%n
+EOF
+jar cvf TMP/minikit.jar -C TMP/TMP .
+
+
+i=1
+cat "${bams}" | while read B
+do
+	samtools view -M -L "${bed}" -F 3844  ${params.mapq && ((params.mapq as int)>0)?"-q ${params.mapq}":""} -T ${reference} -O BAM -o "TMP/BAMS/file\${i}.bam##idx##TMP/BAMS/file\${i}.bam.bai" --threads ${task.cpus} --write-index "\${B}"
+	echo "TMP/BAMS/file\${i}.bam" >> TMP/bams.list
+	i=\$((i + 1))
+done
+
+java -Xmx${task.memory.giga}g -Dsamjdk.compression_level=1 -Djava.io.tmpdir=TMP -cp ${params.gatkjar}:TMP/minikit.jar Minikit \
+                -I "TMP/bams.list" \
                 -L "${bed}" \
-                ${params.mapq && ((params.mapq as int)>0)?"--minimum-mapq ${params.mapq}":""} \
-                --output TMP/selection.vcf.gz \
-                --reference "${reference}" \
+		--attempt "${task.attempt}" \
+		--threads "${task.cpus}" \
+                ${params.mapq && ((params.mapq as int)>0)?"--mapq ${params.mapq}":""} \
+                -o TMP/selection.vcf.gz \
+                -R "${reference}" \
                 ${isBlank(genome.dbsnp)?"":"--dbsnp ${genome.dbsnp}"}
 
 

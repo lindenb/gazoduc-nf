@@ -27,14 +27,13 @@ nextflow.enable.dsl=2
 
 
 
-include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
-include {isBlank;runOnComplete;moduleLoad;getVersionCmd} from '../../../modules/utils/functions.nf'
-include {SIMPLE_PUBLISH_01} from '../../../modules/utils/publish.simple.01.nf'
-include {MERGE_VERSION} from '../../../modules/version/version.merge.nf'
-include {SCATTER_TO_BED} from '../../../subworkflows/picard/picard.scatter2bed.nf'
+//include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
+include {dumpParams;isBlank;runOnComplete;moduleLoad;getVersionCmd} from '../../../modules/utils/functions.nf'
+include {MERGE_VERSION} from '../../../modules/version/version.merge.02.nf'
 include {COLLECT_TO_FILE_01} from '../../../modules/utils/collect2file.01.nf'
-include {BCFTOOLS_CONCAT_PER_CONTIG_01} from '../../../subworkflows/bcftools/bcftools.concat.contigs.01.nf'
-
+include {BCFTOOLS_CONCAT} from '../../../subworkflows/bcftools/bcftools.concat.02.nf'
+include {GATK3_HC_MINIKIT} from './step.gatk3.nf'
+include {GATK4_HC_MINIKIT} from './step.gatk4.nf'
 
 if( params.help ) {
     dumpParams(params);
@@ -60,12 +59,7 @@ workflow HC_MINIKIT {
 	main:
 		version_ch = Channel.empty()
 		if(beds.name.equals("NO_FILE")) {
-			scatter_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"ACGT","MAX_TO_MERGE":"1000"], reference) 
-			version_ch = version_ch.mix(scatter_ch.version)
-
-			mkwin_ch = MAKE_WINDOWS(scatter_ch.bed)
-			version_ch = version_ch.mix(mkwin_ch.version)
-			each_bed  = mkwin_ch.output.splitText().map{it.trim()}
+			throw new IllegalArgumentException("--beds undefined");
 			}
 		else	{
 			each_bed  = Channel.fromPath(beds).splitText().map{it.trim()}
@@ -82,16 +76,18 @@ workflow HC_MINIKIT {
 			throw new IllegalArgumentException("bah gatk jar ${params.gatkjar}");
 			}
 		
-		ch1 = COLLECT_TO_FILE_01([:], call_ch.output.collect())
-		version_ch = version_ch.mix(ch1.version)
 
-		ch2 = BCFTOOLS_CONCAT_PER_CONTIG_01([:], ch1.output)
+
+		ch2 = BCFTOOLS_CONCAT(["method":"all"], call_ch.output.map{T->[vcf:""+T[0],vcf_index:""+T[1]]},file("NO_FILE"))
 		version_ch = version_ch.mix(ch2.version)
 
-        version_ch = MERGE_VERSION(meta, "hc-gatk-minikit", "hc-gatk-minikit",version_ch.collect())
+        version_ch = MERGE_VERSION("hc-gatk-minikit", version_ch.collect())
 
+/*
 emit:
         vcfs = ch2.vcfs
         version= version_ch
+*/
 	}
+
 

@@ -35,7 +35,7 @@ take:
 	bed /* or NO_FILE */
 main:
 	if(!meta.containsKey("method")) throw new IllegalArgumentException("concat.method is Missing. use method='all' for default.");
-
+	version_ch = Channel.empty()
 	if(meta.method.equals("all")) {
 		vcflist1 = vcfs.map{it.vcf}.collectFile(name: 'to_concat.list', newLine: true,sort:'hash')
 		d1_ch = SQRT_FILE(min_file_split:meta.min_file_split?:20, suffix:".list", vcflist1)
@@ -60,6 +60,7 @@ main:
 emit:
 	vcfs = out1 /* stream of hash [vcf:,index:]
 	vcf_list = out2 /* vcfs as list */
+	version = version_ch
 }
 
 
