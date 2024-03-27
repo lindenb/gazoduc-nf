@@ -64,9 +64,8 @@ workflow TRACK_HUB {
 
 		each_type = scan_ch.types.splitText().map{it.trim()}
 
-
 		all_outputs = Channel.empty()
-		bed_ch = MERGE_BED(ci_ch.output , vcfs,  scan_ch.bed, each_type )
+		bed_ch = MERGE_BED(ci_ch.output.combine(vcfs.combine(scan_ch.bed.combine(each_type))) )
 		version_ch = version_ch.mix(bed_ch.version)
 		all_outputs = all_outputs.mix(bed_ch.output)
 	
@@ -243,10 +242,7 @@ process MERGE_BED {
 	tag "${type} ${bed.name}"
 	afterScript "rm -rf TMP"
 	input:
-		path(chrominfo)
-		path(vcfs)
-		path(bed)
-		val(type)
+		tuple path(chrominfo),path(vcfs),path(bed),val(type)
 	output:
 		path("output.tsv"),emit:output
 		path("version.xml"),emit:version
