@@ -38,6 +38,8 @@ process MANTA_SINGLE_01 {
     input:
 	val(meta)
 	val(genomeId)
+	path(bed)
+	path(bed_tbi)
 	val(row)
     output:
     	tuple val(row),path("${row.sample}.txt"),emit:output
@@ -53,7 +55,8 @@ process MANTA_SINGLE_01 {
 	module load ${getModules("manta samtools bcftools")}
 	mkdir -p TMP
 
-	configManta.py  --bam "${bam}" --referenceFasta "${reference}" \
+	configManta.py  --bam "${bam}" --referenceFasta "${reference}" \\
+		${bed.name.equals("NO_FILE")?"":"--callRegions \"${bed}\" "} \\
 		--runDir "TMP"
 
 	

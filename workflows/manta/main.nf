@@ -37,7 +37,7 @@ if( params.help ) {
 
 
 workflow {
-	manta_ch = MANTA_SINGLE_SV01([:], params.genomeId , file(params.bams))
+	manta_ch = MANTA_SINGLE_SV01([:], params.genomeId , file(params.bams), file(params.bed), file(params.bed+".tbi"))
 	}
 runOnComplete(workflow)
 

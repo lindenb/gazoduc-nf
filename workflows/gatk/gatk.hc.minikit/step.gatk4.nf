@@ -67,11 +67,27 @@ script:
 hostname 1>&2
 ${moduleLoad("openjdk/11.0.8 bcftools/0.0.0")}
 
-mkdir -p TMP
+mkdir -p TMP/TMP
 
-TODO COMPILE LIKE GATK3.8
+cp -v "${moduleDir}/Minikit4.java" TMP/TMP/Minikit.java
+javac -d TMP/TMP -cp ${params.gatkjar} -sourcepath 'TMP/TMP' 'TMP/TMP/Minikit.java'
 
-java -Xmx${task.memory.giga}g -Dsamjdk.compression_level=1 -Djava.io.tmpdir=TMP -cp ${params.gatkjar}:${minikit} Minikit \
+cat << EOF > TMP/TMP/log4j.properties
+# Set root logger level to DEBUG and its only appender to A1.
+log4j.rootLogger=ALL, A1
+
+# A1 is set to be a ConsoleAppender.
+log4j.appender.A1=org.apache.log4j.ConsoleAppender
+
+# A1 uses PatternLayout.
+log4j.appender.A1.layout=org.apache.log4j.PatternLayout
+log4j.appender.A1.layout.ConversionPattern=%-4r [%t] %-5p %c %x - %m%n
+EOF
+jar cvf TMP/minikit.jar -C TMP/TMP .
+
+
+
+java -Xmx${task.memory.giga}g -Dsamjdk.compression_level=1 -Djava.io.tmpdir=TMP -cp ${params.gatkjar}:TMP/minikit.jar Minikit \
                 -I "${bams}" \
                 -L "${bed}" \
                 ${params.mapq && ((params.mapq as int)>0)?"--minimum-mapq ${params.mapq}":""} \

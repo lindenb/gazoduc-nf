@@ -37,6 +37,8 @@ workflow MANTA_SINGLE_SV01 {
 		meta
 		genomeId
 		bams
+		bed
+		bed_tbi
 	main:
 		version_ch = Channel.empty()
 
@@ -47,7 +49,7 @@ workflow MANTA_SINGLE_SV01 {
 		each_sample_bam_ch = all_samples_ch.output.splitCsv(header:true,sep:'\t')
 	
 		
-		manta_ch = MANTA_SINGLE_01([:],genomeId,each_sample_bam_ch)
+		manta_ch = MANTA_SINGLE_01([:],genomeId,bed,bed_tbi,each_sample_bam_ch)
 		version_ch= version_ch.mix(manta_ch.version.first())
 	
 
