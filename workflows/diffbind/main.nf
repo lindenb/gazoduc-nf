@@ -286,7 +286,6 @@ cat << '__EOF__' > TMP/jeter.R
 library(DiffBind)
 DBA <- dba.load(file='DBA', dir='TMP', pre='dba_', ext='RData')
 DBA <- dba.normalize(DBA)
-head(DBA)
 dba.save(DBA, file='DBA', dir='.', pre='dba_norm_', ext='RData')
 __EOF__
 
@@ -316,6 +315,9 @@ cp -v  "${dba}" TMP/dba_DBA.RData
 cat << '__EOF__' > TMP/jeter.R
 library(DiffBind)
 DBA <- dba.load(file='DBA', dir='TMP', pre='dba_', ext='RData')
+
+head(DBA\$masks)
+
 DBA <- dba.contrast(DBA , categories = DBA_${colName.toUpperCase()})
 
 df <- dba.show(DBA, bContrasts = TRUE)
@@ -412,11 +414,11 @@ head(DBA.report)
   
   write.table(df,file = "TMP/jeter1.bed", quote=F, col.names=T, row.names = F, sep="\t")
   
-  temp = as.character(df\$names)
-  temp[which(df\$fold <= 0)] <- paste0("${colVals[0]}","_", temp[which(df\$fold <= 0)])
-  temp[which(df\$fold >  0)] <- paste0("${colVals[0]}","_", temp[which(df\$fold > 0)])
-  
-  df\$names=temp
+  #temp = as.character(df\$names)
+  #temp[which(df\$fold <= 0)] <- paste0("${colVals[0]}","_", temp[which(df\$fold <= 0)])
+  #temp[which(df\$fold >  0)] <- paste0("${colVals[0]}","_", temp[which(df\$fold > 0)])
+  #df\$names=temp
+
   ###Selecting based on asb(fold change) > 1 and FDR < 1%
   df_select <- df[which(abs(df\$fold) >= ${fold}),]
   
@@ -431,7 +433,7 @@ R --vanilla < TMP/jeter.R
 
 module load htslib
 sed 's/^CHROM/#CHROM/' TMP/jeter1.bed |\\
-	LC_ALL=C sort -t '\t' -T TMP -k1,1 k2,2n |\\
+	LC_ALL=C sort -t '\t' -T TMP -k1,1 -k2,2n |\\
 	bgzip > "TMP/jeter1.bed.gz"
 tabix --comment '#' -f -p bed TMP/jeter1.bed.gz
 
@@ -440,8 +442,7 @@ mv TMP/jeter1.bed.gz.tbi "${colVals[0]}_${colVals[1]}_full.bed.gz.tbi"
 
 
 
-sed 's/^CHROM/#CHROM/' TMP/jeter2.bed |\\
-	LC_ALL=C sort -t '\t' -T TMP -k1,1 k2,2n |\\
+LC_ALL=C sort -t '\t' -T TMP -k1,1 -k2,2n TMP/jeter2.bed |\\
 	bgzip > "TMP/jeter2.bed.gz"
 tabix --comment '#' -f -p bed TMP/jeter2.bed.gz
 
