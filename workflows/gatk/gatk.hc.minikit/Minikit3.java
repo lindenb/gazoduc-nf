@@ -13,6 +13,7 @@ import htsjdk.samtools.util.StringUtil;
 
 public class Minikit {
 	private static final String COMPRESSED_VCF = ".vcf.gz";
+	private static final String UNCOMPRESSED_VCF = ".vcf";
 	
     private final static Logger LOG = Logger.getLogger(Minikit.class);
 	private String bedPath = null;
@@ -69,11 +70,15 @@ public class Minikit {
 			cmd.add("--min_mapping_quality_score");
 			cmd.add(String.valueOf(this.mapq));
 			}
+		/* for now , let's forget this java.lang.OutOfMemoryError : unable to create new native Thread */
+		/*
 		if(this.cpus>1) {
 			cmd.add("-nct");
 			cmd.add(String.valueOf(this.cpus));
-			}
-		
+			}*/
+		// cmd.add("--variant_index_type"); cmd.add("LINEAR"); 
+		// cmd.add("--variant_index_parameter"); cmd.add("128000");
+
 		cmd.add("-G");cmd.add("StandardAnnotation");
 		cmd.add("-G");cmd.add("AS_StandardAnnotation");
 		cmd.add("-G");cmd.add("StandardHCAnnotation");
@@ -223,14 +228,14 @@ private int doWork(final String[] args) {
 		invoke_genotype(tmpDir,to_genotype,bedPath,this.finalVcf);
 		return 0;
 		}
-	catch(Throwable err) {
+	catch(final Throwable err) {
 		err.printStackTrace();
 		return -1;
 		}
 	}
 
 
-public static void main(String[] args)
+public static void main(final String[] args)
     {
 	int ret= new Minikit().doWork(args);
 	System.exit(ret);
