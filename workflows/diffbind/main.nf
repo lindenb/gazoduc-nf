@@ -23,25 +23,30 @@ workflow DIFFBIND {
 	take:
 		samplesheet
 	main:
+
 		rows1_ch = samplesheet.splitCsv(header:true, sep:'\t').
 			map{T->(!T.containsKey("sample") && T.containsKey("sampleId") ?T.plus("sample":T.sampleId):T)}.
 			map{T->(!T.containsKey("bam") && T.containsKey("bamReads") ?T.plus("bam":T.bamReads):T)}
 
-		rows2_ch = SAMTOOLS_IDXSTATS(rows1_ch)
-		rows3_ch = rows2_ch.splitText().
-			map{T->T[0].plus("countReads":(T[1] as long))}
-		min_count_reads = rows3_ch.map{it.countReads}.min()
-		rows4_ch = rows3_ch.combine(min_count_reads).
-			map{T->T[0].plus("minCountReads":T[1])}
+
+		if(params.downsample as boolean) {
+			rows2_ch = SAMTOOLS_IDXSTATS(rows1_ch)
+			rows3_ch = rows2_ch.splitText().
+				map{T->T[0].plus("countReads":(T[1] as long))}
+			min_count_reads = rows3_ch.map{it.countReads}.min()
+			rows4_ch = rows3_ch.combine(min_count_reads).
+				map{T->T[0].plus("minCountReads":T[1])}
 		
-		downsample_bam_ch = DOWNSAMPLE_BAM(rows4_ch)
+			downsample_bam_ch = DOWNSAMPLE_BAM(rows4_ch).output.
+					map{T->T[0].plus("bam":T[1])}
+			}
+		else
+			{
+			downsample_bam_ch = rows1_ch
+			}
 
 
-		dba1 = DBA_LOAD(
-			downsample_bam_ch.output.
-				map{T->T[0].plus("bam":T[1])}.
-				collect()
-			)
+		dba1 = DBA_LOAD( downsample_bam_ch.collect() )
 		
 		
 		dba_count_ch = DBA_COUNT(dba1.output)
@@ -63,8 +68,8 @@ workflow DIFFBIND {
 		report_ch = DBA_REPORT(analyze_ch.output)
 		
 
-		occupancy_ch = plot_dba_ch.output.filter{F->F.name.startsWith("Occ")}
-		affinity_ch = plot_dba_ch.output.filter{F->F.name.startsWith("Clus")}
+		occupancy_ch = plot_dba_ch.output.filter{F->F.name.contains("OccupancyAnalysis")}
+		affinity_ch = plot_dba_ch.output.filter{F->F.name.contains("ClusteringAffinity")}
 
 
 		README(
@@ -72,6 +77,8 @@ workflow DIFFBIND {
 			occupancy_ch,
 			affinity_ch,
 			pca_ch.output,
+			analyze_ch.ma,
+			analyze_ch.boxplot,
 			report_ch.output
 			)
 
@@ -121,7 +128,7 @@ input:
 	val(L)
 output:
 	path("dba_DBA.RData"),emit:output
-	path("samplesheet.tsv"),emit:samplesheet
+	path("${params.prefix}samplesheet.tsv"),emit:samplesheet
 script:
 """
 mkdir -p TMP
@@ -170,7 +177,7 @@ __EOF__
 
 R --vanilla < TMP/jeter.R
 
-mv TMP/samplesheet.tsv ./
+mv TMP/samplesheet.tsv ./${params.prefix}samplesheet.tsv
 """
 }
 
@@ -180,7 +187,7 @@ afterScript "rm -rf TMP"
 input:
 	tuple path(dba),val(title)
 output:
-	path("${title}.png"),emit:output
+	path("${params.prefix}${title}.png"),emit:output
 script:
 """
 mkdir -p TMP
@@ -191,8 +198,10 @@ cp -v  "${dba}" TMP/dba_DBA.RData
 cat << '__EOF__' > TMP/jeter.R
 library(DiffBind)
 DBA <- dba.load(file='DBA', dir='TMP', pre='dba_', ext='RData')
-png("${title}.png", width= 840, height = 840)
+png("${params.prefix}${title}.png",width= 840, height = 840)
 plot(DBA,
+	main="${title}",
+	sub="${dba.name}",
 	cexRow = 1.4,
 	cexCol = 1.4
 	)
@@ -245,7 +254,7 @@ afterScript "rm -rf TMP"
 input:
 	path(dba)
 output:
-	path("PCA_CONDITION.png"),emit:output
+	path("${params.prefix}PCA_CONDITION.png"),emit:output
 script:
 """
 mkdir -p TMP
@@ -257,7 +266,7 @@ cp -v  "${dba}" TMP/dba_DBA.RData
 cat << '__EOF__' > TMP/jeter.R
 library(DiffBind)
 DBA <- dba.load(file='DBA', dir='TMP', pre='dba_', ext='RData')
-png("PCA_CONDITION.png", width= 840, height = 840)
+png("${params.prefix}PCA_CONDITION.png", width= 840, height = 840)
 dba.plotPCA(DBA,
 	attributes=DBA_CONDITION,
 	title="Condition"
@@ -342,6 +351,8 @@ input:
 	path(dba)
 output:
         path("dba_analyze_DBA.RData"),emit:output
+	path("${params.prefix}ma.png"),emit:ma
+	path("${params.prefix}boxplot.png"),emit:boxplot
 """
 mkdir -p TMP
 ${LOAD_DIFFBIND}
@@ -356,11 +367,11 @@ DBA <- dba.analyze(DBA , method=c(DBA_DESEQ2))
 #dba.plotVenn(DBA,contrast=1,method=DBA_DESEQ2)
 #dba.plotMA(DBA, method=DBA_DESEQ2)
 
-png("ma.png")
+png("${params.prefix}ma.png")
 dba.plotMA(DBA, bXY=TRUE)
 dev.off()
 
-png("boxplot.png")
+png("${params.prefix}boxplot.png")
 dba.plotBox(DBA)
 dev.off()
 
@@ -456,6 +467,8 @@ input:
 	path(occupancy)
 	path(affinity)
 	path(pca)
+	path(ma)
+	path(boxplot)
 	path(report)
 output:
 	path("${params.prefix}archive.zip"),emit:zip
@@ -505,6 +518,16 @@ cat << __EOF__ >> index.html
 <p> binding affinity matrix containing a read count for each sample at every consensus binding site, whether or not it was identified as a peak in that sample</p>
 <div><img src="${affinity.name}"/></div>
 
+<h2>MA Plot</h2>
+<p>MA plots are a useful way to visualize the relationship between the overall binding level at
+each site and the magnitude of the change in binding enrichment between conditions, as well
+as the effect of normalization on data.</p>
+<div><img src="${ma.name}"/></div>
+
+<h2>Box Plot</h2>
+<p>Boxplots provide a way to view how read distributions differ between classes of binding sites.</p>
+<div><img src="${boxplot.name}"/></div>
+
 
 <h2>${nrows} first filtered results.</h2>
 <table>
@@ -525,8 +548,10 @@ cat << __EOF__ >> index.html
 __EOF__
 
 
-zip -9j "${params.prefix}archive.zip" index.html '${occupancy}' '${affinity}' '${pca}' '${samplesheet}' *.bed.gz *.bed.gz.tbi
+mkdir -p "${params.prefix}archive"
+
+cp -v  index.html '${occupancy}' '${affinity}' '${pca}' '${samplesheet}' *.bed.gz *.bed.gz.tbi ${ma} ${boxplot}  ${params.prefix}archive/
+
+zip -9r "${params.prefix}archive.zip" "${params.prefix}archive"
 """
 }
-
-
