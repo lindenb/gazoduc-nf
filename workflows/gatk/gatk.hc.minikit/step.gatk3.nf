@@ -97,7 +97,7 @@ jar cvf TMP/minikit.jar -C TMP/TMP .
 
 awk -F '\t' 'BEGIN {printf("FLAGS=-M -L ${bed} -F 3844 ${params.mapq && ((params.mapq as int)>0)?"-q ${params.mapq}":""} --write-index -T ${reference} -O BAM\\n");} {printf("TMP/BAMS/file%d.bam: %s\\n\tsamtools view \$(FLAGS) -o \\"\$@##idx##\$@.bai\\" \$< && touch -c \$(addsuffix .bai,\$@)\\n",NR,\$0);} END {printf("TMP/bams.list: \$(addprefix TMP/BAMS/file,\$(addsuffix .bam,");for(i=1;i<=NR;i++) printf(" %d",i);printf("))\\n");for(i=1;i<=NR;i++) printf("\techo TMP/BAMS/file%d.bam >> \$@\\n",i);}' "${bams}" > TMP/jeter.mk
 
-make -j ${task.cpus} -f TMP/jeter.mk TMP/bams.list
+make -j ${task.cpus} -f TMP/jeter.mk TMP/bams.list 1>&2
 
 test -s TMP/bams.list
 
