@@ -47,28 +47,33 @@ workflow DIFFBIND {
 		dba_count_ch = DBA_COUNT(dba1.output)
 
 
-		PLOT_DBA(
+		plot_dba_ch = PLOT_DBA(
 			dba1.output.map{[it,"OccupancyAnalysis"]}.
 			mix(dba_count_ch.output.map{[it,"ClusteringAffinity"]})
 			)
 
 
 	
-		cols_ch = Channel.from('Tissue','Condition','Factor').
-			combine(dba1.samplesheet.splitCsv(header:true, sep:'\t')).
-			filter{T->T[1].containsKey(T[0])}.
-			map{T->[T[0],T[1][T[0]]]}.
-			unique().
-			groupTuple().
-			filter{T->T[1].size()>1}
-
-		PLOT_PCA(dba_count_ch.output, cols_ch)
+		pca_ch = PLOT_PCA(dba_count_ch.output)
 
 
 		norm_ch = DBA_NORM(dba_count_ch.output)
-		contrast_ch = DBA_CONTRAST(norm_ch.output, cols_ch)
+		contrast_ch = DBA_CONTRAST(norm_ch.output)
 		analyze_ch = DBA_ANALYZE(contrast_ch.output)
 		report_ch = DBA_REPORT(analyze_ch.output)
+		
+
+		occupancy_ch = plot_dba_ch.output.filter{F->F.name.startsWith("Occ")}
+		affinity_ch = plot_dba_ch.output.filter{F->F.name.startsWith("Clus")}
+
+
+		README(
+			dba1.samplesheet,
+			occupancy_ch,
+			affinity_ch,
+			pca_ch.output,
+			report_ch.output
+			)
 
 	}
 
@@ -235,13 +240,12 @@ R --vanilla < TMP/jeter.R
 
 
 process PLOT_PCA {
-tag "${colName} ${L.join("|")}"
+tag "${dba.name}"
 afterScript "rm -rf TMP"
 input:
 	path(dba)
-	tuple val(colName),val(L)
 output:
-	path("PCA_${colName.toUpperCase()}.png"),emit:output
+	path("PCA_CONDITION.png"),emit:output
 script:
 """
 mkdir -p TMP
@@ -253,10 +257,10 @@ cp -v  "${dba}" TMP/dba_DBA.RData
 cat << '__EOF__' > TMP/jeter.R
 library(DiffBind)
 DBA <- dba.load(file='DBA', dir='TMP', pre='dba_', ext='RData')
-png("PCA_${colName.toUpperCase()}.png", width= 840, height = 840)
+png("PCA_CONDITION.png", width= 840, height = 840)
 dba.plotPCA(DBA,
-	attributes=DBA_${colName.toUpperCase()},
-	title="${L.join(" vs ")}"
+	attributes=DBA_CONDITION,
+	title="Condition"
 	)
 dev.off()
 __EOF__
@@ -276,6 +280,7 @@ input:
         path(dba)
 output:
         path("dba_norm_DBA.RData"),emit:output
+script:
 """
 mkdir -p TMP
 ${LOAD_DIFFBIND}
@@ -296,16 +301,13 @@ R --vanilla < TMP/jeter.R
 
 /**  Sets up contrasts for differential binding affinity analysis  */
 process DBA_CONTRAST {
-tag "${dba.name} ${colName} ${colVals.join("/")}"
+tag "${dba.name}"
 afterScript "rm -rf TMP"
 input:
         path(dba)
-	tuple val(colName),val(colVals)
 output:
-        tuple val(colName),val(colVals),path("dba_contrast_${colName}_DBA.RData"),emit:output
+      	path("dba_contrast_DBA.RData"),emit:output
 	path("show.tsv"),optional:true,emit:show
-when:
-	colVals.size()>1
 """
 mkdir -p TMP
 ${LOAD_DIFFBIND}
@@ -316,9 +318,7 @@ cat << '__EOF__' > TMP/jeter.R
 library(DiffBind)
 DBA <- dba.load(file='DBA', dir='TMP', pre='dba_', ext='RData')
 
-head(DBA\$masks)
-
-DBA <- dba.contrast(DBA , categories = DBA_${colName.toUpperCase()})
+DBA <- dba.contrast(DBA , categories = DBA_CONDITION)
 
 df <- dba.show(DBA, bContrasts = TRUE)
 
@@ -328,7 +328,7 @@ if(!is.null(df)) {
 	}
 
 
-dba.save(DBA, file='DBA', dir='.', pre='dba_contrast_${colName}_', ext='RData')
+dba.save(DBA, file='DBA', dir='.', pre='dba_contrast_', ext='RData')
 __EOF__
 
 R --vanilla < TMP/jeter.R
@@ -336,12 +336,12 @@ R --vanilla < TMP/jeter.R
 }
 
 process DBA_ANALYZE {
-tag "${dba.name} ${colName} ${colVals.join("/")}"
+tag "${dba.name}"
 afterScript "rm -rf TMP"
 input:
-	tuple val(colName),val(colVals),path(dba)
+	path(dba)
 output:
-        tuple val(colName),val(colVals),path("dba_analyze_${colName}_DBA.RData"),emit:output
+        path("dba_analyze_DBA.RData"),emit:output
 """
 mkdir -p TMP
 ${LOAD_DIFFBIND}
@@ -355,12 +355,17 @@ DBA <- dba.analyze(DBA , method=c(DBA_DESEQ2))
 
 #dba.plotVenn(DBA,contrast=1,method=DBA_DESEQ2)
 #dba.plotMA(DBA, method=DBA_DESEQ2)
+
+png("ma.png")
 dba.plotMA(DBA, bXY=TRUE)
+dev.off()
+
+png("boxplot.png")
 dba.plotBox(DBA)
+dev.off()
 
 
-
-dba.save(DBA, file='DBA', dir='.', pre='dba_analyze_${colName}_', ext='RData')
+dba.save(DBA, file='DBA', dir='.', pre='dba_analyze_', ext='RData')
 __EOF__
 
 R --vanilla < TMP/jeter.R
@@ -368,15 +373,13 @@ R --vanilla < TMP/jeter.R
 }
 
 process DBA_REPORT {
-tag "${dba.name} ${colName} ${colVals.join("/")}"
+tag "${dba.name}"
 afterScript "rm -rf TMP"
 
 input:
-	tuple val(colName),val(colVals),path(dba)
-//output:
-//        tuple val(colName),path("dba_analyze_DBA_${colName}_.RData"),emit:output
-when:
-	colVals.size()>1
+	path(dba)
+output:
+	path("*{bed.gz,bed.gz.tbi}"),emit:output
 script:
 	def FDR  = 0.1
 	def fold = 1
@@ -398,33 +401,26 @@ head(DBA.report)
   df <- data.frame(CHROM=seqnames(DBA.report),
                    starts=start(DBA.report)-1,
                    ends=end(DBA.report),
-                   names=c(paste0("peak",1:length(DBA.report))),
+                   name=c(paste0("peak",1:length(DBA.report))),
                    scores=c(rep("0", length(DBA.report))),
                    strands=c(rep(".", length(DBA.report))),
                    conc = DBA.report\$Conc,
-                   conc_cond1=mcols(DBA.report)[,2],
-                   conc_cond2=mcols(DBA.report)[,3],
+                   conc_condition1=mcols(DBA.report)[,2],
+                   conc_condition2=mcols(DBA.report)[,3],
                    fold = DBA.report\$Fold,
-                   pval = DBA.report\$"p-value",
+                   p_value = DBA.report\$"p-value",
                    FDR = DBA.report\$FDR
   		)
 
-  colnames(df)[8] <- paste0("${colVals[0]}","_conc")
-  colnames(df)[9] <- paste0("${colVals[1]}","_conc")
   
   write.table(df,file = "TMP/jeter1.bed", quote=F, col.names=T, row.names = F, sep="\t")
   
-  #temp = as.character(df\$names)
-  #temp[which(df\$fold <= 0)] <- paste0("${colVals[0]}","_", temp[which(df\$fold <= 0)])
-  #temp[which(df\$fold >  0)] <- paste0("${colVals[0]}","_", temp[which(df\$fold > 0)])
-  #df\$names=temp
-
   ###Selecting based on asb(fold change) > 1 and FDR < 1%
   df_select <- df[which(abs(df\$fold) >= ${fold}),]
   
   df_select <- df_select[which(df_select\$FDR <= ${FDR}),]
   
-  write.table(df_select[,c(1,2,3,4)],file= "TMP/jeter2.bed", quote=F, row.names=F, col.names=F, sep="\t")
+  write.table(df_select,file= "TMP/jeter2.bed", quote=F, row.names=F, col.names=T, sep="\t")
 
 
 __EOF__
@@ -437,18 +433,100 @@ sed 's/^CHROM/#CHROM/' TMP/jeter1.bed |\\
 	bgzip > "TMP/jeter1.bed.gz"
 tabix --comment '#' -f -p bed TMP/jeter1.bed.gz
 
-mv TMP/jeter1.bed.gz "${colVals[0]}_${colVals[1]}_full.bed.gz"
-mv TMP/jeter1.bed.gz.tbi "${colVals[0]}_${colVals[1]}_full.bed.gz.tbi"
+mv TMP/jeter1.bed.gz "${params.prefix}raw.bed.gz"
+mv TMP/jeter1.bed.gz.tbi "${params.prefix}raw.bed.gz.tbi"
 
 
-
-LC_ALL=C sort -t '\t' -T TMP -k1,1 -k2,2n TMP/jeter2.bed |\\
+sed 's/^CHROM/#CHROM/' TMP/jeter2.bed |\\
+	LC_ALL=C sort -t '\t' -T TMP -k1,1 -k2,2n  |\\
 	bgzip > "TMP/jeter2.bed.gz"
 tabix --comment '#' -f -p bed TMP/jeter2.bed.gz
 
-mv TMP/jeter2.bed.gz "${colVals[0]}_${colVals[1]}_fdr-${FDR}_fold-${fold}.bed.gz"
-mv TMP/jeter2.bed.gz.tbi "${colVals[0]}_${colVals[1]}_fdr-${FDR}_fold-${fold}.bed.gz.tbi"
+mv TMP/jeter2.bed.gz "${params.prefix}filtered.fdr_${FDR}_fold_${fold}.bed.gz"
+mv TMP/jeter2.bed.gz.tbi "${params.prefix}filtered.fdr_${FDR}_fold_${fold}.bed.gz.tbi"
 
 
 """
 }
+
+process README {
+executor "local"
+input:
+	path(samplesheet)
+	path(occupancy)
+	path(affinity)
+	path(pca)
+	path(report)
+output:
+	path("${params.prefix}archive.zip"),emit:zip
+	path("index.html"),emit:output
+script:
+	def hg="hg38"
+	def nrows=500
+"""
+cat << __EOF__ > index.html
+<html>
+<head>
+	<title>${params.prefix}</title>
+</head>
+<body>
+<h1>Diffbind output</h1>
+<p><a href="https://bioconductor.org/packages/release/bioc/html/DiffBind.html">DiffBind<a>  Compute differentially bound sites
+from multiple ChIP-seq experiments using affinity (quantitative) data. Also enables occupancy (overlap) analysis and plotting functions.</p>
+
+<div><quote>Stark R, Brown G (2011). <i>DiffBind: differential binding analysis of ChIP-Seq peak data.</i>
+<a href="http://bioconductor.org/packages/release/bioc/vignettes/DiffBind/inst/doc/DiffBind.pdf">http://bioconductor.org/packages/release/bioc/vignettes/DiffBind/inst/doc/DiffBind.pdf</a>.<br/>
+(2012). <i>Differential oestrogen receptor binding is associated with clinical outcome in breast cancer.</i>. 
+http://www.nature.com/nature/journal/v481/n7381/full/nature10730.html.<br/>
+</quote></div>
+<h2>Samplesheet</h2>
+<table>
+<thead>
+	<caption>${params.samplesheet}</caption>
+</thead>
+<tbody>
+__EOF__
+
+awk -F '\t' '{tag=(NR==1?"th":"td"); printf("<tr>"); for(i=1;i<=NF;i++) printf("<%s>%s</%s>",tag,\$i,tag);printf("</tr>\\n"); }' ${samplesheet} >> index.html
+
+
+cat << __EOF__ >> index.html
+</tbody>
+</table>
+<h2>Occupancy analysis</h2>
+<p>Peaksets provide insight into the potential occupancy of the ChIPed protein at specific genomic regions.</p>
+<div><img src="${occupancy.name}"/></div>
+
+<h2>PCA</h2>
+<p>To see how well the samples cluster with one another, we can draw a PCA plot</p>
+<div><img src="${pca.name}"/></div>
+
+<h2>Affinity analysis</h2>
+<p> binding affinity matrix containing a read count for each sample at every consensus binding site, whether or not it was identified as a peak in that sample</p>
+<div><img src="${affinity.name}"/></div>
+
+
+<h2>${nrows} first filtered results.</h2>
+<table>
+<thead>
+        <caption>${params.samplesheet}</caption>
+</thead>
+<tbody>
+__EOF__
+
+gunzip -c *filtered*.bed.gz | head -n ${nrows+1} | awk -F '\t' '{tag=(NR==1?"th":"td"); printf("<tr>"); if(NR==1) {printf("<th>Position</th>");} else {printf("<td><a target=\\"ucsc\\" href=\\"http://genome.ucsc.edu/cgi-bin/hgTracks?db=${hg}&amp;position=%s%%3A%s-%s\\">%s:%s-%s</a></td>",\$1,\$2,\$3,\$1,\$2,\$3);}  for(i=4;i<=NF;i++) printf("<%s>%s</%s>",tag,\$i,tag);printf("</tr>\\n"); }'  >> index.html
+
+
+cat << __EOF__ >> index.html
+</tbody>
+</table>
+</body>
+</html>
+__EOF__
+
+
+zip -9j "${params.prefix}archive.zip" index.html '${occupancy}' '${affinity}' '${pca}' '${samplesheet}' *.bed.gz *.bed.gz.tbi
+"""
+}
+
+
