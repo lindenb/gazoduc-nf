@@ -30,11 +30,15 @@ workflow DIFFBIND {
 
 
 		if(params.downsample as boolean) {
-			rows2_ch = SAMTOOLS_IDXSTATS(rows1_ch)
-			rows3_ch = rows2_ch.splitText().
-				map{T->T[0].plus("countReads":(T[1] as long))}
-			min_count_reads = rows3_ch.map{it.countReads}.min()
-			rows4_ch = rows3_ch.combine(min_count_reads).
+			idxstats_ch = SAMTOOLS_IDXSTATS(rows1_ch).output.
+				splitText().
+                                map{T->T[0].plus("countReads":(T[1] as long))}
+
+			mergeidx_ch = MERGE_IDXSTATS(idxstats_ch.collect())
+
+
+			min_count_reads = mergeidx_ch.map{it.countReads}.min()
+			rows4_ch = mergeidx_ch.combine(min_count_reads).
 				map{T->T[0].plus("minCountReads":T[1])}
 		
 			downsample_bam_ch = DOWNSAMPLE_BAM(rows4_ch).output.
@@ -59,7 +63,9 @@ workflow DIFFBIND {
 
 
 	
-		pca_ch = PLOT_PCA(dba_count_ch.output)
+		pca_ch = PLOT_PCA(
+			dba_count_ch.output
+			)
 
 
 		norm_ch = DBA_NORM(dba_count_ch.output)
@@ -68,9 +74,17 @@ workflow DIFFBIND {
 		report_ch = DBA_REPORT(analyze_ch.output)
 		
 
+		
+
+		plot_peaks_ch  = PLOT_PEAKS(
+			rows1_ch.map{T->[(T.SampleID+" "+(T.ncbiSrs?:"")+" "+(T.ncbiSrx?:"")).trim().replace(' ','_'), T.Condition, T.bigWig].join("\t")}.collect(),
+			report_ch.filtered.splitCsv(header:true,sep:'\t')
+			)
+
 		occupancy_ch = plot_dba_ch.output.filter{F->F.name.contains("OccupancyAnalysis")}
 		affinity_ch = plot_dba_ch.output.filter{F->F.name.contains("ClusteringAffinity")}
 
+		pdf_ch = MERGE_PDFS(plot_peaks_ch.output.collect())
 
 		README(
 			dba1.samplesheet,
@@ -79,7 +93,8 @@ workflow DIFFBIND {
 			pca_ch.output,
 			analyze_ch.ma,
 			analyze_ch.boxplot,
-			report_ch.output
+			report_ch.output,
+			pdf_ch.output
 			)
 
 	}
@@ -96,10 +111,24 @@ hostname 1>&2
 ${moduleLoad("samtools")}
 set -o pipefail
 
-samtools idxstats "${row.bam}" | awk -F '\t' 'BEGIN {N=0;} (\$1!="*") {N+=int(\$3);} END {printf("%d",N);}' > count.txt
+samtools idxstats "${row.bam}" | awk -F '\t' 'BEGIN {N=0;} (\$1 ~ /^(chr)?[0-9]+/) {N+=int(\$3);} END {printf("%d",N);}' > count.txt
 """
 }
 
+process MERGE_IDXSTATS {
+executor "local"
+tag "N=${L.size()}"
+input:
+	val(L)
+output:
+	path("output.tsv"),emit:output
+script:
+"""
+cat << EOF > output.tsv
+${L.collect{T->[T.sample,T.bam,T.countReads].join("\t")}.join("\n")}
+EOF
+"""
+}
 
 process DOWNSAMPLE_BAM {
 tag "${row.sample}"
@@ -317,6 +346,9 @@ input:
 output:
       	path("dba_contrast_DBA.RData"),emit:output
 	path("show.tsv"),optional:true,emit:show
+script:
+	/**  By default, dba.contrast won't create contrasts with less than 3 members in each group.  The easiest solution is to set minMembers=2 when calling dba.contrast */
+	def minMembers=2
 """
 mkdir -p TMP
 ${LOAD_DIFFBIND}
@@ -327,7 +359,7 @@ cat << '__EOF__' > TMP/jeter.R
 library(DiffBind)
 DBA <- dba.load(file='DBA', dir='TMP', pre='dba_', ext='RData')
 
-DBA <- dba.contrast(DBA , categories = DBA_CONDITION)
+DBA <- dba.contrast(DBA , categories = DBA_CONDITION, minMembers=${minMembers})
 
 df <- dba.show(DBA, bContrasts = TRUE)
 
@@ -391,6 +423,7 @@ input:
 	path(dba)
 output:
 	path("*{bed.gz,bed.gz.tbi}"),emit:output
+	path("filtered.tsv"),emit:filtered
 script:
 	def FDR  = 0.1
 	def fold = 1
@@ -409,9 +442,9 @@ DBA.report <- sort(DBA.report)
 head(DBA.report)
 
 
-  df <- data.frame(CHROM=seqnames(DBA.report),
-                   starts=start(DBA.report)-1,
-                   ends=end(DBA.report),
+  df <- data.frame(chrom=seqnames(DBA.report),
+                   start=start(DBA.report)-1,
+                   end=end(DBA.report),
                    name=c(paste0("peak",1:length(DBA.report))),
                    scores=c(rep("0", length(DBA.report))),
                    strands=c(rep(".", length(DBA.report))),
@@ -439,7 +472,7 @@ __EOF__
 R --vanilla < TMP/jeter.R
 
 module load htslib
-sed 's/^CHROM/#CHROM/' TMP/jeter1.bed |\\
+sed 's/^chrom/#chrom/' TMP/jeter1.bed |\\
 	LC_ALL=C sort -t '\t' -T TMP -k1,1 -k2,2n |\\
 	bgzip > "TMP/jeter1.bed.gz"
 tabix --comment '#' -f -p bed TMP/jeter1.bed.gz
@@ -447,18 +480,97 @@ tabix --comment '#' -f -p bed TMP/jeter1.bed.gz
 mv TMP/jeter1.bed.gz "${params.prefix}raw.bed.gz"
 mv TMP/jeter1.bed.gz.tbi "${params.prefix}raw.bed.gz.tbi"
 
+cp TMP/jeter2.bed filtered.tsv
 
-sed 's/^CHROM/#CHROM/' TMP/jeter2.bed |\\
+sed 's/^chrom/#chrom/' TMP/jeter2.bed |\\
 	LC_ALL=C sort -t '\t' -T TMP -k1,1 -k2,2n  |\\
 	bgzip > "TMP/jeter2.bed.gz"
 tabix --comment '#' -f -p bed TMP/jeter2.bed.gz
 
 mv TMP/jeter2.bed.gz "${params.prefix}filtered.fdr_${FDR}_fold_${fold}.bed.gz"
 mv TMP/jeter2.bed.gz.tbi "${params.prefix}filtered.fdr_${FDR}_fold_${fold}.bed.gz.tbi"
-
-
 """
 }
+
+
+process PLOT_PEAKS {
+tag "${row.chrom}:${row.start}-${row.end} N=${L.size()}"
+afterScript "rm -rf TMP"
+input:
+	val(L)
+	val(row)
+output:
+	path("${row.chrom}_${row.start}_${row.end}.pdf"),emit:output
+when:
+	true
+script:
+	def chromStart = (row.start as int)
+	def chromEnd = (row.end as int)
+	def len = 1 + chromEnd - chromStart
+	def xStart = java.lang.Math.max(1,chromStart - len)
+	def xEnd = java.lang.Math.max(1,chromEnd+len) 
+"""
+hostname 1>&2
+${moduleLoad("ucsc")}
+set -o pipefail
+
+mkdir -p TMP
+
+cat << EOF > TMP/sn_bigwig.tsv
+${L.join("\n")}
+EOF
+
+i=1
+cut -f 3 TMP/sn_bigwig.tsv | while read BIGWIG
+do
+	bigWigToBedGraph -chrom="${row.chrom}" -start=${xStart} -end=${xEnd}  "\${BIGWIG}" stdout |\\
+		awk -F '\t' '{X1=int(\$2);X2=int(\$3);for(i=X1;i<X2;++i) {printf("%d\t%s\\n",i+1,\$4);}}' > TMP/depth.\${i}.txt
+
+	i=\$((i+1))
+done
+
+${LOAD_DIFFBIND}
+
+cat "${moduleDir}/plot.coverage.R" |\\
+	sed 's%__SAMPLESHEET__%TMP/sn_bigwig.tsv%' |\\
+	sed 's/__CHROM__/${row.chrom}/g' |\\
+	sed 's/__START__/${chromStart}/' |\\
+	sed 's/__END__/${chromEnd}/' |\\
+	sed 's/__XSTART__/${xStart}/' |\\
+	sed 's/__XEND__/${xEnd}/' > TMP/jeter.R
+
+R --vanilla < TMP/jeter.R
+
+mv -v TMP/jeter.pdf "${row.chrom}_${row.start}_${row.end}.pdf"
+"""
+}
+
+
+/** merge PDFs using ghostscript */
+process MERGE_PDFS {
+tag "N=${L.size()}"
+afterScript "rm -rf TMP"
+input:
+	val(L) /* name, list to pdf */
+output:
+	path("${params.prefix?:""}coverage.pdf"),emit:output
+script:
+"""
+hostname 1>&2
+module load gs
+mkdir -p TMP
+
+cat << EOF  | awk -F '/' '{printf("%s,%s\\n",\$NF,\$0);}' | LC_ALL=C sort -t, -k1,1V -T TMP | cut -d, -f2  > TMP/jeter.list
+${L.join("\n")}
+EOF
+
+gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -dPDFSETTINGS=/prepress -sOutputFile=TMP/jeter.pdf @TMP/jeter.list
+
+mv TMP/jeter.pdf "${params.prefix?:""}coverage.pdf"
+"""
+}
+
+
 
 process README {
 executor "local"
@@ -470,6 +582,7 @@ input:
 	path(ma)
 	path(boxplot)
 	path(report)
+	path(coverage)
 output:
 	path("${params.prefix}archive.zip"),emit:zip
 	path("index.html"),emit:output
@@ -528,6 +641,9 @@ as the effect of normalization on data.</p>
 <p>Boxplots provide a way to view how read distributions differ between classes of binding sites.</p>
 <div><img src="${boxplot.name}"/></div>
 
+<h2>Coverage</h2>
+<p>Coverage in WigFiles</p>
+<div><a target="pdf"  href="${coverage.name}">${coverage.name}</a></div>
 
 <h2>${nrows} first filtered results.</h2>
 <table>
@@ -550,8 +666,10 @@ __EOF__
 
 mkdir -p "${params.prefix}archive"
 
-cp -v  index.html '${occupancy}' '${affinity}' '${pca}' '${samplesheet}' *.bed.gz *.bed.gz.tbi ${ma} ${boxplot}  ${params.prefix}archive/
+cp -v  index.html '${occupancy}' '${affinity}' '${pca}' '${samplesheet}' *.bed.gz *.bed.gz.tbi ${ma} ${boxplot} ${coverage} ${params.prefix}archive/
 
 zip -9r "${params.prefix}archive.zip" "${params.prefix}archive"
 """
 }
+
+
