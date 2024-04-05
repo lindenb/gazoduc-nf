@@ -30,15 +30,18 @@ workflow DIFFBIND {
 
 
 		if(params.downsample as boolean) {
+
+			rows1_ch.map{T->(!T.containsKey("sample") && T.containsKey("SampleId") ?T.plus("sample":T.SampleId):T)}
+
 			idxstats_ch = SAMTOOLS_IDXSTATS(rows1_ch).output.
 				splitText().
                                 map{T->T[0].plus("countReads":(T[1] as long))}
 
-			mergeidx_ch = MERGE_IDXSTATS(idxstats_ch.collect())
+			//mergeidx_ch = MERGE_IDXSTATS(idxstats_ch.collect())
 
+			min_count_reads = idxstats_ch.map{it.countReads}.min()
 
-			min_count_reads = mergeidx_ch.map{it.countReads}.min()
-			rows4_ch = mergeidx_ch.combine(min_count_reads).
+			rows4_ch = idxstats_ch.combine(min_count_reads).
 				map{T->T[0].plus("minCountReads":T[1])}
 		
 			downsample_bam_ch = DOWNSAMPLE_BAM(rows4_ch).output.
@@ -619,6 +622,10 @@ awk -F '\t' '{tag=(NR==1?"th":"td"); printf("<tr>"); for(i=1;i<=NF;i++) printf("
 cat << __EOF__ >> index.html
 </tbody>
 </table>
+
+<h2>Downsampling</h2>
+<p>BAM files were downsampled to the lowest read count per BAM to avoid error : <b>${params.downsample}</b></p>
+
 <h2>Occupancy analysis</h2>
 <p>Peaksets provide insight into the potential occupancy of the ChIPed protein at specific genomic regions.</p>
 <div><img src="${occupancy.name}"/></div>

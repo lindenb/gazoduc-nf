@@ -1,6 +1,6 @@
 
 workflow {
-	TOBIAS(params.fasta, file(params.blacklist),file(params.samplesheet))
+	TOBIAS(params.fasta, file(params.blacklist),file(params.samplesheet),file(params.jaspar))
 	}
 
 def TOBIAS_CONTAINER = "https://depot.galaxyproject.org/singularity/tobias:0.13.3--py37h37892f8_0"
@@ -10,6 +10,7 @@ workflow TOBIAS {
 		fasta
 		blacklist
 		samplesheet
+		jasparDir
 	main:
 		ref_ch = Channel.of([file(fasta),file(fasta+".fai")])
 
@@ -67,8 +68,7 @@ workflow TOBIAS {
 
 
 		
-		jaspar1_ch = DOWNLOAD_JASPAR()
-		jaspar2_ch = FORMAT_MOTIFS(jaspar1_ch.output)
+		jaspar2_ch = FORMAT_MOTIFS(jasparDir)
 		
 		peak_header_ch = PEAK_HEADER()
 
@@ -85,13 +85,14 @@ workflow TOBIAS {
 
 		ch4  = ch3.map{T->[T[0].id,T[1],T[2]]}
 
-/*
+		/*
 		BIND_DETECT_SINGLE(
 			jaspar2_ch.output,
 			peak_header_ch.output,
 			ref_ch.combine(ch4)
 			)
-*/
+		*/
+
 		ch5 = cond_value_ch.combine(ch3).
 			filter{T->T[2].get(T[0]).equals(T[1])}.
 			map{T->[
@@ -210,7 +211,15 @@ mv -v TMP jaspar
 """
 }
 
+/**
+
+Transcription factor motifs are often obtained from various databases with different motif formats such as JASPAR or MEME.
+It can therefore be necessary to convert or filter these motif files.
+TOBIAS FormatMotifs is a small utility to handle common operations such as "join" and "split" of motif files.
+
+*/
 process FORMAT_MOTIFS {
+tag "${jaspar}"
 container  "${TOBIAS_CONTAINER}"
 input:
 	path(jaspar)
@@ -224,17 +233,7 @@ TOBIAS FormatMotifs \\
 	--task join \\
 	--output TMP/joined_motifs.jaspar
 
-if ${!params.tfb_regex.isEmpty()} ; then
-
-	cat "TMP/joined_motifs.jaspar" | paste -d '|' - - - - - | grep -E '${params.tfb_regex}' | tr '|' '\\n' > TMP/tmp.jaspar
-
-	mv -v TMP/tmp.jaspar TMP/joined_motifs.jaspar
-
-fi
-
-test -s TMP/joined_motifs.jaspar
-
-mv TMP/joined_motifs.jaspar ./
+mv -v TMP/joined_motifs.jaspar ./
 """
 }
 
@@ -330,6 +329,7 @@ input:
 
 output:
 	tuple val(condition),val(cond1),val(id1),val(cond2),val(id2),path("${id1}.${cond1}.${id2}.${cond2}.tf.txt"),path("${id1}.${cond1}.${id2}.${cond2}.OUTPUT"),emit:output
+	path("beds.list"),emit:beds
 script:
 """
 hostname 1>&2
@@ -350,6 +350,27 @@ TOBIAS BINDetect \\
 
 mv  "TMP" "${id1}.${cond1}.${id2}.${cond2}.OUTPUT"
 find "${id1}.${cond1}.${id2}.${cond2}.OUTPUT" -maxdepth 1 -type d | awk -F '/' '(\$2!="") {print \$2}' > "${id1}.${cond1}.${id2}.${cond2}.tf.txt"
+
+find "\${PWD}/${id1}.${cond1}.${id2}.${cond2}.OUTPUT" -type  f -name "*.bed" |\\
+	awk 'BEGIN{printf("id1\tid2\tbed\\n");} {printf("${id1}\t${id2}\t%s\\n",\$0);}' > "beds.list"
 """
 }
 
+process PLOT_AGGREGATE_TWO {
+afterScript "rm -rf TMP"
+container  "${TOBIAS_CONTAINER}"
+input:
+	tuple val(id1),path(bed1),path(bw1),val(id2),path(bed2),path(bw2)
+script:
+"""
+hostname 1>&2
+mkdir -p TMP
+
+TOBIAS PlotAggregate \\
+	--TFBS ${bed1} ${bed2} \\
+	--signals ${bw1} ${bw2} \\
+	--signal_labels ${id2} ${id1} \
+	--output TMP/ \
+	--share_y both --plot_boundaries --title "${id1}_${id2}"
+"""
+}
