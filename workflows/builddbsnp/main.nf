@@ -12,60 +12,59 @@ workflow BUILD_DBSNP {
 		json = slurpJsonFile(json)
 		ch1_ch = Channel.of(json.sources).flatten()
 		
-		ch2_ch = DOWNLOAD_DICT(ch1_ch.
-			filter{it.containsKey("fasta")}.
-				map{[it.name,it.fasta]}
+
+		ch3_ch = DOWNLOAD_CHAIN(
+			json.name,
+			ch1_ch.map{it.name}
 			)
+		ch4_ch = DOWNLOAD_VCF(ch1_ch.map{T->{
+			if(T.containsKey("vcf") && !T.containsKey("vcfs")) {
+				return T.plus("vcfs":[T.vcf]);
+				}
+			else
+				{
+				return T;
+				}
+			}}.flatMap{T->T.vcfs.collect{V->[T.name,V]}})	
+
+		ch4_ch.output.view()
+		ch5_ch = VCF2INTERVALS(ch4_ch.output)
 		
-
-		ch3_ch = DOWNLOAD_CHAIN(ch1_ch.
-			filter{it.containsKey("chain")}.
-				map{[it.name,it.chain]}
-			)
-		ch4_ch = DOWNLOAD_VCF(ch1_ch.flatMap{T->T.vcfs.collect{V->[T.name,V]}})	
-		//VCF2INTERVALS(ch4_ch.output)
+		ch6_ch = ch5_ch.output.splitText().
+			map{T->{T[1]=T[1].trim(); return T;}}.
+			join(ch3_ch.output)
+		
+		ch7_ch = LIFTOVER_INTERVAL(json.name,json.fasta,ch6_ch)
+		CONCATENATE(json.name, ch7_ch.output.flatten().collect())
+			
 	}
-
-process DOWNLOAD_DICT {
-tag "${name} ${fasta}"
-afterScript "rm -rf TMP"
-input:
-	tuple val(name),val(fasta)
-output:
-	tuple val(name),path("${name}.dict"),emit:output
-script:
-"""
-hostname 1>&2
-${moduleLoad("samtools")}
-mkdir -p TMP
-set -o pipefail
-
-wget -q -O - "${fasta}" |\
-	gunzip -c |\
-	samtools dict -o TMP/ref.dict
-
-mv  -v TMP/ref.dict "${name}.dict"
-"""
-}
 
 
 process DOWNLOAD_CHAIN {
-tag "${name} ${chain}"
+tag "${name}->${hgTo}"
 afterScript "rm -rf TMP"
 input:
-	tuple val(name),val(chain)
+	val(hgTo)
+	val(name)
 output:
-	tuple val(name),path("${name}.chain"),emit:output
-script:
+	tuple val(name),path("${name}.chain"),optional:true,emit:output
+script:        
+	def chainName = "${name}To${hgTo.substring(0,1).toUpperCase()}${hgTo.substring(1)}.over.chain"
+	def url = "http://hgdownload.cse.ucsc.edu/goldenpath/${name}/liftOver/${chainName}.gz"
 """
 hostname 1>&2
 mkdir -p TMP
 set -o pipefail
 
-wget -q -O - "${chain}"  |\
-	gunzip -c > TMP/liftover.chain
+if wget --spider "${url}"
+then
 
-mv -v TMP/liftover.chain "${name}.chain"
+	wget -q -O - "${url}"  |\
+		gunzip -c > TMP/liftover.chain
+
+	test -s TMP/liftover.chain
+	mv -v TMP/liftover.chain "${name}.chain"
+fi
 """
 }
 
@@ -75,23 +74,21 @@ afterScript "rm -rf TMP"
 input:
 	tuple val(name),val(vcf)
 output:
-	tuple val(name),path("${name}.bcf"),path("${name}.bcf.csi"),emit:output
+	tuple val(name),path("${name}.vcf.gz"),path("${name}.vcf.gz.tbi"),emit:output
 script:
 """
 hostname 1>&2
 ${moduleLoad("bcftools")}
 mkdir -p TMP
 set -x
-set -o pipefail
 
 #
 # we use vcf and NOT BCF because when there is not 'contig=' in the
 # header, it cannot be converted to BCF
 #
 wget -q -O - "${vcf}"  |\\
-	gunzip -c |\\
-	cut -f1-8 |\\
-	awk -F '\t' '/^##(INFO|FILTER|FORMAT)=/ {next;} /^#CHROM/ {printf("##source=${vcf}\\n");print;next;} /^#/ {print;next;} {ID=\$3; if(!(ID ~ /^[Rr][Ss][0-9]+\$/ )) {if(ID==".") {C=\$1;if(C ~ /^chr/) C=substr(C,4) ; ID=sprintf("%s_%s_%s",C,\$2,\$4);} ID=sprintf("${name}_%s",ID);} printf("%s\t%s\t%s\t%s\t%s\t.\t.\t.\\n",\$1,\$2,ID,\$4,\$5);}' |\
+	bcftools view |\\
+	awk -F '\t' '/^##(INFO|FILTER|FORMAT)=/ {next;} /^#CHROM/ {printf("##source.${name}=${vcf}\\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\\n");N=0;next;} /^#/ {print;next;} {${(params.limit as int)> 0 ?"if(N> ${params.limit}) {exit 0;};N++;":""}printf("%s\t%s\t.\t%s\t%s\t.\t.\t.\\n",\$1,\$2,\$4,\$5);}' |\\
 	bcftools view -O z -o TMP/jeter1.vcf.gz
 
 
@@ -100,27 +97,30 @@ wget -q -O - "${vcf}"  |\\
 #
 if bcftools view --header-only TMP/jeter1.vcf.gz | grep '^##contig=' -m1
 then
-	bcftools view -O b -o TMP/jeter1.bcf TMP/jeter1.vcf.gz
+	mv TMP/jeter1.vcf.gz TMP/jeter2.vcf.gz
 else
 
 	## try to build a dictionnary/fai , assume sorted on chromosome
-	bcftools query -f '%CHROM\t%END\\n' TMP/jeter1.vcf.gz |\
-		awk -F '\t' 'BEGIN{PREV_C="";PREV_LEN=1;} {if(PREV_C!=\$1 && PREV_C!="") {printf("%s\t%s\t%d\t1\t2\\n",PREV_C,PREV_LEN,NR);} PREV_C=\$1; PREV_LEN=\$2; } END {if(PREV_C!="") printf("%s\t%s\t%d\t1\t2\\n",PREV_C,PREV_LEN,NR);}' > TMP/jeter.fai
+	bcftools query -f '%CHROM\\n' TMP/jeter1.vcf.gz |\
+		uniq |\\
+		awk -F '\t' '{printf("%s\t1000000000\t%d\t1\t2\\n",\$1,NR);}' > TMP/jeter.fai
 
 
-	bcftools reheader --fai TMP/jeter.fai -o TMP/jeter1.bcf --temp-prefix TMP/tmp TMP/jeter1.vcf.gz
+	bcftools reheader --fai TMP/jeter.fai -o TMP/jeter2.vcf.gz --temp-prefix TMP/tmp TMP/jeter1.vcf.gz
 fi
 
+mv TMP/jeter2.vcf.gz TMP/jeter1.vcf.gz
+bcftools index -t -f TMP/jeter1.vcf.gz
 
-bcftools index -f TMP/jeter1.bcf
-
-mv -v TMP/jeter1.bcf "${name}.bcf"
-mv -v TMP/jeter1.bcf.csi "${name}.bcf.csi"
+mv -v TMP/jeter1.vcf.gz "${name}.vcf.gz"
+mv -v TMP/jeter1.vcf.gz.tbi "${name}.vcf.gz.tbi"
 """
 }
-/*
-provess VCF2INTERVALS {
+
+process VCF2INTERVALS {
 tag "${name} ${vcf.name}"
+afterScript "rm -rf TMP"
+memory '1G'
 input:
 	tuple val(name),path(vcf),path(csi)
 output:
@@ -132,43 +132,55 @@ ${moduleLoad("bcftools jvarkit")}
 mkdir -p TMP
 set -x
 
-bcftools view "${vcf}" |\
-        java -jar \${JVARKIT_DIST}/vcf2intervals.jar --bed --distance '50mb' --min-distance '250' |\
-        awk -F '\t' '{printf("%s:%s-%s\\n",\$1,\int(\$2),\$3);}' > ${name}.intervals
-"""
-}*/
+bcftools view "${vcf}" |\\
+        java -jar -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP \${JVARKIT_DIST}/vcf2intervals.jar --bed --distance '50mb' --min-distance '250' |\\
+        awk -F '\t' '{printf("%s:%s-%s\\n",\$1,int(\$2)+1,\$3);}' > TMP/jeter.intervals
 
-/*
+mv -v TMP/jeter.intervals ${name}.intervals
+"""
+}
+
+
 process LIFTOVER_INTERVAL {
-tag "${name} ${vcf.name} ${interval}"
+tag "${name}  ${interval}"
+afterScript "rm -rf TMP"
 memory '5g'
 input:
-	tuple val(name),val(interval),path(chain),path(vcf),path(csi)
+	val(toName)
+	val(fasta)
+	tuple val(name),val(interval),path(vcf),path(csi),path(chain)
 output:
-	path("lifted.bcf"),emit:output
+	path("${name}.${interval.replaceAll("[^A-Za-z0-9]+","_")}.lifted.*"),emit:output
 script:
 """
 hostname 1>&2
-${moduleLoad("bcftools jvarkit")}
+${moduleLoad("bcftools jvarkit picard")}
 mkdir  -p TMP
+set -x
+test -s "${fasta}.fai"
 
-bcftools view -O z -o TMP/jeter.vcf.gz --regions "${intervals}" "${bcf}" 
+bcftools view -O z -o TMP/jeter.vcf.gz --regions "${interval}" "${vcf}" 
 bcftools index -f -t TMP/jeter.vcf.gz
 
-// build awk script to change chain
+
+#
+# build awk script to change chain
+#
 cat << EOF > TMP/jeter.awk
 BEGIN	{
 	OFS=" "
 	IN=0;
 EOF
 
-bcftools query -l '${bcf}' |\\
-	awk '{printf("dict1[\"%s\"]=\"%s\";\\n",\$1,\$1); if(\$1 ~ /^chr/) {C=substr(\$1,4);} else {C=sprintf("chr%s",\$1);} printf("if(!(\"%s\" in dict1)) {dict1[\"%s\"]=\"%s\";}\\n",C,\$1); }' >> TMP/jeter.awk
-cut -f 1 "${reference}.fai" |\\
-	awk '{printf("dict2[\"%s\"]=\"%s\";\\n",\$1,\$1); if(\$1 ~ /^chr/) {C=substr(\$1,4);} else {C=sprintf("chr%s",\$1);} printf("if(!(\"%s\" in dict2)) {dict2[\"%s\"]=\"%s\";}\\n",C,C,\$1); }' >> TMP/jeter.awk
+
+bcftools index -s '${vcf}' |\\
+	awk -F '\t' '{printf("\tdict1[\\\"%s\\\"]=\\\"%s\\\";\\n",\$1,\$1); if(\$1 ~ /^chr/) {C=substr(\$1,4);} else {C=sprintf("chr%s",\$1);} printf("\tif(!(\\\"%s\\\" in dict1)) {dict1[\\\"%s\\\"]=\\\"%s\\\";}\\n",C,C,\$1); }' >> TMP/jeter.awk
+
+cut -f 1 "${fasta}.fai" |\\
+	awk '{printf("\tdict2[\\\"%s\\\"]=\\\"%s\\\";\\n",\$1,\$1); if(\$1 ~ /^chr/) {C=substr(\$1,4);} else {C=sprintf("chr%s",\$1);} printf("\tif(!(\\\"%s\\\" in dict2)) {dict2[\\\"%s\\\"]=\\\"%s\\\";}\\n",C,C,\$1); }' >> TMP/jeter.awk
 
 
-cat << EOF >> TMP/jeter.awk
+cat << 'EOF' >> TMP/jeter.awk
 	}
 
 
@@ -195,143 +207,47 @@ awk -f TMP/jeter.awk '${chain}' > TMP/jeter.chain
 
 test -s TMP/jeter.chain
 
-java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${PICARD_JAR} LiftoverVcf \
-	--CHAIN "TMP/jeter.chain" \
-	--INPUT TMP/jeter.vcf.gz \
-	--OUTPUT TMP/jeter2.vcf.gz \
-	--REFERENCE_SEQUENCE "${reference}" \
-	--REJECT TMP/reject.vcf.gz \
-	--DISABLE_SORT true \
-	--LOG_FAILED_INTERVALS false \
-	--WRITE_ORIGINAL_ALLELES false \
-	--WRITE_ORIGINAL_POSITION false 
 
-bcftools annotate -x 'INFO,FILTER' -O u TMP/jeter2.vcf.gz |\
+java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${PICARD_JAR} LiftoverVcf \\
+	--CHAIN "TMP/jeter.chain" \\
+	--INPUT TMP/jeter.vcf.gz \\
+	--OUTPUT TMP/jeter2.vcf.gz \\
+	--REFERENCE_SEQUENCE "${fasta}" \\
+	--REJECT TMP/reject.vcf.gz \\
+	--DISABLE_SORT true \\
+	--LOG_FAILED_INTERVALS false \\
+	--WRITE_ORIGINAL_ALLELES false \\
+	--WRITE_ORIGINAL_POSITION true 
+
+bcftools annotate --set-id '${name}_%INFO/OriginalContig\\_%INFO/OriginalStart'  -O u TMP/jeter2.vcf.gz |\\
+	bcftools annotate -x 'INFO,FILTER' -O u |\
 	bcftools sort --max-mem ${task.memory.giga}G -T TMP/x -O b -o "TMP/lifted.bcf"
 
 bcftools index "TMP/lifted.bcf"
 
-mv -v TMP/lifted.bcf ./
-mv -v TMP/lifted.bcf.csi ./
-"""
-}
-*/
-
-
-/*
-		// download fasta
-		rsrc_ch.
-		
-			
-	rsrc_ch = Channel.from([
-		[
-		"name":"GRCm38",
-		"chain":"http://hgdownload.cse.ucsc.edu/goldenpath/mm10/liftOver/mm10ToHg19.over.chain.gz",
-		"src_mapping":"https://raw.githubusercontent.com/dpryan79/ChromosomeMappings/master/GRCm38_ensembl2UCSC.txt",
-		"src_inverse_mapping":true,
-		"dest_mapping":"https://raw.githubusercontent.com/dpryan79/ChromosomeMappings/master/GRCh37_gencode2UCSC.txt",
-		"dest_inverse_mapping":true,
-		"vcf":"http://ftp.ensembl.org/pub/release-102/variation/vcf/mus_musculus/mus_musculus.vcf.gz",
-		"fasta":"http://ftp.ensembl.org/pub/release-102/fasta/mus_musculus/dna/Mus_musculus.GRCm38.dna.toplevel.fa.gz",
-		]
-		])
-	ch1 = DOWNLOAD_AND_LIFT(params,rsrc_ch.map{T->T.plus("reference":params.reference)})
-	ch2 = ch1.output.splitCsv(header:false,sep:'\t')
-
-	ch3 = APPLY_LIFTOVER(params,ch2)
-	
-	CONCATENATE(params,ch3.output.groupTuple())
-	}
-*/
-
-process DOWNLOAD_AND_LIFT {
-tag "${row.name}"
-afterScript "rm -rf TMP"
-memory "5g"
-input:
-	val(meta)
-	val(row)
-output:
-	path("${row.name}.bed"),emit:output
-script:
-"""
-hostname 1>&2
-${moduleLoad("samtools jvarkit bcftools picard")}
-mkdir -p TMP
-
-
-wget -q -O TMP/ref.fa.gz "${row.fasta}"
-
-samtools dict -o TMP/ref.dict TMP/ref.fa.gz
-
-rm TMP/ref.fa.gz
-
-wget -O - "${row.src_mapping}" |\
-	awk -F '\t' '{if(\$1=="" || \$2=="") next; printf("%s\t%s\\n",${row.src_inverse_mapping?"\$2,\$1":"\$1,\$2"});}' |\
-	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f TMP/ref.dict --column 2 --convert SKIP 	> TMP/src.mapping
-
-wget -O - "${row.dest_mapping}" |\
-	awk -F '\t' '{if(\$1=="" || \$2=="") next; printf("%s\t%s\\n",${row.dest_inverse_mapping?"\$2,\$1":"\$1,\$2"});}' |\
-	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${row.reference}" --column 2 --convert SKIP 	> TMP/dest.mapping
-
-
-wget -q -O - "${row.chain}" |\
-	gunzip -c |\
-	java -jar /${JVARKIT_DIST}/convertliftoverchain.jar \
-	-R1 TMP/src.mapping \
-	-R2 TMP/dest.mapping > TMP/liftover.chain
-
-test -s TMP/liftover.chain
-
-wget -O - "${row.vcf}" |\
-	java -jar \${JVARKIT_DIST}/vcfsetdict.jar -R TMP/ref.dict  --onNotFound SKIP |\
-	bcftools annotate -O u --set-id +'%CHROM:%POS:%REF:%FIRST_ALT'  -x 'INFO,FILTER,QUAL' |\
-	bcftools annotate -O u --set-id  '${row.name}:%ID' |\
-	bcftools sort --max-mem "${task.memory.giga}G"  -T TMP -o TMP/${row.name}.bcf -O b
-
-
-
-bcftools index TMP/${row.name}.bcf
-
-mv TMP/${row.name}.bcf ./
-mv TMP/${row.name}.bcf.csi ./
-mv TMP/liftover.chain "${row.name}.chain"
-
-bcftools view ${row.name}.bcf |\
-	java -jar ${JVARKIT_DIST}/vcf2intervals.jar --bed --distance '50mb' --min-distance '250' |\
-	awk -F '\t' -v P=\${PWD} '{printf("%s:%s-%s\t${row.name}\t%s/${row.name}.bcf\t%s/${row.name}.chain\t${row.reference}\\n",\$1,int(\$2)+1,\$3,P,P);}' > "${row.name}.bed"
+mv -v TMP/lifted.bcf "${name}.${interval.replaceAll("[^A-Za-z0-9]+","_")}.lifted.bcf"
+mv -v TMP/lifted.bcf.csi "${name}.${interval.replaceAll("[^A-Za-z0-9]+","_")}.lifted.bcf.csi"
 """
 }
 
-process APPLY_LIFTOVER {
-tag "${name} ${interval}"
-afterScript "rm -rf TMP"
-memory "5g"
-input:
-	val(meta)
-	tuple val(interval),val(name),val(vcf),val(chain),val(reference)
-output:
-	tuple val(name),path("lifted.bcf"),emit:output
-script:
-"""
-hostname 1>&2
-${moduleLoad("samtools jvarkit bcftools picard")}
-mkdir -p TMP
-
-bcftools view -o TMP/jeter1.vcf.gz -O z "${vcf}" "${interval}"
-bcftools index TMP/jeter1.vcf.gz
-
-"""
-}
 
 process CONCATENATE {
+afterScript "rm -rf TMP"
 input:
-	val(meta)
-	tuple val(name),val(vcfs)
+	val(hgTo)
+	path(vcfs)
 output:
-	tuple val(name),path("${name}.vcf.gz"),emit:output
+	path("${params.prefix}${hgTo}.vcf.gz"),emit:output
 script:
 """
 
+hostname 1>&2
+${moduleLoad("bcftools jvarkit picard")}
+mkdir  -p TMP
+
+bcftools  concat --remove-duplicates -a -O b -o TMP/concat.vcf.gz *.bcf
+bcftools index -f -t TMP/concat.vcf.gz
+
+mv TMP/concat.vcf.gz "${params.prefix}${hgTo}.vcf.gz"
 """
 }
