@@ -11,13 +11,17 @@ workflow BUILD_DBSNP {
 	main:
 		json = slurpJsonFile(json)
 		ch1_ch = Channel.of(json.sources).flatten()
+
+
 		
 
 		ch3_ch = DOWNLOAD_CHAIN(
 			json.name,
-			ch1_ch.map{it.name}
+			ch1_ch.filter{it.liftover==true}.map{it.name}
 			)
-		ch4_ch = DOWNLOAD_VCF(ch1_ch.map{T->{
+		ch4_ch = DOWNLOAD_VCF(ch1_ch.
+			filter{it.liftover==true}.
+			map{T->{
 			if(T.containsKey("vcf") && !T.containsKey("vcfs")) {
 				return T.plus("vcfs":[T.vcf]);
 				}
@@ -25,17 +29,36 @@ workflow BUILD_DBSNP {
 				{
 				return T;
 				}
-			}}.flatMap{T->T.vcfs.collect{V->[T.name,V]}})	
+			}}.flatMap{T->T.vcfs.collect{V->[T.name,T.priority,V]}})	
 
-		ch4_ch.output.view()
 		ch5_ch = VCF2INTERVALS(ch4_ch.output)
 		
 		ch6_ch = ch5_ch.output.splitText().
-			map{T->{T[1]=T[1].trim(); return T;}}.
+			map{T->{T[2]=T[2].trim(); return T;}}.
 			join(ch3_ch.output)
 		
 		ch7_ch = LIFTOVER_INTERVAL(json.name,json.fasta,ch6_ch)
-		CONCATENATE(json.name, ch7_ch.output.flatten().collect())
+
+
+		ch8_ch = DOWNLOAD_VCF_NO_LIFT(
+			json.fasta,
+			ch1_ch.
+                        filter{it.liftover==false}.
+			map{T->{
+			if(T.containsKey("vcf") && !T.containsKey("vcfs")) {
+				return T.plus("vcfs":[T.vcf]);
+				}
+			else
+				{
+				return T;
+				}
+			}}.flatMap{T->T.vcfs.collect{V->[T.name,T.priority,V]}}
+			)
+	
+
+		CONCATENATE(json.name, json.fasta, ch7_ch.output.mix(ch8_ch.output).
+			map{""+it[0]+"\t"+it[1]}.
+			collect())
 			
 	}
 
@@ -72,9 +95,9 @@ process DOWNLOAD_VCF {
 tag "${name} ${vcf}"
 afterScript "rm -rf TMP"
 input:
-	tuple val(name),val(vcf)
+	tuple val(name),val(priority),val(vcf)
 output:
-	tuple val(name),path("${name}.vcf.gz"),path("${name}.vcf.gz.tbi"),emit:output
+	tuple val(name),val(priority),path("${name}.vcf.gz"),path("${name}.vcf.gz.tbi"),emit:output
 script:
 """
 hostname 1>&2
@@ -122,9 +145,9 @@ tag "${name} ${vcf.name}"
 afterScript "rm -rf TMP"
 memory '1G'
 input:
-	tuple val(name),path(vcf),path(csi)
+	tuple val(name),val(priority),path(vcf),path(csi)
 output:
-	tuple val(name),path("${name}.intervals"),path(vcf),path(csi),emit:output
+	tuple val(name),val(priority),path("${name}.intervals"),path(vcf),path(csi),emit:output
 script:
 """
 hostname 1>&2
@@ -148,9 +171,9 @@ memory '5g'
 input:
 	val(toName)
 	val(fasta)
-	tuple val(name),val(interval),path(vcf),path(csi),path(chain)
+	tuple val(name),val(priority),val(interval),path(vcf),path(csi),path(chain)
 output:
-	path("${name}.${interval.replaceAll("[^A-Za-z0-9]+","_")}.lifted.*"),emit:output
+	tuple val(priority),path("${name}.${interval.replaceAll("[^A-Za-z0-9]+","_")}.lifted.vcf.gz"),emit:output
 script:
 """
 hostname 1>&2
@@ -220,34 +243,125 @@ java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${PICARD_JAR} Liftover
 	--WRITE_ORIGINAL_POSITION true 
 
 bcftools annotate --set-id '${name}_%INFO/OriginalContig\\_%INFO/OriginalStart'  -O u TMP/jeter2.vcf.gz |\\
-	bcftools annotate -x 'INFO,FILTER' -O u |\
-	bcftools sort --max-mem ${task.memory.giga}G -T TMP/x -O b -o "TMP/lifted.bcf"
+	bcftools annotate -x 'INFO,FILTER' -O v |\
+	awk -F '\t' '/^#/ {print;next} {OFS="\t";ID=\$3;N=split(ID,a,/_/);if(N==3 && a[2] ~ /^chr/) {ID=sprintf("%s_%s_%s",a[1],substr(a[2],4),a[3]);\$3=ID;}print;}' |\
+	bcftools sort --max-mem ${task.memory.giga}G -T TMP/x -O z -o "TMP/lifted.vcf.gz"
 
-bcftools index "TMP/lifted.bcf"
+bcftools index -f -t "TMP/lifted.vcf.gz"
 
-mv -v TMP/lifted.bcf "${name}.${interval.replaceAll("[^A-Za-z0-9]+","_")}.lifted.bcf"
-mv -v TMP/lifted.bcf.csi "${name}.${interval.replaceAll("[^A-Za-z0-9]+","_")}.lifted.bcf.csi"
+mv -v TMP/lifted.vcf.gz "${name}.${interval.replaceAll("[^A-Za-z0-9]+","_")}.lifted.vcf.gz"
+mv -v TMP/lifted.vcf.gz.tbi "${name}.${interval.replaceAll("[^A-Za-z0-9]+","_")}.lifted.vcf.gz.tbi"
+"""
+}
+
+
+process DOWNLOAD_VCF_NO_LIFT {
+tag "${name} ${vcf}"
+afterScript "rm -rf TMP"
+input:
+	val(fasta)
+	tuple val(name),val(priority),val(vcf)
+output:
+	tuple val(priority),path("${name}.vcf.gz"),emit:output
+script:
+"""
+hostname 1>&2
+${moduleLoad("bcftools")}
+mkdir -p TMP
+set -x
+
+cat << 'EOF' > TMP/jeter.awk
+BEGIN	{
+	FS="\t";
+	OFS="\t";
+EOF
+
+test -f '${fasta}.fai'
+
+awk -F '\t' '{printf("\tdict1[\\\"%s\\\"]=\\\"%s\\\";\\n",\$1,\$1); if(\$1 ~ /^chr/) {C=substr(\$1,4);} else {C=sprintf("chr%s",\$1);} printf("\tif(!(\\\"%s\\\" in dict1)) {dict1[\\\"%s\\\"]=\\\"%s\\\";}\\n",C,C,\$1); }' '${fasta}.fai'  >> TMP/jeter.awk
+
+cat << 'EOF' >> TMP/jeter.awk
+	}
+
+/^##(INFO|FILTER|FORMAT)=/ {
+	next;
+	}
+
+/^#CHROM/ {
+	printf("##source.${name}=${vcf}\\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\\n");
+	N=0;
+	next;
+	}
+
+/^#/	{
+	print;
+	next;
+	}
+
+	{
+	if(!(\$1 in dict1)) next;
+	${(params.limit as int)> 0 ?"if(N> ${params.limit}) {exit 0;};N++;":""}
+	C = dict1[\$1];
+	printf("%s\t%s\t",C,\$2);
+	ID= \$3;
+	if(!(ID ~ /^[rR][sS][0-9]+\$/ )) {
+		if(C ~ /^chr/) {
+			ID= sprintf("${name}_%s_%s",substr(C,4),\$2);
+			}
+		else
+			{
+			ID= sprintf("${name}_%s_%s",C,\$2);
+			}
+		}
+	printf("%s\t%s\t%s\t.\t.\t.\\n",ID,\$4,\$5);
+	}
+EOF
+
+
+wget -O - "${vcf}" |\\
+	gunzip -c |\\
+	awk -f TMP/jeter.awk |\\
+	bcftools view -O z -o TMP/jeter1.vcf.gz
+
+bcftools index -t -f TMP/jeter1.vcf.gz
+
+mv -v TMP/jeter1.vcf.gz "${name}.vcf.gz"
+mv -v TMP/jeter1.vcf.gz.tbi "${name}.vcf.gz.tbi"
 """
 }
 
 
 process CONCATENATE {
+tag "N=${vcfs.size()}"
 afterScript "rm -rf TMP"
 input:
 	val(hgTo)
-	path(vcfs)
+	val(fasta)
+	val(vcfs)
 output:
 	path("${params.prefix}${hgTo}.vcf.gz"),emit:output
 script:
 """
 
 hostname 1>&2
-${moduleLoad("bcftools jvarkit picard")}
-mkdir  -p TMP
+${moduleLoad("bcftools jvarkit")}
+mkdir  -p TMP/TMP
 
-bcftools  concat --remove-duplicates -a -O b -o TMP/concat.vcf.gz *.bcf
-bcftools index -f -t TMP/concat.vcf.gz
+cat << EOF > TMP/jeter.list
+${vcfs.join("\n")}
+EOF
 
-mv TMP/concat.vcf.gz "${params.prefix}${hgTo}.vcf.gz"
+test -s TMP/jeter.list
+
+java -version 1>&2                                  
+                                                                                                               
+cp -v "${moduleDir}/Minikit.java" TMP/TMP/Minikit.java                                                        
+javac -d TMP/TMP -cp \${JVARKIT_DIST}/jvarkit.jar -sourcepath 'TMP/TMP' 'TMP/TMP/Minikit.java'                            
+jar cvf TMP/minikit.jar -C TMP/TMP .                                                                           
+
+java -cp \${JVARKIT_DIST}/jvarkit.jar:TMP/minikit.jar Minikit '${fasta}' TMP/jeter.list |\
+	bcftools view -O z -o TMP/concat.vcf.gz
+
+mv -v TMP/concat.vcf.gz "${params.prefix}${hgTo}.vcf.gz"
 """
 }
