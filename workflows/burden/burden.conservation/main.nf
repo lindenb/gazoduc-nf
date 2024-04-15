@@ -52,6 +52,9 @@ workflow 	{
 		}
 
 
+runOnComplete(workflow)
+
+
 workflow BURDEN_CONSERVATION {
 	take:
 		genomeId
@@ -95,7 +98,10 @@ workflow BURDEN_CONSERVATION {
 			conditions_ch.combine(each_bed_ch)
 			)
 
-		MERGE_CONDITION_TSV(genomeId,genes_ch.output,per_bed_ch.map{[it[0],it[1]]}.groupTuple())
+		merge1_ch=MERGE_CONDITION_TSV(genomeId,genes_ch.output,per_bed_ch.map{[it[0],it[1]]}.groupTuple())
+
+		MERGE_ALL_TSVS(genomeId, merge1_ch.output.collect())
+
 		MERGE_VCFS(per_bed_ch.map{it[2]}.collect())
 
 	}
@@ -297,6 +303,7 @@ mv TMP/burden.vcf.gz.tbi ./
 
 
 process GENES_TO_BED {
+afterScript "rm -rf TMP"
 input:
 	val(genomeId)
 output:
@@ -308,23 +315,32 @@ hostname 1>&2
 ${moduleLoad("bcftools")}
 mkdir -p TMP BEDS
 
+wget -O - https://ftp.ncbi.nih.gov/gene/DATA/GENE_INFO/Mammalia/Homo_sapiens.gene_info.gz | gunzip -c | cut -f3,9 |\
+	LC_ALL=C sort -T TMP -k1,1 --unique > TMP/ncbi.tsv
+
 gunzip -c "${genome.gtf}" |\\
 	awk -F '\t' '(\$3=="gene")' |\\
-	java  -Djava.io.tmpdir=.  -jar \${JVARKIT_DIST}/jvarkit.jar gtf2bed -c 'gene_name,gene_id,gene_biotype' |\\
-	LC_ALL=C sort -T . -t \$'\\t' -k1,1 -k2,2n |\\
+	java  -Djava.io.tmpdir=.  -jar \${JVARKIT_DIST}/jvarkit.jar gtf2bed -c 'gene_name,gene_id,gene_biotype' |\
+	LC_ALL=C sort -T TMP -k4,4 > TMP/gtf.txt
+
+LC_ALL=C join -t '\t' -1 4 -2 1 -o '1.1,1.2,1.3,1.4,1.5,1.6,2.2' -a 1 -e '.' TMP/gtf.txt TMP/ncbi.tsv |\
+	LC_ALL=C sort -T TMP. -t \$'\\t' -k1,1 -k2,2n |\\
 	uniq > genes.bed
+
+test -s genes.bed
 
 """
 }
 
 process MERGE_CONDITION_TSV {
 tag "N=${L.size()}"
+afterScript "rm -rf TMP"
 input:
 	val(genomeId)
 	path(genes)
 	tuple val(condition),val(L)
 output:
-	tuple val(condition),path("*.closest.bed"),emit:output
+	path("*.closest.bed"),emit:output
 script:
 	def col = condition.entrySet().collect{it.getKey()+":"+it.getValue()}.join(";")
 	def md5 = col.md5() 
@@ -332,16 +348,66 @@ script:
 hostname 1>&2
 ${moduleLoad("bedtools")}
 set -o pipefail
+mkdir -p TMP
+
+head -n 1 "${L[0]}" | tr "\\n" "\t" > TMP/jeter.bed
+echo "gene.chrom;gene.start;gene.end;gene_name;gene_id;gene_biotype;gene_desc;distance;analysis_name;analysis_params" | tr ";" "\t" >> TMP/jeter.bed
+
 
 cat ${L.join(" ")} |\\
 	grep -v '^#' |\\
 	LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n |\
 	bedtools closest -a - -b '${genes}' -d |\
 	awk -F '\t' '{printf("%s\t${md5}\t${col}\\n",\$0);}' |\
-	LC_ALL=C sort -t '\t' -k6,6g >  "${params.prefix?:""}${md5}.closest.bed"
+	LC_ALL=C sort -t '\t' -k6,6g >> TMP/jeter.bed
+
+mv -v TMP/jeter.bed "${params.prefix?:""}${md5}.closest.bed"
 """
 }
 
+
+process MERGE_ALL_TSVS {
+tag "N=${L.size()}"
+afterScript "rm -rf TMP"
+input:
+        val(genomeId)
+        val(L)
+output:
+        path("${params.prefix?:""}closest.bed"),emit:output
+        path("${params.prefix?:""}closest.md")
+script:
+"""
+set -o pipefail
+mkdir -p TMP
+head -n 1 "${L[0]}"  > TMP/jeter.bed
+
+cat ${L.join(" ")} |\\
+        grep -v '^#' |\\
+        LC_ALL=C sort -T . -t '\t' -k6,6g > TMP/jeter.bed
+
+
+cat << 'EOF' > TMP/jeter.awk
+        {
+        printf("| ");
+        for(i=1;i<=NF;i++) printf("%s%s",(i==1?"":" | "),\$i);
+        printf(" |\\n");
+        if(NR==1) {
+                printf("| ");
+                for(i=1;i<=NF;i++) printf("%s:----------",(i==1?"":" | "));
+                printf(" |\\n");
+                }
+        }
+EOF
+
+cut -f 4-11,15-18,21 TMP/jeter.bed | awk -F '\t' -f TMP/jeter.awk >  "${params.prefix?:""}closest.md"
+
+mv -v TMP/jeter.bed "${params.prefix?:""}closest.bed"
+
+
+
+
+"""
+}
 
 process MERGE_VCFS {
 tag "N=${L.size()}"
@@ -355,7 +421,7 @@ hostname 1>&2
 ${moduleLoad("bcftools")}
 set -o pipefail
 
-bcftools concat -a  -O u   ${L.join(" ")}  |\
+bcftools concat -a --remove-duplicates  -O u   ${L.join(" ")}  |\
 	bcftools sort -T ./tmp -O z -o "${params.prefix?:""}concat.vcf.gz"
 """
 }
