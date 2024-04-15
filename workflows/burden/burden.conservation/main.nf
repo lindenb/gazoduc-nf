@@ -383,7 +383,7 @@ head -n 1 "${L[0]}"  > TMP/jeter.bed
 
 cat ${L.join(" ")} |\\
         grep -v '^#' |\\
-        LC_ALL=C sort -T . -t '\t' -k6,6g > TMP/jeter.bed
+        LC_ALL=C sort -T . -t '\t' -k6,6g >> TMP/jeter.bed
 
 
 cat << 'EOF' > TMP/jeter.awk
@@ -399,7 +399,7 @@ cat << 'EOF' > TMP/jeter.awk
         }
 EOF
 
-cut -f 4-11,15-18,21 TMP/jeter.bed | awk -F '\t' -f TMP/jeter.awk >  "${params.prefix?:""}closest.md"
+cut -f 4-11,15-19,21 TMP/jeter.bed | awk -F '\t' -f TMP/jeter.awk >  "${params.prefix?:""}closest.md"
 
 mv -v TMP/jeter.bed "${params.prefix?:""}closest.bed"
 
