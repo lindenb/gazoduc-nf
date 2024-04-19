@@ -54,7 +54,6 @@ workflow 	{
 
 runOnComplete(workflow)
 
-
 workflow BURDEN_CONSERVATION {
 	take:
 		genomeId
@@ -297,7 +296,6 @@ set +o pipefail
 mv TMP/burden.tsv ./
 mv TMP/burden.vcf.gz ./
 mv TMP/burden.vcf.gz.tbi ./
-
 """
 }
 
