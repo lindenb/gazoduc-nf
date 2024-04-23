@@ -51,6 +51,7 @@ include {ANNOTATE_STRINGDB} from './step.stringdb.nf'
 include {ANNOTATE_ALPHAMISSENSE} from './step.alphamissense.nf'
 include {ANNOTATE_MONDO} from './step.mondo.nf'
 include {ANNOTATE_CCRE} from './step.ccre.nf'
+include {ANNOTATE_CADD} from './step.cadd.nf'
 
 workflow ANNOTATE_VCF_01 {
 	take:
@@ -156,6 +157,11 @@ workflow ANNOTATE_VCF_01 {
 		step_ch = ANNOTATE_CCRE(genomeId, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
+
+		step_ch = ANNOTATE_CADD(genomeId, step_ch.output)
+		count_ch = count_ch.mix(step_ch.count)
+		doc_ch = count_ch.mix(step_ch.doc)
+
 		
 
 		vcfs2 = step_ch.output.map{T->slurpJsonFile(T)}.map{T->[vcf:T.vcf,index:T.index]}
