@@ -64,7 +64,8 @@ workflow JVARKIT_VCF_TO_INTERVALS_01 {
 		version_ch = MERGE_VERSION("jvarkit2intervals",version_ch.collect())
 
 	emit:
-		bed = concat_ch.output
+		vcf2bed = bed_ch.bed /** original BED computed by VCF_TO_BED */
+		bed = concat_ch.output /** sliced bed , this is what we want */
 		version = version_ch
 	}
 

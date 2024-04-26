@@ -23,25 +23,22 @@ SOFTWARE.
 
 */
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete;isHg19;isHg38} from './annot.functions.nf'
+include {hasFeature;isBlank;isHg38;backDelete} from './annot.functions.nf'
 
-def TAG="SNPEFF"
 
-String getUrl(genomeId) {
-	if(isHg19(genomeId)) return "TODO"+genomeId;
-	if(isHg38(genomeId)) return "TODO"+genomeId;
-	return "";
-	}
 
-workflow ANNOTATE_SNPEFF {
+def TAG="REGULOME"
+def URL="https://www.encodeproject.org/files/ENCFF250UJY/@@download/ENCFF250UJY.tsv"
+
+workflow ANNOTATE_REGULOME {
 	take:
 		genomeId
-		vcfs /** tuple vcf,vcf_index */
+		vcfs /** json vcf,vcf_index */
 	main:
-		if(hasFeature("snpeff") && !getUrl(genomeId).isEmpty()) {
-			source_ch =  DOWNLOAD_SNPEFF(genomeId)
-			annotate_ch = ANNOTATE(genomeId,source_ch.output, vcfs)
-			
+		if(isHg38(genomeId)) {
+			source_ch =  DOWNLOAD(genomeId)
+			annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,vcfs)
+
 			out1 = annotate_ch.output
 			out2 = annotate_ch.count
 			out3 = MAKE_DOC(genomeId).output
@@ -58,31 +55,6 @@ workflow ANNOTATE_SNPEFF {
 		doc = out3
 }
 
-/** get snpeff Database */
-process DOWNLOAD_SNPEFF {
-tag "${genomeId}"
-afterScript "rm -f TMP"
-memory "10g"
-input:
-        val(genomeId)
-output:
-       	path("DATADIR"),emit:output
-script:
-        def url=getUrl(genomeId)
-"""
-hostname 1>&2
-${moduleLoad("snpeff/5.2")}
-set -o pipefail
-mkdir -p DATADIR TMP
-
-snpEff -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -dataDir  "\${PWD}/DATADIR" download "${url}"
-
-find DATADIR -type f -name "*.bin" 1>&2
-
-"""
-}
-
-
 process MAKE_DOC {
 executor "local"
 input:
@@ -90,47 +62,79 @@ input:
 output:
 	path("${TAG}.html"),emit:output
 script:
-	def db = getUrl(genomeId)
+	def genome = params.genomes[genomeId]
 """
 cat << __EOF__ > ${TAG}.html
 <dl>
 <dt>${TAG}</dt>
-<dd>Annotation with SNPEFF : ${db}</dd>
+<dd>${TAG} <a href="${URL}">${URL}</a></dd>
 </dl>
 __EOF__
+"""
+}
+
+process DOWNLOAD{
+afterScript "rm -rf TMP"
+memory "2g"
+input:
+	val(genomeId)
+output:
+	path("${TAG}.bed.gz"),emit:bed
+	path("${TAG}.bed.gz.tbi"),emit:tbi
+script:
+	def genome = params.genomes[genomeId]
+    	def reference = genome.fasta
+    	def whatis = "Regulome data from ${URL}"
+"""
+hostname 1>&2
+mkdir -p TMP
+${moduleLoad("htslib jvarkit")}
+
+set -o pipefail
+
+wget -O - "${URL}" |\
+        gunzip -c |\\
+	sed 's/^chrom/#chrom/' |\\
+        java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 1 --convert SKIP  |\
+        bgzip > TMP/${TAG}.bed.gz
+
+tabix -p bed -f TMP/${TAG}.bed.gz
+
+mv TMP/${TAG}.bed.gz ./
+mv TMP/${TAG}.bed.gz.tbi ./
+
+
 """
 }
 
 process ANNOTATE {
 tag "${json.name}"
 afterScript "rm -rf TMP"
-memory '3g'
+memory "3g"
 input:
-	val(genomeId)
-	path(config)
-	//tuple path(vcf),path(vcf_idx),path(bed)
+	path(tabix)
+	path(tbi)
 	path(json)
+	//tuple path(vcf),path(vcf_idx),path(bed)
 output:
 	//tuple path("OUTPUT/${TAG}.bcf"),path("OUTPUT/${TAG}.bcf.csi"),path(bed),emit:output
 	path("OUTPUT/${TAG}.json"),emit:output
 	path("OUTPUT/${TAG}.count"),emit:count
 script:
-	def db = getUrl(genomeId)
 	def row = slurpJsonFile(json)
+	def extend=100
 """
 hostname 1>&2
-${moduleLoad("snpeff/5.2")}
+${moduleLoad("bcftools")}
 mkdir -p TMP OUTPUT
 
-set -o pipefail
+bcftools view '${row.vcf}' |\\
+	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfregulomedb -x ${extend} --tabix "${tabix}" --column 1 --convert SKIP  |\\
+	bcftools view -O b -o  TMP/${TAG}.bcf
+bcftools index --force TMP/${TAG}.bcf
 
-bcftools view '${row.vcf}' -O v |\
-	snpEff -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -dataDir '${contig}' \\
-                                -nodownload -noLog -noStats -lof eff ${db} > TMP/jeter1.vcf
+bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
 
-bcftools sort --max-mem '${task.memory.giga}G' -T TMP/tmp -O b -o TMP/${TAG}.bcf TMP/jeter1.vcf
-bcftools index TMP/${TAG}.bcf
-rm TMP/jeter1.vcf
 
 cat << EOF > TMP/${TAG}.json
 {
@@ -140,10 +144,7 @@ cat << EOF > TMP/${TAG}.json
 }
 EOF
 
-
-###
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
-mv -v TMP/${TAG}.* OUTPUT/
+mv -v TMP/${TAG}.* OUTPUT
 ${backDelete(row)}
 """
 }
