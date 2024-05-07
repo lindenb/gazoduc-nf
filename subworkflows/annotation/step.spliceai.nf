@@ -172,7 +172,7 @@ bcftools view --targets-file TMP/junctions.bed.gz "${row.vcf}" --max-ac '${ac}:n
 # create one if no VCF above
 ls TMP/CHUNCKS/split.*.vcf.gz > /dev/null || ( bcftools view --header-only -O z -o TMP/CHUNCKS/split.0.vcf.gz '${row.vcf}' && bcftools index -t TMP/CHUNCKS/split.0.vcf.gz )
 
-find . -type f -name "*.bcf" -o -name "*.vcf.gz" |while read F; do echo -n "\${F}: " 1>&2 && bcftools query -f '.' "\${F}" | wc -c 1>&2 ; done
+find . -type f -name "*.bcf" -o -name "*.vcf.gz" |while read F; do echo -n "\${F}: " 1>&2 && bcftools query -N -f '.' "\${F}" | wc -c 1>&2 ; done
 
 mkdir -p OUTPUT
 mv TMP/off.bcf OUTPUT/
@@ -311,7 +311,7 @@ cat << EOF > TMP/${TAG}.json
 EOF
 
 
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
+bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
 mv -v TMP/${TAG}.* OUTPUT/
 ${backDelete(row)}
 """

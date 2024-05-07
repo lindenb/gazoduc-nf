@@ -178,7 +178,7 @@ else
 fi
 
 echo -n "NUMBER OF VARIANTS BEFORE ANNOT:" 1>&2
-bcftools query -f '.' TMP/jeter.bcf | wc -c 1>&2
+bcftools query -N -f '.' TMP/jeter.bcf | wc -c 1>&2
 
 
 
@@ -194,7 +194,7 @@ bcftools csq -O u --force --local-csq --ncsq 10000 --fasta-ref "${reference}" --
 bcftools index -t TMP/jeter2.vcf.gz
 
 echo -n "NUMBER OF VARIANTS AFTER ANNOT:" 1>&2
-bcftools query -f '.' TMP/jeter2.vcf.gz |wc -c 1>&2
+bcftools query -N -f '.' TMP/jeter2.vcf.gz |wc -c 1>&2
 
 # loop over each TRanscript
 i=1

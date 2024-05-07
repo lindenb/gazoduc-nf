@@ -34,8 +34,6 @@ graphtyper is a graph-based variant caller capable of genotyping population-scal
 */
 process GRAPHTYPER_DOWNLOAD_01 {
 tag "${params.graphtyper.version}"
-input:
-	val(meta)
 output:
 	path("graphtyper"),emit:executable
 	path("version.xml"),emit:version

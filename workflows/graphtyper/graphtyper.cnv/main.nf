@@ -24,33 +24,6 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults()
-
-gazoduc.build("vcf","NO_FILE").
-	desc("file containing the SV variants to genotype").
-	existingFile().
-	required().
-	put()
-
-gazoduc.make("bams","NO_FILE").
-        description("File containing the paths to the BAM/CRAMS files. One path per line").
-        required().
-        existingFile().
-        put()
-
-gazoduc.make("bed","NO_FILE").
-        description("Retstict to that bed").
-        put()
-
-
-gazoduc.make("extraBcfTools","").
-        description("extra arguments to add to bcftools where splitting vcf (could be option -e 'blblabala' )").
-        put()
-
-
-gazoduc.make("split_vcf_method","--vcf-count 1000").
-        description("split initial VCF. Argument for jvarkit/splitnvariants.").
-        put()
 
 
 include {GRAPHTYPER_DOWNLOAD_01} from '../../../modules/graphtyper/graphtyper.download.01.nf'
@@ -59,16 +32,13 @@ include {COLLECT_TO_FILE_01} from '../../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_CONCAT_01} from '../../../subworkflows/bcftools/bcftools.concat.01.nf'
 include {JVARKIT_VCF_SPLIT_N_VARIANTS_01} from '../../../subworkflows/jvarkit/jvarkit.vcfsplitnvariants.nf'
 include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
-include {runOnComplete;moduleLoad;getVersionCmd} from '../../../modules/utils/functions.nf'
+include {runOnComplete;moduleLoad;getVersionCmd;dumpParams} from '../../../modules/utils/functions.nf'
 
-if( params.help ) {
-    gazoduc.usage().
-	name("GraphTyper CNV").
-	desc("Genotype CNV/SV using graphtyper").
-	print();
+if(params.help) {
+    dumpParams(params);
     exit 0
-} else {
-   gazoduc.validate();
+}  else {
+    dumpParams(params);
 }
 
 
@@ -79,22 +49,6 @@ workflow {
 	}
 
 runOnComplete(workflow);
-
-
-process PUBLISH {
-publishDir "${params.publishDir}" , mode: 'copy', overwrite: true
-input:
-	path(html)
-	path(version)
-output:
-	path(zip)
-when:
-	!params.getOrDefault("publishDir","").trim().isEmpty()
-script:
-"""
-echo "publishing ${zip}"
-"""
-}
 
 
 

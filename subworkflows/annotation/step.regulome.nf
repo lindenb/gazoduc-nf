@@ -133,7 +133,7 @@ bcftools view '${row.vcf}' |\\
 	bcftools view -O b -o  TMP/${TAG}.bcf
 bcftools index --force TMP/${TAG}.bcf
 
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
+bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
 
 
 cat << EOF > TMP/${TAG}.json
