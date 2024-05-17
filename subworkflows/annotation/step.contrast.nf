@@ -29,6 +29,7 @@ def TAG="CONTRAST"
 workflow ANNOTATE_CONTRAST {
 	take:
 		genomeId
+		bed
 		vcfs /** tuple vcf,vcf_index */
 	main:
 

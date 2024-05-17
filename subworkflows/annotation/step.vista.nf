@@ -24,17 +24,24 @@ SOFTWARE.
 */
 
 include {slurpJsonFile;parseBoolean;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
+include {hasFeature;isBlank;backDelete;hgName} from './annot.functions.nf'
+
+String getURL(genomeId) {
+	String hg=hgName(genomeId);
+	if(!hg.equals("hg19")) return "";
+	return "https://hgdownload.cse.ucsc.edu/goldenPath/${hg}/database/vistaEnhancers.txt.gz";
+	}
 
 def TAG="VISTA_ENHANCER"
 
 workflow ANNOTATE_VISTA {
 	take:
 		genomeId
+		bed
 		vcfs /** json: vcf,vcf_index */
 	main:
 
-             	if(hasFeature("vista") && !isBlank(params.genomes[genomeId],"vista_enhancers_url") ) {
+             	if(hasFeature("vista") && !getURL(genomeId).isEmpty() ) {
                         source_ch = DOWNLOAD(genomeId)
                         annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
                         out1 = annotate_ch.output
@@ -55,6 +62,7 @@ workflow ANNOTATE_VISTA {
 }
 
 process DOWNLOAD{
+tag "${getURL(genomeId)}"
 afterScript "rm -rf TMP"
 memory "2g"
 input:
@@ -65,7 +73,7 @@ output:
 	path("${TAG}.header"),emit:header
 script:
 	def genome = params.genomes[genomeId]
-	def url = genome.vista_enhancers_url
+	def url = getURL(genomeId)
         def reference = genome.fasta
         def whatis = "Vista Enhancers from ${url}"
 """
@@ -74,7 +82,7 @@ mkdir -p TMP
 ${moduleLoad("htslib jvarkit bedtools")}
 
 set -o pipefail
-wget -O - "${url}" |\
+wget --no-check-certificate -O - "${url}" |\
         gunzip -c |\
         cut -f2-5 |\
         java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 1 --convert SKIP  |\
@@ -98,7 +106,7 @@ output:
 	path("${TAG}.html"),emit:output
 script:
 	def genome = params.genomes[genomeId]
-	def url = genome.vista_enhancers_url
+	def url = getURL(genomeId)
 """
 cat << __EOF__ > ${TAG}.html
 <dl>

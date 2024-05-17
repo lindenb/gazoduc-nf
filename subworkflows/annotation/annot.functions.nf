@@ -31,25 +31,35 @@ boolean isBlank(hash,key) {
         }
 
 boolean hasFeature(key) {
-        def with = "with_"+key
         if(!params.containsKey("annotations")) return false;
-        if(!params.annotations.containsKey(with)) {
-                log.warn("params.annotations."+with+" missing. return false;");
+        if(!params.annotations.containsKey(key)) {
+                log.warn("params.annotations."+key+" missing. return false;");
+		return false;
+		}
+        if(!params.annotations[key].containsKey("enabled")) {
+                log.warn("params.annotations."+key+".enabled missing. return false;");
                 return false;
                 }
-        if(isBlank(params.annotations,with)) return false;
-        return (params.annotations[with] as boolean)
+        return (params.annotations[key].enabled as boolean);
         }
 
 boolean isSoftFilter(key) {
-        def f = "softfilter_"+key
-        if(!params.containsKey("annotations")) return true;
-        if(!params.annotations.containsKey(f)) {
-                log.warn("params.annotations."+f+" missing. return true;");
-                return true;
+	return !isHardFilter(key);
+	}
+
+
+boolean isHardFilter(key) {
+        if(!params.containsKey("annotations")) return false;
+        if(!params.annotations.containsKey(key)) {
+                log.warn("params.annotations."+key+" missing. return false;");
+		return false;
+		}
+        if(!params.annotations[key].containsKey("hard_filter")) {
+                log.warn("params.annotations."+key+".hard_filter missing. return false;");
+                return false;
                 }
-        if(isBlank(params.annotations,f)) return true;
-        return (params.annotations[f] as boolean)
+	
+        return (params.annotations[key].hard_filter as boolean)
         }
 
 String backDelete(json) {
@@ -67,4 +77,10 @@ boolean isHg38(genomeId) {
 	if(isBlank(params.genomes[genomeId],"ucsc_name")) return false;
 	def u = params.genomes[genomeId].ucsc_name;
 	return u.equals("hg38");
+	}
+
+String hgName(genomeId) {
+	if(isHg19(genomeId)) return "hg19";
+	if(isHg38(genomeId)) return "hg38";
+	return "";
 	}

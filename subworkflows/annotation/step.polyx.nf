@@ -30,10 +30,11 @@ def TAG="POLYX"
 workflow ANNOTATE_POLYX {
 	take:
 		genomeId
+		bed
 		vcfs /** json: vcf,index,bed */
 	main:
 
-		 if(hasFeature("polyx") && (params.annotations.polyx as int)>0) {
+		 if(hasFeature("polyx") && (params.annotations.polyx.size as int)>0) {
 			    annotate_ch = ANNOTATE(genomeId,vcfs)
 		            out1 = annotate_ch.output
 		            out2 = annotate_ch.count
@@ -97,7 +98,7 @@ set -o pipefail
 
 bcftools view "${row.vcf}" |\
 	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfpolyx \
-			-n '${params.annotations.polyx}' \
+			-n '${params.annotations.polyx.size}' \
 			--reference '${genome.fasta}' \
 			--tag POLYX   |\
 	bcftools view -O b -o TMP/${TAG}.bcf

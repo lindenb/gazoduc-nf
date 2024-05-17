@@ -33,6 +33,7 @@ def TAG="STRINGDB"
 workflow ANNOTATE_STRINGDB {
 	take:
 		genomeId
+		bed
 		vcfs /** json vcf,vcf_index */
 	main:
 		if(hasFeature("stringdb") && !isBlank(params.genomes[genomeId],"gtf")) {
@@ -67,9 +68,9 @@ output:
 script:
 	def genome = params.genomes[genomeId]
         def reference = genome.fasta
-	def version = params.annotations.stringdb_version
+	def version = params.annotations.stringdb.version
 	def taxon = genome.taxon_id?:9606
-	def treshold = params.annotations.stringdb_treshold
+	def treshold = params.annotations.stringdb.treshold
 """
 hostname 1>&2
 ${moduleLoad("htslib bedtools jvarkit")}

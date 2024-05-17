@@ -31,6 +31,7 @@ def WHATIZ = "The Mondo Disease Ontology (Mondo) aims to harmonize disease defin
 workflow ANNOTATE_MONDO {
 	take:
 		genomeId
+		bed
 		vcfs /** json: vcf,index,bed */
 	main:
 
@@ -76,11 +77,11 @@ mkdir -p TMP/TDB
 ${moduleLoad("htslib jvarkit bedtools")}
 set -x
 
-wget -O TMP/jeter.zip "https://archive.apache.org/dist/jena/binaries/apache-jena-${jena_version}.zip"
-(cd TMP && unzip jeter.zip && rm jeter.zip)
+wget --no-check-certificate -O TMP/jeter.zip "https://archive.apache.org/dist/jena/binaries/apache-jena-${jena_version}.zip"
+(cd TMP && unzip jeter.zip 1>&2 && rm -v jeter.zip)
 
 
-wget -O TMP/mondo.owl "https://github.com/monarch-initiative/mondo/releases/download/v${mondo_version}/mondo.owl"
+wget --no-check-certificate -O TMP/mondo.owl "https://github.com/monarch-initiative/mondo/releases/download/v${mondo_version}/mondo.owl"
 
 
 ./TMP/apache-jena-${jena_version}/bin/tdbloader --loc=./TMP/TDB TMP/mondo.owl

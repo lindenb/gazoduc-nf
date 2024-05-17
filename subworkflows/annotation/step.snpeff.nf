@@ -27,18 +27,20 @@ include {hasFeature;isBlank;backDelete;isHg19;isHg38} from './annot.functions.nf
 
 def TAG="SNPEFF"
 
-String getUrl(genomeId) {
-	if(isHg19(genomeId)) return "TODO"+genomeId;
-	if(isHg38(genomeId)) return "TODO"+genomeId;
+String getDB(genomeId) {
+	if(isHg19(genomeId)) return "GRCh37.75";
+	if(isHg38(genomeId)) return "GRCh38.105";
 	return "";
 	}
+
 
 workflow ANNOTATE_SNPEFF {
 	take:
 		genomeId
+		bed
 		vcfs /** tuple vcf,vcf_index */
 	main:
-		if(hasFeature("snpeff") && !getUrl(genomeId).isEmpty()) {
+		if(hasFeature("snpeff") && !getDB(genomeId).isEmpty()) {
 			source_ch =  DOWNLOAD_SNPEFF(genomeId)
 			annotate_ch = ANNOTATE(genomeId,source_ch.output, vcfs)
 			
@@ -60,7 +62,7 @@ workflow ANNOTATE_SNPEFF {
 
 /** get snpeff Database */
 process DOWNLOAD_SNPEFF {
-tag "${genomeId}"
+tag "${getDB(genomeId)}"
 afterScript "rm -f TMP"
 memory "10g"
 input:
@@ -68,14 +70,14 @@ input:
 output:
        	path("DATADIR"),emit:output
 script:
-        def url=getUrl(genomeId)
+        def url=getDB(genomeId)
 """
 hostname 1>&2
 ${moduleLoad("snpeff/5.2")}
 set -o pipefail
 mkdir -p DATADIR TMP
 
-snpEff -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -dataDir  "\${PWD}/DATADIR" download "${url}"
+snpEff -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP download -dataDir  "\${PWD}/DATADIR"  "${url}"
 
 find DATADIR -type f -name "*.bin" 1>&2
 
@@ -90,7 +92,7 @@ input:
 output:
 	path("${TAG}.html"),emit:output
 script:
-	def db = getUrl(genomeId)
+	def db = getDB(genomeId)
 """
 cat << __EOF__ > ${TAG}.html
 <dl>
@@ -115,7 +117,7 @@ output:
 	path("OUTPUT/${TAG}.json"),emit:output
 	path("OUTPUT/${TAG}.count"),emit:count
 script:
-	def db = getUrl(genomeId)
+	def db = getDB(genomeId)
 	def row = slurpJsonFile(json)
 """
 hostname 1>&2
@@ -124,9 +126,9 @@ mkdir -p TMP OUTPUT
 
 set -o pipefail
 
-bcftools view '${row.vcf}' -O v |\
-	snpEff -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -dataDir '${contig}' \\
-                                -nodownload -noLog -noStats -lof eff ${db} > TMP/jeter1.vcf
+bcftools view '${row.vcf}' -O v |\\
+	snpEff -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP eff -dataDir "\${PWD}/${config}" \\
+		-nodownload -noLog -noStats -lof ${db} > TMP/jeter1.vcf
 
 bcftools sort --max-mem '${task.memory.giga}G' -T TMP/tmp -O b -o TMP/${TAG}.bcf TMP/jeter1.vcf
 bcftools index TMP/${TAG}.bcf

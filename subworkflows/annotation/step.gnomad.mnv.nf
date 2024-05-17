@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
+include {hasFeature;isBlank;backDelete;isHg19} from './annot.functions.nf'
 
 def TAG="MNV"
 
@@ -33,9 +33,9 @@ workflow ANNOTATE_MNV {
 		vcfs /** json: vcf,index,bed */
 	main:
 
-             if(hasFeature("mnv") && !isBlank(params.genomes[genomeId],"ucsc_name") && (params.genomes[genomeId].ucsc_name.equals("hg19"))) {
+             if(hasFeature("mnv") && isHg19(genomeId)) {
                         source_ch = DOWNLOAD(genomeId)
-						annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
+			annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
                         out1 = annotate_ch.output
                         out2 = annotate_ch.count
                         out3 = MAKE_DOC(genomeId).output
@@ -114,12 +114,11 @@ output:
 	path("${TAG}.html"),emit:output
 script:
 	def genome = params.genomes[genomeId]
-	def url = genome.rmsk_url
 """
 cat << __EOF__ > ${TAG}.html
 <dl>
 <dt>${TAG}</dt>
-<dd>UCSC repeat masker intervals. <a href="${url}">${url}</a></dd>
+<dd>MNV</a></dd>
 </dl>
 __EOF__
 """

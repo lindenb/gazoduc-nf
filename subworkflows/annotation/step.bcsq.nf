@@ -29,13 +29,14 @@ def TAG="BCSQ"
 workflow ANNOTATE_BCSQ {
 	take:
 		genomeId
+		bed
 		vcfs /** tuple vcf,vcf_index */
 	main:
 		if(hasFeature("bcftools_csq") && !isBlank(params.genomes[genomeId],"gff3")) {
 			annotate_ch = ANNOTATE(genomeId,vcfs)
 			out1 = annotate_ch.output
 			out2 = annotate_ch.count
-			out3 = MAKE_DOC().output
+			out3 = MAKE_DOC(genomeId).output
 			}
 		else
 			{
@@ -52,14 +53,18 @@ workflow ANNOTATE_BCSQ {
 
 process MAKE_DOC {
 executor "local"
+input:
+	val(genomeId)
 output:
 	path("${TAG}.html"),emit:output
 script:
+	def genome= params.genomes[genomeId]
+
 """
 cat << __EOF__ > ${TAG}.html
 <dl>
 <dt>${TAG}</dt>
-<dd>Functional annotation with <code>bcftools csq</code></dd>
+<dd>Functional annotation with <code>bcftools csq</code>:<code>${genome.gff3}</code></dd>
 </dl>
 __EOF__
 """

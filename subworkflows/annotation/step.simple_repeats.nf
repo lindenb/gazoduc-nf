@@ -23,16 +23,26 @@ SOFTWARE.
 
 */
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
+include {hasFeature;isBlank;backDelete;hgName} from './annot.functions.nf'
 
 def TAG="SREPEAT"
+
+
+String getURL(genomeId) {
+	String hg=hgName(genomeId);
+	if(hg.isEmpty()) return "";
+	return "https://hgdownload.cse.ucsc.edu/goldenPath/${hg}/database/simpleRepeat.txt.gz";
+	}
+
+
 
 workflow ANNOTATE_SIMPLE_REPEATS {
 	take:
 		genomeId
+		bed
 		vcfs /** json: tuple vcf,vcf_index */
 	main:
-		if(hasFeature("simpe_repeats") && !isBlank(params.genomes[genomeId],"simple_repeats_url")) {
+		if(hasFeature("simpe_repeats") && !getURL(genomeId).isEmpty()) {
 			source_ch =  DOWNLOAD(genomeId)
 			annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
 
@@ -53,6 +63,7 @@ workflow ANNOTATE_SIMPLE_REPEATS {
 }
 
 process DOWNLOAD{
+tag "${getURL(genomeId)}"
 afterScript "rm -rf TMP"
 memory "2g"
 input:
@@ -63,7 +74,7 @@ output:
 	path("${TAG}.header"),emit:header
 script:
 	def genome = params.genomes[genomeId]
-	def url = genome.simple_repeats_url
+	def url = getURL(genomeId)
         def reference = genome.fasta
         def whatis = "Simple Repeats from ${url}"
 """
@@ -72,7 +83,7 @@ mkdir -p TMP
 ${moduleLoad("htslib jvarkit bedtools")}
 
 set -o pipefail
-wget -O - "${url}" |\
+wget --no-check-certificate -O - "${url}" |\
         gunzip -c |\
         cut -f2-5 |\
         java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 1 --convert SKIP  |\
@@ -97,7 +108,7 @@ output:
 	path("${TAG}.html"),emit:output
 script:
 	def genome = params.genomes[genomeId]
-	def url = genome.simple_repeats_url
+	def url = getURL(genomeId)
 """
 cat << __EOF__ > ${TAG}.html
 <dl>
@@ -129,9 +140,16 @@ hostname 1>&2
 ${moduleLoad("bcftools")}
 mkdir -p TMP OUTPUT
 
-bcftools annotate -a "${tabix}" -h "${header}" -c "CHROM,FROM,TO,${TAG}"  --merge-logic '${TAG}:unique' -O b -o TMP/${TAG}.bcf '${row.vcf}'
-bcftools index TMP/${TAG}.bcf
+bcftools annotate -a "${tabix}" -h "${header}" -c "CHROM,FROM,TO,${TAG}"  --merge-logic '${TAG}:unique' -O b -o TMP/jeter.bcf '${row.vcf}'
 
+if ${params.annotations.simpe_repeats.hard_filter as boolean} ; then
+	bcftools view -e '${TAG}=1'  -O b -o TMP/${TAG}.bcf TMP/jeter.bcf
+else
+	mv -v TMP/jeter.bcf TMP/${TAG}.bcf
+fi
+
+
+bcftools index TMP/${TAG}.bcf
 
 cat << EOF > TMP/${TAG}.json
 {

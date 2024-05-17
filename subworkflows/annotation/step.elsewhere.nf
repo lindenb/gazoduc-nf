@@ -29,15 +29,15 @@ def TAG="ELSEWHERE"
 workflow ANNOTATE_ELSEWHERE {
 	take:
 		genomeId
+		bed
 		vcfs /** tuple vcf,vcf_index */
-		other_vcfs // or no FILE
 	main:
 
-		if(hasFeature("elsewhere") && !other_vcfs.name.equals("NO_FILE")) {
-			annotate_ch = ANNOTATE(genomeId, other_vcfs, vcfs)
+		if(hasFeature("elsewhere") && !params.annotations.elsewhere.list.equals("NO_FILE")) {
+			annotate_ch = ANNOTATE(genomeId, vcfs)
 			out1 = annotate_ch.output
 			out2 = annotate_ch.count
-			out3 = MAKE_DOC(other_vcfs).output
+			out3 = MAKE_DOC().output
 			}
 		else
 			{
@@ -53,8 +53,6 @@ workflow ANNOTATE_ELSEWHERE {
 
 process MAKE_DOC {
 executor "local"
-input:
-        path(other_vcfs)
 output:
 	path("${TAG}.html"),emit:output
 script:
@@ -65,7 +63,7 @@ cat << __EOF__ > ${TAG}.html
 <dd>Sample with ALT genotypes found in the following file(s):<ul>
 __EOF__
 
-grep -v "#"  '${other_vcfs}' | awk '{printf("<li>%s</li>\\n",\$0);}'  >> ${TAG}.html
+grep -v "#"  '${params.annotations.elsewhere.list}' | awk '{printf("<li>%s</li>\\n",\$0);}'  >> ${TAG}.html
 
 cat << __EOF__ >> ${TAG}.html
 </ul>
@@ -75,11 +73,10 @@ __EOF__
 }
 
 process ANNOTATE {
-tag "${json.name} ${others.name}"
+tag "${json.name}"
 afterScript "rm -rf TMP"
 input:
 	val(genomeId)
-	path(others)
 	//tuple path(vcf),path(vcf_idx),path(bed)
 	path(json)
 output:
@@ -90,7 +87,8 @@ script:
 	def genome = params.genomes[genomeId]
 	def reference = genome.fasta
         def row = slurpJsonFile(json)
-	def ac= (params.annotations.elsewhere_max_ac?:10)
+	def others = params.annotations.elsewhere.list
+	def ac= (params.annotations.elsewhere.max_ac?:10)
 """
 hostname 1>&2
 ${moduleLoad("bcftools bedtools htslib")}

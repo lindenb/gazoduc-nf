@@ -23,17 +23,25 @@ SOFTWARE.
 
 */
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
+include {hasFeature;isBlank;backDelete;hgName} from './annot.functions.nf'
 def TAG="ALPHAMISSENSE"
+
+String getURL(genomeId) {
+	String hg=hgName(genomeId);
+	if(hg.equals("hg19") || hg.equals("hg38")) return "https://storage.googleapis.com/dm_alphamissense/AlphaMissense_${hg}.tsv.gz";
+	return "";
+	}
+
 
 workflow ANNOTATE_ALPHAMISSENSE {
 	take:
 		genomeId
+		bed
 		vcfs /** json: vcf,vcf_index */
 	main:
 
 	
-		if(hasFeature("alphamissense") && !isBlank(params.genomes[genomeId],"alphamissense_url")) {
+		if(hasFeature("alphamissense") && !getURL(genomeId).isEmpty()) {
 			source_ch = DOWNLOAD(genomeId)
 			annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
 			out1 = annotate_ch.output
@@ -54,6 +62,7 @@ workflow ANNOTATE_ALPHAMISSENSE {
 
 
 process DOWNLOAD {
+tag "${getURL(genomeId)}"
 afterScript "rm -rf TMP"
 memory "3g"
 input:
@@ -64,7 +73,7 @@ output:
 	path("${TAG}.header"),emit:header
 script:
 	def genome = params.genomes[genomeId]
-   	def url = genome.alphamissense_url
+   	def url = getURL(genomeId)
     def whatis="Data from AlphaMissense https://www.science.org/doi/10.1126/science.adg7492"
 
 """

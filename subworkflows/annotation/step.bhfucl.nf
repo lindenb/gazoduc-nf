@@ -33,6 +33,7 @@ def URL = "http://ftp.ebi.ac.uk/pub/databases/GO/goa/bhf-ucl/gene_association.go
 workflow ANNOTATE_BHFUCL {
 	take:
 		genomeId
+		bed
 		vcfs /** json vcf,vcf_index */
 	main:
 		if(hasFeature("bhfucl") && !isBlank(params.genomes[genomeId],"gtf")) {

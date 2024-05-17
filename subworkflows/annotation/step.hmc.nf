@@ -36,6 +36,7 @@ String getUrl(genomeId) {
 workflow ANNOTATE_HMC {
 	take:
 		genomeId
+		bed
 		vcfs /** json: vcf,index,bed */
 	main:
 

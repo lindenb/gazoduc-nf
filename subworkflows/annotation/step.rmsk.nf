@@ -23,19 +23,26 @@ SOFTWARE.
 
 */
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
+include {hasFeature;isBlank;backDelete;hgName} from './annot.functions.nf'
 
 def TAG="RMSK"
+
+String getURL(genomeId) {
+	String hg=hgName(genomeId);
+	if(hg.isEmpty()) return "";
+	return "https://hgdownload.cse.ucsc.edu/goldenPath/${hg}/database/rmsk.txt.gz";
+	}
 
 workflow ANNOTATE_RMSK {
 	take:
 		genomeId
+		bed
 		vcfs /** json: vcf,index,bed */
 	main:
 
-             if(hasFeature("rmsk") && !isBlank(params.genomes[genomeId],"rmsk_url")) {
+             if(hasFeature("rmsk") && !getURL(genomeId).isEmpty()) {
                         source_ch = DOWNLOAD(genomeId)
-						annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
+			annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
                         out1 = annotate_ch.output
                         out2 = annotate_ch.count
                         out3 = MAKE_DOC(genomeId).output
@@ -53,6 +60,7 @@ workflow ANNOTATE_RMSK {
 }
 
 process DOWNLOAD {
+tag "${getURL(genomeId)}"
 afterScript "rm -rf TMP"
 memory "2g"
 input:
@@ -64,7 +72,7 @@ output:
 script:
 	def genome = params.genomes[genomeId]
 	def reference = genome.fasta
-	def url = genome.rmsk_url
+	def url = getURL(genomeId)
 	def whatis="Repeat Masker from ${url}"
 """
 hostname 1>&2
@@ -72,19 +80,22 @@ mkdir -p TMP
 ${moduleLoad("htslib jvarkit bedtools")}
 
 set -o pipefail
-wget -O - "${url}" |\
-	gunzip -c |\
-	cut -f6-8 |\
-	java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 1 --convert SKIP  |\
-		sort  -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\
-		bedtools merge |\
-		sed 's/\$/\t1/' |\
-		bgzip > TMP/${TAG}.bed.gz && \
-	tabix -p bed -f TMP/${TAG}.bed.gz
+
+wget --no-check-certificate -O - "${url}" |\\
+	gunzip -c |\\
+	cut -f6-8 |\\
+	java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 1 --convert SKIP  |\\
+		sort  -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
+		bedtools merge |\\
+		sed 's/\$/\t1/' |\\
+		bgzip > TMP/${TAG}.bed.gz
+	
+
+tabix -p bed -f TMP/${TAG}.bed.gz
 
 
-mv TMP/${TAG}.bed.gz ./
-mv TMP/${TAG}.bed.gz.tbi ./
+mv -v TMP/${TAG}.bed.gz ./
+mv -v TMP/${TAG}.bed.gz.tbi ./
 
 echo '##INFO=<ID=${TAG},Number=0,Type=Flag,Description="${whatis}">' > ${TAG}.header
 """
@@ -100,7 +111,7 @@ output:
 	path("${TAG}.html"),emit:output
 script:
 	def genome = params.genomes[genomeId]
-	def url = genome.rmsk_url
+	def url = getURL(genomeId)
 """
 cat << __EOF__ > ${TAG}.html
 <dl>
@@ -130,7 +141,14 @@ hostname 1>&2
 ${moduleLoad("bcftools")}
 mkdir -p TMP OUTPUT
 
-bcftools annotate -a "${tabix}" -h "${header}" -c "CHROM,FROM,TO,${TAG}" -O b -o TMP/${TAG}.bcf '${row.vcf}'
+bcftools annotate -a "${tabix}" -h "${header}" -c "CHROM,FROM,TO,${TAG}" -O b -o TMP/jeter.bcf '${row.vcf}'
+
+if ${params.annotations.rmsk.hard_filter as boolean} ; then
+	bcftools view -e '${TAG}=1'  -O b -o TMP/${TAG}.bcf TMP/jeter.bcf
+else
+	mv -v TMP/jeter.bcf TMP/${TAG}.bcf
+fi
+
 bcftools index TMP/${TAG}.bcf
 
 

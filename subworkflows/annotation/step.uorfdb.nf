@@ -23,10 +23,10 @@ SOFTWARE.
 
 */
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete;isHg19} from './annot.functions.nf'
-def TAG="AVADA"
-
-workflow ANNOTATE_AVADA {
+include {hasFeature;isBlank;backDelete;isHg38} from './annot.functions.nf'
+def TAG="UORFDB"
+def WHATIZ="upstream open reading frame database (uORF)"
+workflow ANNOTATE_UORFDB {
 	take:
 		genomeId
 		bed
@@ -34,9 +34,9 @@ workflow ANNOTATE_AVADA {
 	main:
 
 	
-		if(hasFeature("avada") && isHg19(genomeId) ) {
+		if(hasFeature("uorfdb") && isHg38(genomeId) ) {
 			source_ch = DOWNLOAD(genomeId)
-			annotate_ch = ANNOTATE(source_ch.vcf, source_ch.index,vcfs)
+			annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
 			out1 = annotate_ch.output
 			out2 = annotate_ch.count
 			out3 = MAKE_DOC().output
@@ -60,34 +60,35 @@ memory "3g"
 input:
         val(genomeId)
 output:
-       	path("${TAG}.db.bcf"),emit:vcf
-        path("${TAG}.db.bcf.csi"),emit:index
+	path("${TAG}.bed.gz"),emit:bed
+	path("${TAG}.bed.gz.tbi"),emit:tbi
+	path("${TAG}.header"),emit:header
 script:
+	def hg="hg38"
 	def genome = params.genomes[genomeId]
 	def reference = genome.fasta
-       	def url = "http://bejerano.stanford.edu/AVADA/avada_v1.00_2016.vcf.gz"
-	def whatis = "pubmed-id in avada. The AVADA database includes unvalidated variant evidence data, automatically retrieved from 61,116 full text papers deposited in PubMed until 07-2016"
+       	def url = "https://www.bioinformatics.uni-muenster.de/tools/uorfdb/download/uORF_dump_uORFdb.tsv"
 """
 hostname 1>&2
-${moduleLoad("bcftools jvarkit")}
+${moduleLoad("htslib jvarkit")}
 set -o pipefail
 mkdir -p TMP
 
 wget -O - "${url}" |\\
-	gunzip -c |\\
-	awk -F '\t' '/^#CHROM/ {printf("##INFO=<ID=PMID,Number=.,Type=String,Description=\\"AVADA PMID\\">\\n##INFO=<ID=GENE_SYMBOL,Number=.,Type=String,Description=\\"AVADA GENE_SYMBOL\\">\\n##INFO=<ID=ENSEMBL_ID,Number=.,Type=String,Description=\\"AVADA ENSEMBL_ID\\">\\n##INFO=<ID=ENTREZ_ID,Number=.,Type=String,Description=\\"AVADA ENTREZ_ID\\">\\n##INFO=<ID=REFSEQ_ID,Number=.,Type=String,Description=\\"AVADA REFSEQ_ID\\">\\n##INFO=<ID=STRAND,Number=.,Type=String,Description=\\"AVADA STRAND\\">\\n##INFO=<ID=ORIGINAL_VARIANT_STRING,Number=.,Type=String,Description=\\"AVADA ORIGINAL_VARIANT_STRING\\">\\n\\n");} {print;}' |\\
-	sed 's/PMID/${TAG}_PMID/g' |\
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfsetdict -R "${reference}"  -n SKIP |\\
-	bcftools sort -T TMP/tmp -O b -o TMP/${TAG}.db.bcf
+	awk -F '\t' '(\$2=="${hg}" && \$22!="" && \$23!="" && \$30!="")' |\\
+	cut -f 3,22,23,30 |\\
+	java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 1 --convert SKIP  |\\
+	LC_ALL=C sort  -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
+	uniq |\\
+	bgzip 	> TMP/${TAG}.bed.gz
+	
 
-bcftools view --header-only TMP/${TAG}.db.bcf | grep "^##INFO" | cut -d '=' -f3 | cut -d ',' -f1 | grep -v '^PMID' | awk '{printf("INFO/%s\t${TAG}_%s\\n",\$1,\$1);}' > TMP/rename.tsv
-bcftools annotate --rename-annots TMP/rename.tsv -O b -o TMP/jeter.bcf TMP/${TAG}.db.bcf
-mv TMP/jeter.bcf TMP/${TAG}.db.bcf
+tabix -p bed -f TMP/${TAG}.bed.gz
 
-bcftools index --force TMP/${TAG}.db.bcf
+echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="Kozak_strength uORF ${WHATIZ} ${url}">' > ${TAG}.header
 
-mv TMP/${TAG}.db.bcf ./
-mv TMP/${TAG}.db.bcf.csi ./
+mv TMP/${TAG}.bed.gz ./
+mv TMP/${TAG}.bed.gz.tbi ./
 """
 }
 
@@ -101,18 +102,20 @@ script:
 cat << __EOF__ > ${TAG}.html
 <dl>
 <dt>${TAG}</dt>
-<dd>pubmed-id in avada. The AVADA database includes <b>unvalidated</b> variant evidence data, automatically retrieved from 61,116 full text papers deposited in PubMed until 07-2016</dd>
+<dd>${WHATIZ}</dd>
 </dl>
 __EOF__
 """
 }
 
+
 process ANNOTATE {
 tag "${json.name}"
 afterScript "rm -rf TMP"
 input:
-	path(database)
-	path(database_idx)
+	path(tabix)
+	path(tbi)
+	path(header)
 	path(json)
 	//tuple path(vcf),path(vcf_idx),path(bed)
 output:
@@ -120,14 +123,16 @@ output:
 	path("OUTPUT/${TAG}.json"),emit:output
 	path("OUTPUT/${TAG}.count"),emit:count
 script:
-	 def row = slurpJsonFile(json)
+	def row = slurpJsonFile(json)
 """
 hostname 1>&2
 ${moduleLoad("bcftools")}
 mkdir -p TMP OUTPUT
 
-bcftools annotate -a "${database}" -c "${TAG}_PMID" --merge-logic '${TAG}_PMID:unique' -O b -o TMP/${TAG}.bcf '${row.vcf}'
+bcftools annotate -a "${tabix}" -h "${header}" -c "CHROM,FROM,TO,${TAG}"  --merge-logic '${TAG}:unique' -O b -o TMP/${TAG}.bcf '${row.vcf}'
 bcftools index --force TMP/${TAG}.bcf
+
+bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
 
 
 cat << EOF > TMP/${TAG}.json
@@ -138,9 +143,7 @@ cat << EOF > TMP/${TAG}.json
 }
 EOF
 
-###
-bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
-mv TMP/${TAG}.* OUTPUT/
+mv -v TMP/${TAG}.* OUTPUT
 ${backDelete(row)}
 """
 }

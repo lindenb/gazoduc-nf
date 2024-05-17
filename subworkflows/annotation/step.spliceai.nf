@@ -24,18 +24,25 @@ SOFTWARE.
 */
 
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
+include {hasFeature;isBlank;backDelete;isHg19;isHg38;} from './annot.functions.nf'
 
 
 def TAG="SPLICEAI"
 
+
+String getDb(genomeId) {
+	if(isHg19(genomeId)) return "grch37";
+	if(isHg38(genomeId)) return "grch38";
+	return "";
+	}
  
 workflow ANNOTATE_SPLICEAI {
 	take:
 		genomeId
+		bed
 		vcfs /** json vcf,vcf_index */
 	main:
-		if(hasFeature("spliceai") && !isBlank(params.genomes[genomeId],"gtf") && !isBlank(params.genomes[genomeId],"spliceai_annotation_type")) {
+		if(hasFeature("spliceai") && !isBlank(params.genomes[genomeId],"gtf") && !getDb(genomeId).isEmpty()) {
 			annotate_ch = ANNOTATE(genomeId,vcfs)
 			out1 = annotate_ch.output
 			out2 = annotate_ch.count
@@ -132,10 +139,10 @@ output:
 script:
 	def genome = params.genomes[genomeId]
 	def gtf = genome.gtf
-	def distance = params.annotations.spliceai_distance?:50
+	def distance = params.annotations.spliceai.distance?:50
 	def count = 1000
 	def row = slurpJsonFile(json)
-	def ac = params.annotations.spliceai_max_ac?:0
+	def ac = params.annotations.spliceai.max_ac?:0
 """
 hostname 1>&2
 ${moduleLoad("bcftools bedtools htslib jvarkit")}
@@ -163,14 +170,19 @@ bcftools index --force TMP/off1.bcf
 bcftools view -O b --targets-file TMP/junctions.bed.gz --min-ac '${(ac as int)+1}:nref'  -o TMP/off2.bcf "${row.vcf}"
 bcftools index --force TMP/off2.bcf 
 
-bcftools concat --remove-duplicates --allow-overlaps -O b -o  TMP/off.bcf TMP/off1.bcf TMP/off2.bcf
+# merge, add header for downstream operation
+bcftools concat --remove-duplicates --allow-overlaps -O v TMP/off1.bcf TMP/off2.bcf |\\
+	awk -F '\t' '/^#CHROM/ {printf("##INFO=<ID=SpliceAI,Number=.,Type=String,Description=\\"SpliceAIv1.3.1 variant annotation. These include delta scores (DS) and delta positions (DP) for acceptor gain (AG), acceptor loss (AL), donor gain (DG), and donor loss (DL). Format: ALLELE|SYMBOL|DS_AG|DS_AL|DS_DG|DS_DL|DP_AG|DP_AL|DP_DG|DP_DL\\">\\n");print;next;} {print;}' |\\
+	bcftools view -O b -o TMP/off.bcf
+
 bcftools index --force TMP/off.bcf
 
 bcftools view --targets-file TMP/junctions.bed.gz "${row.vcf}" --max-ac '${ac}:nref' |\\
 	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfsplitnvariants --variants-count ${count} --index -o TMP/CHUNCKS/split
 
 # create one if no VCF above
-ls TMP/CHUNCKS/split.*.vcf.gz > /dev/null || ( bcftools view --header-only -O z -o TMP/CHUNCKS/split.0.vcf.gz '${row.vcf}' && bcftools index -t TMP/CHUNCKS/split.0.vcf.gz )
+
+ls TMP/CHUNCKS/split.*.vcf.gz > /dev/null 2> /dev/null || ( bcftools view --header-only -O z -o TMP/CHUNCKS/split.0.vcf.gz '${row.vcf}' && bcftools index -t TMP/CHUNCKS/split.0.vcf.gz )
 
 find . -type f -name "*.bcf" -o -name "*.vcf.gz" |while read F; do echo -n "\${F}: " 1>&2 && bcftools query -N -f '.' "\${F}" | wc -c 1>&2 ; done
 
@@ -194,28 +206,28 @@ output:
 	tuple path(json),path("OUTPUT/${TAG}.bcf"),path("OUTPUT/${TAG}.bcf.csi"),emit:output
 script:
 	def genome = params.genomes[genomeId]
-	def db =genome.spliceai_annotation_type
-	def distance = params.annotations.spliceai_distance?:50
-	def treshold = params.annotations.spliceai_highscore?:0.9
-	def ac = params.annotations.spliceai_max_ac?:0
+	def db = getDb(genomeId)
+	def distance = params.annotations.spliceai.distance?:50
+	def treshold = params.annotations.spliceai.highscore?:0.9
+	def ac = params.annotations.spliceai.max_ac?:0
 """
 hostname 1>&2
 ${moduleLoad("bcftools htslib")}
 mkdir -p TMP OUTPUT
 
 echo "\${PATH}"
-which conda 1>&2 | cat
+which conda | cat 1>&2
 
 set -x
 
 
 # previous scores where definied
-if ${!file(params.annotations.spliceai_tabix_scores).name.equals("NO_FILE")}
+if ${!file(params.annotations.spliceai.tabix_scores).name.equals("NO_FILE")}
 then
 
 	echo '##INFO=<ID=SpliceAI,Number=.,Type=String,Description="SpliceAIv1.3.1 variant annotation. These include delta scores (DS) and delta positions (DP) for acceptor gain (AG), acceptor loss (AL), donor gain (DG), and donor loss (DL). Format: ALLELE|SYMBOL|DS_AG|DS_AL|DS_DG|DS_DL|DP_AG|DP_AL|DP_DG|DP_DL">' > TMP/tmp.header
 
-	bcftools annotate -a ${params.annotations.spliceai_tabix_scores}' \\
+	bcftools annotate -a '${params.annotations.spliceai.tabix_scores}' \\
 			-h TMP/tmp.header \\
 			-c "CHROM,POS,REF,ALT,SpliceAI" \\
 			-O b -o TMP/tmp1.bcf '${vcf}'
@@ -238,7 +250,7 @@ else
 	bcftools index TMP/done.bcf
 
 	# copy original vcf
-	bcftools view --threads ${tas.cpu} -o TMP/remain.vcf.gz -O z '${vcf}'
+	bcftools view --threads ${task.cpu} -o TMP/remain.vcf.gz -O z '${vcf}'
 	bcftools index -t TMP/remain.vcf.gz
 fi
 
@@ -247,6 +259,9 @@ export OMP_NUM_THREADS=${task.cpus}
 
 spliceai -R "${genome.fasta}"  -A "${db}" -D ${distance} -I TMP/remain.vcf.gz  |\\
 	bcftools view -O b -o TMP/in.bcf
+
+bcftools index  TMP/in.bcf
+
 
 # merge with done vcf
 bcftools concat -a -O b -o TMP/tmp1.bcf TMP/in.bcf TMP/done.bcf
@@ -275,7 +290,7 @@ mv TMP/${TAG}.* OUTPUT/
 
 
 process JOIN {
-tag "${json.name} N=${vcfs}+${vcfs_idx}"
+tag "${json.name}"
 afterScript "rm -rf TMP"
 input:
 	tuple path(json),path("dir??/*"),path("dir??/*")
@@ -297,7 +312,7 @@ bcftools index --force TMP/${TAG}.bcf
 
 # save spliceAI score for another day
 bcftools query -i 'INFO/SpliceAI!=""' -f '%CHROM\t%POS\t%REF\t%SpliceAI\\n' TMP/${TAG}.bcf |\\
-	awk -F '\t' '{n=split(\$4,a,/[,]/);for(i=1;i<=n;i++)  {split(a[i],b,/[\|]/); printf("%s\t%s\t%s\t%s\t%s\\n",\$1,\$2,\$3,b[1],a[i]);}}' |\\
+	awk -F '\t' '{n=split(\$4,a,/[,]/);for(i=1;i<=n;i++)  {split(a[i],b,/[\\|]/); printf("%s\t%s\t%s\t%s\t%s\\n",\$1,\$2,\$3,b[1],a[i]);}}' |\\
 	LC_ALL=C sort -T TMP -t \$'\t' -k1,1 -k2,2n -k3,3 -k4,4 > TMP/${TAG}.scores.tsv
 
 
@@ -331,24 +346,28 @@ script:
 hostname 1>&2
 ${moduleLoad("htslib")}
 
+set -x
+
 mkdir -p TMP
 LC_ALL=C sort -T TMP -t \$'\t' -k1,1 -k2,2n -k3,3 -k4,4 ${L.join(" ")} --merge -o "TMP/${params.prefix?:""}${genomeId}.spliceAI.scores.tsv"
 
 
-if ${!file(params.annotations.spliceai_tabix_scores).name.equals("NO_FILE")}
+if ${!file(params.annotations.spliceai.tabix_scores).name.equals("NO_FILE")}
 then
-	gunzip -c "${params.annotations.spliceai_tabix_scores}" > TMP/prev.tsv
-	LC_ALL=C sort -T TMP -t \$'\t' -k1,1 -k2,2n -k3,3 -k4,4 --merge  "TMP/${params.prefix?:""}${genomeId}.spliceAI.scores.tsv" TMP/prev.tsv -o "TMP/${params.prefix?:""}${genomeId}.spliceAI.scores.merged.tsv
-	rm TMP/prev.tsv
+	gunzip -c "${params.annotations.spliceai.tabix_scores}" > TMP/prev.tsv
+
+
+	LC_ALL=C sort -T TMP -t \$'\t' -k1,1 -k2,2n -k3,3 -k4,4 --merge  "TMP/${params.prefix?:""}${genomeId}.spliceAI.scores.tsv" TMP/prev.tsv > "TMP/${params.prefix?:""}${genomeId}.spliceAI.scores.merged.tsv"
+	rm -v TMP/prev.tsv
 else
-	cp "TMP/${params.prefix?:""}${genomeId}.spliceAI.scores.tsv"  "TMP/${params.prefix?:""}${genomeId}.spliceAI.scores.merged.tsv
+	cp -v "TMP/${params.prefix?:""}${genomeId}.spliceAI.scores.tsv"  "TMP/${params.prefix?:""}${genomeId}.spliceAI.scores.merged.tsv"
 fi
 
 
-bgzip "TMP/${params.prefix?:""}${genomeId}.spliceAI.scores.tsv"
+bgzip -f "TMP/${params.prefix?:""}${genomeId}.spliceAI.scores.tsv"
 tabix --force -s 1 -b 2 -e 2 "TMP/${params.prefix?:""}${genomeId}.spliceAI.scores.tsv.gz"
 
-bgzip "TMP/${params.prefix?:""}${genomeId}.spliceAI.scores.merged.tsv"
+bgzip -f "TMP/${params.prefix?:""}${genomeId}.spliceAI.scores.merged.tsv"
 tabix --force -s 1 -b 2 -e 2 "TMP/${params.prefix?:""}${genomeId}.spliceAI.scores.merged.tsv.gz"
 
 mv TMP/*.gz ./

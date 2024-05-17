@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete;isHg19;isHg18} from './annot.functions.nf'
+include {hasFeature;isBlank;backDelete;isHg19;isHg38} from './annot.functions.nf'
 
 def TAG="REVEL"
 def WHATIZ="REVEL is an ensemble method for predicting the pathogenicity of missense variants in the human genome. https://doi.org/10.1016/j.ajhg.2016.08.016 ."
@@ -36,6 +36,7 @@ String getUrl(genomeId) {
 workflow ANNOTATE_REVEL {
 	take:
 		genomeId
+		bed
 		vcfs /** json: vcf,index,bed */
 	main:
 
@@ -83,10 +84,14 @@ unzip -p TMP/jeter.zip  revel_with_transcript_ids |\\
 	tail -n +2 |\\
 	tr "," "\t" |\\
 	cut -f 1,${colpos},4,5,8 |\\
+	awk -F '\t' '\$2!="."' |\\
+	uniq |\\
 	java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 1 --convert SKIP  |\\
 		LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
-		bgzip > TMP/${TAG}.bed.gz && \
-	tabix -p bed -f TMP/${TAG}.bed.gz
+		uniq |\\
+		bgzip > TMP/${TAG}.bed.gz
+
+tabix -s 1 -b 2 -e 2 -f TMP/${TAG}.bed.gz
 
 
 mv TMP/${TAG}.bed.gz ./

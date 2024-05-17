@@ -31,13 +31,14 @@ def TAG="GNOMADSV"
 workflow ANNOTATE_GNOMADSV {
 	take:
 		genomeId
+		bed
 		vcfs /** json vcf,vcf_index */
 	main:
 		if(hasFeature("gnomadsv") && (isHg19(genomeId) || isHg38(genomeId)) ) {
 			if(isHg19(genomeId)) {
 				source_ch =  DOWNLOAD19(genomeId)
 				}
-			else if((isHg38(genomeId)) {
+			else if(isHg38(genomeId)) {
 				source_ch =  DOWNLOAD38(genomeId)
 				}
 			else
@@ -76,7 +77,7 @@ script:
 cat << __EOF__ > ${TAG}.html
 <dl>
 <dt>${TAG}</dt>
-<dd>Frequent SV in Gnomad. min-AF:${params.annotations.gnomadsv_min_AF} Field ${params.annotations.gnomadsv_population} </dd>
+<dd>Frequent SV in Gnomad. min-AF:${params.annotations.gnomadsv.min_AF} Field ${params.annotations.gnomadsv.population} </dd>
 </dl>
 __EOF__
 """
@@ -93,8 +94,8 @@ output:
 	path("${TAG}.db.bcf.csi"),emit:index
 script:
 	def genome = params.genomes[genomeId]
-	def AF=params.annotations.gnomadsv_min_AF?:0.1
-	def pop = params.annotations.gnomadsv_population?:"POPMAX_AF"
+	def AF=params.annotations.gnomadsv.min_AF?:0.1
+	def pop = params.annotations.gnomadsv.population?:"POPMAX_AF"
 """
 hostname 1>&2
 ${moduleLoad("bcftools jvarkit")}
@@ -102,7 +103,7 @@ mkdir -p TMP
 
 
 wget -O - "https://storage.googleapis.com/gcp-public-data--gnomad/papers/2019-sv/gnomad_v2.1_sv.sites.vcf.gz" |\
-	bcftools annotate --include 'INFO/${tag} >= ${af}' -x '^INFO/${tag}' -O v |\
+	bcftools annotate --include 'INFO/${tag} >= ${af}' -x 'FILTER,^INFO/${tag},INFO/END' -O v |\
 	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfsetdict -R "${genome.fasta}"  -n SKIP |\
 	bcftools view -O b -o TMP/${TAG}.db.bcf
 
@@ -137,15 +138,15 @@ output:
 	path("${TAG}.${chr}.db.bcf"),emit:output
 script:
 	def genome = params.genomes[genomeId]
-	def AF=params.annotations.gnomadsv_min_AF?:0.1
-	def pop = params.annotations.gnomadsv_population?:"POPMAX_AF"
+	def AF=params.annotations.gnomadsv.min_AF?:0.1
+	def pop = params.annotations.gnomadsv.population?:"POPMAX_AF"
 """
 hostname 1>&2
 ${moduleLoad("bcftools jvarkit")}
 mkdir -p TMP
 
 wget -O - "https://storage.googleapis.com/gcp-public-data--gnomad/release/4.0/genome_sv/gnomad.v4.0.sv.chr${chr}.vcf.gz" |\
-	bcftools annotate --include 'INFO/${tag} >= ${af}' -x '^INFO/${tag}' -O v |\
+	bcftools annotate --include 'INFO/${pop} >= ${AF}' -x 'FILTER,^INFO/${pop},INFO/END' -O v |\
 	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfsetdict -R "${genome.fasta}"  -n SKIP |\
 	bcftools view -O b -o TMP/${TAG}.${chr}.db.bcf
 
@@ -164,17 +165,17 @@ output:
 	path("${TAG}.db.bcf"),emit:vcf
 	path("${TAG}.db.bcf.csi"),emit:index
 script:
-	def pop = params.annotations.gnomadsv_population?:"POPMAX_AF"
+	def pop = params.annotations.gnomadsv.population?:"POPMAX_AF"
 """
 hostname 1>&2
 ${moduleLoad("bcftools")}
 mkdir -p TMP
 
 
-bcftools merge -a -O b  -o TMP/${TAG}.db.bcf ${L.join( " ")}
+bcftools concat -a -O b  -o TMP/${TAG}.db.bcf ${L.join( " ")}
 bcftools index --force TMP/${TAG}.db.bcf
 
-mv TMP/${TAG}.* ./
+mv -v TMP/${TAG}.* ./
 
 """
 }
@@ -193,8 +194,8 @@ output:
 	path("OUTPUT/${TAG}.json"),emit:output
 	path("OUTPUT/${TAG}.count"),emit:count
 script:
-	def pop = params.annotations.gnomadsv_population?:"POPMAX_AF"
-	def AF=params.annotations.gnomadsv_min_AF?:0.1
+	def pop = params.annotations.gnomadsv.population?:"POPMAX_AF"
+	def AF=params.annotations.gnomadsv.min_AF?:0.1
 	def whatis = "GNOMAD SV with ${pop} > ${AF}"
 	def row = slurpJsonFile(json)
 """
@@ -203,7 +204,7 @@ ${moduleLoad("bcftools htslib")}
 mkdir -p TMP OUTPUT
 
 # check header exists
-gunzip -c "${tabix}" | head -n 1 | tr "\t" "\\n" | grep -F '${pop}'
+#gunzip -c "{tabix}" | head -n 1 | tr "\t" "\\n" | grep -F '${pop}'
 
 set -o pipefail
 
