@@ -64,7 +64,7 @@ bwa mem ${is_interleaved?"-p":""} -t ${cpus2} -R '@RG\\tID:${ID}\\tSM:${sample}\
 if ${!isBlank(R2)} ; then
 
 	# collate
-	samtools collate -l 5 --threads ${cpus1}  --output-fmt BAM -u --no-PG --reference "${reference}" -T TMP/tmp.collate -o TMP/jeter2.bam TMP/jeter.bam
+	samtools collate -l 5 --threads ${cpus1}  --output-fmt BAM --no-PG --reference "${reference}" -T TMP/tmp.collate -o TMP/jeter2.bam TMP/jeter.bam
 	mv TMP/jeter2.bam TMP/jeter.bam
 
 	# fixmate
