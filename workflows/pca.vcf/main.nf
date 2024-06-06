@@ -19,7 +19,7 @@ if( params.help ) {
 runOnComplete(workflow)
 
 workflow {
-	ACP_VCF([:], params.genomeId, file(params.vcf), file(params.sample2collection), file(params.blacklisted_bed))
+	ACP_VCF([:], params.genomeId, file(params.vcf), file(params.sample2collection), file(params.blacklisted_bed),file(params.exclude_samples) )
 	}
 
 workflow ACP_VCF {
@@ -29,8 +29,9 @@ workflow ACP_VCF {
 		vcf
 		sample2collection
 		blacklisted
+		exclude_samples
 	main:
-		step1_ch = ACP_STEP01([:],genomeId, vcf, sample2collection, blacklisted )
+		step1_ch = ACP_STEP01([:],genomeId, vcf, sample2collection, blacklisted, exclude_samples)
 
 		to_multiqc = step1_ch.multiqc
 
