@@ -53,11 +53,26 @@ include {ANNOTATE_MONDO} from './step.mondo.nf'
 include {ANNOTATE_CCRE} from './step.ccre.nf'
 include {ANNOTATE_CADD} from './step.cadd.nf'
 include {ANNOTATE_REGULOME} from './step.regulome.nf'
+include {ANNOTATE_UORFDB} from './step.uorfdb.nf'
+include {ANNOTATE_REVEL} from './step.revel.nf'
+include {ANNOTATE_MNV} from './step.mnv.nf'
+
+/*
+
+	step.gnomad.constraint.nf
+	step.gtex.tmp.nf
+	step.hmc.nf
+	step.hpo.nf
+	step.mcap.nf
+	step.phastcons.nf
+	step.trio-dnm2.nf
+	step.uniprot.nf
+*/
 
 workflow ANNOTATE_VCF_01 {
 	take:
 		genomeId
-		elsewhere_vfs
+		bed
 		rows /* vcf, idx, bed, interval */
 	main:
 		version_ch = Channel.empty()
@@ -65,105 +80,116 @@ workflow ANNOTATE_VCF_01 {
 		doc_ch = Channel.empty()
 		
 		step_ch = STEP_FIRST(rows)
-		step_ch = ANNOTATE_RMSK(genomeId, step_ch.output)
+		step_ch = ANNOTATE_RMSK(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 		
-		step_ch = ANNOTATE_VISTA(genomeId, step_ch.output)
+		step_ch = ANNOTATE_VISTA(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 		
-		step_ch = ANNOTATE_BCSQ(genomeId, step_ch.output)
+		step_ch = ANNOTATE_BCSQ(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 		
-		step_ch = ANNOTATE_CLINVAR(genomeId, step_ch.output)
+		step_ch = ANNOTATE_CLINVAR(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 		
-		step_ch = ANNOTATE_SIMPLE_REPEATS(genomeId, step_ch.output)
+		step_ch = ANNOTATE_SIMPLE_REPEATS(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)		
 		
-		step_ch = ANNOTATE_SNPEFF(genomeId, step_ch.output)
-		count_ch = count_ch.mix(step_ch.count)
-		doc_ch = count_ch.mix(step_ch.doc)		
-
-
-		step_ch = ANNOTATE_FILTERSO(genomeId, step_ch.output)
+		step_ch = ANNOTATE_SNPEFF(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 
-		step_ch = ANNOTATE_REMAP(genomeId, step_ch.output)
+		step_ch = ANNOTATE_FILTERSO(genomeId, bed, step_ch.output)
+		count_ch = count_ch.mix(step_ch.count)
+		doc_ch = count_ch.mix(step_ch.doc)
+
+		step_ch = ANNOTATE_REMAP(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 		
-		step_ch = ANNOTATE_GNOMAD_GENOME(genomeId, step_ch.output)
+		step_ch = ANNOTATE_GNOMAD_GENOME(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 		
-		step_ch = ANNOTATE_GNOMADSV(genomeId, step_ch.output)
+		step_ch = ANNOTATE_GNOMADSV(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 		
-		step_ch = ANNOTATE_CONTRAST(genomeId, step_ch.output)
+		step_ch = ANNOTATE_CONTRAST(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 	
-		step_ch = ANNOTATE_POLYX(genomeId, step_ch.output)
+		step_ch = ANNOTATE_POLYX(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 		
-		step_ch = ANNOTATE_AVADA(genomeId, step_ch.output)
+		step_ch = ANNOTATE_AVADA(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)		
 		
-		step_ch = ANNOTATE_REGFEATURES(genomeId, step_ch.output)
+		step_ch = ANNOTATE_REGFEATURES(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)			
 		
-		step_ch = ANNOTATE_ELSEWHERE(genomeId, step_ch.output, elsewhere_vfs)
+		step_ch = ANNOTATE_ELSEWHERE(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)		
 
-		step_ch = ANNOTATE_GENCC(genomeId, step_ch.output)
+		step_ch = ANNOTATE_GENCC(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)		
 		
-		step_ch = ANNOTATE_GREENDB(genomeId, step_ch.output)
+		step_ch = ANNOTATE_GREENDB(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)		
 		
-		step_ch = ANNOTATE_BHFUCL(genomeId, step_ch.output)
+		step_ch = ANNOTATE_BHFUCL(genomeId, bed, step_ch.output)
+		count_ch = count_ch.mix(step_ch.count)
+		doc_ch = count_ch.mix(step_ch.doc)
+				
+		step_ch = ANNOTATE_STRINGDB(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 		
-		
-		step_ch = ANNOTATE_STRINGDB(genomeId, step_ch.output)
-		count_ch = count_ch.mix(step_ch.count)
-		doc_ch = count_ch.mix(step_ch.doc)
-		
-		step_ch = ANNOTATE_ALPHAMISSENSE(genomeId, step_ch.output)
+		step_ch = ANNOTATE_ALPHAMISSENSE(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 
-		step_ch = ANNOTATE_SPLICEAI(genomeId, step_ch.output)
+		step_ch = ANNOTATE_SPLICEAI(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 
-		step_ch = ANNOTATE_MONDO(genomeId, step_ch.output)
+		step_ch = ANNOTATE_MONDO(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 
-		step_ch = ANNOTATE_CCRE(genomeId, step_ch.output)
+		step_ch = ANNOTATE_CCRE(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 
-		step_ch = ANNOTATE_CADD(genomeId, step_ch.output)
+		step_ch = ANNOTATE_CADD(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 
-		step_ch = ANNOTATE_REGULOME(genomeId, step_ch.output)
+		step_ch = ANNOTATE_REGULOME(genomeId, bed, step_ch.output)
+		count_ch = count_ch.mix(step_ch.count)
+		doc_ch = count_ch.mix(step_ch.doc)
+
+		step_ch = ANNOTATE_UORFDB(genomeId, bed, step_ch.output)
+		count_ch = count_ch.mix(step_ch.count)
+		doc_ch = count_ch.mix(step_ch.doc)
+
+		step_ch = ANNOTATE_REVEL(genomeId, bed, step_ch.output)
+		count_ch = count_ch.mix(step_ch.count)
+		doc_ch = count_ch.mix(step_ch.doc)
+
+
+		step_ch = ANNOTATE_MNV(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 

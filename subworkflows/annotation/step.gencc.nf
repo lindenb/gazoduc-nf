@@ -28,12 +28,13 @@ include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
 
 
 def TAG="GENCC"
-def URL = "http://ftp.ebi.ac.uk/pub/databases/GO/goa/bhf-ucl/gene_association.goa_bhf-ucl.gz"
+def URL="https://search.thegencc.org/download/action/submissions-export-tsv"
 def WHATIZ = "gencc The Gene Curation Coalition brings together groups engaged in the evaluation of gene-disease validity with a willingness to share data publicly https://thegencc.org/about.html"
  
 workflow ANNOTATE_GENCC {
 	take:
 		genomeId
+		bed
 		vcfs /** json vcf,vcf_index */
 	main:
 		if(hasFeature("gencc") && !isBlank(params.genomes[genomeId],"gtf")) {
@@ -111,7 +112,6 @@ output:
 	path("${TAG}.html"),emit:output
 script:
 	def genome = params.genomes[genomeId]
-	def url = genome.greendb_url
 """
 cat << __EOF__ > ${TAG}.html
 <dl>
@@ -154,7 +154,7 @@ cat << EOF > TMP/${TAG}.json
 EOF
 
 
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
+bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
 mv -v TMP/${TAG}.* OUTPUT/
 ${backDelete(row)}
 """

@@ -24,6 +24,7 @@ SOFTWARE.
 */
 
 include { moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
+include { DOWNLOAD_DELLY2 } from '../../modules/delly2/delly2.download.nf'
 include { SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.nf'
 
 
@@ -44,14 +45,14 @@ workflow DELLY2_RESOURCES {
 		exclude_ch = GET_EXCLUDE([:], genomeId)
 		version_ch = version_ch.mix(exclude_ch.version)
 
-		delly2_ch = DOWNLOAD_DELLY2([:])
+		delly2_ch = DOWNLOAD_DELLY2()
 		version_ch = version_ch.mix(delly2_ch.version)
 
 		xmerge_ch = MERGE_EXCLUDE([:],genomeId,gaps_ch.bed,exclude_ch.bed)
 		version_ch = version_ch.mix(xmerge_ch.version)
 
 	emit:
-		executable = delly2_ch.executable
+		executable = delly2_ch.output
 		exclude = xmerge_ch.bed
 		mappability = map_ch.mappability
 		version = version_ch
@@ -183,35 +184,3 @@ sleep 10
 
 """
 }
-
-
-
-process DOWNLOAD_DELLY2 {
-	errorStrategy "retry"
-	maxRetries 3
-	input:
-		val(meta)
-	output:
-		path("delly"),emit:executable
-		path("version.xml"),emit:version
-	script:
-		def version = params.delly2.version
-		def url = "https://github.com/dellytools/delly/releases/download/v${version}/delly_v${version}_linux_x86_64bit"
-	"""
-	hostname 1>&2
-	wget -O delly "${url}"
-	touch -c delly
-	chmod a+x delly
-	sleep 10
-
-	cat <<- EOF > version.xml
-	<properties id="${task.process}">
-		<entry key="name">${task.process}</entry>
-		<entry key="description">Download delly</entry>
-		<entry key="version">${version}</entry>
-		<entry key="url"><a>${url}</a></entry>
-		<entry key="version">${getVersionCmd("wget")}</entry>
-	</properties>
-	EOF
-	"""
-	}

@@ -29,6 +29,7 @@ def TAG="GNOMAD_GENOME"
 workflow ANNOTATE_GNOMAD_GENOME {
 	take:
 		genomeId
+		bed
 		vcfs /** json vcf,vcf_index */
 	main:
 
@@ -65,7 +66,7 @@ script:
 cat << __EOF__ > ${TAG}.html
 <dl>
 <dt>${TAG}</dt>
-<dd>Annotation with gnomad genome <code>${genome.gnomad_genome}</code>. max AF :${params.annotations.gnomad_max_AF}, Population: <b>${params.annotations.gnomad_population}</b></dd>
+<dd>Annotation with gnomad genome <code>${genome.gnomad_genome}</code>. max AF :${params.annotations.gnomad_genome.max_AF}, Population: <b>${params.annotations.gnomad_genome.population}</b></dd>
 </dl>
 __EOF__
 """
@@ -87,8 +88,8 @@ output:
 script:
 	def genome = params.genomes[genomeId]
 	def row = slurpJsonFile(json)
-	def max_AF = params.annotations.gnomad_max_AF
-	def pop =  params.annotations.gnomad_population
+	def max_AF = params.annotations.gnomad_genome.max_AF
+	def pop =  params.annotations.gnomad_genome.population
 
 """
 hostname 1>&2
@@ -104,7 +105,7 @@ bcftools view "${row.vcf}" |\
 	bcftools view -O b -o TMP/${TAG}.bcf
 
 
- 	if  ${!isSoftFilter("gnomad")} ; then
+    if  ${!isSoftFilter("gnomad")} ; then
         bcftools view  -e 'FILTER ~ "GNOMAD_GENOME_BAD_AF" || FILTER ~ "GNOMAD_GENOME_RF"' -O b -o TMP/jeter.bcf TMP/${TAG}.bcf
         mv TMP/jeter.bcf TMP/${TAG}.bcf
     fi
@@ -121,7 +122,7 @@ cat << EOF > TMP/${TAG}.json
 EOF
 
 ###
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
+bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
 mv TMP/${TAG}.* OUTPUT/
 ${backDelete(row)}
 """

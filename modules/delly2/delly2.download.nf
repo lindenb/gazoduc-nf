@@ -23,33 +23,33 @@ SOFTWARE.
 
 */
 
+include {getVersionCmd} from '../utils/functions.nf'
 
 
-/**
+process DOWNLOAD_DELLY2 {
+	errorStrategy "retry"
+	maxRetries 3
+	output:
+		path("delly"),emit:output
+		path("version.xml"),emit:version
+	script:
+		def version = params.delly2.version
+		def url = "https://github.com/dellytools/delly/releases/download/v${version}/delly_v${version}_linux_x86_64bit"
+	"""
+	hostname 1>&2
+	wget -O delly "${url}"
+	touch -c delly
+	chmod a+x delly
+	sleep 10
 
-https://github.com/DecodeGenetics/graphtyper
-
-graphtyper is a graph-based variant caller capable of genotyping population-scale short read data sets. It represents a reference genome and known variants of a genomic region using an acyclic graph structure (a "pangenome reference"), which high-throughput sequence reads are re-aligned to for the purpose of discovering and genotyping SNPs, small indels, and structural variants.
-
-*/
-process GRAPHTYPER_DOWNLOAD_01 {
-tag "${params.graphtyper.version}"
-output:
-	path("graphtyper"),emit:executable
-	path("version.xml"),emit:version
-script:
-	def v = params.graphtyper.version
-"""
-wget -O graphtyper "https://github.com/DecodeGenetics/graphtyper/releases/download/v${v}/graphtyper"
-chmod a+x graphtyper
-
-##################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">download graphtyper</entry>
-        <entry key="version">${v}</entry>
-</properties>
-EOF
-"""
-}
+	cat <<- EOF > version.xml
+	<properties id="${task.process}">
+		<entry key="name">${task.process}</entry>
+		<entry key="description">Download delly</entry>
+		<entry key="version">${version}</entry>
+		<entry key="url"><a>${url}</a></entry>
+		<entry key="version">${getVersionCmd("wget")}</entry>
+	</properties>
+	EOF
+	"""
+	}

@@ -24,17 +24,18 @@ SOFTWARE.
 */
 
 include {slurpJsonFile;parseBoolean;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
+include {hasFeature;isBlank;backDelete;isHg38} from './annot.functions.nf'
 
 def TAG="UNIPROT"
 
 workflow ANNOTATE_UNIPROT {
 	take:
 		genomeId
+		bed
 		vcfs /** json: vcf,vcf_index */
 	main:
 
-             	if(hasFeature("uniprot") && params.genomes[genomeId].ucsc_name.equals("hg38") ) {
+             	if(hasFeature("uniprot") && isHg38(genomeId) ) {
                         features_ch = Channel.of("zn_fing","binding","coiled","disulfide","metal","motif")
                         source_ch = DOWNLOAD(genomeId,features_ch)
                         annotate_ch = ANNOTATE(source_ch.output.map{T->T.join("\t")}.collect(),vcfs)
@@ -154,7 +155,7 @@ cat << EOF > TMP/${TAG}.json
 EOF
 
 
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
+bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
 mv TMP/${TAG}.* OUTPUT/
 ${backDelete(row)}
 """

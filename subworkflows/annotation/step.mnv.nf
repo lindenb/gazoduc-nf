@@ -29,11 +29,12 @@ def TAG="MNV"
 workflow ANNOTATE_MNV {
 	take:
 		genomeId
+		bed
 		vcfs /** tuple vcf,vcf_index */
 	main:
 
 		if(hasFeature("mnv") && !isBlank(params.genomes[genomeId],"gtf")) {
-			annotate_ch = ANNOTATE(genomeId, other_vcfs, vcfs)
+			annotate_ch = ANNOTATE(genomeId, vcfs)
 			out1 = annotate_ch.output
 			out2 = annotate_ch.count
 			out3 = MAKE_DOC(genomeId).output
@@ -67,12 +68,11 @@ __EOF__
 }
 
 process ANNOTATE {
-tag "${json.name} ${others.name}"
+tag "${json.name}"
 afterScript "rm -rf TMP"
 memory '3g'
 input:
 	val(genomeId)
-	path(others)
 	//tuple path(vcf),path(vcf_idx),path(bed)
 	path(json)
 output:
@@ -92,7 +92,7 @@ set -x
 
 bcftools norm -f '${reference}' --multiallelics -any -O u  '${row.vcf}'|\\
 		bcftools view -i 'ALT!="*"' |\\
-		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar ${JVARKIT_DIST}/jvarkit.jar vcfcombinetwosnvs -R '${reference]' -g '${genome.gtf}' > TMP/jeter1.vcf
+		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfcombinetwosnvs -R '${reference}' -g '${genome.gtf}' > TMP/jeter1.vcf
 		
 bcftools sort --max-mem '${task.memory.giga}G' -T TMP/tmp -O b -o TMP/jeter1.bcf TMP/jeter1.vcf
 
@@ -113,7 +113,7 @@ EOF
 
 
 ###  
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
+bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
 mv TMP/${TAG}.* OUTPUT/
 ${backDelete(row)}
 """

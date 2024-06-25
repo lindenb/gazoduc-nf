@@ -69,7 +69,7 @@ ls -lah  "${!bed.name.equals("NO_FILE") ? "TMP/jeter.bam":"${row.bam}"}" 1>&2
 
 
 # collate
-samtools collate -l ${level} -f --threads ${(task.cpus as int) -1} -O -u --no-PG --reference "${reference}" "${!bed.name.equals("NO_FILE") ? "TMP/jeter.bam":"${row.bam}"}" TMP/tmp.collate |\
+samtools collate -f --threads ${(task.cpus as int) -1} -O -u --no-PG --reference "${reference}" "${!bed.name.equals("NO_FILE") ? "TMP/jeter.bam":"${row.bam}"}" TMP/tmp.collate |\
 	samtools fastq -n --threads 1 -1 TMP/${sample}.paired.R1.fq.gz -2 TMP/${sample}.paired.R2.fq.gz -s "TMP/${sample}.singleton.fq.gz" -0 "TMP/${sample}.other.fq.gz"
 
 

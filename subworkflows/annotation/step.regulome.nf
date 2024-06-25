@@ -33,9 +33,10 @@ def URL="https://www.encodeproject.org/files/ENCFF250UJY/@@download/ENCFF250UJY.
 workflow ANNOTATE_REGULOME {
 	take:
 		genomeId
+		bed
 		vcfs /** json vcf,vcf_index */
 	main:
-		if(isHg38(genomeId)) {
+		if(hasFeature("regulome") && isHg38(genomeId)) {
 			source_ch =  DOWNLOAD(genomeId)
 			annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,vcfs)
 
@@ -93,7 +94,6 @@ ${moduleLoad("htslib jvarkit")}
 set -o pipefail
 
 wget -O - "${URL}" |\
-        gunzip -c |\\
 	sed 's/^chrom/#chrom/' |\\
         java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 1 --convert SKIP  |\
         bgzip > TMP/${TAG}.bed.gz
@@ -133,7 +133,7 @@ bcftools view '${row.vcf}' |\\
 	bcftools view -O b -o  TMP/${TAG}.bcf
 bcftools index --force TMP/${TAG}.bcf
 
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
+bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
 
 
 cat << EOF > TMP/${TAG}.json

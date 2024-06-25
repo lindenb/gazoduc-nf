@@ -101,6 +101,7 @@ make -j ${task.cpus} -f TMP/jeter.mk TMP/bams.list 1>&2
 
 test -s TMP/bams.list
 
+ulimit -s unlimited
 
 java -XX:ParallelGCThreads=1 -Xmx${task.memory.giga}g -Dsamjdk.compression_level=1 -Djava.io.tmpdir=TMP -cp ${params.gatkjar}:TMP/minikit.jar Minikit \
                 -I "TMP/bams.list" \\

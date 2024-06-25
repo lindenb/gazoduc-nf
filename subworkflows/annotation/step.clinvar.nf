@@ -23,17 +23,28 @@ SOFTWARE.
 
 */
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
+include {hasFeature;isBlank;backDelete;hgName} from './annot.functions.nf'
 def TAG="CLINVAR"
+
+String getURL(genomeId) {
+	String hg=hgName(genomeId);
+	String ensembl="";
+	if(hg.equals("hg19")) ensembl="GRCh37";
+	if(hg.equals("hg38")) ensembl="GRCh38";
+	if(ensembl.isEmpty()) return "";
+	return "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_${ensembl}/clinvar.vcf.gz"
+	}
+
 
 workflow ANNOTATE_CLINVAR {
 	take:
 		genomeId
+		bed
 		vcfs /** json: vcf,vcf_index */
 	main:
 
 	
-		if(hasFeature("clinvar") && !isBlank(params.genomes[genomeId],"clinvar_vcf_url")) {
+		if(hasFeature("clinvar") && !getURL(genomeId).isEmpty()) {
 			source_ch = DOWNLOAD(genomeId)
 			annotate_ch = ANNOTATE(source_ch.vcf, source_ch.index,vcfs)
 			out1 = annotate_ch.output
@@ -54,6 +65,7 @@ workflow ANNOTATE_CLINVAR {
 
 
 process DOWNLOAD {
+tag "${getURL(genomeId)}"
 afterScript "rm -rf TMP"
 memory "3g"
 input:
@@ -63,8 +75,8 @@ output:
         path("${TAG}.db.bcf.csi"),emit:index
 script:
 	def genome = params.genomes[genomeId]
-   	def url = genome.clinvar_vcf_url
-    def whatis="ClinVar aggregates information about genomic variation and its relationship to human health."
+   	def url = getURL(genomeId)
+	def whatis="ClinVar aggregates information about genomic variation and its relationship to human health. ${url}"
 
 """
 hostname 1>&2
@@ -141,8 +153,9 @@ EOF
 
 
 ###  
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
+bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
 mv TMP/${TAG}.* OUTPUT/
+
 ${backDelete(row)}
 """
 }

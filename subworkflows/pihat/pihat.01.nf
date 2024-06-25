@@ -124,7 +124,7 @@ mkdir TMP
 
 function countIt {
 	echo -n "COUNT : " 1>&2
-	bcftools query -f a "\$1" | wc -c 1>&2
+	bcftools query -N -f a "\$1" | wc -c 1>&2
 	}
 
 

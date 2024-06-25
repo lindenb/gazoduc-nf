@@ -30,10 +30,11 @@ def TAG="FILTERSO"
 workflow ANNOTATE_FILTERSO {
 	take:
 		genomeId
+		bed
 		vcfs /** json: vcf,index,bed */
 	main:
 
-		 if(hasFeature("vcffilterso") && !isBlank(params.annotations,"soacn")) {
+		 if(hasFeature("vcffilterso") && !isBlank(params.annotations.vcffilterso,"soacn")) {
 			    annotate_ch = ANNOTATE(genomeId,vcfs)
 		            out1 = annotate_ch.output
 		            out2 = annotate_ch.count
@@ -65,7 +66,7 @@ script:
 cat << __EOF__ > ${TAG}.html
 <dl>
 <dt>${TAG}</dt>
-<dd>vcffilter variant predication with jvarkit filter sequence ontology . accession(s): ${params.annotations.soacn}</dd>
+<dd>vcffilter variant predication with jvarkit filter sequence ontology . accession(s): ${params.annotations.vcffilterso.soacn}</dd>
 </dl>
 __EOF__
 """
@@ -97,7 +98,7 @@ set -o pipefail
 bcftools view "${row.vcf}" |\\
 	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterso \\
 	${isSoftFilter("vcffilterso")?"--filterout  ${filterName}":""} \\
-        --acn "${params.annotations.soacn}" |\\
+        --acn "${params.annotations.vcffilterso.soacn}" |\\
 	bcftools view -O b -o TMP/${TAG}.bcf
 
 bcftools index --force TMP/${TAG}.bcf
@@ -111,8 +112,8 @@ cat << EOF > TMP/${TAG}.json
 EOF
 
 ###
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
-mv TMP/${TAG}.* OUTPUT/
+bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
+mv -v TMP/${TAG}.* OUTPUT/
 ${backDelete(row)}
 """
 }

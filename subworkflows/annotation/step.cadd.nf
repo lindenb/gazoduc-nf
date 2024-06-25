@@ -37,10 +37,11 @@ String getUrl(genomeId) {
 workflow ANNOTATE_CADD {
 	take:
 		genomeId
+		bed
 		vcfs /** json: vcf,index,bed */
 	main:
 
-		 if(hasFeature("cadd") && (isHg19(genomeId) || isHg38(genomeId)) ) {
+		 if(hasFeature("cadd") && !getUrl(genomeId).isEmpty() ) {
 			    annotate_ch = ANNOTATE(genomeId,vcfs)
 		            out1 = annotate_ch.output
 		            out2 = annotate_ch.count
@@ -102,10 +103,12 @@ ${moduleLoad("htslib bcftools jvarkit bedtools")}
 mkdir -p TMP OUTPUT
 set -o pipefail
 
+export TMPDIR=\${PWD}/TMP
+
 # get intervals for this VCF, remove chr prefix, sort and merge
 bcftools query -f '%CHROM\t%POS0\t%END\\n' '${row.vcf}' |\\
     sed 's/^chr//' |\\
-    LC_ALL=C sort -T TMP -t $'\t' -k1,1 -k2,2n |\\
+    LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\\
     bedtools merge > TMP/intervals.bed
 
 tabix -h  \\
@@ -121,7 +124,7 @@ bcftools annotate -c 'CHROM,POS,REF,ALT,${TAG}_RAWSCORE,${TAG}_PHRED' \\
     -a TMP/database.tsv.gz \\
     -H '##INFO=<ID=${TAG}_RAWSCORE,Number=1,Type=Float,Description="Raw Score in CADD ${url}">' \\
     -H '##INFO=<ID=${TAG}_PHRED,Number=1,Type=Float,Description="Phred Score in CADD ${url}">' \\
-    -O b -o  TMP/${TAG}.bcf \\	
+    -O b -o  TMP/${TAG}.bcf \\
     '${row.vcf}'
 
 
@@ -136,7 +139,7 @@ cat << EOF > TMP/${TAG}.json
 EOF
 
 ###
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
+bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
 mv TMP/${TAG}.* OUTPUT/
 ${backDelete(row)}
 """

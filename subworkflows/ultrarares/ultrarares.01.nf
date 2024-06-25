@@ -205,10 +205,10 @@ do
 	SECONDS=0
 	echo "bams:\${BLIST}" 1>&2
 	echo -n "\${BLIST} " >> TMP/processed.txt
-	bcftools query -f '.' TMP/jeter.vcf.gz | wc -c  >> TMP/processed.txt
+	bcftools query -N -f '.' TMP/jeter.vcf.gz | wc -c  >> TMP/processed.txt
 
 	# break the loop if no more variant
-	if [[ \$(bcftools query -f '.' TMP/jeter.vcf.gz | wc -c ) -le 0 ]] ; then
+	if [[ \$(bcftools query -N -f '.' TMP/jeter.vcf.gz | wc -c ) -le 0 ]] ; then
 		break
 	fi
 

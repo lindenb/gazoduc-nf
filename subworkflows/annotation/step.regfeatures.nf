@@ -23,18 +23,27 @@ SOFTWARE.
 
 */
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
+include {hasFeature;isBlank;backDelete;isHg19;isHg38} from './annot.functions.nf'
 
 
 
 def TAG="REGULATORY_FEAT"
 
+String getURL(genomeId) {
+	if(isHg19(genomeId)) return  "https://ftp.ensembl.org/pub/grch37/current/regulation/homo_sapiens/homo_sapiens.GRCh37.Regulatory_Build.regulatory_features.20201218.gff.gz";
+	if(isHg38(genomeId)) return  "https://ftp.ensembl.org/pub/release-111/regulation/homo_sapiens/homo_sapiens.GRCh38.Regulatory_Build.regulatory_features.20221007.gff.gz";
+	return "";
+	}
+
+
+
 workflow ANNOTATE_REGFEATURES {
 	take:
 		genomeId
+		bed
 		vcfs /** json vcf,vcf_index */
 	main:
-		if(!isBlank(params.genomes[genomeId],"ensembl_regulatory_gff_url")) {
+		if(hasFeature("regfeatures") && !getURL(genomeId).isEmpty()) {
 			source_ch =  DOWNLOAD(genomeId)
 			annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
 
@@ -134,7 +143,7 @@ mkdir -p TMP OUTPUT
 bcftools annotate -a "${tabix}" -h "${header}" -c "CHROM,FROM,TO,${TAG}"  --merge-logic '${TAG}:unique' -O b -o TMP/${TAG}.bcf '${row.vcf}'
 bcftools index --force TMP/${TAG}.bcf
 
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
+bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
 
 
 cat << EOF > TMP/${TAG}.json

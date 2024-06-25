@@ -33,6 +33,7 @@ def URL = "http://ftp.ebi.ac.uk/pub/databases/GO/goa/bhf-ucl/gene_association.go
 workflow ANNOTATE_BHFUCL {
 	take:
 		genomeId
+		bed
 		vcfs /** json vcf,vcf_index */
 	main:
 		if(hasFeature("bhfucl") && !isBlank(params.genomes[genomeId],"gtf")) {
@@ -155,7 +156,7 @@ cat << EOF > TMP/${TAG}.json
 EOF
 
 
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
+bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
 mv -v TMP/${TAG}.* OUTPUT/
 ${backDelete(row)}
 """

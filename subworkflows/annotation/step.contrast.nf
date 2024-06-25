@@ -29,6 +29,7 @@ def TAG="CONTRAST"
 workflow ANNOTATE_CONTRAST {
 	take:
 		genomeId
+		bed
 		vcfs /** tuple vcf,vcf_index */
 	main:
 
@@ -125,7 +126,7 @@ cat << EOF > TMP/${TAG}.json
 EOF
 
 ##
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
+bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
 
 mv  TMP/${TAG}.* ./OUTPUT/
 ${backDelete(row)}

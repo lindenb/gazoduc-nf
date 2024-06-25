@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 include {moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
-include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf' addParams(with_header:false)
+include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf'
 include {CONCAT_FILES_01} from '../../modules/utils/concat.files.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 
@@ -41,7 +41,7 @@ workflow JVARKIT_VCF_SPLIT_N_VARIANTS_01 {
 		bed /* limit to that BED or NO_FILE */
 	main:
 		version_ch = Channel.empty()
-		bed_ch = VCF_TO_BED([with_header:false],vcf)
+		bed_ch = VCF_TO_BED([:],vcf)
 		version_ch = version_ch.mix(bed_ch.version)
 
 		contig_vcf_ch = bed_ch.bed.splitCsv(sep:'\t',header:false).
@@ -72,8 +72,7 @@ output:
 	path("vcfs.list"),emit:output
 	path("version.xml"),emit:version
 script:
-	TODO set in config
-	def method = task.ext.split_vcf_method ?:" --vcf-count  1000"
+	def method = params.split_vcf_method?:(task.ext.split_vcf_method ?:" --vcf-count  1000")
 """
 hostname 1>&2
 ${moduleLoad("bcftools jvarkit bedtools")}

@@ -82,7 +82,7 @@ bcftools view "${vcf}" |\
 bcftools index --force TMP/${TAG}.bcf
 
 ###
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/count.tsv
+bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/count.tsv
 mv TMP OUTPUT
 """
 }

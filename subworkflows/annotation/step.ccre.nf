@@ -23,18 +23,25 @@ SOFTWARE.
 
 */
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
+include {hasFeature;isBlank;backDelete;isHg38} from './annot.functions.nf'
 
 
 
 def TAG="CCRE"
 def WHATIZ = "ENCODE Registry of candidate cis-Regulatory Elements (cCREs) in the human genome, a total of 926,535 elements identified and classified by the ENCODE Data Analysis Center according to biochemical signatures."
+
+String getURL(genomeId) {
+	if(isHg38(genomeId)) return "http://hgdownload.soe.ucsc.edu/gbdb/hg38/encode3/ccre/encodeCcreCombined.bb";
+	return "";
+	}
+
 workflow ANNOTATE_CCRE {
 	take:
 		genomeId
+		bed
 		vcfs /** json vcf,vcf_index */
 	main:
-		if(hasFeature("encode_ccre") && !isBlank(params.genomes[genomeId],"encode_ccre_url")) {
+		if(hasFeature("encode_ccre") && !getURL(genomeId).isEmpty()) {
 			source_ch =  DOWNLOAD(genomeId)
 			annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
 
@@ -82,7 +89,7 @@ output:
 	path("${TAG}.header"),emit:header
 script:
 	def genome = params.genomes[genomeId]
-	def url = genome.encode_ccre_url
+	def url = getURL(genomeId)
     def reference = genome.fasta
 """
 hostname 1>&2
@@ -138,7 +145,7 @@ mkdir -p TMP OUTPUT
 bcftools annotate -a "${tabix}" -h "${header}" -c "CHROM,FROM,TO,${TAG}"  --merge-logic '${TAG}:unique' -O b -o TMP/${TAG}.bcf '${row.vcf}'
 bcftools index --force TMP/${TAG}.bcf
 
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
+bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
 
 
 cat << EOF > TMP/${TAG}.json

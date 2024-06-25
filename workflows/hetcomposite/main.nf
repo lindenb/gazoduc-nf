@@ -204,7 +204,7 @@ bcftools view --regions-file TMP/exons.bed "${vcf}"  |\
 	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterjdk --body -f TMP/jeter.code > TMP/jeter2.vcf
 mv TMP/jeter2.vcf TMP/jeter1.vcf
 
-bcftools query -f . TMP/jeter1.vcf |wc -c 1>&2
+bcftools query -N -f . TMP/jeter1.vcf |wc -c 1>&2
 
 
 java -jar -Xmx${task.memory.giga}G  -Djava.io.tmpdir=TMP \${SNPEFF_JAR} eff \
@@ -212,14 +212,14 @@ java -jar -Xmx${task.memory.giga}G  -Djava.io.tmpdir=TMP \${SNPEFF_JAR} eff \
         -nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf "${snpeffdb}" TMP/jeter1.vcf > TMP/jeter2.vcf
 mv TMP/jeter2.vcf TMP/jeter1.vcf
 
-bcftools query -f . TMP/jeter1.vcf |wc -c 1>&2
+bcftools query -N -f . TMP/jeter1.vcf |wc -c 1>&2
 
 
 java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterso \
                 --acn "${soacn}" TMP/jeter1.vcf > TMP/jeter2.vcf
 mv TMP/jeter2.vcf TMP/jeter1.vcf
 
-bcftools query -f . TMP/jeter1.vcf |wc -c 1>&2
+bcftools query -N -f . TMP/jeter1.vcf |wc -c 1>&2
 
 
 java -Xmx${task.memory.giga}G  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfgnomad  --bufferSize 10000 \
@@ -232,7 +232,7 @@ mv TMP/jeter2.vcf TMP/jeter1.vcf
 awk  '\$0 ~ /^#/ || !(\$7 ~ /GNOMAD_GENOME_BAD/)' TMP/jeter1.vcf > TMP/jeter2.vcf
 mv TMP/jeter2.vcf TMP/jeter1.vcf
 
-bcftools query -f . TMP/jeter1.vcf |wc -c 1>&2
+bcftools query -N -f . TMP/jeter1.vcf |wc -c 1>&2
 
 
 java -Xmx${task.memory.giga}G  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfcomposite \

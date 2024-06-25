@@ -438,12 +438,12 @@ do
 		java -jar \${JVARKIT_DIST}/vcfburdenfiltergenes.jar -a "\${ENST}" |\
 		bcftools annotate -O z --rename-chrs "${reheader}" -o TMP/jeter.vcf.gz -
 
-	if test `bcftools query -f '.' TMP/jeter.vcf.gz | wc -c` -gt 0 ; then
+	if test `bcftools query -N -f '.' TMP/jeter.vcf.gz | wc -c` -gt 0 ; then
 
 		bcftools index --tbi -f TMP/jeter.vcf.gz
 	
 
-		echo -n "## \${ENST}: " && bcftools query -f '.' TMP/jeter.vcf.gz | wc -c
+		echo -n "## \${ENST}: " && bcftools query -N -f '.' TMP/jeter.vcf.gz | wc -c
 
 		# build setFile
 		echo "\${ENST}\t\${RGN}" | sed 's/\tchr/\t/' > TMP/variants.setfile

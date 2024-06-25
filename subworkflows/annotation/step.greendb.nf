@@ -24,17 +24,24 @@ SOFTWARE.
 */
 
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
+include {hasFeature;isBlank;backDelete;isHg19;isHg38} from './annot.functions.nf'
 
 
 def TAG="GREENDB"
 
+String getURL(genomeId) {
+	if(isHg19(genomeId)) return "https://zenodo.org/record/5636209/files/GRCh37_GREEN-DB.bed.gz?download=1";
+	if(isHg38(genomeId)) return "https://zenodo.org/record/5636209/files/GRCh38_GREEN-DB.bed.gz?download=1";
+	return "";
+	}
+
 workflow ANNOTATE_GREENDB {
 	take:
 		genomeId
+		bed
 		vcfs /** json vcf,vcf_index */
 	main:
-		if(hasFeature("greendb") && !isBlank(params.genomes[genomeId],"greendb_url")) {
+		if(hasFeature("greendb") && !getURL(genomeId).isEmpty()) {
 			source_ch =  DOWNLOAD(genomeId)
 			annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
 
@@ -55,6 +62,7 @@ workflow ANNOTATE_GREENDB {
 }
 
 process DOWNLOAD{
+tag "${getURL(genomeId)}"
 afterScript "rm -rf TMP"
 memory "2g"
 input:
@@ -65,7 +73,7 @@ output:
 	path("${TAG}.header"),emit:header
 script:
 	def genome = params.genomes[genomeId]
-	def url = genome.greendb_url
+	def url = getURL(genomeId)
     def reference = genome.fasta
     def whatis = "GREEN-DB is a comprehensive collection of 2.4 million regulatory elements in the human genome collected from previously published databases, high-throughput screenings and functional studies. ${url}"
 """
@@ -103,7 +111,7 @@ output:
 	path("${TAG}.html"),emit:output
 script:
 	def genome = params.genomes[genomeId]
-	def url = genome.greendb_url
+	def url = getURL(genomeId)
 """
 cat << __EOF__ > ${TAG}.html
 <dl>
@@ -146,7 +154,7 @@ cat << EOF > TMP/${TAG}.json
 EOF
 
 
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
+bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
 mv -v TMP/${TAG}.* OUTPUT/
 ${backDelete(row)}
 """

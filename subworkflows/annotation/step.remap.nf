@@ -24,18 +24,27 @@ SOFTWARE.
 */
 
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
+include {hasFeature;isBlank;backDelete;hgName} from './annot.functions.nf'
 
 /* ReMap is a large scale integrative analysis of DNA-binding experiments for Homo sapiens, Mus musculus, Drosophila melanogaster and Arabidopsis thaliana transcriptional regulators. The catalogues are the results of the manual curation of ChIP-seq, ChIP-exo, DAP-seq from public sources (GEO, ENCODE, ENA).  */
 
 def TAG="REMAP"
 
+String getURL(genomeId) {
+	String hg=hgName(genomeId);
+	if(hg.isEmpty()) return "";
+	return "https://remap.univ-amu.fr/storage/remap2022/${hg}/MACS2/remap2022_crm_macs2_${hg}_v1_0.bed.gz";
+	}
+
+
+
 workflow ANNOTATE_REMAP {
 	take:
 		genomeId
+		bed
 		vcfs /** json vcf,vcf_index */
 	main:
-		if(hasFeature("remap") && !isBlank(params.genomes[genomeId],"remap_url")) {
+		if(hasFeature("remap") && !getURL(genomeId).isEmpty()) {
 			source_ch =  DOWNLOAD(genomeId)
 			annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
 
@@ -66,7 +75,7 @@ output:
 	path("${TAG}.header"),emit:header
 script:
 	def genome = params.genomes[genomeId]
-	def url = genome.remap_url
+	def url = getURL(genomeId)
         def reference = genome.fasta
         def whatis = "ReMap is a large scale integrative analysis of DNA-binding experiments for Homo sapiens, Mus musculus, Drosophila melanogaster and Arabidopsis thaliana transcriptional regulators. The catalogues are the results of the manual curation of ChIP-seq, ChIP-exo, DAP-seq from public sources (GEO, ENCODE, ENA). ${url}"
 """
@@ -102,7 +111,7 @@ output:
 	path("${TAG}.html"),emit:output
 script:
 	def genome = params.genomes[genomeId]
-	def url = genome.remap_url
+	def url = getURL(genomeId)
 """
 cat << __EOF__ > ${TAG}.html
 <dl>
@@ -145,7 +154,7 @@ cat << EOF > TMP/${TAG}.json
 EOF
 
 
-bcftools query -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
+bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
 mv -v TMP/${TAG}.* OUTPUT/
 ${backDelete(row)}
 """
