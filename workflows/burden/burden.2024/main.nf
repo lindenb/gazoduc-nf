@@ -130,6 +130,15 @@ workflow BURDEN_CODING {
 				if(it.cadd.containsKey("phred")) return it;
 				it.cadd.phred=-1.0;
 				return it;
+			}.
+			map {
+				if(!it.containsKey("QD")) it=it.plus("QD":2);
+				if(!it.containsKey("FS")) it=it.plus("FS":60);
+				if(!it.containsKey("SOR")) it=it.plus("SOR":3);
+				if(!it.containsKey("MQ")) it=it.plus("MQ":40);
+				if(!it.containsKey("MQRankSum")) it=it.plus("MQRankSum":-12.0);
+				if(!it.containsKey("ReadPosRankSum")) it=it.plus("ReadPosRankSum":-8.0);
+				return it;
 			}
 		
 
@@ -137,8 +146,7 @@ workflow BURDEN_CODING {
 
 		X1 = xgene_ch.output.splitCsv(sep:'\t',header:true).
 			combine(conditions_ch).
-			combine(vcf2bedcontig_ch).
-			take(1000)
+			combine(vcf2bedcontig_ch)
 
 
 
@@ -211,18 +219,29 @@ tabix --regions "TMP/tmp1.bed" "${gtf}" |\
 	bedtools slop -i -  -g "${reference}.fai" -b ${slop} |\
 	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\
 	bedtools intersect -u -wa -a - -b TMP/tmp1.bed |\
-	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n >> TMP/tmp2.bed
+	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n >> TMP/tmp3.bed
 
 
+if ${!userbed.name.equals("NO_FILE")}
+then
+	cut -f1,2,3 "${userbed}" |\
+		LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
+		bedtools merge > TMP/tmp4.bed
+
+	bedtools intersect -u -wa -a TMP/tmp3.bed -b TMP/tmp4.bed |\\
+		LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n >> TMP/tmp5.bed
+	mv TMP/tmp5.bed TMP/tmp3.bed
+fi
 
 
-mv TMP/tmp2.bed genes.bed
+cat TMP/tmp2.bed TMP/tmp3.bed > genes.bed
 """
 }
 
 
 String getSnpeffDB(genomeId) {
 	if(genomeId.equals("hs38me")) return "GRCh38.105";
+	if(genomeId.equals("hs37d5")) return "GRCh37.75";
 	return "UNDEFINED_SNPEFF_DB";
 	}
 
@@ -364,6 +383,15 @@ final double count_low_gq = variant.getGenotypes().stream().
 if(count_low_gq/count_alt >= 0.25) {
 	return false;
 	}
+
+// see https://gatk.broadinstitute.org/hc/en-us/articles/360035890471-Hard-filtering-germline-short-variants
+if(variant.hasAttribute("QD") && variant.getAttributeAsDouble("QD",1000) < ${condition.QD}) return false;
+if(variant.hasAttribute("FS") && variant.getAttributeAsDouble("FS",0) > ${condition.FS}) return false;
+if(variant.hasAttribute("SOR") && variant.getAttributeAsDouble("SOR",0) > ${condition.SOR}) return false;
+if(variant.hasAttribute("MQ") && variant.getAttributeAsDouble("MQ",1000) < ${condition.MQ}) return false;
+if(variant.hasAttribute("MQRankSum") && variant.getAttributeAsDouble("MQRankSum",1000) < ${condition.MQRankSum}) return false;
+if(variant.hasAttribute("ReadPosRankSum") && variant.getAttributeAsDouble("ReadPosRankSum",1000) < ${condition.ReadPosRankSum}) return false;
+
 
 
 Genotype singleton=null;
