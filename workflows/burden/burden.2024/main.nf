@@ -266,7 +266,9 @@ process PER_GENE {
 afterScript "rm -rf TMP"
 tag "${gene.gene_name} ${condition.id}"
 memory "3g"
-array 20
+array 100
+errorStrategy "retry"
+maxRetries 2
 input:
 	val(genomeId)
 	path(samplesheet)
