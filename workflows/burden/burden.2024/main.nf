@@ -34,20 +34,21 @@ if (params.help) {
    log.info paramsHelp("nextflow run my_pipeline --input input_file.csv")
    exit 0
 }
-
+// validate parameters
+validateParameters()
 
 // Print summary of supplied parameters
 log.info paramsSummaryLog(workflow)
 
 
+
 workflow {
 		ch_input = Channel.fromList(samplesheetToList(params.samplesheet, "assets/schema_samplesheet.json"))
-		BURDEN_CODING(params.genomeId, Channel.fromPath(params.datasheet), file(params.samplesheet), Channel.fromPath(params.conditions), file(params.bed) )
+		BURDEN_CODING(Channel.fromPath(params.datasheet), file(params.samplesheet), Channel.fromPath(params.conditions), file(params.bed) )
 		}
 
 workflow BURDEN_CODING {
 	take:
-		genomeId
 		datasheet
 		samplesheet
 		conditions
@@ -81,6 +82,9 @@ workflow BURDEN_CODING {
 				no_coord : true // A fallback condition
 				}
 
+		genome_ch = Channel.value([file(params.fasta),file(params.fasta+".fai"),file(""+file(params.fasta).getParent()+"/"+file(params.fasta).getBaseName()+".dict")])
+		gtf_ch = Channel.value([file(params.gtf),file(params.gtf+".tbi")])
+
 		
 
 		
@@ -98,11 +102,10 @@ workflow BURDEN_CODING {
 			collectFile(name: 'vcf2bed.bed', newLine: true)
 
 
-		xgene_ch = EXTRACT_GENES(genomeId,vcf2bedcontig_ch,bed)
+		xgene_ch = EXTRACT_GENES(genome_ch,gtf_ch,vcf2bedcontig_ch,bed)
 
 		conditions_ch = conditions.splitJson().
 			map{it.containsKey("description")?it:it.plus(description:it.id)}.
-			map{it.containsKey("gene_biotype_regex")?it:it.plus(gene_biotype_regex:".*")}.
 			map{it.containsKey("enabled")?it:it.plus(enabled:true)}.
 			map{it.containsKey("f_missing")?it:it.plus(f_missing:-1.0)}.
 			map{it.containsKey("minDP")?it:it.plus(minDP:5)}.
@@ -132,6 +135,7 @@ workflow BURDEN_CODING {
 				return it;
 			}.
 			map {
+				if(!it.containsKey("exons_only")) it=it.plus("exons_only":false)
 				if(!it.containsKey("QD")) it=it.plus("QD":2);
 				if(!it.containsKey("FS")) it=it.plus("FS":60);
 				if(!it.containsKey("SOR")) it=it.plus("SOR":3);
@@ -144,24 +148,27 @@ workflow BURDEN_CODING {
 
 		conditions_ch.view{"CONDITION: $it"}
 
-		X1 = xgene_ch.output.splitCsv(sep:'\t',header:true).
+		gene_cond_vcf_ch = xgene_ch.output.
+			flatten().
 			combine(conditions_ch).
 			combine(vcf2bedcontig_ch)
 
 
+		eff=DOWNLOAD_SNPEFF_DB()
 
-		eff=DOWNLOAD_SNPEFF_DB(genomeId)
-
-		per_gene_ch = PER_GENE(genomeId, samplesheet,eff.output,X1)
+		per_gene_ch = PER_BED(genome_ch, gtf_ch,samplesheet,eff.output,gene_cond_vcf_ch)
 		per_gene_ch.output.splitCsv(sep:'\t', header:true).
 			view{"$it"}
 		all_results_ch =  per_gene_ch.output.collectFile(name:"output.tsv")
 	
-		PLOTIT( 
+		cleanup_ch = CLEANUP(all_results_ch)
+
+		plot_ch=PLOTIT( 
 			Channel.of("fisher","skat","skato","saktadj","saktoadj").
 				combine(conditions_ch).
-				combine(all_results_ch)
+				combine(cleanup_ch.output)
 			)
+		MULTIQC(plot_ch.collect())
 
 	}
 
@@ -184,16 +191,14 @@ tag "${vcf2bed}"
 memory "2g"
 afterScript "rm -rf TMP"
 input:
-	val(genomeId)
+	tuple path(fasta),path(fai),path(dict)
+	tuple path(gtf), path(gtf_tbi)
 	path(vcf2bed)
 	path(userbed)
 output:
-	path("genes.bed"),emit:output
+	path("BEDS/*.bed"),emit:output
 script:
-	def genome = params.genomes[genomeId]
-	def reference = genome.fasta
-	def gtf = genome.gtf
-	def slop= params.genes_slop
+	def slop = 20
 """
 hostname 1>&2
 set -o pipefail
@@ -202,21 +207,11 @@ mkdir -p TMP
 cut -f1,2,3 '${vcf2bed}' | LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n > TMP/tmp1.bed
 
 
-cat << EOF  | paste -sd'\t' > TMP/tmp2.bed
-contig
-start
-end
-feature
-gene_id
-gene_name
-strand
-biotype
-EOF
-
-tabix --regions "TMP/tmp1.bed" "${gtf}" |\
-	java -jar \${JVARKIT_DIST}/gtf2bed.jar -R "${reference}" --columns "gtf.feature,gene_id,gene_name,gff.strand,gene_biotype" |\
-	awk -F '\t' '(\$4=="gene" && \$5!=".")' |\
-	bedtools slop -i -  -g "${reference}.fai" -b ${slop} |\
+tabix --regions "TMP/tmp1.bed" "${gtf}" |\\
+	java -jar \${JVARKIT_DIST}/gtf2bed.jar -R "${fasta}" --columns "gtf.feature" |\\
+	awk -F '\t' '(\$4=="gene")' |\\
+	cut -f1,2,3 |\\
+	bedtools slop -i -  -g "${fai}" -b ${slop} |\
 	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\
 	bedtools intersect -u -wa -a - -b TMP/tmp1.bed |\
 	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n >> TMP/tmp3.bed
@@ -234,55 +229,59 @@ then
 fi
 
 
-cat TMP/tmp2.bed TMP/tmp3.bed > genes.bed
+mkdir -p BEDS
+
+java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/bedcluster.jar \\
+		-R "${fasta}" --out BEDS  --size "1Mb" \\
+		TMP/tmp3.bed
 """
 }
 
 
-String getSnpeffDB(genomeId) {
-	if(genomeId.equals("hs38me")) return "GRCh38.105";
-	if(genomeId.equals("hs37d5")) return "GRCh37.75";
-	return "UNDEFINED_SNPEFF_DB";
-	}
 
 process  DOWNLOAD_SNPEFF_DB {
 memory "3G"
-input:
-	val(genomeId)
 output:
 	path("SNPEFF"),emit:output
 script:
 """
 module load snpeff/5.2
 mkdir -p SNPEFFX TMP
-snpEff -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  download -dataDir  "\${PWD}/SNPEFFX"  ${getSnpeffDB(genomeId)}
+snpEff -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  download -dataDir  "\${PWD}/SNPEFFX"  '${params.snpeff_db}'
 test -s SNPEFFX/*/snpEffectPredictor.bin
 mv SNPEFFX SNPEFF
 
 """
 }
 
-process PER_GENE {
+process PER_BED {
 afterScript "rm -rf TMP"
-tag "${gene.gene_name} ${condition.id}"
+tag "${condition.id} ${roi.name}"
 memory "3g"
-array 100
+//array 100
 errorStrategy "retry"
 maxRetries 2
 input:
-	val(genomeId)
+	tuple path(fasta),path(fai),path(dict)
+	tuple path(gtf), path(gtf_tbi)
 	path(samplesheet)
 	path(snpeffDir)
-	tuple val(gene),val(condition),path(vcf2bed)
+	tuple path(roi),val(condition),path(vcf2bed)
 output:
-	path("results.txt"),emit:output
+	path("results.bed"),emit:output
 when:
-	condition.enabled==true && gene.biotype.matches(condition.gene_biotype_regex)
+	condition.enabled==true
 script:
-	def genome = params.genomes[genomeId]
+	def slop=20
 """
 module load snpeff/5.2 R/3.6.0-dev
 mkdir -p TMP
+set -x
+
+# compile Minikit
+cat "${moduleDir}/Minikit.java" > TMP/Minikit.java
+javac -d TMP -cp \${JVARKIT_DIST}/jvarkit.jar -sourcepath TMP  TMP/Minikit.java
+
 
 cat << 'EOF' > TMP/jeter.R
 T1 <- read.csv("${samplesheet}",header=TRUE)
@@ -303,16 +302,48 @@ sort TMP/controls.txt | uniq > TMP/jeter.txt
 mv TMP/jeter.txt TMP/controls.txt
 
 
-echo "${gene.contig}\t${gene.start}\t${gene.end}" > TMP/gene.bed
+LC_ALL=C sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n "${roi}" > TMP/roi.bed
 
-bedtools intersect -u -a ${vcf2bed} -b TMP/gene.bed | cut -f 4 > TMP/vcf.list
+
+if ${condition.exons_only==true}
+then
+	tabix --regions TMP/roi.bed "${gtf}" |\\
+        	java -jar \${JVARKIT_DIST}/gtf2bed.jar -R "${fasta}" --columns "gtf.feature" |\\
+		awk -F '\t' '(\$4=="exon")' |\\
+		cut -f1-3 |\\
+	        bedtools slop -i -  -g "${fai}" -b ${slop} |\\
+        	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
+		bedtools merge > TMP/exons.bed
+	
+	if ! test -s TMP/exons.bed
+	then
+		echo -e 'chr22\t0\t1' > TMP/exons.bed
+	fi
+
+	bedtools intersect -a TMP/roi.bed -b TMP/exons.bed |\\
+		LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
+		bedtools merge > TMP/jeter.bed
+	
+	mv -v TMP/jeter.bed TMP/roi.bed
+
+	if ! test -s TMP/roi.bed
+	then
+		echo -e 'chr22\t0\t1' > TMP/roi.bed
+	fi
+
+
+fi
+
+
+
+bedtools intersect -u -a ${vcf2bed} -b TMP/roi.bed | cut -f 4 > TMP/vcf.list
 
 if ! test -s TMP/vcf.list
 then
 	head -n 1  ${vcf2bed} | cut -f 4 > TMP/vcf.list
 fi
 
-bcftools concat -a --regions-file TMP/gene.bed --file-list TMP/vcf.list -O b -o TMP/jeter1.bcf
+bcftools concat -a --regions-file TMP/roi.bed --file-list TMP/vcf.list -O b -o TMP/jeter1.bcf
 
 bcftools query -l TMP/jeter1.bcf | sort |\
 	comm -12 - TMP/cases.txt > TMP/jeter.txt
@@ -330,6 +361,8 @@ comm -12 TMP/controls.txt TMP/cases.txt > TMP/jeter.txt
 test ! -s TMP/jeter.txt
 
 cat TMP/controls.txt TMP/cases.txt > TMP/all.samples.txt
+
+
 
 bcftools view --trim-unseen-allele --trim-alt-alleles --samples-file TMP/all.samples.txt -O b -o TMP/jeter2.bcf TMP/jeter1.bcf
 mv TMP/jeter2.bcf TMP/jeter1.bcf
@@ -426,7 +459,7 @@ bcftools view TMP/jeter1.bcf |\\
 #
 # normalize
 #
-bcftools norm -f ${genome.fasta} --multiallelics -any -O u TMP/jeter1.bcf |\\
+bcftools norm -f ${params.fasta} --multiallelics -any -O u TMP/jeter1.bcf |\\
 	bcftools view  -i 'ALT!="*" && AC[*]>0 && INFO/AF <= ${condition.maxAF}' -O b -o TMP/jeter2.bcf
 mv TMP/jeter2.bcf TMP/jeter1.bcf
 
@@ -439,13 +472,11 @@ mv -v TMP/jeter2.bcf TMP/jeter1.bcf
 
 
 
-
-
 if ${!condition.so_acn.isEmpty()}
 then
 	bcftools view TMP/jeter1.bcf |\\
 	snpEff -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  eff -dataDir "\${PWD}/${snpeffDir}" \\
-		 -nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf  ${getSnpeffDB(genomeId)} |\\
+		 -nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf '${params.snpeff_db}' |\\
 	java -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterso \\
 		--remove-attribute  --rmnoatt \\
 		 -A '${condition.so_acn}' |\\
@@ -453,25 +484,14 @@ then
 	mv TMP/jeter2.bcf TMP/jeter1.bcf
 fi
 
-
-#
-# select only in the current gene
-#
-echo "${gene.gene_id}" > TMP/gene.id
-
-bcftools view TMP/jeter1.bcf |\\
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcffiltergenes -g TMP/gene.id |\
-	bcftools view  -O b -o TMP/jeter2.bcf
- mv -v TMP/jeter2.bcf TMP/jeter1.bcf
-
 #
 # CADD
 #
-if ${genome.containsKey("cadd_tabix") && condition.cadd.phred >0}
+if ${params.containsKey("cadd") && condition.cadd.phred >0}
 then
 	bcftools view TMP/jeter1.bcf |\\
-		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfcadd --tabix '${genome.cadd_tabix}' | \\
-		bcftools view -e 'INFO/CADD_PHRED<${condition.cadd.phred}' -O b -o TMP/jeter2.bcf
+		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfcadd --tabix '${params.cadd}' | \\
+		bcftools view -e 'INFO/CADD_PHRED < ${condition.cadd.phred}' -O b -o TMP/jeter2.bcf
 	mv -v TMP/jeter2.bcf TMP/jeter1.bcf
 fi
 
@@ -481,30 +501,13 @@ then
 	bcftools view TMP/jeter1.bcf |\\
 	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfgnomad \\
 		--bufferSize 10000 \\
-		--gnomad "${genome.gnomad_genome}" \\
+		--gnomad "${params.gnomad}" \\
 		--fields "${condition.gnomad.population}"  \\
 		--max-af '${condition.gnomad.AF}' |\\
 	bcftools view --apply-filters '.,PASS' -O b -o TMP/jeter2.bcf
         mv TMP/jeter2.bcf TMP/jeter1.bcf
 fi
 
-
-
-
-bcftools view -O v TMP/jeter1.bcf |\\
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfgenesplitter \\
-		-E 'ANN/GeneId ANN/FeatureId VEP/GeneId VEP/Ensp VEP/Feature' \\
-		--manifest TMP/jeter.mf \\
-		-o \${PWD}/TMP
-
-cat << 'EOF' > TMP/jeter01.R
-T1<-read.table("TMP/jeter.mf", header=TRUE, comment.char = "")
-write.table(data.frame(splitter=T1\$splitter,key=T1\$key,path=T1\$path),quote=FALSE,sep="\\t",file=stdout(),col.names = FALSE,row.names = FALSE)
-EOF
-
-echo -e '' > TMP/result.tsv
-
-cat "${moduleDir}/karaka01.R" > TMP/jeter02.R
 
 cat << 'EOF' >> TMP/jeter02.R
 
@@ -516,36 +519,46 @@ v5 <- applySKATOAdjusted(genotypes,population,variants)
 
 cat(
 	c(
+		contig,
+		gene.start,
+		gene.end,
+		"${condition.id}",
+		splitter,
+		gene.key,
+		gene.name,
+		n.variants,
 		v1\$p.value,
 		v2\$p.value,
 		v3\$p.value,
 		v4\$p.value,
 		v5\$p.value,
-		v1\$CASE_ALT,
-		v1\$CASE_REF,
-		v1\$CTRL_ALT,
-		v1\$CTRL_REF
+		CASES_ALT_COUNT,
+		CASES_REF_COUNT,
+		CTRLS_ALT_COUNT,
+		CTRLS_REF_COUNT,
+		variants.str,
+		"\n"
 		),
-	file="TMP/results.txt",
+	file="TMP/results.bed",
 	sep = "\t",
 	append = TRUE
 )
 
 EOF
 
+
 #
 # output header
 #
-cat << EOF | paste -sd '\t' > TMP/results.txt
-condition_id
+cat << EOF | paste -sd '\t' > TMP/results.bed
 contig
 start
 end
-gene_id
-gene_name
-gene_biotype
+condition_id
 splitter
 key
+gene_name
+n_variants
 fisher
 skat
 skato
@@ -555,65 +568,85 @@ CASE_ALT
 CASE_REF
 CTRL_ALT
 CTRL_REF
+variants
 EOF
 
-R --vanilla --slave < TMP/jeter01.R | while read SPLITTER KEY VCF
-do
-	echo "VCF=\${VCF}" 1>&2
 
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcf2r \\
-		--variants \\
-		--info AF \\
+bcftools view -O v TMP/jeter1.bcf |\\
+java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -cp \${JVARKIT_DIST}/jvarkit.jar:TMP  Minikit \\
+		--header "${moduleDir}/karaka01.R" \\
+		--body TMP/jeter02.R \\
 		--cases TMP/cases.txt \\
-		--controls TMP/controls.txt "\${VCF}" > TMP/jeter.R
+		--controls TMP/controls.txt | \\
+	R --vanilla --no-save --slave
+		
 
-	cat TMP/jeter02.R >> TMP/jeter.R
-	echo -n "${condition.id}\t${gene.contig}\t${gene.start}\t${gene.end}\t${gene.gene_id?:"."}\t${gene.gene_name?:"."}\t${gene.biotype?:"."}\t\${SPLITTER}\t\${KEY}\t" >> TMP/results.txt
-	R --vanilla --no-save --slave < TMP/jeter.R
-
-	# add EOL
-	echo >> TMP/results.txt
-
-done
-
-
-mv -v TMP/results.txt ./
+mv -v TMP/results.bed ./
 
 """
 }
 
-
+process CLEANUP {
+input:
+	path(tsv)
+output:
+	path("cleanup.bed"),emit:output
+script:
+"""
+awk -F '\t' '(NR==1 || \$1!="contig")' '${tsv}' > jeter.tsv
+mv jeter.tsv cleanup.bed
+"""
+}
 
 process PLOTIT {
 tag "${assoc} ${condition.id}"
 input:
 	tuple val(assoc),val(condition),path(results)
+output:
+	path("mqc.*"),emit:output
 script:
-	prefix = params.prefix?:""
 	def head = 20
 	def subtitle ="${condition.id}/${assoc}"
 	def assoc_desc= assoc; //"${testDescription(assoc)}"
+	def associd=  "${assoc}_${condition.id}"
 """
 hostname 1>&2
 module load R/3.6.0-dev
 mkdir -p TMP
 
-# remove header
-awk -F '\t' '(NR==1 || \$1!="condition_id")' '${results}' > TMP/jeter.tsv
-
-wc -l TMP/jeter.tsv
-head TMP/jeter.tsv
 
 cat << '__EOF__' > jeter.R
 
-T1<-read.table("TMP/jeter.tsv",header=TRUE,sep="\t",stringsAsFactors=FALSE)
+T1<-read.table("${results}",header=TRUE,sep="\t",stringsAsFactors=FALSE)
 head(T1)
+
+
+T1<-T1[T1\$condition_id=="${condition.id}",]
+head(T1)
+
+
+
+T1<-T1[!is.na(as.numeric(as.character(T1\$${assoc}))),]
+head(T1)
+
+
+T2<-head(T1[order(as.numeric(T1\$${assoc})),],n=${head})
+write.table(T2,file="TMP/jeter.tsv",quote=FALSE,sep="\t",row.names=FALSE,col.names=TRUE)
+
 
 T1<-T1[,c("contig","start","key","${assoc}")]
 head(T1)
 
-T1<-T1[!is.na(as.numeric(as.character(T1\$${assoc}))),]
+
+T1\$contig = as.numeric(sub("Y","24",sub("X","23",sub("chr","",T1\$contig))))
 head(T1)
+
+T1<-T1[!is.na(T1\$contig),]
+head(T1)
+
+
+
+
 
 colnames(T1)<-c("CHR","BP","SNP","P")
 
@@ -624,59 +657,90 @@ if(nrow(T1)>0) {
 
 Sys.setenv("DISPLAY"=":0.0")
 
-png("${prefix}${assoc}.manhattan.png")
-manhattan(T1,main="${prefix}${assoc}",sub="${subtitle}");
+png("mqc.${associd}.manhattan.png", type="cairo")
+manhattan(T1,main="${associd}",sub="${subtitle}");
 dev.off()
 
-png("${prefix}${assoc}.qqplot.png")
-qq(T1\$P,main="${prefix}${assoc}",sub="${subtitle}");
+png("mqc.${associd}.qqplot.png", type="cairo")
+qq(T1\$P,main="${associd}",sub="${subtitle}");
 dev.off()
+
+
 }
 __EOF__
 
 R --vanilla < jeter.R || true
 
 
-cat << EOF > multiqc_config.yaml
+cat << EOF > mqc.${associd}.yaml
 custom_data:
-  ${assoc}_manhattan:
-    parent_id: ${assoc}_section
-    parent_name: "${assoc}"
-    parent_description: "${assoc_desc}"
-    section_name: "${assoc} Manhattan"
-    description: "RVTEST ${assoc} Manhattan plot"
-  ${assoc}_qqplot:
-    parent_id: ${assoc}_section
-    parent_name: "${assoc}"
-    parent_description: "RVTEST ${assoc}"
-    section_name: "${assoc} QQPlot"
-    description: "RVTEST ${assoc} QQPlot"
+  ${associd}_manhattan:
+    parent_id: ${associd}_section
+    parent_name: "${associd}"
+    parent_description: "${assoc_desc} <pre>${condition}</pre>"
+    section_name: "${associd} Manhattan"
+    description: "${associd} Manhattan plot"
+  ${associd}_qqplot:
+    parent_id: ${associd}_section
+    parent_name: "${associd}"
+    parent_description: "${assoc_desc} <pre>${condition}</pre>"
+    section_name: "${associd} QQPlot"
+    description: "${associd} QQPlot"
 sp:
-  ${assoc}_manhattan:
-    fn: "${prefix}${assoc}.manhattan.png"
-  ${assoc}_qqplot:
-    fn: "${prefix}${assoc}.qqplot.png"
+  ${associd}_manhattan:
+    fn: "mqc.${associd}.manhattan.png"
+  ${associd}_qqplot:
+    fn: "mqc.${associd}.qqplot.png"
 ignore_images: false
 EOF
 
-cat << EOF > "${prefix}${assoc}.table_mqc.html"
+cat << EOF > "mqc.${associd}.table_mqc.html"
 <!--
-parent_id: ${assoc}_section
-parent_name: "${assoc}"
-parent_description: "RVTEST ${assoc}"
-id: '${assoc}_table'
-section_name: '${assoc} table'
+parent_id: ${associd}_section
+parent_name: "${associd}"
+parent_description: "${associd}  <pre>${condition}</pre>"
+id: '${associd}_table'
+section_name: '${associd} table'
 description: '${head} first lines.'
 -->
 <pre>
 EOF
 
-head -n ${head} TMP/jeter.tsv | column -t >> "${prefix}${assoc}.table_mqc.html"
-echo "</pre>" >>  "${prefix}${assoc}.table_mqc.html"
+cat TMP/jeter.tsv | column -t >> "mqc.${associd}.table_mqc.html"
+echo "</pre>" >>  "mqc.${associd}.table_mqc.html"
 
-
-
-find \${PWD} -type f -name "*.png" >> paths.txt
 """
 }
 
+process MULTIQC {
+executor "local"
+input:
+	path(mqcs)
+script:
+	def prefix = params.prefix
+	def title="";
+	def comment="";
+"""
+
+		hostname 1>&2
+		module load multiqc
+		mkdir -p TMP
+
+# do NOT use -type f, those are symlinks
+find .  -name "mqc.*" | grep -v '\\.yaml\$' > TMP/jeter.list
+
+
+		mkdir -p "${prefix}multiqc"
+
+		export LC_ALL=en_US.utf8
+		multiqc  --filename  "${prefix}multiqc_report.html" --no-ansi \
+			${title}  \\
+			${comment}  \\
+			--force \\
+			`find . -name "*.yaml" | awk '{printf(" --config  %s ",\$0);}' ` \\
+			--outdir "${prefix}multiqc" \\
+			--file-list TMP/jeter.list
+		
+		zip -9 -r "${prefix}multiqc.zip" "${prefix}multiqc"
+"""
+}
