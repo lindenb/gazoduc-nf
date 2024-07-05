@@ -1,5 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title":"burden 2024",
+  "description":"burden",
   "type": "object",
   "defs": { 
     "input_and_output_params": { 
@@ -50,6 +52,11 @@
                     "description": "Path to CADD file file.",
                     "fa_icon": "fas fa-code-branch",
                     "help_text": "path to indexed CADD file."
+		},
+	 "group_by_cluster_size": {
+		"type":"string",
+		"pattern": "^\\d+[kKMmGg][bB]?$",
+		"description":"group bed files by group of 'x' bases"
 		}
       }
     }

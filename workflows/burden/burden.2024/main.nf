@@ -102,7 +102,6 @@ workflow BURDEN_CODING {
 			collectFile(name: 'vcf2bed.bed', newLine: true)
 
 
-		xgene_ch = EXTRACT_GENES(genome_ch,gtf_ch,vcf2bedcontig_ch,bed)
 
 		conditions_ch = conditions.splitJson().
 			map{it.containsKey("description")?it:it.plus(description:it.id)}.
@@ -135,6 +134,8 @@ workflow BURDEN_CODING {
 				return it;
 			}.
 			map {
+				if(!it.containsKey("gene_biotype")) it=it.plus("gene_biotype":"");
+				if(!it.containsKey("polyx")) it=it.plus("polyx":10);
 				if(!it.containsKey("exons_only")) it=it.plus("exons_only":false)
 				if(!it.containsKey("QD")) it=it.plus("QD":2);
 				if(!it.containsKey("FS")) it=it.plus("FS":60);
@@ -148,15 +149,19 @@ workflow BURDEN_CODING {
 
 		conditions_ch.view{"CONDITION: $it"}
 
-		gene_cond_vcf_ch = xgene_ch.output.
-			flatten().
-			combine(conditions_ch).
+
+		xgene_ch = EXTRACT_GENES(genome_ch,gtf_ch,bed,vcf2bedcontig_ch.combine(conditions_ch))
+		
+		bed_cond_vcf_ch = xgene_ch.output.
+			flatMap{X->X[0].flatten().collect{Y->tuple(Y,X[1])}}.
 			combine(vcf2bedcontig_ch)
+		
+		gene_cond_vcf_ch = Channel.empty()
 
 
 		eff=DOWNLOAD_SNPEFF_DB()
 
-		per_gene_ch = PER_BED(genome_ch, gtf_ch,samplesheet,eff.output,gene_cond_vcf_ch)
+		per_gene_ch = PER_BED(genome_ch, gtf_ch,samplesheet,eff.output,bed_cond_vcf_ch)
 		per_gene_ch.output.splitCsv(sep:'\t', header:true).
 			view{"$it"}
 		all_results_ch =  per_gene_ch.output.collectFile(name:"output.tsv")
@@ -187,16 +192,16 @@ bcftools index -s "${vcf}" | awk -F '\t' '{printf("%s\\t0\\t%s\\n",\$1,\$2);}' >
 
 
 process EXTRACT_GENES {
-tag "${vcf2bed}"
+tag "${vcf2bed} ${condition.id}"
 memory "2g"
 afterScript "rm -rf TMP"
 input:
 	tuple path(fasta),path(fai),path(dict)
 	tuple path(gtf), path(gtf_tbi)
-	path(vcf2bed)
 	path(userbed)
+	tuple path(vcf2bed),val(condition)
 output:
-	path("BEDS/*.bed"),emit:output
+	tuple path("BEDS/*.bed"),val(condition),emit:output
 script:
 	def slop = 20
 """
@@ -208,8 +213,8 @@ cut -f1,2,3 '${vcf2bed}' | LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -
 
 
 tabix --regions "TMP/tmp1.bed" "${gtf}" |\\
-	java -jar \${JVARKIT_DIST}/gtf2bed.jar -R "${fasta}" --columns "gtf.feature" |\\
-	awk -F '\t' '(\$4=="gene")' |\\
+	java -jar \${JVARKIT_DIST}/gtf2bed.jar -R "${fasta}" --columns "gtf.feature,gene_biotype" |\\
+	awk -F '\t' '(\$4=="gene" ${condition.gene_biotype.isEmpty()?"":"&& \$5==\"${condition.gene_biotype}\""})' |\\
 	cut -f1,2,3 |\\
 	bedtools slop -i -  -g "${fai}" -b ${slop} |\
 	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\
@@ -232,7 +237,7 @@ fi
 mkdir -p BEDS
 
 java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/bedcluster.jar \\
-		-R "${fasta}" --out BEDS  --size "1Mb" \\
+		-R "${fasta}" --out BEDS  --size "${params.group_by_cluster_size}" \\
 		TMP/tmp3.bed
 """
 }
@@ -274,6 +279,7 @@ when:
 script:
 	def slop=20
 """
+hostname 1>&2
 module load snpeff/5.2 R/3.6.0-dev
 mkdir -p TMP
 set -x
@@ -367,94 +373,9 @@ cat TMP/controls.txt TMP/cases.txt > TMP/all.samples.txt
 bcftools view --trim-unseen-allele --trim-alt-alleles --samples-file TMP/all.samples.txt -O b -o TMP/jeter2.bcf TMP/jeter1.bcf
 mv TMP/jeter2.bcf TMP/jeter1.bcf
 
-
-#
-# Filter with jvarkit
-#
-cat << __EOF__ > TMP/jeter.code
-
-/** min max alleles */
-if(variant.getNAlleles()<2 || variant.getNAlleles()>${condition.max_alleles}) {
-	return false;
-	}
-
-
-final double f_missing = ${condition.f_missing};
-if(f_missing >= 0 ) {
-	/** missing */
-	final double  n_missing = variant.getGenotypes().stream().
-		filter(G->G.isNoCall() || (G.hasDP() && G.getDP()==0)).
-		count();
-
-	if(n_missing/variant.getNSamples() > f_missing) return false;
-	}
-
-/** filters 
-if(variant.isFiltered()) {
-	return false;
-}
-*/
-
-/** low DP */
-final double dp= variant.getGenotypes().stream().
-	filter(G->G.isCalled() && G.hasDP()).
-	mapToInt(G->G.getDP()).average().orElse(${condition.minDP}); 
-
-if(dp <${condition.minDP} || dp > ${condition.maxDP}) return false;
-
-/** low GQ */
-
-final long count_alt = variant.getGenotypes().stream().
-        filter(g->g.isCalled() && !g.isHomRef()).
-	count();
-
-if(count_alt==0L) return false;
-
-final double count_low_gq = variant.getGenotypes().stream().
-	filter(g->g.isCalled() && !g.isHomRef() && g.hasGQ()).
-	filter(g->g.getGQ()<${condition.lowGQ}).
-	count();
-
-if(count_low_gq/count_alt >= 0.25) {
-	return false;
-	}
-
-// see https://gatk.broadinstitute.org/hc/en-us/articles/360035890471-Hard-filtering-germline-short-variants
-if(variant.hasAttribute("QD") && variant.getAttributeAsDouble("QD",1000) < ${condition.QD}) return false;
-if(variant.hasAttribute("FS") && variant.getAttributeAsDouble("FS",0) > ${condition.FS}) return false;
-if(variant.hasAttribute("SOR") && variant.getAttributeAsDouble("SOR",0) > ${condition.SOR}) return false;
-if(variant.hasAttribute("MQ") && variant.getAttributeAsDouble("MQ",1000) < ${condition.MQ}) return false;
-if(variant.hasAttribute("MQRankSum") && variant.getAttributeAsDouble("MQRankSum",1000) < ${condition.MQRankSum}) return false;
-if(variant.hasAttribute("ReadPosRankSum") && variant.getAttributeAsDouble("ReadPosRankSum",1000) < ${condition.ReadPosRankSum}) return false;
-
-
-
-Genotype singleton=null;
-for(final Genotype g: variant.getGenotypes()) {
-	if(g.isCalled() && !g.isHomRef()) {
-		if(singleton!=null) return true;
-		singleton=g;
-		}
-	}
-//if(singleton!=null && singleton.isFiltered()) return false;
-
-if(singleton!=null && singleton.isHet() && singleton.hasGQ() && singleton.getGQ()<${condition.minGQsingleton}) {
-	return false; 
-	}
-if(singleton !=null && singleton.hasAD() && singleton.isHet() && singleton.getAD().length==2) 
-	{
-	int array[]=singleton.getAD();double r= array[1]/(double)(array[0]+array[1]);
-	if(r< ${condition.minRatioSingleton} || r>(1.0 - ${condition.minRatioSingleton})) return false;
-	}
-return true;
-__EOF__
-
-
-bcftools view TMP/jeter1.bcf |\\
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterjdk --nocode  -f TMP/jeter.code |\
-	bcftools view  -O b -o TMP/jeter2.bcf
- mv -v TMP/jeter2.bcf TMP/jeter1.bcf
-
+## too many alleles
+bcftools view -m 2 -M ${condition.max_alleles} -O b -o TMP/jeter2.bcf TMP/jeter1.bcf
+mv TMP/jeter2.bcf TMP/jeter1.bcf
 
 #
 # normalize
@@ -463,6 +384,8 @@ bcftools norm -f ${params.fasta} --multiallelics -any -O u TMP/jeter1.bcf |\\
 	bcftools view  -i 'ALT!="*" && AC[*]>0 && INFO/AF <= ${condition.maxAF}' -O b -o TMP/jeter2.bcf
 mv TMP/jeter2.bcf TMP/jeter1.bcf
 
+
+
 #
 # bcftools contrast
 #
@@ -470,6 +393,18 @@ bcftools +contrast -0 TMP/controls.txt -1 TMP/cases.txt -O u TMP/jeter1.bcf |\\
 	bcftools view -e 'INFO/PASSOC < ${condition.p_assoc}' -O b -o TMP/jeter2.bcf
 mv -v TMP/jeter2.bcf TMP/jeter1.bcf
 
+
+
+## polyx
+if ${ condition.polyx  > 1 } ; then
+
+	bcftools view TMP/jeter1.bcf |\\
+	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfpolyx -R "${fasta}" --tag POLYX -n "${condition.polyx}"  |\
+                bcftools view -e 'INFO/POLYX > ${condition.polyx}' -O b -o  TMP/jeter2.bcf
+	
+	mv -v TMP/jeter2.bcf TMP/jeter1.bcf
+
+fi
 
 
 if ${!condition.so_acn.isEmpty()}
@@ -536,13 +471,19 @@ cat(
 		CASES_REF_COUNT,
 		CTRLS_ALT_COUNT,
 		CTRLS_REF_COUNT,
-		variants.str,
-		"\n"
+		variants.str
 		),
 	file="TMP/results.bed",
 	sep = "\t",
 	append = TRUE
 )
+
+cat("\\n",
+   file="TMP/results.bed",
+   sep="",
+   append = TRUE
+   )
+
 
 EOF
 
@@ -574,6 +515,19 @@ EOF
 
 bcftools view -O v TMP/jeter1.bcf |\\
 java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -cp \${JVARKIT_DIST}/jvarkit.jar:TMP  Minikit \\
+		--QD "${condition.QD}" \\
+		--FS "${condition.FS}" \\
+		--SOR "${condition.SOR}" \\
+		--MQ "${condition.MQ}" \\
+		--MQRankSum "${condition.MQRankSum}" \\
+		--ReadPosRankSum "${condition.ReadPosRankSum}" \\
+		--minDP ${condition.minDP} \\
+		--maxDP ${condition.maxDP} \\
+		--minGQsingleton ${condition.minGQsingleton} \\
+		--minRatioSingleton ${condition.minRatioSingleton} \\
+		--f_missing  ${condition.f_missing} \\
+		--lowGQ ${condition.lowGQ} \\
+		--gtf "${gtf}" \\
 		--header "${moduleDir}/karaka01.R" \\
 		--body TMP/jeter02.R \\
 		--cases TMP/cases.txt \\

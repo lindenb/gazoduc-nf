@@ -37,6 +37,7 @@ import java.util.stream.Collectors;
 
 import com.beust.jcommander.Parameter;
 import com.beust.jcommander.ParametersDelegate;
+import com.github.lindenb.jvarkit.gatk.GATKConstants;
 import com.github.lindenb.jvarkit.io.IOUtils;
 import com.github.lindenb.jvarkit.iterator.EqualIterator;
 import com.github.lindenb.jvarkit.lang.StringUtils;
@@ -50,6 +51,7 @@ import com.github.lindenb.jvarkit.util.vcf.predictions.GeneExtractorFactory.Gene
 import htsjdk.samtools.util.BinaryCodec;
 import htsjdk.samtools.util.CloseableIterator;
 import htsjdk.samtools.util.SortingCollection;
+import htsjdk.tribble.readers.TabixReader;
 import htsjdk.variant.variantcontext.Genotype;
 import htsjdk.variant.variantcontext.VariantContext;
 import htsjdk.variant.vcf.VCFHeader;
@@ -70,6 +72,35 @@ public class Minikit extends Launcher {
 	private Path headerFile = null;
 	@Parameter(names={"--body"},description = "insert this file after each output")
 	private Path bodyFile = null;	
+	@Parameter(names={"--minGQsingleton"},description = "min singleton GQ")
+	private int minGQsingleton=90;
+	@Parameter(names={"--minRatioSingleton"},description = "min singleton ration AD")
+	private double minRatioSingleton=0.3;
+	@Parameter(names={"--"+GATKConstants.QD_KEY},description = "GATK "+GATKConstants.QD_KEY)
+	private double gatk_QD=-1.0;
+	@Parameter(names={"--"+GATKConstants.FS_KEY},description = "GATK "+GATKConstants.FS_KEY)
+	private double gatk_FS=-1.0;
+	@Parameter(names={"--"+GATKConstants.SOR_KEY},description = "GATK "+GATKConstants.SOR_KEY)
+	private double gatk_SOR=-1.0;
+	@Parameter(names={"--"+GATKConstants.MQ_KEY},description = "GATK "+GATKConstants.MQ_KEY)
+	private double gatk_MQ=1000;
+	@Parameter(names={"--"+GATKConstants.MQRankSum_KEY},description = "GATK "+GATKConstants.MQRankSum_KEY)
+	private double gatk_MQRankSum=1000;
+	@Parameter(names={"--"+GATKConstants.ReadPosRankSum_KEY},description = "GATK "+GATKConstants.ReadPosRankSum_KEY)
+	private double gatk_ReadPosRankSum=1000;
+	@Parameter(names={"--minDP"},description = "minDP")
+	private int minDP=0;
+	@Parameter(names={"--maxDP"},description = "maxDP")
+	private int maxDP=300;
+	@Parameter(names={"--lowGQ"},description = "lowGQ")
+	private int lowGQ=60;
+	@Parameter(names={"--f_missing"},description = "fraction missing")
+	private double f_missing=0.05;
+	@Parameter(names={"--gtf"},description = "gtf indexed file")
+	private String gtfPath=null;
+
+
+	private TabixReader gtfReader = null;
 	
 	
 	private static class Key implements Comparable<Key>{
@@ -215,12 +246,125 @@ private static class KeyAndVariantCodec implements SortingCollection.Codec<KeyAn
 		}
 	}
 
+private boolean accept(final VariantContext variant) {
+	if(variant.isFiltered()) {
+		return false;
+	}
+	
 
+	final int count_alt = (int)variant.getGenotypes().stream().
+        filter(g->g.hasAltAllele()).
+        count();
+
+	if(count_alt==0) return false;
+
+
+	
+	
+	if(this.f_missing  >= 0 ) {
+	        /** missing */
+	        final double  n_missing = variant.getGenotypes().stream().
+	                filter(G->G.isNoCall() || (G.hasDP() && G.getDP()==0)).
+	                count();
+
+	        if(n_missing/variant.getNSamples() > this.f_missing) return false;
+	        }
+
+
+	
+	/** low DP */
+	final double dp= variant.getGenotypes().stream().
+	        filter(G->G.isCalled() && G.hasDP()).
+	        mapToInt(G->G.getDP()).average().orElse(this.minDP);
+
+	if(dp < this.minDP  || dp > this.maxDP) return false;
+
+	
+	final int count_alt_filtered=(int)variant.getGenotypes().stream().
+			filter(G->G.hasAltAllele() && G.isFiltered()).
+			count();
+	if(count_alt_filtered/count_alt >= 0.1) {
+		return false;
+		}
+	
+	
+
+	/** low GQ */
+	final double count_low_gq = variant.getGenotypes().stream().
+	        filter(G->G.hasAltAllele() && G.hasGQ()).
+	        filter(g->g.getGQ()< this.lowGQ).
+	        count();
+	
+	if(count_low_gq/count_alt >= 0.25) {
+	        return false;
+	        }
+
+	
+	
+	if(variant.hasAttribute(GATKConstants.QD_KEY) &&
+		variant.getAttributeAsDouble(GATKConstants.QD_KEY,1000) < this.gatk_QD) {
+		return false;
+		}
+	
+	if(variant.hasAttribute(GATKConstants.FS_KEY) && 
+			variant.getAttributeAsDouble(GATKConstants.FS_KEY,0) > this.gatk_FS) {
+		return false;
+		}
+	
+	if(variant.hasAttribute(GATKConstants.SOR_KEY) && 
+			variant.getAttributeAsDouble(GATKConstants.SOR_KEY,0) > this.gatk_SOR) {
+		return false;
+		}
+	
+	if(variant.hasAttribute(GATKConstants.MQ_KEY) && 
+			variant.getAttributeAsDouble(GATKConstants.MQ_KEY,1000) < this.gatk_MQ) {
+		return false;
+		}
+	
+	if(variant.hasAttribute(GATKConstants.MQRankSum_KEY) && 
+			variant.getAttributeAsDouble(GATKConstants.MQRankSum_KEY,1000) < this.gatk_MQRankSum) {
+		return false;
+		}
+	
+	if(variant.hasAttribute(GATKConstants.ReadPosRankSum_KEY) && 
+			variant.getAttributeAsDouble(GATKConstants.ReadPosRankSum_KEY,1000) < this.gatk_ReadPosRankSum) {
+		return false;
+		}
+	
+
+	
+	Genotype singleton=null;
+	for(final Genotype g: variant.getGenotypes()) {
+	        if(g.hasAltAllele()) {
+                if(singleton!=null) {
+                	singleton=null;
+                	break;
+                	}
+                singleton=g;
+                }
+	        }
+	if(singleton!=null) {
+		if(singleton.isFiltered()) return true;
+		if(singleton.isHet() && singleton.hasGQ() && singleton.getGQ()< minGQsingleton) {
+	        return false;
+	        }
+		if(singleton.hasAD() && singleton.isHet() && singleton.getAD().length==2)
+	        {
+			final  int array[]=singleton.getAD();
+	        final double r= array[1]/(double)(array[0]+array[1]);
+	        if(r< this.minRatioSingleton || r>(1.0 - minRatioSingleton)) return false;
+	        }
+		}
+	return true;
+	}
 
 @Override
 public int doWork(List<String> args) {
-	
 	try {
+		if(!StringUtils.isBlank(this.gtfPath)) {
+			this.gtfReader = new TabixReader(this.gtfPath);
+			}
+		
 		try(VCFIterator iter = new VCFIteratorBuilder().open(System.in)) {
 			final VCFHeader header = iter.getHeader();
 
@@ -255,6 +399,7 @@ public int doWork(List<String> args) {
 			final Splitter splitter= new GeneSplitter(header);
 			while(iter.hasNext()) {
 				final VariantContext ctx=iter.next();
+				if(!accept(ctx)) continue;
 				for(Key key: splitter.apply(ctx)) {
 					sorter.add(new KeyAndVariant(key,ctx));
 					}
@@ -281,6 +426,12 @@ public int doWork(List<String> args) {
 						final List<KeyAndVariant> array = iter1.next();
 						final Key key = array.get(0).key;
 						final List<VariantContext> variants = array.stream().map(it->it.ctx).collect(Collectors.toList());
+						
+						// no Case have an ALT, skip
+						if(variants.stream().flatMap(V->V.getGenotypes().stream()).
+							filter(G->G.hasAltAllele()).
+							noneMatch(G->casesControls.isCase(G))) continue;
+						
 						final FisherCasesControls fisherCasesControls = new FisherCasesControls(casesControls);
 
 						pw.println("contig <- "+ StringUtils.doubleQuote(key.contig));
@@ -353,10 +504,12 @@ public int doWork(List<String> args) {
 		LOG.error(err);
 		return -1;
 		}
+	finally {
+		if(gtfReader!=null) gtfReader.close();
+		}
 	}
 
 public static void main(final String[] args) {
 	new Minikit().instanceMain(args);
 	}
 }
-

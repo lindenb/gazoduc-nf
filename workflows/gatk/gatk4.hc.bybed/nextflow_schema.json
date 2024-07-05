@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title":"GATK HC by BED",
+  "description":"GATK call by bed",
+  "type": "object",
+  "defs": { 
+    "input_and_output_params": { 
+      "title": "Input / Ouput",
+      "type": "object",
+      "required": ["fasta", "beds","prefix"], 
+      "properties": {
+        "fasta": { 
+          "type": "string",
+	  "format": "file-path",
+          "exists": true,
+          "mimetype": "text/plain",
+          "pattern": "^\\S+\\.fn?a(sta)?(\\.gz)?$",
+          "description": "Path to FASTA genome file.",
+	  "fa_icon": "far fa-file-code"
+        },
+        "beds": { 
+          "type": "string",
+	  "format": "file-path",
+          "exists": true,
+          "mimetype": "text/plain",
+          "pattern": "^\\S+(\\.list)?$",
+          "description": "Path BED files",
+	  "fa_icon": "far fa-file-code"
+        },
+	"prefix": {
+		"type":"string",
+		"pattern": "^[a-zA-z0-9_\\.]+\\.$"
+		},
+	"mapq": {
+		"type":"integer",
+		"description": "gatk mapping quality"
+		},
+	"dbsnp": {
+		"type":"string",
+		"format": "file-path",
+		"exists": true,
+                "pattern": "^\\S+\\.vcf\\.gz$",
+                "description": "path to indexed dbsnp"
+		}
+      }
+    }
+  },
+  "allOf": [
+    { "$ref": "#/defs/input_and_output_params" } 
+  ]
+}
