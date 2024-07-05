@@ -41,7 +41,8 @@ workflow {
 		params.genomeId,
 		file(params.vcf),
 		Channel.fromPath(params.samples),
-		file(params.pihat.blacklisted)
+		file(params.pihat.blacklisted),
+		file(params.remove_samples)
 		)
 	to_multiqc = pihat_ch.to_multiqc
 	mqc_ch = MULTIQC(to_multiqc)

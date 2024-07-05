@@ -28,9 +28,10 @@ workflow ACP_VCF_STEP {
 		vcf
 		sample2collection
 		blacklisted_bed
+		remove_samples
 	main:
-		pihat_ch = PIHAT01(genomeId, vcf, Channel.fromPath("NO_FILE"), blacklisted_bed)
-		cluster_ch = PLINK_CLUSTER( pihat_ch.genome_bcf, pihat_ch.plink_genome)
+		pihat_ch = PIHAT01(genomeId, vcf, Channel.fromPath("NO_FILE"), blacklisted_bed, remove_samples)
+		cluster_ch = PLINK_CLUSTER( pihat_ch.genome_bcf, pihat_ch.plink_genome, remove_samples)
 		
 		assoc_ch = PLINK_ASSOC( genomeId, pihat_ch.genome_bcf, cluster_ch.output)
 
@@ -66,6 +67,7 @@ process PLINK_CLUSTER {
 	input:
 		path(genome_bcf)
 		path(genome_plink)
+		path(remove_samples)
 	output:
 		path("cluster.mds"),emit:output
 		path("header.tsv"),emit:header
@@ -81,6 +83,7 @@ process PLINK_CLUSTER {
 		--read-genome '${genome_plink}' \\
 		--mds-plot ${num_components} \\
 		--cluster \\
+		${remove_samples.name.equals("NO_FILE")?"":"--remove \"${remove_samples}\""} \\
 		--out TMP/cluster
 
 	# reformat mds, normalize spaces, replace with tab
@@ -194,7 +197,7 @@ import htsjdk.variant.utils.SAMSequenceDictionaryExtractor;
 
 
 public class Minikit {
-private final static double MIN_P = 1E-10;
+private final static double MIN_P = ${params.plot_min_pvalue?:"1E-100"};
 private int doWork() {
     final String REF="${reference}";
     final String input = "${assoc}";
@@ -426,7 +429,7 @@ mergedata\$collection[is.na(mergedata\$collection)] <- "OTHER"
 
 head(mergedata)
 
-COLORS <- rainbow(length(unique(mergedata\$collection)))
+COLORS <- rainbow(length(unique(mergedata\$collection)),alpha = 0.75)
 
 # Sélectionner les colonnes C*
 colX <- mergedata\$${row.label1}

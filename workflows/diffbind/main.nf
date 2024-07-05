@@ -5,8 +5,9 @@ include {runOnComplete;moduleLoad} from '../../modules/utils/functions.nf'
 def LOAD_DIFFBIND = """
 
 set +u
-source \${HOME}/.bash_profile
-micromamba activate DIFFBIND
+export SSH_TTY=zobi
+source \${HOME}/${params.mamba_tool.equals("micromamba")?".bash_profile":".bashrc"}
+${params.mamba_tool} activate DIFFBIND
 set -u
 
 """
@@ -80,7 +81,8 @@ workflow DIFFBIND {
 		
 
 		plot_peaks_ch  = PLOT_PEAKS(
-			rows1_ch.map{T->[(T.SampleID+" "+(T.ncbiSrs?:"")+" "+(T.ncbiSrx?:"")).trim().replace(' ','_'), T.Condition, T.bigWig].join("\t")}.collect(),
+			rows1_ch.filter{it.containsKey("bigWig")}.
+				map{T->[(T.SampleID+" "+(T.ncbiSrs?:"")+" "+(T.ncbiSrx?:"")).trim().replace(' ','_'), T.Condition, T.bigWig].join("\t")}.collect(),
 			report_ch.filtered.splitCsv(header:true,sep:'\t')
 			)
 
@@ -164,10 +166,8 @@ output:
 script:
 """
 mkdir -p TMP
-set +u
-source \${HOME}/.bash_profile
-micromamba activate DIFFBIND
-set -u
+
+${LOAD_DIFFBIND}
 
 
 cat << EOF | paste -s -d '\t' > TMP/samplesheet.tsv
@@ -260,10 +260,8 @@ output:
 script:
 """
 mkdir -p TMP
-set +u
-source \${HOME}/.bash_profile
-micromamba activate DIFFBIND
-set -u
+
+${LOAD_DIFFBIND}
 
 cp -v  "${dba}" TMP/dba_DBA.RData
 

@@ -53,6 +53,7 @@ workflow PIHAT01 {
 		vcf
 		samples
 		blacklisted_bed
+		remove_samples
 	main:
 		version_ch = Channel.empty();
 		to_zip = Channel.empty();
@@ -68,7 +69,7 @@ workflow PIHAT01 {
 		version_ch = version_ch.mix(perCtg.version.collect())
 
 
-		pihat_ch = MERGE_PIHAT_VCF(vcf, perCtg.vcf.map{T->T.join("\t")}.collect())
+		pihat_ch = MERGE_PIHAT_VCF(vcf, remove_samples, perCtg.vcf.map{T->T.join("\t")}.collect())
 		version_ch = version_ch.mix(pihat_ch.version)
 
 
@@ -306,6 +307,7 @@ cache "lenient"
 afterScript ""
 input:
 	path(vcf)
+	path(remove_samples)
 	val(L)
 output:
 	path("${prefix}plink.genome.txt.gz"),emit:plink_genome
@@ -339,7 +341,7 @@ awk -F '\t' '(\$1 ~ /^(chr)?[0-9]+\$/ ) {print \$2}' TMP/jeter.list > TMP/autoso
 
 # concat autosomes
 bcftools concat --allow-overlaps  -O b --file-list TMP/autosomes.list -o "TMP/jeter.bcf"
-plink --double-id --bcf TMP/jeter.bcf  --allow-extra-chr --genome --out TMP/plink
+plink --double-id --bcf TMP/jeter.bcf  --allow-extra-chr --genome --out TMP/plink ${remove_samples.name.equals("NO_FILE")?"":"--remove \"${remove_samples}\""} 
 
 
 ## for ACP subworkflow, I may need the vcf that was used to create the genome

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nf-core/rnaseq/master/assets/schema_input.json",
+  "title": "nf-core/rnaseq pipeline - params.input schema",
+  "description": "Schema for the file provided with params.input",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "sample": {
+        "type": "string",
+        "pattern": "^\\S+$",
+        "errorMessage": "Sample name must be provided and cannot contain spaces"
+      },
+      "status": {
+        "type": "string",
+        "pattern": "^(case|control)$",
+        "errorMessage": "status must be 'case' or 'control' "
+      }
+    },
+    "required": ["sample", "status"]
+  }
+}
