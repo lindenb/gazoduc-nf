@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title":"GATK HC by BED",
+  "description":"GATK call by bed",
+  "type": "object",
+  "defs": { 
+    "input_and_output_params": { 
+      "title": "Input / Ouput",
+      "type": "object",
+      "required": ["fasta", "vcf","prefix","recal_snps","recal_indels"], 
+      "properties": {
+        "fasta": { 
+          "type": "string",
+	  "format": "file-path",
+          "exists": true,
+          "mimetype": "text/plain",
+          "pattern": "^\\S+\\.fn?a(sta)?(\\.gz)?$",
+          "description": "Path to FASTA genome file.",
+	  "fa_icon": "far fa-file-code"
+        },
+	"help": {
+		"type":"boolean",
+		"description": "display help"
+		},
+	"outdir": {
+                 "type": "string",
+                 "format": "directory-path",
+                 "description": "The output directory where the results will be saved. You have to use absolute paths to storage on Cloud infrastructure.",
+                 "fa_icon": "fas fa-folder-open"
+                },
+        "vcf": { 
+          "type": "string",
+	  "format": "file-path",
+          "exists": true,
+          "mimetype": "text/plain",
+          "pattern": "^\\S+(\\.vcf\\.gz|\\.bcf)?$",
+          "description": "Path VCF to file",
+	  "fa_icon": "far fa-file-code"
+        },
+	"prefix": {
+		"type":"string",
+		"pattern": "^[a-zA-z0-9_\\.]+\\.$"
+		},
+	"recal_snps": {
+                "type":"string"
+		},
+	"recal_indels": {
+                "type":"string"
+		}
+      }
+    }
+  },
+  "allOf": [
+    { "$ref": "#/defs/input_and_output_params" } 
+  ]
+}
