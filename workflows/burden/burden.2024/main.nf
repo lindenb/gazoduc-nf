@@ -422,7 +422,7 @@ fi
 #
 # CADD
 #
-if ${params.containsKey("cadd") && condition.cadd.phred >0}
+if ${params.containsKey("cadd") && (condition.cadd.phred as int) >0}
 then
 	bcftools view TMP/jeter1.bcf |\\
 		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfcadd --tabix '${params.cadd}' | \\
@@ -657,11 +657,9 @@ id: '${associd}_table'
 section_name: '${associd} table'
 description: '${head} first lines.'
 -->
-<pre>
 EOF
 
-cat TMP/jeter.tsv | column -t >> "mqc.${associd}.table_mqc.html"
-echo "</pre>" >>  "mqc.${associd}.table_mqc.html"
+awk -F '\t' 'BEGIN{printf("<table class=\\"table\\">");} (NR==1) {printf("<thead><caption>${associd}</caption><tr>");for(i=1;i<=NF;i++) {printf("<th>%s</th>",\$i);}printf("</tr></thead><tbody>"); next;} {printf("<tr>");for(i=1;i<=NF;i++) printf("<td>%s</td>",\$i); printf("</tr>");} END{if(NR>1) printf("</tbody>");printf("</table><br/>\\n");}' TMP/jeter.tsv >> "mqc.${associd}.table_mqc.html"
 
 """
 }

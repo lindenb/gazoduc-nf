@@ -71,7 +71,7 @@ public class Minikit extends Launcher {
 	@Parameter(names={"--header"},description = "insert this file in the output header")
 	private Path headerFile = null;
 	@Parameter(names={"--body"},description = "insert this file after each output")
-	private Path bodyFile = null;	
+	private Path bodyFile = null;
 	@Parameter(names={"--minGQsingleton"},description = "min singleton GQ")
 	private int minGQsingleton=90;
 	@Parameter(names={"--minRatioSingleton"},description = "min singleton ration AD")
@@ -101,8 +101,7 @@ public class Minikit extends Launcher {
 
 
 	private TabixReader gtfReader = null;
-	
-	
+
 	private static class Key implements Comparable<Key>{
 		String contig; // eg. chr1
 		String splitter; // eg. SNpeff/transcript
@@ -250,7 +249,6 @@ private boolean accept(final VariantContext variant) {
 	if(variant.isFiltered()) {
 		return false;
 	}
-	
 
 	final int count_alt = (int)variant.getGenotypes().stream().
         filter(g->g.hasAltAllele()).
@@ -259,9 +257,9 @@ private boolean accept(final VariantContext variant) {
 	if(count_alt==0) return false;
 
 
-	
-	
-	if(this.f_missing  >= 0 ) {
+
+    final String ctg = variant.getContig();
+	if(this.f_missing  >= 0 && !(ctg.equals("X") || ctg.equals("Y") || ctg.equals("chrX") || ctg.equals("chrY"))) {
 	        /** missing */
 	        final double  n_missing = variant.getGenotypes().stream().
 	                filter(G->G.isNoCall() || (G.hasDP() && G.getDP()==0)).
@@ -270,8 +268,6 @@ private boolean accept(final VariantContext variant) {
 	        if(n_missing/variant.getNSamples() > this.f_missing) return false;
 	        }
 
-
-	
 	/** low DP */
 	final double dp= variant.getGenotypes().stream().
 	        filter(G->G.isCalled() && G.hasDP()).
@@ -279,22 +275,19 @@ private boolean accept(final VariantContext variant) {
 
 	if(dp < this.minDP  || dp > this.maxDP) return false;
 
-	
 	final int count_alt_filtered=(int)variant.getGenotypes().stream().
 			filter(G->G.hasAltAllele() && G.isFiltered()).
 			count();
 	if(count_alt_filtered/count_alt >= 0.1) {
 		return false;
 		}
-	
-	
 
 	/** low GQ */
 	final double count_low_gq = variant.getGenotypes().stream().
 	        filter(G->G.hasAltAllele() && G.hasGQ()).
 	        filter(g->g.getGQ()< this.lowGQ).
 	        count();
-	
+
 	if(count_low_gq/count_alt >= 0.25) {
 	        return false;
 	        }
@@ -306,27 +299,27 @@ private boolean accept(final VariantContext variant) {
 		return false;
 		}
 	
-	if(variant.hasAttribute(GATKConstants.FS_KEY) && 
+	if(variant.hasAttribute(GATKConstants.FS_KEY) &&
 			variant.getAttributeAsDouble(GATKConstants.FS_KEY,0) > this.gatk_FS) {
 		return false;
 		}
 	
-	if(variant.hasAttribute(GATKConstants.SOR_KEY) && 
+	if(variant.hasAttribute(GATKConstants.SOR_KEY) &&
 			variant.getAttributeAsDouble(GATKConstants.SOR_KEY,0) > this.gatk_SOR) {
 		return false;
 		}
 	
-	if(variant.hasAttribute(GATKConstants.MQ_KEY) && 
+	if(variant.hasAttribute(GATKConstants.MQ_KEY) &&
 			variant.getAttributeAsDouble(GATKConstants.MQ_KEY,1000) < this.gatk_MQ) {
 		return false;
 		}
 	
-	if(variant.hasAttribute(GATKConstants.MQRankSum_KEY) && 
+	if(variant.hasAttribute(GATKConstants.MQRankSum_KEY) &&
 			variant.getAttributeAsDouble(GATKConstants.MQRankSum_KEY,1000) < this.gatk_MQRankSum) {
 		return false;
 		}
 	
-	if(variant.hasAttribute(GATKConstants.ReadPosRankSum_KEY) && 
+	if(variant.hasAttribute(GATKConstants.ReadPosRankSum_KEY) &&
 			variant.getAttributeAsDouble(GATKConstants.ReadPosRankSum_KEY,1000) < this.gatk_ReadPosRankSum) {
 		return false;
 		}
