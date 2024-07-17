@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schema>
+	<title>Somalier - bams</title>
+	<section id="input_and_output" title="Input/Output">
+		<macro id="help" />
+		<macro id="outdir"/>
+		<macro id="prefix"/>
+		<macro id="fasta" required="true"/>
+		<param name="samplesheet" required="true">
+			<type>string</type>
+			<format>file-path</format>
+			<exists>true</exists>
+			<mimetype>text/plain</mimetype>
+			<pattern>^\\S+\\.csv$</pattern>
+			<description>Path to CSV file: sample,bam,bai</description>
+			<fa_icon>fas fa-code-branch</fa_icon>
+			<help_text>Path to CSV file</help_text>
+		</param>
+		<param name="user_sites">
+			<type>string</type>
+			<format>file-path</format>
+			<exists>true</exists>
+			<mimetype>text/plain</mimetype>
+			<pattern>^(NO_FILE|\\S+\\.vcf\\.gz)$</pattern>
+			<description>custom VCF site for somalier</description>
+		</param>
+		<param name="pedigree">
+			<type>string</type>
+			<format>file-path</format>
+			<exists>true</exists>
+			<mimetype>text/plain</mimetype>
+			<pattern>^(NO_FILE|\\S+)$</pattern>
+			<description>pedigree for somalier</description>
+		</param>
+		<param name="somalier_version">
+			<type>string</type>
+		</param>
+	</section>
+</schema>

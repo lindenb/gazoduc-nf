@@ -25,13 +25,11 @@ SOFTWARE.
 
 
 process MOSDEPTH_DOWNLOAD_01 {
-input:
-	val(meta)
 output:
 	path("mosdepth"),emit:executable
 	path("version.xml"),emit:version
 script:
-	def mosdepth_version = params.mosdepth.version
+	def mosdepth_version = params.mosdepth_version?:"0.3.8"
 	def url = "https://github.com/brentp/mosdepth/releases/download/v${mosdepth_version}/mosdepth"
 """
 hostname 1>&2

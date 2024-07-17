@@ -34,95 +34,71 @@ include {SAMTOOLS_SAMPLES} from '../samtools/samtools.samples.03.nf'
 
 workflow SOMALIER_BAMS_01 {
 	take:
-		meta
-		genomeId
-		bams
-		pedigree
-		user_sites
+		genome_ch // fasta,fai,dict
+		samplesheet // sample,bam,bai
+		pedigree // pedigree for somalier
+		user_sites //file or no file
 	main:
 		version_ch = Channel.empty()
 
-		ch1 = SAMTOOLS_SAMPLES([:], bams)
-		version_ch = version_ch.mix(ch1.version)
-
-		ch2 = ch1.rows.filter{T->T.genomeId.equals(genomeId)}
-
-		som_ch = SOMALIER_BAMS_02([:], genomeId, ch2, pedigree, user_sites)
-		version_ch = version_ch.mix(som_ch.version)
-
-		version_ch = MERGE_VERSION( "somalier",version_ch.collect())
-	emit:
-		version = version_ch
-		zip = som_ch.zip
-		output = som_ch.output
-		qc = som_ch.qc /** input for multiqc */
-	}
-
-workflow SOMALIER_BAMS_02 {
-	take:
-		meta
-		genomeId
-		rows
-		pedigree
-		user_sites
-	main:
-		version_ch = Channel.empty()
-
-		exe_ch = DOWNLOAD_SOMALIER([:])
+		exe_ch = DOWNLOAD_SOMALIER()
 		version_ch = version_ch.mix(exe_ch.version)
 
+
 		if(user_sites.name.equals("NO_FILE")) {
-			sites_ch = SOMALIER_DOWNLOAD_SITES([:],genomeId)
+			sites_ch = SOMALIER_DOWNLOAD_SITES(genome_ch)
 			version_ch = version_ch.mix(sites_ch.version)
-			sites_vcf= sites_ch.vcf
+			sites_vcf= sites_ch.output
 			}
 		else {
-			sites_vcf = user_sites
+			sites_vcf = Channel.of(user_sites).
+				map{[file(it),file(it+".tbi")]}
 			}
 
-		ch3 = EXTRACT_BAM([:], genomeId, exe_ch.executable , sites_vcf , rows)
+		ch3 = EXTRACT_BAM(genome_ch, exe_ch.output , samplesheet.combine(sites_vcf))
 		version_ch = version_ch.mix(ch3.version)
-			
-		somalier_ch = RELATE_SOMALIER([:], genomeId, exe_ch.executable,ch3.output.collect(), pedigree)
-		version_ch = version_ch.mix(somalier_ch.version)
 	
-		version_ch = MERGE_VERSION( "somalier",version_ch.collect())
+		somalier_ch = RELATE_SOMALIER(genome_ch, exe_ch.output, ch3.output.collect(), pedigree)
+		version_ch = version_ch.mix(somalier_ch.version)
+
+			
+		//version_ch = MERGE_VERSION( "somalier",version_ch.collect())
+
 	emit:
 		output = somalier_ch.output
 		version = version_ch
 		zip = somalier_ch.zip
 		qc = somalier_ch.qc
+
 	}
 
 
 process EXTRACT_BAM {
-	tag "${row.sample}"
+	tag "${sample}"
+	label "process_quick"
 	memory '2g'
 	input:
-		val(meta)
-		val(genomeId)
-		val(somalier)
-		val(sites)
-		val(row)
+		tuple path(fasta),path(fai),path(dict)
+		path(somalier)
+		tuple val(sample),path(bam),path(bai),path(sites),path(sites_idx)
 	output:
-		path("extracted/${row.sample}.somalier"),emit:output
+		path("extracted/${sample}.somalier"),emit:output
 		path("version.xml"),emit:version
 	script:
-		def genome = params.genomes[genomeId]
 	"""
 	hostname 1>&2
 	mkdir -p extracted
-	${somalier} extract -d extracted --sites "${sites}" -f "${genome.fasta}" "${row.bam}"
+	./${somalier} extract -d extracted --sites "${sites}" -f "${fasta}" "${bam}"
 	
-	test -s "extracted/${row.sample}.somalier"
+	test -s "extracted/${sample}.somalier"
 
 ##################
 cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
         <entry key="description">somalier extract</entry>
-        <entry key="sample">${row.sample}</entry>
-        <entry key="bam">${row.bam}</entry>
+        <entry key="sample">${sample}</entry>
+        <entry key="bam">${bam}</entry>
 </properties>
 EOF
 	"""
@@ -130,13 +106,11 @@ EOF
 
 
 process RELATE_SOMALIER {
-tag "N=${L.size()}"
 afterScript "rm -rf extracted TMP"
 input:
-	val(meta)
-	val(genomeId)
-	val(somalier)
-	val(L)
+	tuple path(fasta),path(fai),path(dict)
+	path(somalier)
+	path("EXTRACT/*")
 	path(pedigree)
 output:
 	path("${params.prefix?:""}somalier.bams/*"),emit:output
@@ -144,9 +118,8 @@ output:
 	path("${params.prefix?:""}somalier_mqc.html"),emit:qc
 	path("version.xml"),emit:version
 script:
-	def genome = params.genomes[genomeId]
-	def prefix = params.prefix?:""
 	def max_rows_html = 50
+	def prefix=params.prefix?:""
 """
 hostname 1>&2
 set -x
@@ -154,9 +127,9 @@ set -x
 mkdir -p TMP
 mkdir -p "${prefix}somalier.bams"
 
-${somalier} relate --output-prefix=${prefix}somalier.bams/${prefix}bams \
-	${pedigree.name.equals("NO_FILE")?"":"-p '${pedigree}'"} \
-	${L.join(" ")}
+./${somalier} relate --output-prefix=${prefix}somalier.bams/${prefix}bams \\
+	${pedigree.name.equals("NO_FILE")?"":"-p '${pedigree}'"} \\
+	EXTRACT/*.somalier
 
 # may not exist
 touch "${prefix}somalier.bams/${prefix}bams.groups.tsv"
@@ -216,7 +189,6 @@ cat << EOF > version.xml
 <properties id="${task.process}">
         <entry key="name">${task.process}</entry>
         <entry key="description">run somalier on bams</entry>
-        <entry key="bams.count">${L.size()}</entry>
         <entry key="pedigree">${pedigree}</entry>
 </properties>
 EOF

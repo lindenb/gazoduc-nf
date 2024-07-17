@@ -24,19 +24,22 @@ SOFTWARE.
 */
 include {moduleLoad} from '../utils/functions.nf'
 
+String getURL(fai) {
+	if(fai.name.contains("hs37d5")) return "https://github.com/brentp/somalier/files/3412453/sites.hg19.vcf.gz";
+        if(fai.name.contains("hs38me")) return "https://github.com/brentp/somalier/files/3412456/sites.hg38.vcf.gz";
+	return "TODO";
+	}
+
 process SOMALIER_DOWNLOAD_SITES {
-tag "${genomeId}"
+tag "${fasta.name}"
 afterScript "rm -rf TMP"
 input:
-	val(meta)
-	val(genomeId)
+	tuple path(fasta),path(fai),path(dict)
 output:
-	path("sites.vcf.gz"), emit: vcf
-	path("sites.vcf.gz.tbi"), emit:index
+	tuple path("sites.vcf.gz"), path("sites.vcf.gz.tbi"), emit:output
 	path("version.xml"), emit:version
 script:
-	def genome = params.genomes[genomeId]
-	def url = genome.somalier_sites_url
+	def url = getURL(fai)
 """
 hostname 1>&2
 ${moduleLoad("jvarkit bcftools")}
@@ -46,10 +49,10 @@ mkdir -p TMP
 
 wget -O - "${url}" |\
 	gunzip -c |\
-	java -jar \${JVARKIT_DIST}/vcfsetdict.jar -R "${genome.fasta}"  --onNotFound SKIP |\
-	bcftools sort -T TMP -o TMP/sites.vcf.gz -O z
+	java -jar \${JVARKIT_DIST}/jvarkit.jar vcfsetdict -R "${fasta}"  --onNotFound SKIP |\
+	bcftools sort -T TMP/sort -o TMP/sites.vcf.gz -O z
 
-bcftools index -t TMP/sites.vcf.gz
+bcftools index -f -t TMP/sites.vcf.gz
 
 mv -v TMP/sites* ./
 

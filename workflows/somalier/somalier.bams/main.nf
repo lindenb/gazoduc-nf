@@ -24,43 +24,50 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-/** path to indexed fasta reference */
-params.reference = ""
-params.bams=""
-params.pedigree=""
-params.help = false
-/** publish Directory */
-params.publishDir = ""
-/** files prefix */
-params.prefix = ""
+include { validateParameters; paramsHelp; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
+
+include {runOnComplete;} from '../../../modules/utils/functions.nf'
+
+
+// Print help message, supply typical command line usage for the pipeline
+if (params.help) {
+   log.info paramsHelp("nextflow run my_pipeline --input input_file.csv")
+   exit 0
+}
+// validate parameters
+validateParameters()
+
+// Print summary of supplied parameters
+log.info paramsSummaryLog(workflow)
+
+
 
 include {SOMALIER_BAMS_01} from  '../../../subworkflows/somalier/somalier.bams.01.nf'
 include {MULTIQC} from '../../../subworkflows/multiqc/multiqc.nf'
-include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
-include {runOnComplete;dumpParams} from '../../../modules/utils/functions.nf'
 
-
-if( params.help ) {
-    dumpParams(params);
-    exit 0
-}  else {
-    dumpParams(params);
-}
 
 
 
 workflow {
+	genome_ch = [file(params.fasta) , file(params.fasta+".fai"), file(""+file(params.fasta).getParent()+"/"+file(params.fasta).getBaseName()+".dict" ) ]
+	
 
 	somalier_ch = SOMALIER_BAMS_01(
-		[:],
-		params.genomeId,
-		Channel.fromPath(params.bams),
+		genome_ch,
+		Channel.fromPath(params.samplesheet).
+			splitCsv(header:true,sep:',').
+			map{
+				if(!it.containsKey("sample")) throw new IllegalArgumentException("sample missing");
+				if(!it.containsKey("bam")) throw new IllegalArgumentException("bam missing");
+				if(!it.containsKey("bai")) throw new IllegalArgumentException("bai missing");
+				return it;
+				}.
+			map{[it.sample,file(it.bam),file(it.bai)]},
 		file(params.pedigree),
 		file(params.user_sites)
 		)
-	multiqc =  MULTIQC(somalier_ch.output.mix(somalier_ch.qc).flatten().collect())
-        html = VERSION_TO_HTML(somalier_ch.version)
+	//multiqc =  MULTIQC(somalier_ch.output.mix(somalier_ch.qc).flatten().collect())
 	}
 
 
-runOnComplete(workflow)
+//runOnComplete(workflow)

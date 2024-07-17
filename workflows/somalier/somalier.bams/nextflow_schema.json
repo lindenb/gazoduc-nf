@@ -1,0 +1,76 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "",
+    "description": "",
+    "type": "object",
+    "defs": {
+        "input_and_output": {
+            "title": "Input/Output",
+            "type": "object",
+            "required": [
+                "outdir",
+                "prefix",
+                "fasta",
+                "samplesheet"
+            ],
+            "properties": {
+                "help": {
+                    "type": "boolean",
+                    "description": "display help",
+                    "help_text": "display help"
+                },
+                "outdir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "mimetype": "text/plain",
+                    "description": "The output directory where the results will be saved. You have to use absolute paths to storage on Cloud infrastructure",
+                    "fa_icon": "far fa-file-code"
+                },
+                "prefix": {
+                    "type": "string",
+                    "mimetype": "text/plain",
+                    "description": "file prefix for output files"
+                },
+                "fasta": {
+                    "type": "string",
+                    "format": "file-path",
+                    "mimetype": "text/plain",
+                    "pattern": "^\\S+\\.fn?a(sta)?(\\.gz)?$",
+                    "description": "Path to FASTA genome file",
+                    "fa_icon": "far fa-file-code"
+                },
+                "samplesheet": {
+                    "type": "string",
+                    "format": "file-path",
+                    "mimetype": "text/plain",
+                    "pattern": "^\\S+\\.csv$",
+                    "description": "Path to CSV file: sample,bam,bai",
+                    "fa_icon": "fas fa-code-branch",
+                    "help_text": "Path to CSV file"
+                },
+                "user_sites": {
+                    "type": "string",
+                    "format": "file-path",
+                    "mimetype": "text/plain",
+                    "pattern": "^(NO_FILE|\\S+\\.vcf\\.gz)$",
+                    "description": "custom VCF site for somalier"
+                },
+                "pedigree": {
+                    "type": "string",
+                    "format": "file-path",
+                    "mimetype": "text/plain",
+                    "pattern": "^(NO_FILE|\\S+)$",
+                    "description": "pedigree for somalier"
+                },
+                "somalier_version": {
+                    "type": "string"
+                }
+            }
+        }
+    },
+    "allOf": [
+        {
+            "$ref": "#/defs/input_and_output"
+        }
+    ]
+}

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title":"bamstats01",
+  "description":"QC for BAMS",
+  "type": "object",
+  "defs": { 
+    "input_and_output_params": { 
+      "title": "Input / Ouput",
+      "type": "object",
+      "required": ["fasta", "prefix"], 
+      "properties": {
+        "fasta": { 
+          "type": "string",
+	  "format": "file-path",
+          "exists": true,
+          "mimetype": "text/plain",
+          "pattern": "^\\S+\\.fn?a(sta)?(\\.gz)?$",
+          "description": "Path to FASTA genome file.",
+	  "fa_icon": "far fa-file-code"
+        },
+      "samplesheet": {
+                    "type": "string",
+                    "format": "file-path",
+                    "exists": true,
+                    "mimetype": "text/plain",
+                    "pattern": "^\\S+\\.csv$",
+                    "description": "Path to CSV file: sample,bam,idx",
+                    "fa_icon": "fas fa-code-branch",
+                    "help_text": "path to csv file."
+                },
+	"prefix": {
+		"type":"string",
+		"pattern": "^[a-zA-z0-9_\\.]+\\.$"
+		},
+	"help": {
+		"type":"boolean"
+		}
+      }
+    }
+  },
+  "allOf": [
+    { "$ref": "#/defs/input_and_output_params" } 
+  ]
+}
