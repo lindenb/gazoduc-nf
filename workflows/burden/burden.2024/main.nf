@@ -126,7 +126,7 @@ workflow BURDEN_CODING {
 			}.
 			map{it.containsKey("max_alleles")?it:it.plus(max_alleles:3)}.
 			map{it.containsKey("maxAF")?it:it.plus(maxAF:0.1)}.
-			map{it.containsKey("p_assoc")?it:it.plus(p_assoc:0.01)}.
+			map{it.containsKey("p_assoc")?it:it.plus(p_assoc:0.001)}.
 			map{it.containsKey("cadd")?it:it.plus(cadd:[:])}.
 			map{
 				if(it.cadd.containsKey("phred")) return it;
@@ -134,6 +134,7 @@ workflow BURDEN_CODING {
 				return it;
 			}.
 			map {
+				if(!it.containsKey("types")) it=it.plus("types":"");
 				if(!it.containsKey("gene_biotype")) it=it.plus("gene_biotype":"");
 				if(!it.containsKey("polyx")) it=it.plus("polyx":10);
 				if(!it.containsKey("exons_only")) it=it.plus("exons_only":false)
@@ -369,7 +370,6 @@ test ! -s TMP/jeter.txt
 cat TMP/controls.txt TMP/cases.txt > TMP/all.samples.txt
 
 
-
 bcftools view --trim-unseen-allele --trim-alt-alleles --samples-file TMP/all.samples.txt -O b -o TMP/jeter2.bcf TMP/jeter1.bcf
 mv TMP/jeter2.bcf TMP/jeter1.bcf
 
@@ -383,6 +383,15 @@ mv TMP/jeter2.bcf TMP/jeter1.bcf
 bcftools norm -f ${params.fasta} --multiallelics -any -O u TMP/jeter1.bcf |\\
 	bcftools view  -i 'ALT!="*" && AC[*]>0 && INFO/AF <= ${condition.maxAF}' -O b -o TMP/jeter2.bcf
 mv TMP/jeter2.bcf TMP/jeter1.bcf
+
+#
+# variant type
+#
+if ${!condition.types.isEmpty()}
+then
+	bcftools view --types "${condition.types}" -O b -o TMP/jeter2.bcf TMP/jeter1.bcf
+	mv TMP/jeter2.bcf TMP/jeter1.bcf
+fi
 
 
 

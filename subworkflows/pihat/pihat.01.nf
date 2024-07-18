@@ -49,7 +49,7 @@ include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 
 workflow PIHAT01 {
 	take:
-		genomeId
+		genome_ch
 		vcf
 		samples
 		blacklisted_bed
@@ -65,7 +65,7 @@ workflow PIHAT01 {
 				combine(samples)
 
 
-		perCtg = PLINK_PER_CONTIG(genomeId, blacklisted_bed, ctgvcf_ch)
+		perCtg = PLINK_PER_CONTIG(genome_ch, blacklisted_bed, ctgvcf_ch)
 		version_ch = version_ch.mix(perCtg.version.collect())
 
 
@@ -92,7 +92,7 @@ tag "${vcf.name}/${contig}"
 afterScript "rm -rf TMP"
 memory "3g"
 input:
-	val(genomeId)
+	tuple path(fasta),path(fai),path(dict)
 	path("BLACKLISTED/*")
         tuple val(contig),path(vcf),path(samples)
 output:
@@ -101,17 +101,13 @@ output:
 when:
 	contig.matches(params.pihat.contig_regex)
 script:
-	def genome = params.genomes[genomeId]
-	if(genome==null) throw new IllegalArgumentException("cannot get genome[${genomeId}]")
-	def reference = genome.fasta
 	def filters = params.pihat.filters
 	def pihatmaf = (params.pihat.MAF as double)
 	def pihatMinGQ = (params.pihat.min_GQ as int)
 	def f_missing= (params.pihat.f_missing as double)
 	def minDP= (params.pihat.min_DP as int)
 	def maxDP= (params.pihat.max_DP as int)
-	def gnomad_genome_path = genome.gnomad_genome
-	def gnomad_exome_path =  genome.gnomad_exome
+	def gnomad_genome_path = params.gnomad_genome
 
 if(contig.matches("(chr)?[0-9]+"))
 
@@ -157,7 +153,7 @@ bcftools view -m2 -M2 ${filters} --types snps -O u \
 
 	countIt TMP/jeter1.bcf
 
-	for G in "${gnomad_genome_path}" "${gnomad_exome_path}"
+	for G in "${gnomad_genome_path}"
 	do
 	if [ -f "\${G}"  ] ; then
 
@@ -175,7 +171,7 @@ bcftools view -m2 -M2 ${filters} --types snps -O u \
 
 		# get filtered variants in gnomad
 		bcftools query -e 'FILTER=="." || FILTER=="PASS"'  --regions-file TMP/gnomad.bed -f '%CHROM\t%POS0\t%END\\n' "\${G}" |\
-			java  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 1 --convert SKIP |\
+			java  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${fasta}" --column 1 --convert SKIP |\
 			sort -T	TMP -t '\t' -k1,1	-k2,2n > TMP/x.gnomad.bed
 		
 		if [ ! -s x.gnomad.bed ] ; then
