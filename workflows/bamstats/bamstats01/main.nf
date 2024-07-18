@@ -112,11 +112,11 @@ workflow {
                 ch2 = APPLY_MOSDEPTH(genome_ch,mosdepth_ch.executable,samples_ch)
                 //version_ch = version_ch.mix(ch2.version)
 		
-		tozip_ch = tozip_ch.mix(ststats_ch.output.map{["mosdepth",it]})
+		tozip_ch = tozip_ch.mix(ch2.output.flatten().map{["mosdepth",it]})
 		toqc_ch =  toqc_ch.mix(ch2.output)
 		}
 	
-	ZIP_IT(tozip_ch.groupTuple())
+	 ZIP_IT(tozip_ch.groupTuple())
          multiqc01_ch = MULTIQC_1(toqc_ch.collect())
 
          MULTIQC_2(file(params.sample2population), multiqc01_ch.json )
