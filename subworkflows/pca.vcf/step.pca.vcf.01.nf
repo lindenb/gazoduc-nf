@@ -23,19 +23,18 @@ def whatisapca = "<cite><b>PCA</b> is a statistical technique for reducing the d
 
 workflow ACP_VCF_STEP {
 	take:
-		meta
-		genomeId
+		genome_ch
 		vcf
 		sample2collection
 		blacklisted_bed
 		remove_samples
 	main:
-		pihat_ch = PIHAT01(genomeId, vcf, Channel.fromPath("NO_FILE"), blacklisted_bed, remove_samples)
+		pihat_ch = PIHAT01(genome_ch, vcf, Channel.fromPath("NO_FILE"), blacklisted_bed, remove_samples)
 		cluster_ch = PLINK_CLUSTER( pihat_ch.genome_bcf, pihat_ch.plink_genome, remove_samples)
 		
-		assoc_ch = PLINK_ASSOC( genomeId, pihat_ch.genome_bcf, cluster_ch.output)
+		assoc_ch = PLINK_ASSOC(genome_ch , pihat_ch.genome_bcf, cluster_ch.output)
 
-		plot_assoc_ch = PLOT_ASSOC(genomeId, assoc_ch.assoc.flatten())
+		plot_assoc_ch = PLOT_ASSOC(genome_ch, assoc_ch.assoc.flatten())
 
 		CLEANUP_VCF(vcf, assoc_ch.variants_to_remove)
 	
@@ -102,7 +101,7 @@ process PLINK_CLUSTER {
 process PLINK_ASSOC {
 	tag "${genome_bcf.name} ${cluster_mds.name}"
 	input:
-		val(genomeId)
+		tuple path(fasta),path(fai),path(dict)
 		path(genome_bcf)
 		path(cluster_mds)
 	output:
@@ -111,7 +110,6 @@ process PLINK_ASSOC {
 		path("variants_to_remove.bcf.csi"),emit:variants_to_remove_csi
 	script:
 		def treshold = 5E-8
-		def reference = params.genomes[genomeId].fasta
 	"""
 	hostname 2>&1
 	${moduleLoad("plink bcftools jvarkit")}
@@ -136,7 +134,7 @@ process PLINK_ASSOC {
 		awk -F ':' '{printf("%s\t%s\t.\t%s\t%s\t.\t.\t.\\n",\$1,\$2,\$3,\$4);}' |\
 		sed 's/^chr//' >> TMP/jeter.vcf
 	
-	java -jar \${JVARKIT_DIST}/jvarkit.jar vcfsetdict -R '${reference}'  --onNotFound SKIP TMP/jeter.vcf |\
+	java -jar \${JVARKIT_DIST}/jvarkit.jar vcfsetdict -R '${fasta}'  --onNotFound SKIP TMP/jeter.vcf |\
 		bcftools sort -T TMP/tmp -O b -o variants_to_remove.bcf
 	bcftools index -f variants_to_remove.bcf
 	"""
@@ -155,13 +153,12 @@ process CLEANUP_VCF {
 process PLOT_ASSOC {
 tag "${assoc.name}"
 input:
-	val(genomeId)
+	tuple path(fasta),path(fai),path(dict)
 	path(assoc)
 output:
 	path("${prefix}.multiqc.*"),emit:output
 script:
 	prefix = "plotassoc"
-	def reference = params.genomes[genomeId].fasta
 	def title = assoc.name.replace('.','_')
 	def nhead = 10
 """
@@ -199,7 +196,7 @@ import htsjdk.variant.utils.SAMSequenceDictionaryExtractor;
 public class Minikit {
 private final static double MIN_P = ${params.plot_min_pvalue?:"1E-100"};
 private int doWork() {
-    final String REF="${reference}";
+    final String REF="${fasta}";
     final String input = "${assoc}";
     try {
         Path path = Paths.get(input);
@@ -363,7 +360,7 @@ awk '(\$2!="SNP") {print \$2}' '${assoc}' |\\
 	cut -d ':' -f 1 | sort -T TMP | uniq -c |\\
 	awk '{printf("%s\t%s\\n",\$2,\$1);}' |\\
 	sort -T TMP -t '\t' -k1,1 |\\
-	join -t '\t' -1 1 -2 1 - <(sort -t '\t' -k1,1 '${reference}.fai' ) |\\
+	join -t '\t' -1 1 -2 1 - <(sort -t '\t' -k1,1 '${fai}' ) |\\
 	awk 'BEGIN{printf("<table class=\\"table\\"><thead><caption>Number of variants per contig</caption><tr><th>CHROM</th><th>Length</th><th>VARIANTS</th><th>Variants per base</th></tr></thead><tbody>\\n");} {printf("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\\n",\$1,\$3,\$2,\$2/\$3);} END {printf("</tbody></table>\\n");}' >> TMP/jeter.html
 
 
