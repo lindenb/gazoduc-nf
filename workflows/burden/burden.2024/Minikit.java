@@ -30,6 +30,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.function.Function;
 import java.util.function.ToDoubleFunction;
 import java.util.function.UnaryOperator;
@@ -37,12 +38,15 @@ import java.util.stream.Collectors;
 
 import com.beust.jcommander.Parameter;
 import com.beust.jcommander.ParametersDelegate;
+import com.github.lindenb.jvarkit.bed.BedLineReader;
 import com.github.lindenb.jvarkit.gatk.GATKConstants;
 import com.github.lindenb.jvarkit.io.IOUtils;
 import com.github.lindenb.jvarkit.iterator.EqualIterator;
 import com.github.lindenb.jvarkit.lang.StringUtils;
+import com.github.lindenb.jvarkit.util.Counter;
 import com.github.lindenb.jvarkit.math.stats.FisherCasesControls;
 import com.github.lindenb.jvarkit.pedigree.CasesControls;
+import com.github.lindenb.jvarkit.util.bio.bed.BedLine;
 import com.github.lindenb.jvarkit.util.jcommander.Launcher;
 import com.github.lindenb.jvarkit.util.log.Logger;
 import com.github.lindenb.jvarkit.util.vcf.predictions.GeneExtractorFactory;
@@ -50,10 +54,23 @@ import com.github.lindenb.jvarkit.util.vcf.predictions.GeneExtractorFactory.Gene
 
 import htsjdk.samtools.util.BinaryCodec;
 import htsjdk.samtools.util.CloseableIterator;
+import htsjdk.samtools.util.FileExtensions;
+import htsjdk.samtools.util.Interval;
+import htsjdk.samtools.util.IntervalTreeMap;
 import htsjdk.samtools.util.SortingCollection;
+import htsjdk.tribble.index.tabix.TabixFormat;
+import htsjdk.tribble.index.tabix.TabixIndexCreator;
 import htsjdk.tribble.readers.TabixReader;
 import htsjdk.variant.variantcontext.Genotype;
 import htsjdk.variant.variantcontext.VariantContext;
+import htsjdk.variant.variantcontext.VariantContextBuilder;
+import htsjdk.variant.variantcontext.writer.Options;
+import htsjdk.variant.variantcontext.writer.VariantContextWriter;
+import htsjdk.variant.variantcontext.writer.VariantContextWriterBuilder;
+
+import htsjdk.variant.vcf.VCFHeaderLine;
+import htsjdk.variant.vcf.VCFHeaderLineType;
+import htsjdk.variant.vcf.VCFInfoHeaderLine;
 import htsjdk.variant.vcf.VCFHeader;
 import htsjdk.variant.vcf.VCFIterator;
 import htsjdk.variant.vcf.VCFIteratorBuilder;
@@ -74,8 +91,8 @@ public class Minikit extends Launcher {
 	private Path bodyFile = null;
 	@Parameter(names={"--minGQsingleton"},description = "min singleton GQ")
 	private int minGQsingleton=90;
-	@Parameter(names={"--minRatioSingleton"},description = "min singleton ration AD")
-	private double minRatioSingleton=0.3;
+	@Parameter(names={"--minRatioAD"},description = "min singleton ration AD")
+	private double minRatioAD=0.3;
 	@Parameter(names={"--"+GATKConstants.QD_KEY},description = "GATK "+GATKConstants.QD_KEY)
 	private double gatk_QD=-1.0;
 	@Parameter(names={"--"+GATKConstants.FS_KEY},description = "GATK "+GATKConstants.FS_KEY)
@@ -98,9 +115,17 @@ public class Minikit extends Launcher {
 	private double f_missing=0.05;
 	@Parameter(names={"--gtf"},description = "gtf indexed file")
 	private String gtfPath=null;
-
+	@Parameter(names={"--bed"},description = "bed file for custom intervals")
+	private Path bedPath=null;
+	@Parameter(names={"--fisher-treshold"},description = "save VCF if fisher test is lower than this value")
+	private double fisher_treshold = 1E-6;
+	@Parameter(names={"--vcf-out"},description = "save VCF in this directory")
+	private Path vcfOutDirectory=null;
+    @Parameter(names={"--ignore_HOM_VAR"},description = "skip variant if Homvar genotype on autosome")
+    private boolean ignore_HOM_VAR=false;
 
 	private TabixReader gtfReader = null;
+	private Counter<String> explain = new Counter<>();
 
 	private static class Key implements Comparable<Key>{
 		String contig; // eg. chr1
@@ -163,7 +188,40 @@ private class GeneSplitter implements Splitter {
 			}
 		return new ArrayList<>(keys);
 		}
-}
+	}
+
+private class IntervalSplitter implements Splitter {
+	private IntervalTreeMap<Interval> intervalTreeMap= new IntervalTreeMap<>();
+	public IntervalSplitter(final Path bedPath) {
+		int nr=0;
+		try(BedLineReader r=new  BedLineReader(bedPath)) {
+			while(r.hasNext()) {
+				final BedLine bed = r.next();
+				nr++;
+				String name=bed.getOrDefault(3, "");
+				if(StringUtils.isBlank(name)) name=bed.getContig()+"_"+bed.getStart()+"_"+bed.getBedEnd()+"_"+nr;
+				final Interval rgn=new Interval(bed.getContig(), bed.getStart(), bed.getEnd(), false, name);
+				this.intervalTreeMap.put(rgn, rgn);
+				}
+			}
+		if(this.intervalTreeMap.isEmpty()) {
+			LOG.warn("NO INTERVAL FOUND IN "+bedPath);
+			}
+		}
+	@Override
+	public List<Key> apply(final VariantContext vc) {
+		final Set<Key> keys = new HashSet<>();
+		for(Interval rgn: this.intervalTreeMap.getOverlapping(vc)) {
+			final Key k= new  Key();
+			k.contig=vc.getContig();
+			k.splitter = "interval";
+			k.key = rgn.getName();
+			k.geneName = k.key;
+			keys.add(k);
+			}
+		return new ArrayList<>(keys);
+		}
+	}
 
 
 private static class KeyAndVariant {
@@ -177,21 +235,25 @@ private static class KeyAndVariant {
 	public int compareTo2(KeyAndVariant o) {
 		int i= this.key.compareTo(o.key);
 		if(i!=0) return i;
-		i = this.ctx.getContig().compareTo(o.ctx.getContig());
+		return compareVariant( this.ctx, o.ctx);
+		}
+	}
+
+private static int compareVariant(final VariantContext vc1, final VariantContext vc2) {
+		int i = vc1.getContig().compareTo( vc2.getContig());
 		if(i!=0) return i;
-		i = Integer.compare(this.ctx.getStart(),o.ctx.getStart());
+		i = Integer.compare(vc1.getStart(), vc2.getStart());
 		if(i!=0) return i;
-		i = this.ctx.getReference().compareTo(o.ctx.getReference());
+		i = vc1.getReference().compareTo(vc2.getReference());
 		if(i!=0) return i;
 		int x=1;
-		while(x<this.ctx.getAlleles().size() && x<o.ctx.getAlleles().size()) {
-			i = this.ctx.getAlleles().get(x).compareTo(o.ctx.getAlleles().get(x));
+		while(x< vc1.getAlleles().size() && x < vc2.getAlleles().size()) {
+			i = vc1.getAlleles().get(x).compareTo(vc2.getAlleles().get(x));
 			if(i!=0) return i;
 			++x;
 			}
-		return 0;
-		}
-	}
+	    return 0;
+        }
 
 private static class KeyAndVariantCodec implements SortingCollection.Codec<KeyAndVariant> {
 	final VCFHeader header;
@@ -247,14 +309,20 @@ private static class KeyAndVariantCodec implements SortingCollection.Codec<KeyAn
 
 private boolean accept(final VariantContext variant) {
 	if(variant.isFiltered()) {
+	    explain.incr("VARIANT_FILTERED");
 		return false;
 	}
+
 
 	final int count_alt = (int)variant.getGenotypes().stream().
         filter(g->g.hasAltAllele()).
         count();
 
-	if(count_alt==0) return false;
+	if(count_alt==0) {
+	    explain.incr("NOT_ALT");
+	    return false;
+	    }
+
 
 
 
@@ -265,20 +333,36 @@ private boolean accept(final VariantContext variant) {
 	                filter(G->G.isNoCall() || (G.hasDP() && G.getDP()==0)).
 	                count();
 
-	        if(n_missing/variant.getNSamples() > this.f_missing) return false;
+	        if(n_missing/variant.getNSamples() > this.f_missing) {
+	        	    explain.incr("F_MISSING");
+	                return false;
+	                }
 	        }
+
+    /** ignore variant if any HOM_VAR */
+    if(this.ignore_HOM_VAR && !(ctg.equals("X") || ctg.equals("Y") || ctg.equals("chrX") || ctg.equals("chrY"))) {
+        if(variant.getGenotypes().stream().anyMatch(G->G.isHomVar())) {
+        	explain.incr("HOM_VAR");
+            return false;
+            }
+        }
+
 
 	/** low DP */
 	final double dp= variant.getGenotypes().stream().
 	        filter(G->G.isCalled() && G.hasDP()).
 	        mapToInt(G->G.getDP()).average().orElse(this.minDP);
 
-	if(dp < this.minDP  || dp > this.maxDP) return false;
+	if(dp < this.minDP  || dp > this.maxDP) {
+	    explain.incr("BAD_DP");
+	    return false;
+	    }
 
 	final int count_alt_filtered=(int)variant.getGenotypes().stream().
 			filter(G->G.hasAltAllele() && G.isFiltered()).
 			count();
 	if(count_alt_filtered/count_alt >= 0.1) {
+	    explain.incr("TOO_MANY_FILTERED");
 		return false;
 		}
 
@@ -289,43 +373,55 @@ private boolean accept(final VariantContext variant) {
 	        count();
 
 	if(count_low_gq/count_alt >= 0.25) {
+	        explain.incr("LOW_GQ");
 	        return false;
 	        }
 
-	
-	
 	if(variant.hasAttribute(GATKConstants.QD_KEY) &&
 		variant.getAttributeAsDouble(GATKConstants.QD_KEY,1000) < this.gatk_QD) {
+		explain.incr("BAD_QD");
 		return false;
 		}
 	
 	if(variant.hasAttribute(GATKConstants.FS_KEY) &&
 			variant.getAttributeAsDouble(GATKConstants.FS_KEY,0) > this.gatk_FS) {
+		explain.incr("BAD_FS");
 		return false;
 		}
 	
 	if(variant.hasAttribute(GATKConstants.SOR_KEY) &&
 			variant.getAttributeAsDouble(GATKConstants.SOR_KEY,0) > this.gatk_SOR) {
+		explain.incr("BAD_SOR");
 		return false;
 		}
 	
 	if(variant.hasAttribute(GATKConstants.MQ_KEY) &&
 			variant.getAttributeAsDouble(GATKConstants.MQ_KEY,1000) < this.gatk_MQ) {
+		explain.incr("BAD_MQ");
 		return false;
 		}
 	
 	if(variant.hasAttribute(GATKConstants.MQRankSum_KEY) &&
 			variant.getAttributeAsDouble(GATKConstants.MQRankSum_KEY,1000) < this.gatk_MQRankSum) {
+		explain.incr("BAD_MQRankSum");
 		return false;
 		}
 	
 	if(variant.hasAttribute(GATKConstants.ReadPosRankSum_KEY) &&
 			variant.getAttributeAsDouble(GATKConstants.ReadPosRankSum_KEY,1000) < this.gatk_ReadPosRankSum) {
+		explain.incr("BAD_ReadPosRankSum");
 		return false;
 		}
-	
 
-	
+   /** all het variant have a bad AD */
+   if(variant.getGenotypes().stream().
+               filter(G->G.isHet() && G.hasAD()).
+               allMatch(G->!acceptAD(G))) {
+               explain.incr("BAD_AD_FOR_ALL_HET");
+               //System.err.println(variant.getContig()+":"+variant.getStart());
+               return false;
+                }
+
 	Genotype singleton=null;
 	for(final Genotype g: variant.getGenotypes()) {
 	        if(g.hasAltAllele()) {
@@ -337,19 +433,27 @@ private boolean accept(final VariantContext variant) {
                 }
 	        }
 	if(singleton!=null) {
-		if(singleton.isFiltered()) return true;
+		if(singleton.isFiltered()) return false;
 		if(singleton.isHet() && singleton.hasGQ() && singleton.getGQ()< minGQsingleton) {
+		    explain.incr("SINGLETON_GQ");
 	        return false;
 	        }
-		if(singleton.hasAD() && singleton.isHet() && singleton.getAD().length==2)
-	        {
-			final  int array[]=singleton.getAD();
-	        final double r= array[1]/(double)(array[0]+array[1]);
-	        if(r< this.minRatioSingleton || r>(1.0 - minRatioSingleton)) return false;
+	    if(!acceptAD(singleton)) {
+	        explain.incr("SINGLETON_AD");
+	        return false;
 	        }
 		}
 	return true;
 	}
+
+private boolean acceptAD(final Genotype singleton) {
+    if(singleton.hasAD() && singleton.isHet() && singleton.getAD().length==2) {
+          final  int array[]=singleton.getAD();
+          final double r= array[1]/(double)(array[0]+array[1]);
+          if(r< this.minRatioAD || r>(1.0 - this.minRatioAD)) return false;
+          }
+    return true;
+    }
 
 @Override
 public int doWork(List<String> args) {
@@ -389,7 +493,14 @@ public int doWork(List<String> args) {
 					writingSortingCollection.getTmpPaths()
 					);
 			
-			final Splitter splitter= new GeneSplitter(header);
+			final Splitter splitter;
+			if(this.bedPath!=null) {
+				splitter = new IntervalSplitter(this.bedPath);
+				}
+			else
+				{
+				splitter = new GeneSplitter(header);
+				}
 			while(iter.hasNext()) {
 				final VariantContext ctx=iter.next();
 				if(!accept(ctx)) continue;
@@ -418,8 +529,18 @@ public int doWork(List<String> args) {
 					while(iter1.hasNext()) {
 						final List<KeyAndVariant> array = iter1.next();
 						final Key key = array.get(0).key;
-						final List<VariantContext> variants = array.stream().map(it->it.ctx).collect(Collectors.toList());
-						
+						//final TreeSet<VariantContext> variants_set = new TreeSet<>((A,B)->compareVariant(A,B));
+						//array.stream().map(it->it.ctx).forEach(V->variants_set.add(V));
+                        //final List<VariantContext> variants = new ArrayList<>(variants_set);
+                        final List<VariantContext> variants = array.stream().map(it->it.ctx).collect(Collectors.toList());
+						/*final TreeSet<VariantContext> variants_set = new TreeSet<>((A,B)->compareVariant(A,B));
+						variants_set.addAll(variants);
+						 if(variants_set.size()!=variants.size()) {
+						    System.err.println(variants);
+						    System.exit(-1);
+						    }*/
+
+
 						// no Case have an ALT, skip
 						if(variants.stream().flatMap(V->V.getGenotypes().stream()).
 							filter(G->G.hasAltAllele()).
@@ -462,8 +583,10 @@ public int doWork(List<String> args) {
 						pw.println("CASES_REF_COUNT <- "+ fisherCasesControls.getCasesRefCount());
 						pw.println("CTRLS_ALT_COUNT <- "+ fisherCasesControls.getControlsAltCount());
 						pw.println("CTRLS_REF_COUNT <- "+ fisherCasesControls.getControlsRefCount());
+						pw.println("ODD_RATIO <- "+ (fisherCasesControls.getOddRatio().isPresent() ? String.valueOf(fisherCasesControls.getOddRatio().getAsDouble()): "-1.0"));
+                        pw.println("CASES_NAMES <- "+ StringUtils.doubleQuote(String.join(",",fisherCasesControls.getCasesAlt())));
+                        pw.println("CTRLS_NAMES <- "+ StringUtils.doubleQuote(String.join(",",fisherCasesControls.getControlsAlt())));
 
-						
 						pw.print("# variants.");
 						pw.println();
 						pw.print("variants <- data.frame(chrom=c(");
@@ -481,6 +604,30 @@ public int doWork(List<String> args) {
 						pw.print(")");
 						pw.println(")");
 
+						/** save VCF if fisher is lower than treshold */
+						if(fisherCasesControls.getAsDouble() < this.fisher_treshold && vcfOutDirectory!=null) {
+							final VariantContextWriterBuilder vcb = new VariantContextWriterBuilder();
+							String filename=key.contig+"_"+key.splitter+"_"+key.geneName;
+							filename=filename.replaceAll("[^A-Z0-9_a-z]+", "_");
+	                    	final Path outvcfpath = vcfOutDirectory.resolve(filename + FileExtensions.COMPRESSED_VCF);
+	                    	LOG.info("write " + outvcfpath);
+	                    	final VCFHeader header2 = new VCFHeader(header);
+	                    	vcb.setReferenceDictionary(header.getSequenceDictionary());
+	                    	vcb.setIndexCreator(new TabixIndexCreator(header.getSequenceDictionary(), TabixFormat.VCF));
+	                    	vcb.setOption(Options.INDEX_ON_THE_FLY);
+
+	                    	try(VariantContextWriter w = vcb.
+	                    			setOutputPath(outvcfpath).
+	                    			setCreateMD5(false).
+	                    			build()) {
+	                    	   final VCFInfoHeaderLine infoHdr = new VCFInfoHeaderLine("BURDENID", 1, VCFHeaderLineType.String,"Burden cluster identifier");
+	                    		header2.addMetaDataLine(infoHdr);
+	                    		w.writeHeader(header2);
+	                    		for(VariantContext ctx:variants) {
+		                    	    w.add(new VariantContextBuilder(ctx).attribute(infoHdr.getID(), filename).make());
+		                    		}
+	                    		}
+							}
 						if(bodyFile!=null) {
 							IOUtils.copyTo(bodyFile, pw);
 							pw.println();
@@ -491,6 +638,9 @@ public int doWork(List<String> args) {
 				pw.flush();
 				}
 			}
+	    for(final String k: explain.keySet()) {
+    	    System.err.println(k+" = "+explain.count(k));
+    	    }
 		return 0;
 		}
 	catch(final Throwable err) {
@@ -506,3 +656,4 @@ public static void main(final String[] args) {
 	new Minikit().instanceMain(args);
 	}
 }
+

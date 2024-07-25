@@ -44,43 +44,33 @@ log.info paramsSummaryLog(workflow)
 
 workflow {
 		ch_input = Channel.fromList(samplesheetToList(params.samplesheet, "assets/schema_samplesheet.json"))
-		BURDEN_CODING(Channel.fromPath(params.datasheet), file(params.samplesheet), Channel.fromPath(params.conditions), file(params.bed) )
+		BURDEN_CODING(Channel.fromPath(params.vcfs), file(params.samplesheet), Channel.fromPath(params.conditions), file(params.bed) )
 		}
 
 workflow BURDEN_CODING {
 	take:
-		datasheet
+		vcfs
 		samplesheet
 		conditions
 		bed
 	main:
 
-		ch1 = datasheet.
-			splitCsv(sep:',',header:true).
-			/** check VCF suffix */
+		ch1 = vcfs.
+			splitText().
+			map{it.trim()}.
 			map{
-			if(!it.containsKey("vcf")) throw new IllegalArgumentException("vcf key missing in datasheet");
-			if(!(it.vcf.endsWith(".bcf") || it.vcf.endsWith(".vcf.gz")) ) throw new IllegalArgumentException("bad vcf extension for ${it.vcf}"); 
-			return it;
-			}.map{
-			if(it.containsKey("idx") && !(it.idx.isEmpty() || it.idx.equals("."))) {
-				if(!(it.idx.endsWith(".csi") || it.vcf.endsWith(".tbi"))) throw new IllegalArgumentException("bad vcf index extension for ${it.vcf}"); 
-				return it;
-				}
-			else if(it.vcf.endsWith(".bcf")){
-				return it.plus(idx: it.vcf+".csi");
+			if(!(it.endsWith(".bcf") || it.endsWith(".vcf.gz")) ) throw new IllegalArgumentException("bad vcf extension for ${it}"); 
+			if(it.endsWith(".bcf")){
+				return [it,it+".csi"];
 				}
 			else if(it.vcf.endsWith(".vcf.gz")){
-				return it.plus(idx: it.vcf+".tbi");
+				return [it,it+".tbi"];
 				}
 			else	{
 				throw new IllegalArgumentException("bad vcf extension ${it.vcf}");
 				}
 			}.
-			branch{
-				with_coord: it.containsKey("chrom") && it.containsKey("start") && it.containsKey("end")
-				no_coord : true // A fallback condition
-				}
+			map{[file(it[0]),file(it[1])]}
 
 		genome_ch = Channel.value([file(params.fasta),file(params.fasta+".fai"),file(""+file(params.fasta).getParent()+"/"+file(params.fasta).getBaseName()+".dict")])
 		gtf_ch = Channel.value([file(params.gtf),file(params.gtf+".tbi")])
@@ -88,14 +78,11 @@ workflow BURDEN_CODING {
 		
 
 		
-		vcf2bed_ch = BCFTOOLS_INDEX_S(ch1.no_coord.map{tuple(file(it.vcf),file(it.idx))})
+		vcf2bed_ch = BCFTOOLS_INDEX_S(ch1)
 		ctg_start_end1  = vcf2bed_ch.output.splitCsv(sep:'\t',header:false).
 			map{tuple(it[0][0],it[0][1],it[0][2],it[1],it[2])}
 
-		ctg_start_end2 = ch1.with_coord.map{tuple(it.chrom,it.start,it.end,file(it.vcf),file(it.idx))}
-		
-
-		ctg_start_end = ctg_start_end1.mix(ctg_start_end2)
+		ctg_start_end = ctg_start_end1
 
 		vcf2bedcontig_ch = ctg_start_end.
 			map{rec->rec.join("\t")}.
@@ -111,7 +98,7 @@ workflow BURDEN_CODING {
 			map{it.containsKey("maxDP")?it:it.plus(maxDP:300)}.
 			map{it.containsKey("lowGQ")?it:it.plus(lowGQ:60)}.
 			map{it.containsKey("minGQsingleton")?it:it.plus(minGQsingleton:90)}.
-			map{it.containsKey("minRatioSingleton")?it:it.plus(minRatioSingleton:0.2)}.
+			map{it.containsKey("minRatioAD")?it:it.plus(minRatioAD:0.2)}.
 			map{it.containsKey("so_acn")?it:it.plus(so_acn:"")}.
 			map{it.containsKey("gnomad")?it:it.plus(gnomad:[:])}.
 			map{
@@ -134,6 +121,9 @@ workflow BURDEN_CODING {
 				return it;
 			}.
 			map {
+				if(!it.containsKey("ignore_HOM_VAR")) it=it.plus("ignore_HOM_VAR":false);
+				if(!it.containsKey("phastCons")) it=it.plus("phastCons":-1);
+				if(!it.containsKey("bed_is_data_source")) it=it.plus("bed_is_data_source":false);
 				if(!it.containsKey("types")) it=it.plus("types":"");
 				if(!it.containsKey("gene_biotype")) it=it.plus("gene_biotype":"");
 				if(!it.containsKey("polyx")) it=it.plus("polyx":10);
@@ -162,12 +152,22 @@ workflow BURDEN_CODING {
 
 		eff=DOWNLOAD_SNPEFF_DB()
 
-		per_gene_ch = PER_BED(genome_ch, gtf_ch,samplesheet,eff.output,bed_cond_vcf_ch)
+		per_gene_ch = PER_BED(
+			genome_ch, 
+			gtf_ch,
+			samplesheet,
+			(params.phastCons.equals("NO_FILE")? file("NO_PHASTCONS"): file(params.phastCons))  ,
+			(params.excludeBed.equals("NO_FILE")? file("NO_EXCLUDE"): file(params.excludeBed))  ,
+			eff.output,
+			bed_cond_vcf_ch
+			)
 		per_gene_ch.output.splitCsv(sep:'\t', header:true).
 			view{"$it"}
 		all_results_ch =  per_gene_ch.output.collectFile(name:"output.tsv")
 	
 		cleanup_ch = CLEANUP(all_results_ch)
+
+		CONCAT_VCFS(per_gene_ch.vcfs.flatten().collect())
 
 		plot_ch=PLOTIT( 
 			Channel.of("fisher","skat","skato","saktadj","saktoadj").
@@ -212,15 +212,33 @@ mkdir -p TMP
 
 cut -f1,2,3 '${vcf2bed}' | LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n > TMP/tmp1.bed
 
+#
+# FOR EXAMPLE EACH RECORD IN THE BED IS A PEAK OF ATAC-SEQ
+#
+if ${condition.bed_is_data_source == true}
+then
+
+	# user bed MUST be defined
+	${!userbed.name.equals("NO_FILE")}
+
+	${userbed.name.endsWith(".gz")?"gunzip -c":"cat"} ${userbed} |\\
+	cut -f1,2,3 |\\
+	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
+	bedtools intersect -u -wa -a - -b TMP/tmp1.bed |\\
+	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n -k3,3n|\\
+	uniq > TMP/tmp3.bed
+
+else
+
 
 tabix --regions "TMP/tmp1.bed" "${gtf}" |\\
 	java -jar \${JVARKIT_DIST}/gtf2bed.jar -R "${fasta}" --columns "gtf.feature,gene_biotype" |\\
 	awk -F '\t' '(\$4=="gene" ${condition.gene_biotype.isEmpty()?"":"&& \$5==\"${condition.gene_biotype}\""})' |\\
 	cut -f1,2,3 |\\
-	bedtools slop -i -  -g "${fai}" -b ${slop} |\
-	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\
-	bedtools intersect -u -wa -a - -b TMP/tmp1.bed |\
-	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n >> TMP/tmp3.bed
+	bedtools slop -i -  -g "${fai}" -b ${slop} |\\
+	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
+	bedtools intersect -u -wa -a - -b TMP/tmp1.bed |\\
+	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n > TMP/tmp3.bed
 
 
 if ${!userbed.name.equals("NO_FILE")}
@@ -234,6 +252,7 @@ then
 	mv TMP/tmp5.bed TMP/tmp3.bed
 fi
 
+fi
 
 mkdir -p BEDS
 
@@ -260,6 +279,11 @@ mv SNPEFFX SNPEFF
 """
 }
 
+String countVariants(def f) {
+	return "bcftools query -f '.\\n' \""+f+"\" | wc -l 1>&2";
+	}
+
+
 process PER_BED {
 afterScript "rm -rf TMP"
 tag "${condition.id} ${roi.name}"
@@ -271,10 +295,13 @@ input:
 	tuple path(fasta),path(fai),path(dict)
 	tuple path(gtf), path(gtf_tbi)
 	path(samplesheet)
+	path(phastCons)
+	path(excludeBed)
 	path(snpeffDir)
 	tuple path(roi),val(condition),path(vcf2bed)
 output:
 	path("results.bed"),emit:output
+	path("VCFS/*"),optional:true,emit:vcfs
 when:
 	condition.enabled==true
 script:
@@ -282,7 +309,7 @@ script:
 """
 hostname 1>&2
 module load snpeff/5.2 R/3.6.0-dev
-mkdir -p TMP
+mkdir -p TMP VCFS
 set -x
 
 # compile Minikit
@@ -343,7 +370,7 @@ fi
 
 
 
-bedtools intersect -u -a ${vcf2bed} -b TMP/roi.bed | cut -f 4 > TMP/vcf.list
+bedtools intersect -u -a ${vcf2bed} -b TMP/roi.bed | cut -f 4 | sort | uniq > TMP/vcf.list
 
 if ! test -s TMP/vcf.list
 then
@@ -351,6 +378,20 @@ then
 fi
 
 bcftools concat -a --regions-file TMP/roi.bed --file-list TMP/vcf.list -O b -o TMP/jeter1.bcf
+
+${countVariants("TMP/jeter1.bcf")}
+
+#
+# BLACKLIST BED
+#
+if ${!excludeBed.name.equals("NO_EXCLUDE")}
+then
+
+	bcftools view --targets-file "^${excludeBed}" --targets-overlap 2  -O b -o TMP/jeter2.bcf TMP/jeter1.bcf
+	mv TMP/jeter2.bcf TMP/jeter1.bcf
+	${countVariants("TMP/jeter1.bcf")}
+
+fi
 
 bcftools query -l TMP/jeter1.bcf | sort |\
 	comm -12 - TMP/cases.txt > TMP/jeter.txt
@@ -372,10 +413,13 @@ cat TMP/controls.txt TMP/cases.txt > TMP/all.samples.txt
 
 bcftools view --trim-unseen-allele --trim-alt-alleles --samples-file TMP/all.samples.txt -O b -o TMP/jeter2.bcf TMP/jeter1.bcf
 mv TMP/jeter2.bcf TMP/jeter1.bcf
+${countVariants("TMP/jeter1.bcf")}
+
 
 ## too many alleles
 bcftools view -m 2 -M ${condition.max_alleles} -O b -o TMP/jeter2.bcf TMP/jeter1.bcf
 mv TMP/jeter2.bcf TMP/jeter1.bcf
+${countVariants("TMP/jeter1.bcf")}
 
 #
 # normalize
@@ -383,6 +427,8 @@ mv TMP/jeter2.bcf TMP/jeter1.bcf
 bcftools norm -f ${params.fasta} --multiallelics -any -O u TMP/jeter1.bcf |\\
 	bcftools view  -i 'ALT!="*" && AC[*]>0 && INFO/AF <= ${condition.maxAF}' -O b -o TMP/jeter2.bcf
 mv TMP/jeter2.bcf TMP/jeter1.bcf
+${countVariants("TMP/jeter1.bcf")}
+
 
 #
 # variant type
@@ -391,6 +437,7 @@ if ${!condition.types.isEmpty()}
 then
 	bcftools view --types "${condition.types}" -O b -o TMP/jeter2.bcf TMP/jeter1.bcf
 	mv TMP/jeter2.bcf TMP/jeter1.bcf
+	${countVariants("TMP/jeter1.bcf")}
 fi
 
 
@@ -401,6 +448,7 @@ fi
 bcftools +contrast -0 TMP/controls.txt -1 TMP/cases.txt -O u TMP/jeter1.bcf |\\
 	bcftools view -e 'INFO/PASSOC < ${condition.p_assoc}' -O b -o TMP/jeter2.bcf
 mv -v TMP/jeter2.bcf TMP/jeter1.bcf
+${countVariants("TMP/jeter1.bcf")}
 
 
 
@@ -412,6 +460,7 @@ if ${ condition.polyx  > 1 } ; then
                 bcftools view -e 'INFO/POLYX > ${condition.polyx}' -O b -o  TMP/jeter2.bcf
 	
 	mv -v TMP/jeter2.bcf TMP/jeter1.bcf
+	${countVariants("TMP/jeter1.bcf")}
 
 fi
 
@@ -426,6 +475,20 @@ then
 		 -A '${condition.so_acn}' |\\
 	bcftools view -O b -o TMP/jeter2.bcf
 	mv TMP/jeter2.bcf TMP/jeter1.bcf
+	${countVariants("TMP/jeter1.bcf")}
+
+fi
+
+
+if ${!phastCons.name.equals("NO_PHASTCONS") && condition.phastCons >= 0}
+then
+	bcftools view TMP/jeter1.bcf |\\
+		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfbigwig -B '${phastCons}' --tag "PHASTCONS" | \\
+		 bcftools view -e 'INFO/PHASTCONS < ${condition.phastCons}'  -O b -o TMP/jeter2.bcf
+
+	mv TMP/jeter2.bcf TMP/jeter1.bcf
+	${countVariants("TMP/jeter1.bcf")}
+
 fi
 
 #
@@ -437,6 +500,8 @@ then
 		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfcadd --tabix '${params.cadd}' | \\
 		bcftools view -e 'INFO/CADD_PHRED < ${condition.cadd.phred}' -O b -o TMP/jeter2.bcf
 	mv -v TMP/jeter2.bcf TMP/jeter1.bcf
+	${countVariants("TMP/jeter1.bcf")}
+
 fi
 
 
@@ -450,6 +515,8 @@ then
 		--max-af '${condition.gnomad.AF}' |\\
 	bcftools view --apply-filters '.,PASS' -O b -o TMP/jeter2.bcf
         mv TMP/jeter2.bcf TMP/jeter1.bcf
+	${countVariants("TMP/jeter1.bcf")}
+
 fi
 
 
@@ -476,11 +543,14 @@ cat(
 		v3\$p.value,
 		v4\$p.value,
 		v5\$p.value,
+		ODD_RATIO,
 		CASES_ALT_COUNT,
 		CASES_REF_COUNT,
 		CTRLS_ALT_COUNT,
 		CTRLS_REF_COUNT,
-		variants.str
+		variants.str,
+		CASES_NAMES,
+		CTRLS_NAMES
 		),
 	file="TMP/results.bed",
 	sep = "\t",
@@ -514,16 +584,21 @@ skat
 skato
 saktadj
 saktoadj
+ODD_RATIO
 CASE_ALT
 CASE_REF
 CTRL_ALT
 CTRL_REF
 variants
+CASES_NAMES
+CTRLS_NAMES
 EOF
 
 
 bcftools view -O v TMP/jeter1.bcf |\\
 java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -cp \${JVARKIT_DIST}/jvarkit.jar:TMP  Minikit \\
+		--vcf-out VCFS \\
+		${condition.bed_is_data_source?"--bed ${roi}":""} \\
 		--QD "${condition.QD}" \\
 		--FS "${condition.FS}" \\
 		--SOR "${condition.SOR}" \\
@@ -533,16 +608,16 @@ java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -cp \${JVARKIT_DIST}/jvarkit
 		--minDP ${condition.minDP} \\
 		--maxDP ${condition.maxDP} \\
 		--minGQsingleton ${condition.minGQsingleton} \\
-		--minRatioSingleton ${condition.minRatioSingleton} \\
+		--minRatioAD ${condition.minRatioAD} \\
 		--f_missing  ${condition.f_missing} \\
 		--lowGQ ${condition.lowGQ} \\
+		${condition.ignore_HOM_VAR?"--ignore_HOM_VAR":""} \\
 		--gtf "${gtf}" \\
 		--header "${moduleDir}/karaka01.R" \\
 		--body TMP/jeter02.R \\
 		--cases TMP/cases.txt \\
 		--controls TMP/controls.txt | \\
 	R --vanilla --no-save --slave
-		
 
 mv -v TMP/results.bed ./
 
@@ -558,6 +633,19 @@ script:
 """
 awk -F '\t' '(NR==1 || \$1!="contig")' '${tsv}' > jeter.tsv
 mv jeter.tsv cleanup.bed
+"""
+}
+
+process CONCAT_VCFS {
+input:
+	path("VCFS/*")
+output:
+	tuple path("${params.prefix}concat.bcf"), path("${params.prefix}concat.bcf.csi"),emit:output
+script:
+"""
+module load bcftools
+bcftools concat -a -O b "${params.prefix}concat.bcf" VCFS/*.vcf.gz
+bcftools index -f "${params.prefix}concat.bcf"
 """
 }
 
