@@ -433,13 +433,16 @@ private boolean accept(final VariantContext variant) {
                 }
 	        }
 	if(singleton!=null) {
-		if(singleton.isFiltered()) return false;
+		if(singleton.isFiltered()) {
+		        explain.incr("SINGLETON_FILTERED"+(casesControls.isCase(singleton)?"_CASE":"_CONTROL"));
+		        return false;
+		        }
 		if(singleton.isHet() && singleton.hasGQ() && singleton.getGQ()< minGQsingleton) {
-		    explain.incr("SINGLETON_GQ");
+		    explain.incr("SINGLETON_GQ"+(casesControls.isCase(singleton)?"_CASE":"_CONTROL"));
 	        return false;
 	        }
 	    if(!acceptAD(singleton)) {
-	        explain.incr("SINGLETON_AD");
+	        explain.incr("SINGLETON_AD"+(casesControls.isCase(singleton)?"_CASE":"_CONTROL"));
 	        return false;
 	        }
 		}
@@ -504,6 +507,7 @@ public int doWork(List<String> args) {
 			while(iter.hasNext()) {
 				final VariantContext ctx=iter.next();
 				if(!accept(ctx)) continue;
+				explain.incr("PASS");
 				for(Key key: splitter.apply(ctx)) {
 					sorter.add(new KeyAndVariant(key,ctx));
 					}
@@ -540,12 +544,28 @@ public int doWork(List<String> args) {
 						    System.exit(-1);
 						    }*/
 
+						LOG.info(key.toString()+"\t"+variants.size()+"\t"+ 	variants.
+						        stream().
+						        map(V->noChr.apply(V.getContig())+":"+V.getStart()).
+						        collect(Collectors.joining(";")));
+
+                        /*
+                        for(VariantContext ctx2: variants) {
+                            for(Genotype g2: ctx2.getGenotypes()) {
+                                if(!g2.hasAltAllele()) continue;
+                                System.err.println("[ZORG]\t"+ctx2.getContig()+":"+ctx2.getStart()+ " "+g2.getSampleName()+" "+casesControls.isCase(g2));
+                                }
+                            }*/
 
 						// no Case have an ALT, skip
 						if(variants.stream().flatMap(V->V.getGenotypes().stream()).
 							filter(G->G.hasAltAllele()).
-							noneMatch(G->casesControls.isCase(G))) continue;
-						
+							noneMatch(G->casesControls.isCase(G))) {
+							LOG.info("no cases. Skip.");
+							continue;
+							}
+						LOG.info("OK ");
+
 						final FisherCasesControls fisherCasesControls = new FisherCasesControls(casesControls);
 
 						pw.println("contig <- "+ StringUtils.doubleQuote(key.contig));

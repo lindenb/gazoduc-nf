@@ -77,7 +77,20 @@ workflow BURDEN_CODING {
 
 		
 
-		
+		stats1_ch = BCFTOOLS_STATS(
+			genome_ch,
+			ch1.flatten().collect(),
+			samplesheet,
+			bed,
+			(params.excludeBed.equals("NO_FILE")? file("NO_EXCLUDE"): file(params.excludeBed)),
+			Channel.of("case","control")
+			)
+
+		multiqc_per_pop = MULTIQC_PER_POP(
+				stats1_ch.filter{it[0].equals("case")}.map{[it[1],it[2]]}.
+				combine(stats1_ch.filter{it[0].equals("control")}.map{[it[1],it[2]]})
+				)
+
 		vcf2bed_ch = BCFTOOLS_INDEX_S(ch1)
 		ctg_start_end1  = vcf2bed_ch.output.splitCsv(sep:'\t',header:false).
 			map{tuple(it[0][0],it[0][1],it[0][2],it[1],it[2])}
@@ -138,7 +151,9 @@ workflow BURDEN_CODING {
 			}
 		
 
+
 		conditions_ch.view{"CONDITION: $it"}
+		conditions_ch = Channel.empty() // CHANGGGEEE THIS
 
 
 		xgene_ch = EXTRACT_GENES(genome_ch,gtf_ch,bed,vcf2bedcontig_ch.combine(conditions_ch))
@@ -278,6 +293,83 @@ mv SNPEFFX SNPEFF
 
 """
 }
+
+
+process BCFTOOLS_STATS {
+tag "${status}"
+afterScript "rm -rf TMP"
+cpus 8
+input:
+	tuple path(fasta),path(fai),path(dict)
+	path("VCFS/*")
+	path(samplesheet)
+	path(bed)
+	path(excludeBed)
+	val(status)
+output:
+	tuple val(status),path("${status}.stats.txt"),path("${status}.samples.txt"),emit:output
+script:
+"""
+module load jvarkit R/3.6.0-dev
+mkdir -p TMP
+set -o pipefail
+
+find VCFS -name "*.vcf.gz" -o -name "*.bcf" > TMP/vcfs.list
+test -s TMP/vcfs.list
+
+cat << 'EOF' > TMP/jeter.R
+T1 <- read.csv("${samplesheet}",header=TRUE)
+T2 <- T1[T1\$status=='${status}',]\$sample
+write.table(T2,"TMP/samples.txt",sep="\t", row.names=FALSE, quote=FALSE, col.names = FALSE)
+EOF
+
+R --no-save --vanilla < TMP/jeter.R
+test -s TMP/samples.txt
+
+bcftools concat --threads ${task.cpus} -a ${bed.name.equals("NO_FILE")?"":"--regions-file ${bed}"} --file-list TMP/vcfs.list -O u |\\
+	bcftools view ${excludeBed.name.equals("NO_EXCLUDE")?"":"--targets-file \"^${excludeBed}\" --targets-overlap 2"}  -O u --trim-unseen-allele --trim-alt-alleles --force-samples --samples-file TMP/samples.txt |\\
+	bcftools view --min-ac 1 --max-ac  1 -O u |\\
+	bcftools stats --fasta-ref ${fasta} --samples '-' > TMP/stats.txt
+
+mv TMP/stats.txt "${status}.stats.txt"
+awk '{printf("%s\t${status}\\n",\$1);}' TMP/samples.txt > "${status}.samples.txt"
+"""
+}
+
+
+process MULTIQC_PER_POP {
+afterScript "rm -rf TMP"
+input:
+	tuple path(cases_stats),path(cases_samples),path(ctrls_stats),path(ctrls_samples)
+output:
+	path("*_mqc.json"),emit:output
+script:
+"""
+module load multiqc jvarkit
+export LC_ALL=en_US.utf8
+mkdir -p TMP/TMP2
+
+case "${cases_samples}" "${ctrls_samples}" > TMP/sample2pop.txt
+
+multiqc --no-ansi \\
+	--force \\
+	--outdir "TMP/cases.multiqc" \\
+	"${cases_stats}"
+
+multiqc --no-ansi \\
+	--force \\
+	--outdir "TMP/controls.multiqc" \\
+	"${ctrls_stats}"
+
+java -jar jvarkit.jar multiqcpostproc \\
+	TMP/cases.multiqc/multiqc_data \\
+	TMP/ctrls.multiqc/multiqc_data \\
+	-o TMP/TMP2
+
+mv TMP/TMP2/*_mqc.json ./
+"""
+}
+
 
 String countVariants(def f) {
 	return "bcftools query -f '.\\n' \""+f+"\" | wc -l 1>&2";
