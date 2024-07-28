@@ -83,13 +83,13 @@ workflow BURDEN_CODING {
 			samplesheet,
 			bed,
 			(params.excludeBed.equals("NO_FILE")? file("NO_EXCLUDE"): file(params.excludeBed)),
-			Channel.of("case","control")
 			)
 
+		/*
 		multiqc_per_pop = MULTIQC_PER_POP(
 				stats1_ch.filter{it[0].equals("case")}.map{[it[1],it[2]]}.
 				combine(stats1_ch.filter{it[0].equals("control")}.map{[it[1],it[2]]})
-				)
+				)*/
 
 		vcf2bed_ch = BCFTOOLS_INDEX_S(ch1)
 		ctg_start_end1  = vcf2bed_ch.output.splitCsv(sep:'\t',header:false).
@@ -134,6 +134,7 @@ workflow BURDEN_CODING {
 				return it;
 			}.
 			map {
+				if(!it.containsKey("ignore_GT_FILTER")) it=it.plus("ignore_GT_FILTER":false);
 				if(!it.containsKey("ignore_HOM_VAR")) it=it.plus("ignore_HOM_VAR":false);
 				if(!it.containsKey("phastCons")) it=it.plus("phastCons":-1);
 				if(!it.containsKey("bed_is_data_source")) it=it.plus("bed_is_data_source":false);
@@ -153,8 +154,6 @@ workflow BURDEN_CODING {
 
 
 		conditions_ch.view{"CONDITION: $it"}
-		conditions_ch = Channel.empty() // CHANGGGEEE THIS
-
 
 		xgene_ch = EXTRACT_GENES(genome_ch,gtf_ch,bed,vcf2bedcontig_ch.combine(conditions_ch))
 		
@@ -296,8 +295,8 @@ mv SNPEFFX SNPEFF
 
 
 process BCFTOOLS_STATS {
-tag "${status}"
 afterScript "rm -rf TMP"
+memory "5g"
 cpus 8
 input:
 	tuple path(fasta),path(fai),path(dict)
@@ -305,9 +304,8 @@ input:
 	path(samplesheet)
 	path(bed)
 	path(excludeBed)
-	val(status)
 output:
-	tuple val(status),path("${status}.stats.txt"),path("${status}.samples.txt"),emit:output
+	tuple path("stats.txt"),path("samples.txt"),emit:output
 script:
 """
 module load jvarkit R/3.6.0-dev
@@ -319,26 +317,32 @@ test -s TMP/vcfs.list
 
 cat << 'EOF' > TMP/jeter.R
 T1 <- read.csv("${samplesheet}",header=TRUE)
-T2 <- T1[T1\$status=='${status}',]\$sample
-write.table(T2,"TMP/samples.txt",sep="\t", row.names=FALSE, quote=FALSE, col.names = FALSE)
+T2 <- T1[T1\$status=='case',]\$sample
+write.table(T2,"TMP/cases.txt",sep="\t", row.names=FALSE, quote=FALSE, col.names = FALSE)
+T2 <- T1[T1\$status=='control',]\$sample
+write.table(T2,"TMP/controls.txt",sep="\t", row.names=FALSE, quote=FALSE, col.names = FALSE)
 EOF
 
 R --no-save --vanilla < TMP/jeter.R
-test -s TMP/samples.txt
+
+awk '{printf("%s\tcase\\n",\$1);}' TMP/cases.txt > "samples.txt"
+awk '{printf("%s\tcontrol\\n",\$1);}' TMP/controls.txt >> "samples.txt"
+
+cut -f 1 samples.txt | LC_ALL=C sort -T TMP > TMP/samples.txt
 
 bcftools concat --threads ${task.cpus} -a ${bed.name.equals("NO_FILE")?"":"--regions-file ${bed}"} --file-list TMP/vcfs.list -O u |\\
 	bcftools view ${excludeBed.name.equals("NO_EXCLUDE")?"":"--targets-file \"^${excludeBed}\" --targets-overlap 2"}  -O u --trim-unseen-allele --trim-alt-alleles --force-samples --samples-file TMP/samples.txt |\\
 	bcftools view --min-ac 1 --max-ac  1 -O u |\\
 	bcftools stats --fasta-ref ${fasta} --samples '-' > TMP/stats.txt
 
-mv TMP/stats.txt "${status}.stats.txt"
-awk '{printf("%s\t${status}\\n",\$1);}' TMP/samples.txt > "${status}.samples.txt"
+mv TMP/stats.txt "stats.txt"
 """
 }
 
 
 process MULTIQC_PER_POP {
-afterScript "rm -rf TMP"
+//afterScript "rm -rf TMP"
+memory "5g"
 input:
 	tuple path(cases_stats),path(cases_samples),path(ctrls_stats),path(ctrls_samples)
 output:
@@ -349,7 +353,7 @@ module load multiqc jvarkit
 export LC_ALL=en_US.utf8
 mkdir -p TMP/TMP2
 
-case "${cases_samples}" "${ctrls_samples}" > TMP/sample2pop.txt
+cat "${cases_samples}" "${ctrls_samples}" > TMP/sample2pop.txt
 
 multiqc --no-ansi \\
 	--force \\
@@ -361,10 +365,13 @@ multiqc --no-ansi \\
 	--outdir "TMP/controls.multiqc" \\
 	"${ctrls_stats}"
 
-java -jar jvarkit.jar multiqcpostproc \\
+java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar multiqcpostproc \\
+	--sample2collection TMP/sample2pop.txt \\
 	TMP/cases.multiqc/multiqc_data \\
 	TMP/ctrls.multiqc/multiqc_data \\
 	-o TMP/TMP2
+
+touch TMP/TMP2/fake_mqc.json
 
 mv TMP/TMP2/*_mqc.json ./
 """
@@ -372,7 +379,8 @@ mv TMP/TMP2/*_mqc.json ./
 
 
 String countVariants(def f) {
-	return "bcftools query -f '.\\n' \""+f+"\" | wc -l 1>&2";
+	return "\n## bcftools query -f '.\\n' \""+f+"\" | wc -l 1>&2" +"\n"+
+		"## bcftools query -f '[%CHROM:%POS %SAMPLE %GT\\n]'  \""+f+"\" | grep '0/1' | grep LQT | cat -n | tail  1>&2\n";
 	}
 
 
@@ -503,7 +511,8 @@ test ! -s TMP/jeter.txt
 cat TMP/controls.txt TMP/cases.txt > TMP/all.samples.txt
 
 
-bcftools view --trim-unseen-allele --trim-alt-alleles --samples-file TMP/all.samples.txt -O b -o TMP/jeter2.bcf TMP/jeter1.bcf
+bcftools view --trim-unseen-allele --trim-alt-alleles --samples-file TMP/all.samples.txt -O u TMP/jeter1.bcf |\\
+	bcftools +fill-tags -O b -o TMP/jeter2.bcf  -- -t AF,AN,AC
 mv TMP/jeter2.bcf TMP/jeter1.bcf
 ${countVariants("TMP/jeter1.bcf")}
 
@@ -513,11 +522,21 @@ bcftools view -m 2 -M ${condition.max_alleles} -O b -o TMP/jeter2.bcf TMP/jeter1
 mv TMP/jeter2.bcf TMP/jeter1.bcf
 ${countVariants("TMP/jeter1.bcf")}
 
+
 #
 # normalize
 #
-bcftools norm -f ${params.fasta} --multiallelics -any -O u TMP/jeter1.bcf |\\
-	bcftools view  -i 'ALT!="*" && AC[*]>0 && INFO/AF <= ${condition.maxAF}' -O b -o TMP/jeter2.bcf
+bcftools norm -f ${params.fasta} --multiallelics -any -O b -o TMP/jeter2.bcf TMP/jeter1.bcf
+mv TMP/jeter2.bcf TMP/jeter1.bcf
+${countVariants("TMP/jeter1.bcf")}
+
+# save
+##cp TMP/jeter1.bcf save.bcf
+
+#
+# filter on internal AF
+#
+bcftools view  -i 'ALT!="*" && AC[*]>0 && INFO/AF <= ${condition.maxAF}' -O b -o TMP/jeter2.bcf TMP/jeter1.bcf
 mv TMP/jeter2.bcf TMP/jeter1.bcf
 ${countVariants("TMP/jeter1.bcf")}
 
@@ -572,7 +591,7 @@ then
 fi
 
 
-if ${!phastCons.name.equals("NO_PHASTCONS") && condition.phastCons >= 0}
+if ${!phastCons.name.equals("NO_PHASTCONS") && (condition.phastCons as double) >= 0}
 then
 	bcftools view TMP/jeter1.bcf |\\
 		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfbigwig -B '${phastCons}' --tag "PHASTCONS" | \\
@@ -704,6 +723,7 @@ java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -cp \${JVARKIT_DIST}/jvarkit
 		--f_missing  ${condition.f_missing} \\
 		--lowGQ ${condition.lowGQ} \\
 		${condition.ignore_HOM_VAR?"--ignore_HOM_VAR":""} \\
+		${condition.ignore_GT_FILTER?"--ignore_GT_FILTER":""} \\
 		--gtf "${gtf}" \\
 		--header "${moduleDir}/karaka01.R" \\
 		--body TMP/jeter02.R \\
@@ -711,7 +731,7 @@ java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -cp \${JVARKIT_DIST}/jvarkit
 		--controls TMP/controls.txt | \\
 	R --vanilla --no-save --slave
 
-mv -v TMP/results.bed ./
+cp -v TMP/results.bed ./
 
 """
 }
@@ -736,7 +756,7 @@ output:
 script:
 """
 module load bcftools
-bcftools concat -a -O b "${params.prefix}concat.bcf" VCFS/*.vcf.gz
+bcftools concat -a -O b -o "${params.prefix}concat.bcf" VCFS/*.vcf.gz
 bcftools index -f "${params.prefix}concat.bcf"
 """
 }
