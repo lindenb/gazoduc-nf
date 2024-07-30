@@ -85,11 +85,8 @@ workflow BURDEN_CODING {
 			(params.excludeBed.equals("NO_FILE")? file("NO_EXCLUDE"): file(params.excludeBed)),
 			)
 
-		/*
-		multiqc_per_pop = MULTIQC_PER_POP(
-				stats1_ch.filter{it[0].equals("case")}.map{[it[1],it[2]]}.
-				combine(stats1_ch.filter{it[0].equals("control")}.map{[it[1],it[2]]})
-				)*/
+		
+		multiqc_per_pop = MULTIQC_PER_POP(stats1_ch.output)
 
 		vcf2bed_ch = BCFTOOLS_INDEX_S(ch1)
 		ctg_start_end1  = vcf2bed_ch.output.splitCsv(sep:'\t',header:false).
@@ -188,7 +185,7 @@ workflow BURDEN_CODING {
 				combine(conditions_ch).
 				combine(cleanup_ch.output)
 			)
-		MULTIQC(plot_ch.collect())
+		MULTIQC(plot_ch.mix(multiqc_per_pop.output).flatten().collect())
 
 	}
 
@@ -344,7 +341,7 @@ process MULTIQC_PER_POP {
 //afterScript "rm -rf TMP"
 memory "5g"
 input:
-	tuple path(cases_stats),path(cases_samples),path(ctrls_stats),path(ctrls_samples)
+	tuple path(stats),path(samples2pop)
 output:
 	path("*_mqc.json"),emit:output
 script:
@@ -353,25 +350,18 @@ module load multiqc jvarkit
 export LC_ALL=en_US.utf8
 mkdir -p TMP/TMP2
 
-cat "${cases_samples}" "${ctrls_samples}" > TMP/sample2pop.txt
 
 multiqc --no-ansi \\
 	--force \\
-	--outdir "TMP/cases.multiqc" \\
-	"${cases_stats}"
+	--outdir "TMP/multiqc" \\
+	"${stats}"
 
-multiqc --no-ansi \\
-	--force \\
-	--outdir "TMP/controls.multiqc" \\
-	"${ctrls_stats}"
 
 java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar multiqcpostproc \\
-	--sample2collection TMP/sample2pop.txt \\
-	TMP/cases.multiqc/multiqc_data \\
-	TMP/ctrls.multiqc/multiqc_data \\
+	--sample2collection ${samples2pop} \\
+	TMP/multiqc/multiqc_data \\
 	-o TMP/TMP2
 
-touch TMP/TMP2/fake_mqc.json
 
 mv TMP/TMP2/*_mqc.json ./
 """
@@ -877,6 +867,8 @@ process MULTIQC {
 executor "local"
 input:
 	path(mqcs)
+output:
+	path("multiqc.zip"),emit:output
 script:
 	def prefix = params.prefix
 	def title="";
@@ -888,7 +880,7 @@ script:
 		mkdir -p TMP
 
 # do NOT use -type f, those are symlinks
-find .  -name "mqc.*" | grep -v '\\.yaml\$' > TMP/jeter.list
+find .  -name "mqc.*" -o -name "*_mqc.*" | grep -v '\\.yaml\$' > TMP/jeter.list
 
 
 		mkdir -p "${prefix}multiqc"
@@ -902,6 +894,6 @@ find .  -name "mqc.*" | grep -v '\\.yaml\$' > TMP/jeter.list
 			--outdir "${prefix}multiqc" \\
 			--file-list TMP/jeter.list
 		
-		zip -9 -r "${prefix}multiqc.zip" "${prefix}multiqc"
+		zip -9 -r "multiqc.zip" "${prefix}multiqc"
 """
 }
