@@ -123,6 +123,8 @@ public class Minikit extends Launcher {
 	private Path vcfOutDirectory=null;
     @Parameter(names={"--ignore_HOM_VAR"},description = "skip variant if Homvar genotype on autosome")
     private boolean ignore_HOM_VAR=false;
+    @Parameter(names={"--ignore_GT_FILTER"},description = "ignore GT status PASS/FILTERed")
+    private boolean ignore_GT_FILTER=false;
 
 	private TabixReader gtfReader = null;
 	private Counter<String> explain = new Counter<>();
@@ -142,7 +144,7 @@ public class Minikit extends Launcher {
 			}
 		
 		@Override
-		public int compareTo(Key o) {
+		public int compareTo(final Key o) {
 			int i= this.contig.compareTo(o.contig);
 			if(i!=0) return i;
 			i= this.splitter.compareTo(o.splitter);
@@ -153,7 +155,7 @@ public class Minikit extends Launcher {
 			return 0;
 			}
 		@Override
-		public boolean equals(Object obj) {
+		public boolean equals(final Object obj) {
 			if(obj==this) return true;
 			if(obj==null || !(obj instanceof Key)) return false;
 			return compareTo(Key.class.cast(obj))==0;
@@ -163,13 +165,13 @@ public class Minikit extends Launcher {
 			return contig+" "+splitter+" "+key+" "+geneName;
 			}
 		}
-	
+
 private interface Splitter extends Function<VariantContext,List<Key>> {
-}
+    }
 
 private class GeneSplitter implements Splitter {
 	final List<GeneExtractor> extractors ;
-	public GeneSplitter(VCFHeader header) {
+	public GeneSplitter(final VCFHeader header) {
 		GeneExtractorFactory geneExtractorFactory= new GeneExtractorFactory(header);
 		this.extractors = geneExtractorFactory.getAllExtractors();
 		}
@@ -186,6 +188,9 @@ private class GeneSplitter implements Splitter {
 				keys.add(k);
 				}
 			}
+	    if(keys.isEmpty()) {
+	    	explain.incr("NO_FUNCTIONAL_PREDICTION");
+	        }
 		return new ArrayList<>(keys);
 		}
 	}
@@ -204,9 +209,6 @@ private class IntervalSplitter implements Splitter {
 				this.intervalTreeMap.put(rgn, rgn);
 				}
 			}
-		if(this.intervalTreeMap.isEmpty()) {
-			LOG.warn("NO INTERVAL FOUND IN "+bedPath);
-			}
 		}
 	@Override
 	public List<Key> apply(final VariantContext vc) {
@@ -219,6 +221,9 @@ private class IntervalSplitter implements Splitter {
 			k.geneName = k.key;
 			keys.add(k);
 			}
+	    if(keys.isEmpty()) {
+	    	explain.incr("NO_OVERLAPING_INTERVAL");
+	        }
 		return new ArrayList<>(keys);
 		}
 	}
@@ -357,11 +362,25 @@ private boolean accept(final VariantContext variant) {
 	    explain.incr("BAD_DP");
 	    return false;
 	    }
+	    
+    /** all variants with DP have low DO or high DP */
+    if(variant.getGenotypes().stream().
+                filter(G->G.hasAltAllele() && G.hasDP()).
+                allMatch(G->G.getDP() < this.minDP)) {
+	    explain.incr("ALL_ALT_HAVE_LOW_DP");
+        return false;
+        }
+    if(variant.getGenotypes().stream().
+                filter(G->G.hasAltAllele() && G.hasDP()).
+                allMatch(G->G.getDP() > this.maxDP)) {
+	    explain.incr("ALL_ALT_HAVE_HIGH_DP");
+        return false;
+        }
 
 	final int count_alt_filtered=(int)variant.getGenotypes().stream().
 			filter(G->G.hasAltAllele() && G.isFiltered()).
 			count();
-	if(count_alt_filtered/count_alt >= 0.1) {
+	if(!this.ignore_GT_FILTER && count_alt_filtered/count_alt >= 0.1) {
 	    explain.incr("TOO_MANY_FILTERED");
 		return false;
 		}
@@ -418,7 +437,6 @@ private boolean accept(final VariantContext variant) {
                filter(G->G.isHet() && G.hasAD()).
                allMatch(G->!acceptAD(G))) {
                explain.incr("BAD_AD_FOR_ALL_HET");
-               //System.err.println(variant.getContig()+":"+variant.getStart());
                return false;
                 }
 
@@ -432,8 +450,9 @@ private boolean accept(final VariantContext variant) {
                 singleton=g;
                 }
 	        }
+
 	if(singleton!=null) {
-		if(singleton.isFiltered()) {
+		if(!this.ignore_GT_FILTER && singleton.isFiltered()) {
 		        explain.incr("SINGLETON_FILTERED"+(casesControls.isCase(singleton)?"_CASE":"_CONTROL"));
 		        return false;
 		        }
@@ -446,6 +465,7 @@ private boolean accept(final VariantContext variant) {
 	        return false;
 	        }
 		}
+
 	return true;
 	}
 
@@ -506,7 +526,9 @@ public int doWork(List<String> args) {
 				}
 			while(iter.hasNext()) {
 				final VariantContext ctx=iter.next();
-				if(!accept(ctx)) continue;
+				if(!accept(ctx)) {
+				    continue;
+				    }
 				explain.incr("PASS");
 				for(Key key: splitter.apply(ctx)) {
 					sorter.add(new KeyAndVariant(key,ctx));
@@ -533,38 +555,15 @@ public int doWork(List<String> args) {
 					while(iter1.hasNext()) {
 						final List<KeyAndVariant> array = iter1.next();
 						final Key key = array.get(0).key;
-						//final TreeSet<VariantContext> variants_set = new TreeSet<>((A,B)->compareVariant(A,B));
-						//array.stream().map(it->it.ctx).forEach(V->variants_set.add(V));
-                        //final List<VariantContext> variants = new ArrayList<>(variants_set);
                         final List<VariantContext> variants = array.stream().map(it->it.ctx).collect(Collectors.toList());
-						/*final TreeSet<VariantContext> variants_set = new TreeSet<>((A,B)->compareVariant(A,B));
-						variants_set.addAll(variants);
-						 if(variants_set.size()!=variants.size()) {
-						    System.err.println(variants);
-						    System.exit(-1);
-						    }*/
 
-						LOG.info(key.toString()+"\t"+variants.size()+"\t"+ 	variants.
-						        stream().
-						        map(V->noChr.apply(V.getContig())+":"+V.getStart()).
-						        collect(Collectors.joining(";")));
-
-                        /*
-                        for(VariantContext ctx2: variants) {
-                            for(Genotype g2: ctx2.getGenotypes()) {
-                                if(!g2.hasAltAllele()) continue;
-                                System.err.println("[ZORG]\t"+ctx2.getContig()+":"+ctx2.getStart()+ " "+g2.getSampleName()+" "+casesControls.isCase(g2));
-                                }
-                            }*/
 
 						// no Case have an ALT, skip
 						if(variants.stream().flatMap(V->V.getGenotypes().stream()).
 							filter(G->G.hasAltAllele()).
 							noneMatch(G->casesControls.isCase(G))) {
-							LOG.info("no cases. Skip.");
 							continue;
 							}
-						LOG.info("OK ");
 
 						final FisherCasesControls fisherCasesControls = new FisherCasesControls(casesControls);
 
