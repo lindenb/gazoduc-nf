@@ -69,12 +69,12 @@ workflow {
 		dbsnp_ch = [file(params.dbsnp), file(params.dbsnp+".tbi")]
 		}
 	hc_ch = HC_BAM_BED( genome_ch, dbsnp_ch, beds_ch.combine(bams_ch))
-	if(params.xz_compression) {
-		gather_ch = MERGE_VCFS( hc_ch.groupTuple().map{[it[0],it[1].plus(it[2])]})
+	if(params.xz_compression==true) {
+		gather_ch = XZ_VCFS( hc_ch.groupTuple().map{[it[0],it[1].plus(it[2])]})
 		}
 	else
 		{
-		gather_ch = XZ_VCFS( hc_ch.groupTuple().map{[it[0],it[1].plus(it[2])]})
+		gather_ch = MERGE_VCFS( hc_ch.groupTuple().map{[it[0],it[1].plus(it[2])]})
 		}
 	}
 
@@ -154,7 +154,7 @@ maxRetries 2
 input:
 	tuple val(sample),path("VCFS/*")
 output:
-	tuple path("${sample}.g.vcf.xz"),emit:output
+	path("${sample}.g.vcf.xz"),emit:output
 script:
 """
 hostname 1>&2
