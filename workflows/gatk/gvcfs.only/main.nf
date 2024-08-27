@@ -42,9 +42,9 @@ log.info paramsSummaryLog(workflow)
 
 workflow {
 
-	beds_ch = Channel.fromPath(params.beds).
-		splitText().
-		map{file(it.trim())}
+	bed_ch = Channel.fromPath(params.bed).
+		splitCsv(sep:'\t',header:false).
+		map{[it[0],(it[1] as int)+1,it[2]]}
 
 	genome_ch = [file(params.fasta) , file(params.fasta+".fai"), file(""+file(params.fasta).getParent()+"/"+file(params.fasta).getBaseName()+".dict" ) ]	
 
@@ -68,9 +68,13 @@ workflow {
 		{
 		dbsnp_ch = [file(params.dbsnp), file(params.dbsnp+".tbi")]
 		}
-	hc_ch = HC_BAM_BED( genome_ch, dbsnp_ch, beds_ch.combine(bams_ch))
-	if(params.xz_compression==true) {
+	hc_ch = HC_BAM_BED( genome_ch, dbsnp_ch, bed_ch.combine(bams_ch))
+
+	if(params.compression.equals("xz")) {
 		gather_ch = XZ_VCFS( hc_ch.groupTuple().map{[it[0],it[1].plus(it[2])]})
+		}
+	else if(params.compression.equals("bz2") || params.compression.equals("bzip2")) {
+		gather_ch = BZ2_VCFS( hc_ch.groupTuple().map{[it[0],it[1].plus(it[2])]})
 		}
 	else
 		{
@@ -79,7 +83,7 @@ workflow {
 	}
 
 process HC_BAM_BED {
-tag "${bed.name} ${sample}"
+tag "${chrom}:${start}-${end} ${sample}"
 label "process_quick"
 afterScript "rm -rf TMP"
 errorStrategy "retry"
@@ -87,24 +91,28 @@ maxRetries 2
 input:
 	tuple path(fasta),path(fai),path(dict)
 	tuple path(dbsnp),path(dbsnp_tbi)
-	tuple path(bed),val(sample),path(bam),path(bai)
+	tuple val(chrom),val(start),val(end),val(sample),path(bam),path(bai)
 output:
 	tuple val(sample),path("*.g.vcf.gz"),path("*.g.vcf.gz.tbi"),emit:output
 script:
-	def prefix = bed.name.md5()+"."+sample;
+	def interval = "${chrom}:${start}-${end}"
+	def prefix = interval.md5()+"."+sample;
+	def arg1 = task.ext.arg1?:""
+	def arg2 = task.ext.arg2?:""
+	def compression_level = task.ext.compression_level?:5;
 """
 hostname 1>&2
 module load gatk/0.0.0
 mkdir -p TMP
 
-   gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -Dsamjdk.compression_level=9" HaplotypeCaller \\
-     -L "${bed}" \\
+   gatk --java-options "${arg1} -XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -Dsamjdk.compression_level=${compression_level}" HaplotypeCaller \\
+     -L "${interval}" \\
      -R "${fasta}" \\
      -I "${bam}" \\
      -ERC GVCF \\
      ${dbsnp.name.equals("NO_DBSNP")?"":"--dbsnp ${dbsnp}"} \\
      ${(params.mapq as Integer)<1?"":" --minimum-mapping-quality "+params.mapq} \\
-     -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \\
+     ${arg2} \\
      -O "TMP/jeter.g.vcf.gz"
 
 mv TMP/jeter.g.vcf.gz "${prefix}.g.vcf.gz"
@@ -112,7 +120,7 @@ mv TMP/jeter.g.vcf.gz.tbi "${prefix}.g.vcf.gz.tbi"
 """
 }
 
-process MERGE_VCFS {
+process GATHER_VCFS {
 tag "${sample}"
 label "process_quick"
 afterScript "rm -rf TMP"
@@ -122,7 +130,7 @@ maxRetries 2
 input:
 	tuple val(sample),path("VCFS/*")
 output:
-	tuple path("${sample}.g.vcf.gz"), path("${sample}.g.vcf.gz.tbi"),emit:output
+	path("${sample}.g.vcf.gz"),emit:output
 script:
 """
 hostname 1>&2
@@ -132,21 +140,19 @@ mkdir -p TMP
 find ./VCFS -name "*.vcf.gz" > TMP/jeter.list
 test -s TMP/jeter.list
 
-# cannot use GathVcfs because jvarkit cluster bed migh mix intervals
-gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -Dsamjdk.compression_level=9" MergeVcfs \\
+gatk --java-options "-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP  -Dsamjdk.compression_level=9" GatherVcfs \\
+	--REORDER_INPUT_BY_FIRST_VARIANT \\
 	--COMPRESSION_LEVEL 9 \\
 	--INPUT TMP/jeter.list \\
-	--CREATE_INDEX true \\
 	--OUTPUT TMP/jeter.g.vcf.gz
 
 mv TMP/jeter.g.vcf.gz "${sample}.g.vcf.gz"
-mv TMP/jeter.g.vcf.gz.tbi "${sample}.g.vcf.gz.tbi"
 """
 }
 
 process XZ_VCFS {
 tag "${sample}"
-label "process_quick"
+label "process_medium"
 afterScript "rm -rf TMP"
 errorStrategy "retry"
 maxRetries 2
@@ -156,6 +162,7 @@ input:
 output:
 	path("${sample}.g.vcf.xz"),emit:output
 script:
+	def args1 = task.ext.args1?:"--force --best --extreme"
 """
 hostname 1>&2
 module load gatk/0.0.0
@@ -164,14 +171,46 @@ mkdir -p TMP
 find ./VCFS -name "*.vcf.gz" > TMP/jeter.list
 test -s TMP/jeter.list
 
-# cannot use GathVcfs because jvarkit cluster bed migh mix intervals
-gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" MergeVcfs \\
-	--COMPRESSION_LEVEL 9 \\
+gatk --java-options "-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP  -Dsamjdk.compression_level=9" GatherVcfs \\
+	--REORDER_INPUT_BY_FIRST_VARIANT \\
 	--INPUT TMP/jeter.list \\
-	--CREATE_INDEX false \\
 	--OUTPUT TMP/jeter.g.vcf
 
-xz --force --best --extreme TMP/jeter.g.vcf
+xz -v --threads=${task.cpus} ${args1} TMP/jeter.g.vcf > xv.log
 mv TMP/jeter.g.vcf.xz "${sample}.g.vcf.xz"
+"""
+}
+
+
+process BZ2_VCFS {
+tag "${sample}"
+label "process_quick"
+afterScript "rm -rf TMP"
+errorStrategy "retry"
+maxRetries 2
+
+input:
+	tuple val(sample),path("VCFS/*")
+output:
+	path("${sample}.g.vcf.bz2"),emit:output
+script:
+	def args1 = task.ext.args1?:" --best "
+"""
+hostname 1>&2
+module load gatk/0.0.0
+mkdir -p TMP
+
+find ./VCFS -name "*.vcf.gz" > TMP/jeter.list
+test -s TMP/jeter.list
+
+gatk --java-options "-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP  -Dsamjdk.compression_level=9" GatherVcfs \\
+	--REORDER_INPUT_BY_FIRST_VARIANT \\
+	--INPUT TMP/jeter.list \\
+	--OUTPUT TMP/jeter.g.vcf
+
+ls -lah TMP/jeter.g.vcf 1>&2
+
+bzip2 -v  ${args1} TMP/jeter.g.vcf > bz2.log
+mv TMP/jeter.g.vcf.bz2 "${sample}.g.vcf.bz2"
 """
 }

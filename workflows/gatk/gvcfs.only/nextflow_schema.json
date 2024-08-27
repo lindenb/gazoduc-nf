@@ -7,7 +7,7 @@
     "input_and_output_params": { 
       "title": "Input / Ouput",
       "type": "object",
-      "required": ["fasta", "beds","prefix"], 
+      "required": ["fasta", "bed","prefix"], 
       "properties": {
         "fasta": { 
           "type": "string",
@@ -28,13 +28,13 @@
                  "description": "The output directory where the results will be saved. You have to use absolute paths to storage on Cloud infrastructure.",
                  "fa_icon": "fas fa-folder-open"
                 },
-        "beds": { 
+        "bed": { 
           "type": "string",
 	  "format": "file-path",
           "exists": true,
           "mimetype": "text/plain",
-          "pattern": "^\\S+(\\.list)?$",
-          "description": "Path BED files",
+          "pattern": "^\\S+(\\.bed)?$",
+          "description": "BED file",
 	  "fa_icon": "far fa-file-code"
         },
         "bams": { 
