@@ -78,7 +78,7 @@ workflow {
 		}
 	else
 		{
-		gather_ch = MERGE_VCFS( hc_ch.groupTuple().map{[it[0],it[1].plus(it[2])]})
+		gather_ch = GATHER_VCFS( hc_ch.groupTuple().map{[it[0],it[1].plus(it[2])]})
 		}
 	}
 
@@ -147,6 +147,7 @@ gatk --java-options "-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir
 	--OUTPUT TMP/jeter.g.vcf.gz
 
 mv TMP/jeter.g.vcf.gz "${sample}.g.vcf.gz"
+# no tbi produced
 """
 }
 
@@ -184,10 +185,11 @@ mv TMP/jeter.g.vcf.xz "${sample}.g.vcf.xz"
 
 process BZ2_VCFS {
 tag "${sample}"
-label "process_quick"
+label "process_medium"
 afterScript "rm -rf TMP"
 errorStrategy "retry"
 maxRetries 2
+time "24h"
 
 input:
 	tuple val(sample),path("VCFS/*")
