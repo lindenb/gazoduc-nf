@@ -25,6 +25,9 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 include { validateParameters; paramsHelp; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
+include { HC_COMBINE1 } from '../modules/gatk/gatk4.combine.gvcfs.01.nf'
+include { HC_COMBINE2 } from '../modules/gatk/gatk4.combine.gvcfs.02.nf'
+include { HC_GENOTYPE } from '../modules/gatk/gatk4.genotype.gvcfs.01.nf'
 
 // Print help message, supply typical command line usage for the pipeline
 if (params.help) {
@@ -65,11 +68,6 @@ workflow {
 		splitText().
 		map{file(it.trim())}
 
-	bams_ch = Channel.fromPath(params.bams).
-		splitText().
-		map{it.trim()}.
-		map{[it, it.endsWith(".cram")?it+".crai":it+".bai"]}.
-		map{[file(it[0],checkIfExists:true),file(it[1],checkIfExists:true)]}
 
 
 
@@ -82,7 +80,27 @@ workflow {
 		{
 		dbsnp_ch = [file(params.dbsnp), file(params.dbsnp+".tbi")]
 		}
-	hc_ch = HC_BAM_BED( genome_ch, dbsnp_ch, beds_ch.combine(bams_ch))
+
+	hc_ch = Channel.empty()
+        if(!params.gvcfs.equals("NO_FILE")) {
+		gvcfs_ch = Channel.fromPath(params.gvcfs).
+			splitText().
+			map{it.trim()}.
+			map{[it,it+".tbi"]}.
+			map{[file(it[0],checkIfExists:true),file(it[1],checkIfExists:true)]}
+		hc_ch = hc_ch.mix(  beds_ch.combine(gvcfs_ch) )
+		}
+
+	if(!params.bams.equals("NO_FILE")) {
+		bams_ch = Channel.fromPath(params.bams).
+			splitText().
+			map{it.trim()}.
+			map{[it, it.endsWith(".cram")?it+".crai":it+".bai"]}.
+			map{[file(it[0],checkIfExists:true),file(it[1],checkIfExists:true)]}
+
+		hc_ch = hc_ch.mix( HC_BAM_BED( genome_ch, dbsnp_ch, beds_ch.combine(bams_ch)) )
+		}
+	
 
 	combine1_input_ch = hc_ch.output.map{[it[0].toRealPath(),[it[1],it[2]]]}.
 		groupTuple().
@@ -142,43 +160,6 @@ mv TMP/jeter.g.vcf.gz.tbi "${bam.getBaseName()}.g.vcf.gz.tbi"
 """
 }
 
-process HC_COMBINE1 {
-tag "${bed.name}"
-label "process_quick"
-afterScript "rm -rf TMP"
-errorStrategy "retry"
-maxRetries 2
-input:
-        tuple path(fasta),path(fai),path(dict)
-        tuple path(dbsnp),path(dbsnp_tbi)
-        tuple path(bed),path("VCFS/*")
-output:
-        tuple path(bed),path("*.g.vcf.gz"),path("*.g.vcf.gz.tbi"),emit:output
-script:
-"""
-hostname 1>&2
-module load gatk/0.0.0
-mkdir -p TMP
-set -x
-
-
-find VCFS -name "*.g.vcf.gz" | sort > TMP/jeter.list
-MD5=`md5sum TMP/jeter.list | awk '{print \$1}'`
-
-        gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" \\
-                CombineGVCFs \\
-                -R "${fasta}" \\
-                -L "${bed}" \\
-                -V TMP/jeter.list \\
-                -O "TMP/combine1.g.vcf.gz" \\
-                -G StandardAnnotation \\
-                -G AS_StandardAnnotation
-
-
-mv TMP/combine1.g.vcf.gz "\${MD5}.g.vcf.gz"
-mv TMP/combine1.g.vcf.gz.tbi "\${MD5}.g.vcf.gz.tbi"
-"""
-}
 
 process SPLIT_BED {
 tag "${bed.name}"
@@ -197,82 +178,6 @@ awk -F '\t' 'BEGIN{N=1;T=0;f=sprintf("BEDS/${f}.%d.bed",N);} {print \$0 >> f; T+
 """
 }
 
-process HC_COMBINE2 {
-tag "${bed.name}"
-label "process_quick"
-afterScript "rm -rf TMP"
-memory = {20.GB  * task.attempt}
-errorStrategy "retry"
-maxRetries 2
-time "3h"
-input:
-        tuple path(fasta),path(fai),path(dict)
-        tuple path(dbsnp),path(dbsnp_tbi)
-        tuple path(bed),path("VCFS/*")
-output:
-        tuple path(bed),path("combine2.g.vcf.gz"),path("combine2.g.vcf.gz.tbi"),emit:output
-script:
-"""
-hostname 1>&2
-module load gatk/0.0.0
-mkdir -p TMP
-set -x
-
-
-find VCFS -name "*.g.vcf.gz" | sort > TMP/jeter.list
-
-        gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" \\
-                CombineGVCFs \\
-                -R "${fasta}" \\
-                -L "${bed}" \\
-		-XL "chr2:152720034-152720034" \\
-                -V TMP/jeter.list \\
-                -O "TMP/combine2.g.vcf.gz" \\
-                -G StandardAnnotation \\
-                -G AS_StandardAnnotation
-
-
-mv TMP/combine2.g.vcf.gz ./
-mv TMP/combine2.g.vcf.gz.tbi ./
-"""
-}
-
-process HC_GENOTYPE {
-tag "${bed.name}"
-label "process_quick"
-afterScript "rm -rf TMP"
-errorStrategy "retry"
-maxRetries 2
-cpus 2
-input:
-        tuple path(fasta),path(fai),path(dict)
-        tuple path(dbsnp),path(dbsnp_tbi)
-        tuple path(bed),path(gvcf),path(gvcf_idx)
-output:
-	tuple path("${bed.getBaseName()}.vcf.gz"),path("${bed.getBaseName()}.vcf.gz.tbi"),emit:output
-script:
-"""
-hostname 1>&2
-module load gatk/0.0.0
-mkdir -p TMP
-
-
-	gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" \\
-		GenotypeGVCFs \\
-	        ${dbsnp.name.equals("NO_DBSNP")?"":"--dbsnp ${dbsnp}"} \\
-		-R "${fasta}" \\
-		-L "${bed}" \\
-		-O TMP/genotyped.vcf.gz \\
-		-V "${gvcf}" \\
-		-G StandardAnnotation \\
-		-G AS_StandardAnnotation
-
-
-
-mv -v TMP/genotyped.vcf.gz "${bed.getBaseName()}.vcf.gz"
-mv -v TMP/genotyped.vcf.gz.tbi "${bed.getBaseName()}.vcf.gz.tbi"
-"""
-}
 
 process VCF_CONCAT {
 label "process_high"
