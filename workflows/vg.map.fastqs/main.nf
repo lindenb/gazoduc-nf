@@ -22,28 +22,25 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-nextflow.enable.dsl=2
-
-/** path to indexed fasta reference */
-params.reference = ""
-params.vcf = "NO_FILE"
-params.bed = ""
-params.samplesheet = "NO_FILE"
-params.publishDir = ""
-params.prefix = ""
-
-include {VG_CONSTRUCT_01} from '../../subworkflows/vg/vg.construct.01.nf'
-include {VG_DOWNLOAD_01} from '../../modules/vg/vg.download.01.nf'
-include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
-include {runOnComplete} from '../../modules/utils/functions.nf'
-
 
 workflow {
-	ch1 = VG_MAP_FASTQS(params,params.reference, Channel.fromPath(params.samplesheet), file(params.bed), file(params.vcf))
-	html = VERSION_TO_HTML(params,ch1.version)
-	//PUBLISH(ch1.version,html.html,ch1.vcf,ch1.index,ch1.pdf)
+	vg = DOWNLOAD_VG()
 	}
-runOnComplete(workflow);
+
+process DOWNLOAD_VG {
+output:
+        path("vg"),emit:executable
+script:
+        def vg_version = task.ext.args?:"1.60.0"
+        def url = "https://github.com/vgteam/vg/releases/download/v${vg_version}/vg"
+"""
+hostname 1>&2
+wget -O vg "${url}"
+chmod +x vg
+"""
+}
+
+
 
 workflow VG_MAP_FASTQS {
 	take:
