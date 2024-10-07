@@ -25,9 +25,12 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 include { validateParameters; paramsHelp; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
-include { HC_COMBINE1 } from '../modules/gatk/gatk4.combine.gvcfs.01.nf'
-include { HC_COMBINE2 } from '../modules/gatk/gatk4.combine.gvcfs.02.nf'
-include { HC_GENOTYPE } from '../modules/gatk/gatk4.genotype.gvcfs.01.nf'
+include { HC_COMBINE1 } from '../../../modules/gatk/gatk4.combine.gvcfs.01.nf'
+include { HC_COMBINE2 } from '../../../modules/gatk/gatk4.combine.gvcfs.02.nf'
+include { HC_GENOTYPE } from '../../../modules/gatk/gatk4.genotype.gvcfs.01.nf'
+include { HC_GENOMICDB_IMPORT} from '../../../modules/gatk/gatk4.genomicdb.import.01.nf'
+include { HC_GENOMICDB_GENOTYPE} from '../../../modules/gatk/gatk4.genomicdb.genotype.01.nf'
+include { SPLIT_BED; SPLIT_BED as SPLIT_BED2} from './part.split.bed.nf'
 
 // Print help message, supply typical command line usage for the pipeline
 if (params.help) {
@@ -98,33 +101,90 @@ workflow {
 			map{[it, it.endsWith(".cram")?it+".crai":it+".bai"]}.
 			map{[file(it[0],checkIfExists:true),file(it[1],checkIfExists:true)]}
 
-		hc_ch = hc_ch.mix( HC_BAM_BED( genome_ch, dbsnp_ch, beds_ch.combine(bams_ch)) )
+		hc_ch = hc_ch.mix( HC_BAM_BED( genome_ch, dbsnp_ch, beds_ch.combine(bams_ch)).output )
 		}
-	
 
-	combine1_input_ch = hc_ch.output.map{[it[0].toRealPath(),[it[1],it[2]]]}.
-		groupTuple().
-		flatMap{makeSQRT(it)}.
-		map{[it[0],it[1].flatten()]}
 
-	hc1 = HC_COMBINE1(genome_ch, dbsnp_ch, combine1_input_ch )
+       if(params.genomicsDB==false) {
+		combine1_input_ch = hc_ch.map{[it[0].toRealPath(),[it[1],it[2]]]}.
+			groupTuple().
+			flatMap{makeSQRT(it)}.
+			map{[it[0],it[1].flatten()]}
 
-	combine2_input_ch = hc1.output.
-		map{ [it[0].toRealPath(), it[1],it[2] ]}. /* duplicate bed file so we can extract distinct contig in first , keep bed content in second */
-		groupTuple(). /* group by contig/bed */
-		map{[it[0], it[1].flatten().plus(it[2].flatten())]}
+		hc1 = HC_COMBINE1(genome_ch, dbsnp_ch, combine1_input_ch )
 
-	splitbed_ch = SPLIT_BED(combine2_input_ch)
+		combine2_input_ch = hc1.output.
+			map{ [it[0].toRealPath(), it[1],it[2] ]}. /* duplicate bed file so we can extract distinct contig in first , keep bed content in second */
+			groupTuple(). /* group by contig/bed */
+			map{[it[0], it[1].flatten().plus(it[2].flatten())]}
 
-	combine2_input_ch = splitbed_ch.output.
-		flatMap{T->T[0].collect{X->[X,T[1]]} }
+		splitbed_ch = SPLIT_BED(combine2_input_ch)
 
-	hc2 = HC_COMBINE2(genome_ch, dbsnp_ch, combine2_input_ch )
-	hg = HC_GENOTYPE(genome_ch, dbsnp_ch, hc2.output )
+		combine2_input_ch = splitbed_ch.output.
+			map{T->(T[0] instanceof List?T:[[T[0]],T[1]])}.//only one bed ? convert to array for the flatMap below
+			flatMap{T->T[0].collect{X->[X,T[1]]} }
+
+		hc2 = HC_COMBINE2(genome_ch, dbsnp_ch, combine2_input_ch )
+		hg = HC_GENOTYPE(genome_ch, dbsnp_ch, hc2.output )
+        	}
+	else
+		{
+		smap_ch = HC_GENOMICDB_SAMPLE_MAP(gvcfs_ch.map{it[0]}.collect())
+		bed_gvcfs = beds_ch.combine(gvcfs_ch).
+			groupTuple().
+			map{[it[0], it[1].flatten().plus(it[2].flatten())]}
+
+		beds2_ch = SPLIT_BED2(bed_gvcfs).output.
+			flatMap{L1->{
+			def key = (L1.get(0) instanceof List? L1.get(0):[L1.get(0)]);
+			L = []
+			for(i=0;i< key.size();i++) {
+				L.add([key.get(i),L1.get(1)])
+				}
+			return L;
+			}}
+		genomiddb_ch = HC_GENOMICDB_IMPORT(genome_ch,smap_ch.output, beds2_ch)
+		hg = HC_GENOMICDB_GENOTYPE(genome_ch, dbsnp_ch, genomiddb_ch.output)
+		}
 	concat_ch = VCF_CONCAT(hg.output.flatten().collect())
-	stats_ch = BCFTOOLS_STATS(genome_ch,concat_ch.output)
-	mqc_ch = MULTIQC(file(params.sample2population), stats_ch.output)
+	if(params.with_multiqc==true) {
+		stats_ch = BCFTOOLS_STATS(genome_ch,concat_ch.output)
+		mqc_ch = MULTIQC(file(params.sample2population), stats_ch.output)
+		}
 	}
+
+
+process HC_GENOMICDB_SAMPLE_MAP {
+label "process_quick"
+afterScript "rm -rf TMP"
+input:
+        path("VCFS/*")
+output:
+        path("sample.map"),emit:output
+script:
+"""
+hostname 1>&2
+mkdir -p TMP
+set -x
+
+
+find VCFS -name "*.g.vcf.gz" | sort > TMP/jeter.list
+test -s TMP/jeter.list
+
+touch TMP/sample.map
+
+cat TMP/jeter.list | while read F
+do
+        gunzip -c "\${F}" | grep "^#CHROM" -m1 | cut -f 10 | tr "\\n" "\t" >> TMP/sample.map
+        echo "\${F}" >> TMP/sample.map
+done
+
+LC_ALL=C sort -t '\t' -k1,1 -T TMP TMP/sample.map > sample.map
+test -s sample.map
+"""
+}
+
+
 
 process HC_BAM_BED {
 tag "${bed.name} ${bam.name}"
@@ -157,24 +217,6 @@ mkdir -p TMP
 
 mv TMP/jeter.g.vcf.gz "${bam.getBaseName()}.g.vcf.gz"
 mv TMP/jeter.g.vcf.gz.tbi "${bam.getBaseName()}.g.vcf.gz.tbi"
-"""
-}
-
-
-process SPLIT_BED {
-tag "${bed.name}"
-executor "local"
-maxForks 10
-input:
-	tuple path(bed),path(vcfs)
-output:
-	tuple path("BEDS/*.bed"),path(vcfs),emit:output
-script:
-	def f = bed.getBaseName();
-	def size="1E6";
-"""
-mkdir -p BEDS
-awk -F '\t' 'BEGIN{N=1;T=0;f=sprintf("BEDS/${f}.%d.bed",N);} {print \$0 >> f; T+=int(\$3)-int(\$2); if(T>${size}) {close(f);T=0;N++;f=sprintf("BEDS/${f}.%d.bed",N);}}' '${bed}'
 """
 }
 

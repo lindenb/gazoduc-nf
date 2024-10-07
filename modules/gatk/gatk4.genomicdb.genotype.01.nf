@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-process HC_COMBINE2 {
+process HC_GENOMICDB_GENOTYPE {
 tag "${bed.name}"
 label "process_quick"
 afterScript "rm -rf TMP"
@@ -32,31 +32,31 @@ maxRetries 2
 time "3h"
 input:
         tuple path(fasta),path(fai),path(dict)
-        tuple path(dbsnp),path(dbsnp_tbi)
-        tuple path(bed),path("VCFS/*")
+	tuple path(dbsnp),path(dbsnp_tbi)
+        tuple path(bed),path(database)
 output:
-        tuple path(bed),path("combine2.g.vcf.gz"),path("combine2.g.vcf.gz.tbi"),emit:output
+	tuple path("${bed.getBaseName()}.vcf.gz"),path("${bed.getBaseName()}.vcf.gz.tbi"),emit:output
 script:
+	def batchSize=-1
+	def maxAlternateAlleles=6
 """
 hostname 1>&2
 module load gatk/0.0.0
 mkdir -p TMP
 set -x
 
+gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" GenotypeGVCFs \\
+        -R "${fasta}"  \\
+        -V "gendb://${database}" \\
+        -L "${bed}" \\
+         ${dbsnp.name.equals("NO_DBSNP")?"":"--dbsnp ${dbsnp}"} \\
+       --max-alternate-alleles ${maxAlternateAlleles} \\
+       --seconds-between-progress-updates 60 \\
+       -G StandardAnnotation -G StandardHCAnnotation \\
+       --verbosity INFO \\
+       -O "TMP/jeter.vcf.gz"
 
-find VCFS -name "*.g.vcf.gz" | sort > TMP/jeter.list
-
-        gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" \\
-                CombineGVCFs \\
-                -R "${fasta}" \\
-                -L "${bed}" \\
-                -V TMP/jeter.list \\
-                -O "TMP/combine2.g.vcf.gz" \\
-                -G StandardAnnotation \\
-                -G AS_StandardAnnotation
-
-
-mv TMP/combine2.g.vcf.gz ./
-mv TMP/combine2.g.vcf.gz.tbi ./
+mv TMP/jeter.vcf.gz "${bed.getBaseName()}.vcf.gz"
+mv TMP/jeter.vcf.gz.tbi "${bed.getBaseName()}.vcf.gz.tbi"
 """
 }

@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-process HC_COMBINE2 {
+process HC_GENOMICDB_IMPORT {
 tag "${bed.name}"
 label "process_quick"
 afterScript "rm -rf TMP"
@@ -32,31 +32,29 @@ maxRetries 2
 time "3h"
 input:
         tuple path(fasta),path(fai),path(dict)
-        tuple path(dbsnp),path(dbsnp_tbi)
+	path(sample_map)
         tuple path(bed),path("VCFS/*")
 output:
-        tuple path(bed),path("combine2.g.vcf.gz"),path("combine2.g.vcf.gz.tbi"),emit:output
+        tuple path(bed),path("database"),emit:output
 script:
+	def batchSize=-1
 """
 hostname 1>&2
 module load gatk/0.0.0
 mkdir -p TMP
 set -x
 
+SQRT=`awk 'END{X=NR;if(X<10){print(X);} else {z=sqrt(X); print (z==int(z)?z:int(z)+1);}}' "${sample_map}"`
 
-find VCFS -name "*.g.vcf.gz" | sort > TMP/jeter.list
-
-        gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" \\
-                CombineGVCFs \\
-                -R "${fasta}" \\
-                -L "${bed}" \\
-                -V TMP/jeter.list \\
-                -O "TMP/combine2.g.vcf.gz" \\
-                -G StandardAnnotation \\
-                -G AS_StandardAnnotation
+gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" GenomicsDBImport \\
+    -R ${fasta} \\
+    --batch-size ${(batchSize as Integer) <= 0 ? "\${SQRT}" : ""+batchSize} \\
+    ${(task.cpus as Integer) > 1 ? "  --reader-threads " +task.cpus : "" } \\
+    --sample-name-map ${sample_map} \
+    -L "${bed}" \
+    --genomicsdb-workspace-path "TMP/database"
 
 
-mv TMP/combine2.g.vcf.gz ./
-mv TMP/combine2.g.vcf.gz.tbi ./
+mv TMP/database ./
 """
 }
