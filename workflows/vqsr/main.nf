@@ -82,8 +82,7 @@ workflow {
 		apply_indel_ch = APPLY_RECALIBRATION_INDEL(genome_ch , apply_snp_ch.output)
 
 		if(params.gather_by.equals("chrom") || params.gather_by.equals("chromosome") || params.gather_by.equals("contig")) {
-			distinct_chrom = vcf2bed_ch.contigs.splitText().map{it.trim()}.unique()
-			GATHER_BY_CONTIG(distinct_chom.combine(apply_indel_ch.flatten().collect()))
+			GATHER_BY_CONTIG(each_contig_ch.combine(apply_indel_ch.flatten().collect().toList()))
 			}
 		else
 			{
@@ -94,7 +93,7 @@ workflow {
 
 
 process BCF_TO_VCF {
-label "process_low"
+label "process_short"
 afterScript 'rm -rf  TMP'
 input:
 	path("VCFS/*")
@@ -128,7 +127,7 @@ output:
 	path("minikit.jar"),emit:output
 script:
 """
-${moduleLoad("java/1.8")}
+${moduleLoad("java/17.0.10")}
 
 mkdir -p TMP/TMP
 cp -v "${moduleDir}/Minikit.java" TMP/Minikit.java
@@ -144,8 +143,8 @@ jar cfm minikit.jar TMP/tmp.mf -C TMP .
 }
 
 process VCF_TO_INTERVALS {
-tag "${contig}"
-label "process_low"
+tag "${contig} ${vcf}"
+label "process_short"
 input:
 	tuple path(vcf),path(idx),val(contig)
 output:
