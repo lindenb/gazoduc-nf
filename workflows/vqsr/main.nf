@@ -37,7 +37,7 @@ log.info paramsSummaryLog(workflow)
 
 
 include {BCFTOOLS_CONCAT} from '../../subworkflows/bcftools/bcftools.concat.02.nf'
-include {moduleLoad; escapeXml; } from '../../modules/utils/functions.nf'
+include {moduleLoad } from '../../modules/utils/functions.nf'
 
 
 
@@ -81,14 +81,20 @@ workflow {
 		apply_snp_ch = APPLY_RECALIBRATION_SNP(genome_ch, in_vcf_ch, rgn_vcf_ch)
 		apply_indel_ch = APPLY_RECALIBRATION_INDEL(genome_ch , apply_snp_ch.output)
 
-
-		GATHER_VCFS(apply_indel_ch.flatten().collect())
+		if(params.gather_by.equals("chrom") || params.gather_by.equals("chromosome") || params.gather_by.equals("contig")) {
+			distinct_chrom = vcf2bed_ch.contigs.splitText().map{it.trim()}.unique()
+			GATHER_BY_CONTIG(distinct_chom.combine(apply_indel_ch.flatten().collect()))
+			}
+		else
+			{
+			GATHER_VCFS(apply_indel_ch.flatten().collect())
+			}
 		
 	}
 
 
 process BCF_TO_VCF {
-label "process_medium"
+label "process_low"
 afterScript 'rm -rf  TMP'
 input:
 	path("VCFS/*")
@@ -116,7 +122,7 @@ bcftools index --stats reformat.vcf.gz | cut -f 1 > chroms.txt
 
 
 process COMPILE_MINIKIT {
-executor "local"
+label "process_short"
 afterScript "rm -rf TMP"
 output:
 	path("minikit.jar"),emit:output
@@ -327,6 +333,7 @@ mv TMP/jeter.vcf.gz.tbi "${suffix}.recal.vcf.gz.tbi"
 
 
 process GATHER_VCFS {
+label "process_medium"
 afterScript "rm -rf TMP"
 cpus 10
 memory "10G"
@@ -352,5 +359,32 @@ bcftools index --force --threads "${task.cpus}" TMP/jeter.bcf
 
 mv TMP/jeter.bcf vqsr.bcf
 mv TMP/jeter.bcf.csi vqsr.bcf.csi
+"""
+}
+
+process GATHER_BY_CONTIG {
+label "process_medium"
+tag "${contig}"
+afterScript "rm -rf TMP"
+cpus 10
+memory "10G"
+input:
+	tuple val(contig),path("VCFS/*")
+output:
+	tuple path("${contig}.vqsr.bcf"),path("${contig}.vqsr.bcf.csi"),emit:output
+script:
+"""
+hostname 1>&2
+${moduleLoad("bcftools")} 
+mkdir -p TMP
+
+find VCFS/ -name "*.vcf.gz" | awk -F '/' '{printf("%s,%s\\n",\$NF,\$0);}' | LC_ALL=C sort -t, -k1,1V -T TMP | cut -d, -f2  > TMP/jeter.list
+test -s TMP/jeter.list
+
+bcftools concat -a --regions "${contig}" --threads "${task.cpus}" --file-list TMP/jeter.list -O b9 -o TMP/jeter.bcf
+bcftools index --force --threads "${task.cpus}" TMP/jeter.bcf
+
+mv TMP/jeter.bcf ${contig}.vqsr.bcf
+mv TMP/jeter.bcf.csi ${contig}.vqsr.bcf.csi
 """
 }
