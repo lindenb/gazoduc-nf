@@ -129,7 +129,10 @@ workflow {
         	}
 	else
 		{
-		smap_ch = HC_GENOMICDB_SAMPLE_MAP(gvcfs_ch.map{it[0]}.collect())
+		smap0_ch = HC_GENOMICDB_SAMPLE_MAP(gvcfs_ch.map{it[0]}.collate(100))
+
+		smap_ch = MERGE_SAMPLE_MAP(smap0_ch.output.collect())
+
 		bed_gvcfs = beds_ch.combine(gvcfs_ch).
 			groupTuple().
 			map{[it[0], it[1].flatten().plus(it[2].flatten())]}
@@ -146,7 +149,9 @@ workflow {
 		genomiddb_ch = HC_GENOMICDB_IMPORT(genome_ch,smap_ch.output, beds2_ch)
 		hg = HC_GENOMICDB_GENOTYPE(genome_ch, dbsnp_ch, genomiddb_ch.output)
 		}
-	concat_ch = VCF_CONCAT(hg.output.flatten().collect())
+	concat0_ch = VCF_CONCAT1(hg.output.collate(10).map{it.flatten()})
+	concat_ch  = VCF_CONCAT2(concat0_ch.output.flatten().collect())
+
 	if(params.with_multiqc==true) {
 		stats_ch = BCFTOOLS_STATS(genome_ch,concat_ch.output)
 		mqc_ch = MULTIQC(file(params.sample2population), stats_ch.output)
@@ -160,16 +165,17 @@ afterScript "rm -rf TMP"
 input:
         path("VCFS/*")
 output:
-        path("sample.map"),emit:output
+        path("sample.*.map"),emit:output
 script:
 """
 hostname 1>&2
 mkdir -p TMP
 set -x
 
-
 find VCFS -name "*.g.vcf.gz" | sort > TMP/jeter.list
 test -s TMP/jeter.list
+
+MD5=`cat TMP/jeter.list | sha1sum | cut -d ' ' -f1`
 
 touch TMP/sample.map
 
@@ -179,11 +185,25 @@ do
         echo "\${F}" >> TMP/sample.map
 done
 
-LC_ALL=C sort -t '\t' -k1,1 -T TMP TMP/sample.map > sample.map
-test -s sample.map
+LC_ALL=C sort -t '\t' -k1,1 -T TMP TMP/sample.map > "sample.\${MD5}.map"
+test -s "sample.\${MD5}.map"
 """
 }
 
+process MERGE_SAMPLE_MAP {
+executor "local"
+afterScript "rm -rf TMP"
+input:
+	path(sms)
+output:
+	path("sample.map"),emit:output
+script:
+"""
+mkdir -p TMP
+cat ${sms} | LC_ALL=C sort -t '\t' -k1,1 -T TMP > sample.map
+test -s sample.map
+"""
+}
 
 
 process HC_BAM_BED {
@@ -221,7 +241,7 @@ mv TMP/jeter.g.vcf.gz.tbi "${bam.getBaseName()}.g.vcf.gz.tbi"
 }
 
 
-process VCF_CONCAT {
+process VCF_CONCAT1 {
 label "process_high"
 cpus 20
 time "24h"
@@ -229,7 +249,7 @@ afterScript "rm -rf TMP"
 input:
 	path("VCFS/*")
 output:
-	tuple path("output.bcf"),path("output.bcf.csi"),emit:output
+	tuple path("*.bcf"),path("*.bcf.csi"),emit:output
 script:
 	
 """
@@ -241,13 +261,49 @@ set -x
 	
 find ./VCFS -name "*.vcf.gz" > TMP/jeter.list
 
-bcftools concat --threads ${task.cpus} --allow-overlaps --rm-dups exact --file-list TMP/jeter.list -O b -o  TMP/jeter.bcf
-bcftools sort -T TMP/sort. --max-mem "${(task.memory.giga / 2 ) as int }G" -O b9 -o TMP/output.bcf TMP/jeter.bcf
-bcftools index --threads ${task.cpus} -f TMP/output.bcf
+MD5=`cat TMP/jeter.list | md5sum | cut -d ' ' -f1`
+
+bcftools concat --threads ${task.cpus} --allow-overlaps --rm-dups exact --file-list TMP/jeter.list -O b -o  TMP/output.\${MD5}.bcf
+bcftools index --threads ${task.cpus} -f TMP/output.\${MD5}.bcf
+mv -v TMP/output.\${MD5}.bcf ./
+mv -v TMP/output.\${MD5}.bcf.csi ./
+"""
+}
+
+
+process VCF_CONCAT2 {
+label "process_high"
+cpus 20
+time "24h"
+afterScript "rm -rf TMP"
+input:
+	path("VCFS/*")
+output:
+	tuple path("output.bcf"),path("output.bcf.csi"),emit:output
+script:
+"""
+hostname 1>&2
+module load bcftools
+set -o pipefail
+mkdir -p TMP
+set -x
+	
+find ./VCFS -name "*.bcf" > TMP/jeter.list
+
+if [[ \$(wc -l < TMP/jeter.list) -eq 1 ]]
+then
+	cp -v VCFS/*.bcf TMP/output.bcf
+	cp -v VCFS/*.bcf.csi TMP/output.bcf.csi
+else
+	bcftools concat --threads ${task.cpus} --allow-overlaps --rm-dups exact --file-list TMP/jeter.list -O b -o  TMP/output.bcf
+	bcftools index --threads ${task.cpus} -f TMP/output.bcf
+fi
+
 mv -v TMP/output.bcf ./
 mv -v TMP/output.bcf.csi ./
 """
 }
+
 
 process BCFTOOLS_STATS {
 label "process_medium"
