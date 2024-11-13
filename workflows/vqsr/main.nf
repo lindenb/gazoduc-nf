@@ -82,7 +82,9 @@ workflow {
 		apply_indel_ch = APPLY_RECALIBRATION_INDEL(genome_ch , apply_snp_ch.output)
 
 		if(params.gather_by.equals("chrom") || params.gather_by.equals("chromosome") || params.gather_by.equals("contig")) {
-			GATHER_BY_CONTIG(each_contig_ch.combine(apply_indel_ch.flatten().collect().toList()))
+			chx = each_contig_ch.combine(apply_indel_ch.flatten().collect().toList())
+			chx.view()
+			//GATHER_BY_CONTIG(chx)
 			}
 		else
 			{
@@ -168,8 +170,6 @@ ${moduleLoad("bcftools jvarkit")}
 process RECALIBRATE_SNP {
 tag "${vcf.name}"
 label "process_medium"
-cpus 5
-memory "15g"
 afterScript 'rm -rf  TMP'
 input:
 	tuple path(fasta),path(fai),path(dict)
@@ -195,7 +195,7 @@ test -s TMP/args.list
 cat ${recal_snps} >> TMP/args.list
 
 
-gatk  --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" VariantRecalibrator  \\
+gatk  --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -XX:-UsePerfData" VariantRecalibrator  \\
 	-R "${fasta}" \\
 	-V "${vcf}" \
 	--arguments_file TMP/args.list \\
@@ -314,7 +314,7 @@ hostname 1>&2
 ${moduleLoad("gatk/0.0.0 r")}
 mkdir -p TMP
 
-gatk  --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" ApplyVQSR  \
+gatk  --java-options "-Xmx${task.memory.giga}g -XX:-UsePerfData -Djava.io.tmpdir=TMP" ApplyVQSR  \
 	-R "${fasta}" \
 	-V "${vcf}"  \
 	-mode INDEL \
@@ -348,7 +348,7 @@ mkdir -p TMP
 
 find VCFS/ -name "*.vcf.gz" > TMP/jeter.list
 
-gatk  --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" GatherVcfs  \\
+gatk  --java-options "-Xmx${task.memory.giga}g -XX:-UsePerfData -Djava.io.tmpdir=TMP" GatherVcfs  \\
 	--INPUT TMP/jeter.list \\
 	--REORDER_INPUT_BY_FIRST_VARIANT \\
 	--OUTPUT TMP/jeter.vcf.gz	
