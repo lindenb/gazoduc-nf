@@ -22,18 +22,18 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include { validateParameters; paramsHelp; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
+//include { validateParameters; paramsHelp; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
 
 // Print help message, supply typical command line usage for the pipeline
 if (params.help) {
-   log.info paramsHelp("nextflow run my_pipeline --input input_file.csv")
+  // log.info paramsHelp("nextflow run my_pipeline --input input_file.csv")
    exit 0
 }
 // validate parameters
-validateParameters()
+//validateParameters()
 
 // Print summary of supplied parameters
-log.info paramsSummaryLog(workflow)
+//log.info paramsSummaryLog(workflow)
 
 
 include {BCFTOOLS_CONCAT} from '../../subworkflows/bcftools/bcftools.concat.02.nf'
@@ -83,8 +83,7 @@ workflow {
 
 		if(params.gather_by.equals("chrom") || params.gather_by.equals("chromosome") || params.gather_by.equals("contig")) {
 			chx = each_contig_ch.combine(apply_indel_ch.flatten().collect().toList())
-			chx.view()
-			//GATHER_BY_CONTIG(chx)
+			GATHER_BY_CONTIG(chx)
 			}
 		else
 			{
