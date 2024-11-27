@@ -27,10 +27,10 @@ workflow ACP_VCF_STEP {
 		vcf
 		sample2collection
 		blacklisted_bed
-		remove_samples
+		exclude_samples
 	main:
-		pihat_ch = PIHAT01(genome_ch, vcf, Channel.fromPath("NO_FILE"), blacklisted_bed, remove_samples)
-		cluster_ch = PLINK_CLUSTER( pihat_ch.genome_bcf, pihat_ch.plink_genome, remove_samples)
+		pihat_ch = PIHAT01(genome_ch, vcf, exclude_samples , blacklisted_bed)
+		cluster_ch = PLINK_CLUSTER( pihat_ch.genome_bcf, pihat_ch.plink_genome)
 		
 		assoc_ch = PLINK_ASSOC(genome_ch , pihat_ch.genome_bcf, cluster_ch.output)
 
@@ -66,7 +66,6 @@ process PLINK_CLUSTER {
 	input:
 		path(genome_bcf)
 		path(genome_plink)
-		path(remove_samples)
 	output:
 		path("cluster.mds"),emit:output
 		path("header.tsv"),emit:header
@@ -82,7 +81,6 @@ process PLINK_CLUSTER {
 		--read-genome '${genome_plink}' \\
 		--mds-plot ${num_components} \\
 		--cluster \\
-		${remove_samples.name.equals("NO_FILE")?"":"--remove \"${remove_samples}\""} \\
 		--out TMP/cluster
 
 	# reformat mds, normalize spaces, replace with tab

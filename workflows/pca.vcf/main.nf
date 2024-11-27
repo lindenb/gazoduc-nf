@@ -40,9 +40,9 @@ workflow ACP_VCF {
 		vcf
 		sample2collection
 		blacklisted_bed
-		exclude_samples
+		samples
 	main:
-		step1_ch = ACP_STEP01(genome_ch, vcf, sample2collection, blacklisted_bed, exclude_samples)
+		step1_ch = ACP_STEP01(genome_ch, vcf, sample2collection, blacklisted_bed,samples)
 
 		to_multiqc = step1_ch.multiqc
 

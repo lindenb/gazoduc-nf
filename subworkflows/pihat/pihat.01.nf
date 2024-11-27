@@ -51,9 +51,8 @@ workflow PIHAT01 {
 	take:
 		genome_ch
 		vcf
-		samples
+		exclude_samples
 		blacklisted_bed
-		remove_samples
 	main:
 		version_ch = Channel.empty();
 		to_zip = Channel.empty();
@@ -61,15 +60,14 @@ workflow PIHAT01 {
 		version_ch = version_ch.mix(vcf2contig_ch.version)
 
 		ctgvcf_ch = vcf2contig_ch.bed.splitCsv(header: false,sep:'\t',strip:true).
-                               map{T->[T[0],file(T[3])]}.
-				combine(samples)
+                               map{T->[T[0],file(T[3])]}
 
 
-		perCtg = PLINK_PER_CONTIG(genome_ch, blacklisted_bed, ctgvcf_ch)
+		perCtg = PLINK_PER_CONTIG(genome_ch, exclude_samples, blacklisted_bed, ctgvcf_ch)
 		version_ch = version_ch.mix(perCtg.version.collect())
 
 
-		pihat_ch = MERGE_PIHAT_VCF(vcf, remove_samples, perCtg.vcf.map{T->T.join("\t")}.collect())
+		pihat_ch = MERGE_PIHAT_VCF(vcf, perCtg.vcf.map{T->T.join("\t")}.collect())
 		version_ch = version_ch.mix(pihat_ch.version)
 
 
@@ -93,8 +91,9 @@ afterScript "rm -rf TMP"
 memory "3g"
 input:
 	tuple path(fasta),path(fai),path(dict)
+	path(exclude_samples)
 	path("BLACKLISTED/*")
-        tuple val(contig),path(vcf),path(samples)
+        tuple val(contig),path(vcf)
 output:
 	tuple val(contig),path("${contig}.bcf"),emit:vcf
 	path("version.xml"),emit:version
@@ -143,8 +142,19 @@ if [ ! -s TMP/jeter.x.bed ] ; then
 
 fi
 
+if ${!exclude_samples.name.equals("NO_FILE")}
+then
+	sort '${exclude_samples}' | uniq > TMP/a
+	bcftools query -l "${vcf}" | sort | uniq > TMP/b
+	comm -12 TMP/a TMP/b > TMP/x.samples
+	#test common samples
+	rm TMP/a TMP/b
+	test -s TMP/x.samples
+fi
+
+
 bcftools view -m2 -M2 ${filters} --types snps -O u \
-		${samples.name.equals("NO_FILE")?"":"--samples-file '${samples.toRealPath()}'"} \
+		${exclude_samples.name.equals("NO_FILE")?"":"--samples-file '^TMP/x.samples'"} \
 		"${vcf.toRealPath()}" "${contig}" |\
 	bcftools view --targets-file ^TMP/jeter.x.bed  --targets-overlap 2 --exclude-uncalled  --min-af "${pihatmaf}" --max-af "${1.0 - (pihatmaf as Double)}"  -i 'AC>0 ${contig.matches("(chr)?Y")?"":"&& F_MISSING < ${f_missing}"}'  -O v |\
 	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterjdk --nocode -e 'final double dp= variant.getGenotypes().stream().filter(G->G.isCalled() && G.hasDP()).mapToInt(G->G.getDP()).average().orElse(${minDP}); if( dp<${minDP} || dp>${maxDP}) return false; if (variant.getGenotypes().stream().filter(G->G.isCalled() && G.hasGQ()).anyMatch(G->G.getGQ()< ${pihatMinGQ} )) return false; return true;' |\
@@ -229,7 +239,7 @@ cat << EOF > version.xml
 	<entry key="name">${task.process}</entry>
 	<entry key="description">prepare pihat data per autosome</entry>
 	<entry key="vcf">${vcf}</entry>
-	<entry key="samples">${samples.toRealPath()}</entry>
+	<entry key="excludesamples">${exclude_samples.toRealPath()}</entry>
 	<entry key="contig">${contig}</entry>
 	<entry key="maf">${pihatmaf}</entry>
 	<entry key="min.GQ">${pihatMinGQ}</entry>
@@ -270,8 +280,19 @@ if [ ! -s TMP/jeter.x.bed ] ; then
 fi
 
 
+if ${!exclude_samples.name.equals("NO_FILE")}
+then
+	sort '${exclude_samples}' | uniq > TMP/a
+	bcftools query -l "${vcf}" | sort | uniq > TMP/b
+	comm -12 TMP/a TMP/b > TMP/x.samples
+	rm TMP/a TMP/b
+	#test common samples
+	test -s TMP/x.samples
+fi
+
+
 bcftools view -m2 -M2 --apply-filters '.,PASS' --types snps -O u \
-		${samples.name.equals("NO_FILE")?"":"--samples-file '${samples.toRealPath()}'"} \
+		${exclude_samples.name.equals("NO_FILE")?"":"--samples-file 'TMP/x.samples'"} \
 		"${vcf.toRealPath()}" "${contig}" |\
 	bcftools view --targets-file ^TMP/jeter.x.bed  --targets-overlap 1 --exclude-uncalled  -i 'AC>0' -O u |\
 	bcftools annotate -x 'INFO,ID,FILTER,QUAL,^FORMAT/GT' -O b -o TMP/jeter.bcf
@@ -286,7 +307,7 @@ cat << EOF > version.xml
 	<entry key="name">${task.process}</entry>
 	<entry key="description">prepare pihat data per sexual contig</entry>
 	<entry key="vcf">${vcf}</entry>
-	<entry key="samples">${samples}</entry>
+	<entry key="exclude samples">${exclude_samples}</entry>
 	<entry key="contig">${contig}</entry>
 </properties>
 EOF
@@ -312,7 +333,6 @@ cache "lenient"
 afterScript ""
 input:
 	path(vcf)
-	path(remove_samples)
 	val(L)
 output:
 	path("${prefix}plink.genome.txt.gz"),emit:plink_genome
@@ -346,7 +366,7 @@ awk -F '\t' '(\$1 ~ /^(chr)?[0-9]+\$/ ) {print \$2}' TMP/jeter.list > TMP/autoso
 
 # concat autosomes
 bcftools concat --allow-overlaps  -O b --file-list TMP/autosomes.list -o "TMP/jeter.bcf"
-plink --double-id --bcf TMP/jeter.bcf  --allow-extra-chr --genome --out TMP/plink ${remove_samples.name.equals("NO_FILE")?"":"--remove \"${remove_samples}\""} 
+plink --double-id --bcf TMP/jeter.bcf  --allow-extra-chr --genome --out TMP/plink
 
 
 ## for ACP subworkflow, I may need the vcf that was used to create the genome
