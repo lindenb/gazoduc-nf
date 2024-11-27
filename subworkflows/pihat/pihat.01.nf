@@ -147,7 +147,7 @@ bcftools view -m2 -M2 ${filters} --types snps -O u \
 		${samples.name.equals("NO_FILE")?"":"--samples-file '${samples.toRealPath()}'"} \
 		"${vcf.toRealPath()}" "${contig}" |\
 	bcftools view --targets-file ^TMP/jeter.x.bed  --targets-overlap 2 --exclude-uncalled  --min-af "${pihatmaf}" --max-af "${1.0 - (pihatmaf as Double)}"  -i 'AC>0 ${contig.matches("(chr)?Y")?"":"&& F_MISSING < ${f_missing}"}'  -O v |\
-	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/vcffilterjdk.jar --nocode -e 'final double dp= variant.getGenotypes().stream().filter(G->G.isCalled() && G.hasDP()).mapToInt(G->G.getDP()).average().orElse(${minDP}); if( dp<${minDP} || dp>${maxDP}) return false; if (variant.getGenotypes().stream().filter(G->G.isCalled() && G.hasGQ()).anyMatch(G->G.getGQ()< ${pihatMinGQ} )) return false; return true;' |\
+	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterjdk --nocode -e 'final double dp= variant.getGenotypes().stream().filter(G->G.isCalled() && G.hasDP()).mapToInt(G->G.getDP()).average().orElse(${minDP}); if( dp<${minDP} || dp>${maxDP}) return false; if (variant.getGenotypes().stream().filter(G->G.isCalled() && G.hasGQ()).anyMatch(G->G.getGQ()< ${pihatMinGQ} )) return false; return true;' |\
 	bcftools annotate --set-id '%CHROM:%POS:%REF:%FIRST_ALT' -x '^INFO/AC,INFO/AF,INFO/AN,QUAL,^FORMAT/GT' -O b -o TMP/jeter2.bcf
 	mv -v TMP/jeter2.bcf TMP/jeter1.bcf
 
@@ -252,9 +252,18 @@ mkdir TMP
 
 # reduce size of exclude bed
 
-if ${!blacklisted.name.equals("NO_FILE")}  ; then
-awk -F '\t' '(\$1=="${contig}")' "${blacklisted}" > TMP/jeter.x.bed
+
+# reduce size of exclude bed
+if test ! -L "BLACKLISTED/NO_FILE" ; then
+
+	awk -F '\t' '(\$1=="${contig}")' BLACKLISTED/*.bed > TMP/jeter.x.bed
+
+else
+
+	touch TMP/jeter.x.bed
+
 fi
+
 
 if [ ! -s TMP/jeter.x.bed ] ; then
         echo "${contig}\t0\t1" > TMP/jeter.x.bed
