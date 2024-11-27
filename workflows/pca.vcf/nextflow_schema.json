@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title":"GATK HC by BED",
+  "description":"GATK call by bed",
+  "type": "object",
+  "defs": { 
+    "input_and_output_params": { 
+      "title": "Input / Ouput",
+      "type": "object",
+      "required": ["fasta", "prefix","outdir"], 
+      "properties": {
+        "fasta": { 
+          "type": "string",
+	  "format": "file-path",
+          "exists": true,
+          "mimetype": "text/plain",
+          "pattern": "^\\S+\\.fn?a(sta)?(\\.gz)?$",
+          "description": "Path to FASTA genome file.",
+	  "fa_icon": "far fa-file-code"
+        },
+	"help": {
+		"type":"boolean",
+		"description": "display help"
+		},
+	"outdir": {
+                 "type": "string",
+                 "format": "directory-path",
+                 "description": "The output directory where the results will be saved. You have to use absolute paths to storage on Cloud infrastructure.",
+                 "fa_icon": "fas fa-folder-open"
+                },
+      }
+    }
+  },
+  "allOf": [
+    { "$ref": "#/defs/input_and_output_params" } 
+  ]
+}
