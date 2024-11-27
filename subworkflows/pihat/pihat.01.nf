@@ -107,7 +107,7 @@ script:
 	def f_missing= (params.pihat.f_missing as double)
 	def minDP= (params.pihat.min_DP as int)
 	def maxDP= (params.pihat.max_DP as int)
-	def gnomad_genome_path = params.gnomad_genome
+	def gnomad_genome_path = params.gnomad
 
 if(contig.matches("(chr)?[0-9]+"))
 
