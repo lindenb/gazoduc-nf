@@ -24,7 +24,7 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-include { validateParameters; paramsHelp; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
+//include { validateParameters; paramsHelp; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
 include { HC_COMBINE1 } from '../../../modules/gatk/gatk4.combine.gvcfs.01.nf'
 include { HC_COMBINE2 } from '../../../modules/gatk/gatk4.combine.gvcfs.02.nf'
 include { HC_GENOTYPE } from '../../../modules/gatk/gatk4.genotype.gvcfs.01.nf'
@@ -38,10 +38,10 @@ if (params.help) {
    exit 0
 }
 // validate parameters
-validateParameters()
+//validateParameters()
 
 // Print summary of supplied parameters
-log.info paramsSummaryLog(workflow)
+//log.info paramsSummaryLog(workflow)
 
 
 List makeSQRT(def L1) {
@@ -129,13 +129,16 @@ workflow {
         	}
 	else
 		{
-		smap0_ch = HC_GENOMICDB_SAMPLE_MAP(gvcfs_ch.map{it[0]}.collate(100))
+		smap0_ch = HC_GENOMICDB_SAMPLE_MAP(hc_ch.map{it[1]}.collate(100))
 
 		smap_ch = MERGE_SAMPLE_MAP(smap0_ch.output.collect())
 
-		bed_gvcfs = beds_ch.combine(gvcfs_ch).
+
+		bed_gvcfs = hc_ch.
+			map{[it[0].toRealPath(), it[1], it[2] ]}.
 			groupTuple().
 			map{[it[0], it[1].flatten().plus(it[2].flatten())]}
+
 
 		beds2_ch = SPLIT_BED2(bed_gvcfs).output.
 			flatMap{L1->{
