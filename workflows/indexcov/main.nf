@@ -39,7 +39,7 @@ if( params.help ) {
 
 
 workflow {
-	indexcov_ch = INDEXCOV(params,params.genomeId,file(params.bams), file(params.bai_samplesheet))
+	indexcov_ch = INDEXCOV(params.fasta,params.fai,file(params.samplesheet))
 
 	html = VERSION_TO_HTML(indexcov_ch.version)
 

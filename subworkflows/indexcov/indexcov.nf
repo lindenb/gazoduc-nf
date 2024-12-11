@@ -31,65 +31,37 @@ include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 
 workflow INDEXCOV {
      take:
-        meta /* meta */
-        genomeId
-        bams /* file containing the path to the bam/cram files . One per line */
-	bai_samplesheet /** tsv file containing sample and bai for BAI only files */
+        fasta
+	fai /* file containing the path to the bam/cram files . One per line */
+	samplesheet
      main:
         ch_version = Channel.empty()
 
-	if(bams.name.equals("NO_FILE") && bai_samplesheet.name.equals("NO_FILE")) {
-		throw new IllegalArgumentException("bams and bai_samplesheet are both NO_FILE");
+	sheet_ch  = Channel.fromPath(samplesheet).splitCsv(header:true,sep:'\t').
+		branch {
+			bai_only : !it.containsKey("bam") || it.get("bam").isEmpty() || it.get("bam").equals(".")
+			bam_only : true
 		}
 
-
+	
 	/** BAI only part */
-	if( !bai_samplesheet.name.equals("NO_FILE") ) {
-		bai_only0 = FROM_BAI_ONLY(genomeId, Channel.fromPath(bai_samplesheet).splitCsv(header:true,sep:'\t'))
-		bai_only = bai_only0.output.map{T->T[0]}
-		}
-	else
-		{
-		bai_only = Channel.empty()
-		}
+	bai_only_ch = FROM_BAI_ONLY(fasta,fai, sheet_ch.bai_only.map{[it.sample,file(it.bai)]})
+	bams_only_ch = REBUILD_BAI(fasta,fai, sheet_ch.bam_only.map{[it.sample,file(it.bam)]})
 
-	/** WHOLE BAM PRovided */
-	if( bams.name.equals("NO_FILE")) {
-		bams_only = Channel.empty()
-		}
-    	else if ( (params.mapq  as int)> 0 ) {
- 		log.info("mapq ${params.mapq} is greater than 0. rebuilding bam indexes... ${bams} ${genomeId}")
-		bams_ch = SAMTOOLS_SAMPLES([:], bams)
-		ch_version = ch_version.mix( bams_ch.version)
-
-        	sample_bam_fasta_ch = bams_ch.rows.filter{T->T.genomeId.equals(genomeId)}
-        
-		rebuild_bai_ch = REBUILD_BAI([:], sample_bam_fasta_ch)
-		ch_version = ch_version.mix( rebuild_bai_ch.version.first() ) 
-
-
-		bams_only = rebuild_bai_ch.bam
-
-        	}
-    	else
-		{
-		bams_only  = Channel.fromPath(bams).splitText().map{file(it.trim())}
-		}
-
+	
 
 	def collate_size = ((params.batch_size?:10000) as int)
 
-	bams2_ch = bams_only.
-		mix(bai_only).
-		toSortedList({a,b->a.name.compareTo(b.name)}).
+	bams2_ch = bams_only_ch.output.
+		mix(bai_only_ch.output).
+		toSortedList({a,b->a[0].name.compareTo(b[0].name)}).
 		flatten().
 		collate(collate_size).
 		map{T->["batch."+T.collect{V->V.toString()}.join(" ").md5().substring(0,7) , T]}
 		
-
-	executable_ch = DOWNLOAD_GOLEFT([:])
+	executable_ch = DOWNLOAD_GOLEFT()
 	ch_version = ch_version.mix( executable_ch.version)
-    	indexcov_ch = RUN_GOLEFT_INDEXCOV(executable_ch.executable ,genomeId , bams2_ch)
+    	indexcov_ch = RUN_GOLEFT_INDEXCOV(fasta,fai,executable_ch.executable, bams2_ch)
 	ch_version = ch_version.mix( indexcov_ch.version)
 
 	mergebed_ch= MERGE_BEDS(indexcov_ch.output.map{T->T[0]}.collect())
@@ -104,16 +76,13 @@ workflow INDEXCOV {
 	}
 
 process DOWNLOAD_GOLEFT {
-	tag "${params.goleft.version}"
 	errorStrategy "retry"
 	maxRetries 3
-	input:
-		val(meta)
 	output:
 		path("goleft"),emit:executable
 		path("version.xml"),emit:version
 	script:
-		def version = params.goleft.version
+		def version = task.ext.version?:"v0.2.6"
 		def url ="https://github.com/brentp/goleft/releases/download/${version}/goleft_linux64"
 	"""
 	wget -O goleft "${url}"
@@ -132,36 +101,32 @@ process DOWNLOAD_GOLEFT {
 	}
 
 process FROM_BAI_ONLY {
-    tag "${row.sample}"
+    tag "${sample}"
     afterScript "rm -rf TMP"
     memory "5g"
     input:	
-	val(genomeId)
-	val(row)
+	path(fasta)
+	path(fai)
+	tuple val(sample),path(bai)
     output:
-	tuple path("OUT/${row.sample}.bam"),path("OUT/${row.sample}.bam.bai"), emit: output
+	path("OUT/${sample}*"),emit: output
 
 script:
-        def fasta = params.genomes[genomeId].fasta
-	def reference = file(file(fasta).toRealPath())
-	def sample  = row.sample
-	def dict = "${reference.getParent()}/${reference.getSimpleName()}.dict"
 """
 	hostname 1>&2
 	${moduleLoad("samtools")}
 
 	mkdir -p TMP
-	test -s "${dict}"
-	cat "${dict}" > TMP/tmp.sam
+	samtools dict ${fasta} > TMP/tmp.sam
 	echo "@RG\tID:${sample}\tSM:${sample}\tLB:${sample}" >> TMP/tmp.sam
 	samtools sort --reference "${fasta}" -O BAM -o TMP/${sample}.bam -T TMP/tmp TMP/tmp.sam
 	rm TMP/tmp.sam
-	cp -v "${row.bai}" TMP/${sample}.bam.bai
+	cp -v "${bai}" TMP/${sample}.bam.bai
 
 	#just test
-	samtools idxstat TMP/${sample}.bam
+	samtools idxstat TMP/${sample}.bam 1>&2
 	
-	mv TMP OUT	
+	mv -v TMP OUT
 """
 }
 
@@ -172,21 +137,18 @@ script:
 
  **/
 process REBUILD_BAI {
-    tag "${row.sample} ${file(row.bam).name} mapq=${params.mapq}"
+    tag "${sample} ${bam.name} mapq=${params.mapq}"
     afterScript "rm -rf TMP"
     memory "5g"
     cpus 3
     input:
-        val meta
-        val(row)
+        path(fasta)
+        path(fai)
+        tuple val(sample),path(bam)
     output:
-	path("OUT/${row.sample}.bam"),     emit: bam
-	path("OUT/${row.sample}.bam.bai"), emit: bai
+	path("OUT/${sample}*"), emit: output
         path "version.xml",           emit: version
-
     script:
-	def genomeId = row.genomeId
-	def reference = params.genomes[genomeId].fasta
 	def mapq = params.mapq?:1
     """
 	hostname 1>&2
@@ -196,17 +158,17 @@ process REBUILD_BAI {
         # write header only
 	samtools view --header-only -O BAM  \
 		--threads ${task.cpus} \
-		-o "TMP/${row.sample}.bam" \
-		--reference "${reference}" \
-		"${row.bam}"
+		-o "TMP/${sample}.bam" \
+		--reference "${fasta}" \
+		"${bam}"
 
 	# hack about creating bam index. see main samtools manual
 	samtools view -F 3844 -q "${mapq}" --uncompressed \
 		--threads ${task.cpus} \
-		-o "/dev/null##idx##TMP/${row.sample}.bam.bai" \
+		-o "/dev/null##idx##TMP/${sample}.bam.bai" \
 		--write-index  -O BAM  \
-		--reference "${reference}" \
-		"${row.bam}"
+		--reference "${fasta}" \
+		"${bam}"
 
 	mv -v TMP OUT
 
@@ -224,13 +186,14 @@ process REBUILD_BAI {
 
 
 process RUN_GOLEFT_INDEXCOV {
-    tag "${name} N=${L.size()}"
+    tag "${name}"
     afterScript "rm -rf TMP"
     label "process_high"
     input:
+	path(fasta)
+	path(fai)
 	val executable
-	val genomeId
-	tuple val(name),val(L)
+	tuple val(name),path("BAMS/*")
     output:
     	path "*indexcov.zip"       , emit: zip
     	path "*files.list"          , emit: files
@@ -238,7 +201,6 @@ process RUN_GOLEFT_INDEXCOV {
     	path "version.xml"        , emit: version
 
     script:
-	def fasta = params.genomes[genomeId].fasta
     	def prefix = params.prefix.replaceAll("[\\.]+\$","")+"."+name
     	def prefix2 = prefix +"."
     """
@@ -247,9 +209,7 @@ process RUN_GOLEFT_INDEXCOV {
 	set -o pipefail
 	mkdir -p "${prefix}" TMP
 
-cat << EOF > TMP/jeter.list
-${L.join("\n")}
-EOF
+	find BAMS  -name "*.bam" -o -name "*.cram" > TMP/jeter.list
 
 	# test not empty
 	test -s TMP/jeter.list
@@ -283,8 +243,6 @@ EOF
 	<properties id="${task.process}">
 		<entry key="name">${task.process}</entry>
 		<entry key="description">run go left indexcov</entry>
-		<entry key="bams">${L.join( " ")}</entry>
-		<entry key="count-bams">${L.size()}</entry>
 		<entry key="goleft">\$(${executable} -h |  head -n 1 | sed 's/.*: //')</entry>
 		<entry key="versions">${getVersionCmd("tabix")}</entry>
 	</properties>
