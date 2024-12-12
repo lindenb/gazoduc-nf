@@ -26,18 +26,16 @@ include {getVersionCmd;isHg19;isHg38;moduleLoad} from '../utils/functions.nf'
 
 
 process DOWNLOAD_REFGENE {
-tag "${reference}"
+tag "${fasta}"
 afterScript "rm -rf TMP"
 input:
-	val(meta)
-	val(genomeId)
+	path(fasta)
+	path(fai)
+	path(dict)
 output:
-	path("${genomeId}.refGene.txt.gz"),emit:output
+	path("${fasta.baseName}.refGene.txt.*"),emit:output
 	path("version.xml"),emit:version
 script:
-	def genome = params.genomes[genomeId]
-	def reference = genome.fasta
-	def url="https://hgdownload.cse.ucsc.edu/goldenPath/${genome.ucsc_name}/database/refGene.txt.gz"
 """
 hostname 1>&2
 ${moduleLoad("jvarkit htslib")}
@@ -45,21 +43,31 @@ mkdir -p TMP
 set -o pipefail
 
 
-wget -O TMP/refGene.txt.gz "${url}"
-gunzip -c TMP/refGene.txt.gz |\
-		java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 3 --convert SKIP |\
-		LC_ALL=C sort -T TMP -t '\t' -k3,3 -k5,5n |\
-		bgzip > "${genomeId}.refGene.txt.gz"
+cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
+1:248956422	https://hgdownload.cse.ucsc.edu/goldenPath/hg38/database/refGene.txt.gz
+1:249250621	https://hgdownload.cse.ucsc.edu/goldenPath/hg19/database/refGene.txt.gz
+EOF
 
-tabix -f -0 -b 5 -e 6 -s 3 "${genomeId}.refGene.txt.gz"
+awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
+
+join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv | sort | uniq > TMP/jeter.url
+
+test -s TMP/jeter.url
+
+
+wget -O TMP/refGene.txt.gz `cat TMP/jeter.url`
+gunzip -c TMP/refGene.txt.gz |\
+		java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${fasta}" --column 3 --convert SKIP |\
+		LC_ALL=C sort -T TMP -t '\t' -k3,3 -k5,5n |\
+		bgzip > "${fasta.baseName}.refGene.txt.gz"
+
+tabix -f -0 -b 5 -e 6 -s 3 "${fasta.baseName}.refGene.txt.gz"
 
 ###############################################################################
 cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
 	<entry key="description">Download UCSC refgene</entry>
-	<entry key="reference">${reference}</entry>
-	<entry key="url"><url>${url}</url></entry>
 	<entry key="versions">${getVersionCmd("jvarkit/bedrenamechr wget")}</entry>
 </properties>
 EOF

@@ -27,8 +27,7 @@ nextflow.enable.dsl=2
 
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 include {dumpParams;runOnComplete;moduleLoad} from '../../modules/utils/functions.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
-include {SAMTOOLS_SAMPLES} from '../../subworkflows/samtools/samtools.samples.03.nf'
+//include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {DOWNLOAD_CYTOBAND} from '../../modules/ucsc/download.cytoband.nf'
 include {DOWNLOAD_REFGENE} from '../../modules/ucsc/download.refgene.nf'
 
@@ -42,53 +41,65 @@ if( params.help ) {
 
 
 workflow {
-	ch1 = IGVREPORTS([:],params.genomeId,file(params.bams),file(params.vcf))
-	html = VERSION_TO_HTML(ch1.version)
+	ch1 = IGVREPORTS(params.fasta, params.fai, params.dict,file(params.bams),file(params.vcf))
+	//html = VERSION_TO_HTML(ch1.version)
 	}
 
 runOnComplete(workflow)
 
 workflow IGVREPORTS {
 	take:
-		meta
-		genomeId
+		fasta
+		fai
+		dict
 		bams
 		vcf
 	main:
 		version_ch = Channel.empty()
 
-                snbam_ch = SAMTOOLS_SAMPLES(["with_header":false,"allow_multiple_references":false,"allow_duplicate_samples":false], bams)
-                version_ch = version_ch.mix(snbam_ch.version)
+                snbam_ch = SAMTOOLS_SAMPLES(fasta,fai,bams)
+		
 
-		rows = snbam_ch.rows.filter{T->T.genomeId.equals(genomeId)}
-
-		compile_ch = COMPILE([:])
+		compile_ch = COMPILE()
 		version_ch = version_ch.mix(compile_ch.version)
 
-		cyto_ch = DOWNLOAD_CYTOBAND([:],genomeId)
+		cyto_ch = DOWNLOAD_CYTOBAND(fasta,fai,dict)
                 version_ch = version_ch.mix(cyto_ch.version)
 
-		refgene_ch = DOWNLOAD_REFGENE([:],genomeId)
+		refgene_ch = DOWNLOAD_REFGENE(fasta,fai,dict)
                 version_ch = version_ch.mix(refgene_ch.version)
 
-		prepare_ch = PREPARE_IGVREPORTS([:], genomeId, compile_ch.output, rows.map{T->T.sample+"\t"+T.bam}.collect(), vcf )
+		prepare_ch = PREPARE_IGVREPORTS(
+			fasta,fai, dict,
+			compile_ch.output,
+			snbam_ch.output, 
+			vcf
+			)
                 version_ch = version_ch.mix(prepare_ch.version)
 
-		report_ch = IGVREPORT([:], genomeId, vcf, cyto_ch.output, refgene_ch.output, prepare_ch.output.splitCsv(header:true,sep:'\t') )
+		report_ch = IGVREPORT(fasta,fai,dict, vcf, cyto_ch.output, refgene_ch.output, prepare_ch.output.splitCsv(header:true,sep:'\t') )
                 version_ch = version_ch.mix(report_ch.version)
 		
-		version_ch = MERGE_VERSION("IGV report", version_ch.collect())
+		ZIPIT(report_ch.output.collect())
 
-	emit:
-		version = version_ch
-		htmls  = report_ch.output.collect()
 	}
 
+process SAMTOOLS_SAMPLES {
+afterScript "rm -rf TMP"
+input:
+	path(fasta)
+	path(fai)
+	path(bams)
+output:
+	path("sample_bam.tsv"),emit:output
+script:
+"""
+samtools samples -f '${fasta}' < "${bams}" | awk -F '\t' '\$3!="."' | cut -f1,2 > sample_bam.tsv
+"""
+}
 
 process COMPILE {
         afterScript "rm -rf TMP"
-        input:
-                val(meta)
         output:
                 path("minikit.jar"),emit:output
                 path("version.xml"),emit:version
@@ -401,31 +412,29 @@ EOF
 
 process PREPARE_IGVREPORTS {
 input:
-	val(meta)
-	val(genomeId)
+	path(fasta)
+	path(fai)
+	path(dict)
 	path(jar)
-	val(L)
+	path(sn2bam)
 	path(vcf)
 output:
 	path("output.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
-	def reference = params.genomes[genomeId].fasta
 """        
 hostname 1>&2     
 ${moduleLoad("jvarkit bcftools")}
 set -o pipefail
 mkdir -p OUT
 
-cat << EOF > jeter.list
-${L.join("\n")}
-EOF
+bcftools view "${vcf}" |\\
+	java -cp ${jar}:\${JVARKIT_DIST}/jvarkit.jar Minikit \\
+			--reference "${fasta}" \\
+			--bams ${sn2bam} \\
+			--out "\${PWD}/OUT" > output.tsv
 
-bcftools view "${vcf}" |\
-	java -cp ${jar}:\${JVARKIT_DIST}/vcffilterjdk.jar Minikit --reference "${reference}" --bams jeter.list --out "\${PWD}/OUT" > output.tsv
 
-
-rm jeter.list
 ###############################################################################
 cat << EOF > version.xml
 <properties id="${task.process}">
@@ -442,26 +451,27 @@ tag "${row.title}"
 afterScript "rm -rf TMP"
 conda "${params.conda}/IGVREPORTS"
 input:
-	val(meta)
-	val(genomeId)
-	val(vcf)
-	val(cytoband)
-	val(refgene)
+	path(fasta)
+	path(fai)
+	path(dict)
+	path(vcf)
+	path(cytoband)
+	path(refgene)
 	val(row)
 output:
 	path("${row.title}.html"),emit:output
 	path("version.xml"),emit:version
 script:
-	def reference = params.genomes[genomeId].fasta
+	def refgene2 = refgene.find{it.name.endsWith(".txt.gz")}.join(" ")
 """
 hostname 1>&2
 mkdir -p TMP
 
-create_report ${row.vcf.isEmpty()?row.bedpe:row.vcf}  ${reference} \
-	--ideogram "${cytoband}" \
-	${row.flanking.isEmpty()?"":"--flanking ${row.flanking}"} \
-	${row.info.isEmpty()?"":"--info-columns ${row.info}"} \
-	--tracks ${vcf} ${row.bams} ${refgene} \
+create_report ${row.vcf.isEmpty()?row.bedpe:row.vcf}  ${fasta} \\
+	--ideogram "${cytoband}" \\
+	${row.flanking.isEmpty()?"":"--flanking ${row.flanking}"} \\
+	${row.info.isEmpty()?"":"--info-columns ${row.info}"} \\
+	--tracks ${vcf} ${row.bams} ${refgene2} \\
 	--output TMP/${row.title}.html
 
 mv -v "TMP/${row.title}.html" ./
@@ -474,5 +484,16 @@ cat << EOF > version.xml
         <entry key="versions"></entry>
 </properties>
 EOF
+"""
+}
+
+process ZIPIT {
+input:
+	path(htmls)
+output:
+	path("archive.zip"),emit:output
+script:
+"""
+zip -9 -j archive.zip ${htmls}
 """
 }

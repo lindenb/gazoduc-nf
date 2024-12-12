@@ -26,36 +26,44 @@ include {getVersionCmd;isHg19;isHg38;moduleLoad} from '../utils/functions.nf'
 
 
 process DOWNLOAD_CYTOBAND {
-tag "${reference}"
+tag "${fasta.name}"
 afterScript "rm -rf TMP"
 input:
-	val(meta)
-	val(genomeId)
+	path(fasta)
+	path(fai)
+	path(dict)
 output:
-	path("${genomeId}.cytoBandIdeo.txt"),emit:output
+	path("${fasta.baseName}.cytoBandIdeo.txt"),emit:output
 	path("version.xml"),emit:version
 script:
-	def genome = params.genomes[genomeId]
-	def reference = genome.fasta
-	def url="https://hgdownload.cse.ucsc.edu/goldenPath/${genome.ucsc_name}/database/cytoBandIdeo.txt.gz"
 """
 hostname 1>&2
 ${moduleLoad("jvarkit")}
 mkdir -p TMP
 set -o pipefail
 
+cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
+1:248956422	https://hgdownload.cse.ucsc.edu/goldenPath/hg38/database/cytoBandIdeo.txt.gz
+1:249250621	https://hgdownload.cse.ucsc.edu/goldenPath/hg19/database/cytoBandIdeo.txt.gz
+EOF
 
-wget -O TMP/cytoBandIdeo.txt.gz "${url}"
+awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
+
+join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv | sort | uniq > TMP/jeter.url
+
+test -s TMP/jeter.url
+
+
+wget -O TMP/cytoBandIdeo.txt.gz `cat TMP/jeter.url`
+
 gunzip -c TMP/cytoBandIdeo.txt.gz |\
-		java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 1 --convert SKIP > "${genomeId}.cytoBandIdeo.txt" 
+		java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${fasta}" --column 1 --convert SKIP > "${fasta.baseName}.cytoBandIdeo.txt" 
 
 ###############################################################################
 cat << EOF > version.xml
 <properties id="${task.process}">
 	<entry key="name">${task.process}</entry>
 	<entry key="description">Download UCSC cytobands</entry>
-	<entry key="reference">${reference}</entry>
-	<entry key="url"><url>${url}</url></entry>
 	<entry key="versions">${getVersionCmd("jvarkit/bedrenamechr wget")}</entry>
 </properties>
 EOF
