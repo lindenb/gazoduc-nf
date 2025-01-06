@@ -94,7 +94,9 @@ output:
 	path("sample_bam.tsv"),emit:output
 script:
 """
+set -o pipefail
 samtools samples -f '${fasta}' < "${bams}" | awk -F '\t' '\$3!="."' | cut -f1,2 > sample_bam.tsv
+test -s sample_bam.tsv
 """
 }
 

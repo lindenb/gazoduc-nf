@@ -46,6 +46,7 @@ set -o pipefail
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
 1:248956422	https://hgdownload.cse.ucsc.edu/goldenPath/hg38/database/refGene.txt.gz
 1:249250621	https://hgdownload.cse.ucsc.edu/goldenPath/hg19/database/refGene.txt.gz
+1:123556469	https://hgdownload.cse.ucsc.edu/goldenPath/canFam4/database/refGene.txt.gz
 EOF
 
 awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
