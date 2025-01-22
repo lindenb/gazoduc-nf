@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 nextflow.enable.dsl=2
-
+include {ANNOTATE_SV_VCF_01} from "../../subworkflows/annotation/annotation.sv.01.nf"
 
 workflow {
 		def reference = Channel.fromPath([params.fasta,params.fai,params.dict]).collect().first()
@@ -67,6 +67,13 @@ workflow {
 		merge_gt = MERGE_GENOTYPES(genotype_ch.output.collect())
 		filter_delly = FILTER_DELLY( reference , delly2_ch.output, samplesheet_ch.map{it[0]+"\t"+it[3]}.collect() , merge_gt.output ) 
 
+		if(params.with_annotation==true) {
+			for_annot_ch = filter_delly.output.map{[
+				it[0].name.endsWith(".bcf")?it[0]:it[1], /* vcf */
+				it[0].name.endsWith(".bcf")?it[1]:it[0]  /* index */
+				]}
+			ANNOTATE_SV_VCF_01(reference, for_annot_ch)
+			}
 }
 
 if (false) {
@@ -120,7 +127,7 @@ process DOWNLOAD_DELLY2 {
 	output:
 		path("delly"),emit:output
 	script:
-		def version = params.delly2_version?:"1.3.2"
+		def version = params.delly2_version?:"1.3.3"
 		def url = "https://github.com/dellytools/delly/releases/download/v${version}/delly_v${version}_linux_x86_64bit"
 	"""
 	hostname 1>&2
@@ -144,11 +151,14 @@ script:
 """
 module load bedtools gatk
 mkdir -p TMP
+
 gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" ScatterIntervalsByNs \\
             --REFERENCE "${fasta}" \\
             --MAX_TO_MERGE "1" \\
             --OUTPUT "TMP/jeter.interval_list" \\
             --OUTPUT_TYPE "N"
+
+test -s TMP/jeter.interval_list
 
 gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" IntervalListToBed \\
             --INPUT "TMP/jeter.interval_list" \\
@@ -156,6 +166,7 @@ gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" IntervalList
             --SORT true
 
 mv TMP/jeter.bed ./exclude.bed
+test -s ./exclude.bed
 """
 }
 
@@ -200,7 +211,7 @@ afterScript "rm -f jeter.bed jeter2.bed jeter.interval_list"
 input:
 	path(reference)
 output:
-	path("exclude.bed"),optional:true,emit:output
+	path("exclude2.bed"),optional:true,emit:output /* exclude2.bed otherwise collision with bed from scatter_bed */
 script:
 	def fasta = reference.find{it.name.endsWith("a")}.first()
 	def fai = reference.find{it.name.endsWith(".fai")}.first()
@@ -227,7 +238,7 @@ url1=`cat  TMP/jeter.url`
 if [ ! -z "\${url1}" ] ; then
 	wget -O - "\${url1}" |\\
 		cut -f 1,2,3|\\
-		java -jar \${JVARKIT_DIST}/bedrenamechr.jar -R "${fasta}" --column 1 --convert SKIP > exclude.bed 
+		java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -R "${fasta}" --column 1 --convert SKIP > exclude2.bed 
 fi
 
 """
@@ -239,7 +250,7 @@ input:
 	path(reference)
 	path(xcludes)
 output:
-	path("exclude.bed"),emit:output
+	path("exclude_merged.bed"),emit:output
 script:
 	def fai = reference.find{it.name.endsWith(".fai")}.first()
 """
@@ -250,8 +261,9 @@ awk -F '\t' '(!(\$1 ~ /${params.exclude_contig_regex}/)) {printf("%s\t0\t%s\\n",
 
 cut -f1-3 ${xcludes} jeter2.bed | \
 	LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n |\
-	bedtools merge > exclude.bed
+	bedtools merge > exclude_merged.bed
 
+test -s exclude_merged.bed
 rm jeter2.bed
 """
 }
@@ -288,9 +300,8 @@ process CALL_DELLY {
 
 //  merge many files: https://github.com/dellytools/delly/issues/158
 process MERGE_DELLY {
-    label "process_short"
+    label "process_medium"
     afterScript "rm -rf TMP"
-    memory "20g"
     input:
 	path(reference)
 	path(delly)
@@ -332,7 +343,6 @@ process GENOTYPE_DELLY {
     cache 'lenient'
     errorStrategy 'finish'
     afterScript 'rm -rf TMP'
-    memory "15g"
     input:
 	path(reference)
 	path(delly)

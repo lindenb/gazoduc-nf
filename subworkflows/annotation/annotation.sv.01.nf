@@ -23,170 +23,278 @@ SOFTWARE.
 
 */
 
-
-include {getVersionCmd;moduleLoad} from '../../modules/utils/functions.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
-include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
-include {DOWNLOAD_GNOMAD_SV_01} from '../gnomad/download_gnomad_sv.01.nf'
-include {DOWNLOAD_DGV_01} from '../../modules/dgv/download.dgv.01.nf'
-include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf'
-include {JENSENLAB_DISEASES_01} from '../jensenlab/diseases.01.nf'
-include {BCFTOOLS_CONCAT_01} from '../bcftools/bcftools.concat.01.nf'
-include {CONCAT_FILES_01} from '../../modules/utils/concat.files.nf'
+def k1_hg19=249250621
+def k1_hg38=248956422
 
 
 workflow ANNOTATE_SV_VCF_01 {
 	take:
-		meta
-		genomeId
-		vcf
+		reference //bag fasta,fai/dict
+		vcf_ch // channel containing [vcf,vcfidx]
 	main:
-		version_ch = Channel.empty()
-	
+		gtf1_ch = PROCESS_GTF1()
+		gtf2_ch = PROCESS_GTF2()
+		gnomad_ch = DOWNLOAD_GNOMAD_SV(reference)
+		dgv_ch = DOWNLOAD_DGV(reference) 
+		ensemblreg_ch = DOWNLOAD_ENSEMBL_REG(reference)
 
-		gnomad_ch = DOWNLOAD_GNOMAD_SV_01([:], genomeId)
-		version_ch = version_ch.mix(gnomad_ch.version)		
+		
+		ann_ch= ANNOTATE(
+			vcf_ch,
+			gtf1_ch.output,
+			gtf2_ch.output,
+			gnomad_ch.output,
+			dgv_ch.output,
+			ensemblreg_ch.output
+			)
 
-		dgv_ch = DOWNLOAD_DGV_01([:], genomeId) 
-		version_ch = version_ch.mix(dgv_ch.version)
-
-		ensemblreg_ch = DOWNLOAD_ENSEMBL_REG([:], genomeId)
-		version_ch = version_ch.mix(ensemblreg_ch.version)
-
-		diseases_ch = JENSENLAB_DISEASES_01([:], genomeId )
-
-		ch1_ch  = VCF_TO_BED([:],vcf)
-		version_ch = version_ch.mix(ch1_ch.version)
-
-		ch2_ch = ch1_ch.bed.splitCsv(header:false,sep:'\t').
-			map{T->[T[0],T[3]]}
-
-
-		db2_ch = CONCAT_FILES_01([:], Channel.empty().mix(diseases_ch.output).collect())
-		version_ch = version_ch.mix(db2_ch.version)
-	
-
-		ann_ch= ANNOTATE([:], genomeId, gnomad_ch.bed, dgv_ch.bed, ensemblreg_ch.output, db2_ch.output, ch2_ch)
-		version_ch = version_ch.mix(ann_ch.version)
-	
-		ch5_ch = COLLECT_TO_FILE_01([:], ann_ch.vcf.collect())
-		version_ch = version_ch.mix(ch5_ch.version)
-
-		ch6_ch = BCFTOOLS_CONCAT_01([:],ch5_ch.output, file("NO_FILE"))
-		version_ch = version_ch.mix(ch6_ch.version)
-
-
-		version_ch = MERGE_VERSION(meta, "svannotation", "VCF SV annotation", version_ch.collect())
 	emit:
-		version= version_ch
-		vcf = ch6_ch.vcf
-		index = ch6_ch.index
+		output = ann_ch.output
 	}
 
-
-process DOWNLOAD_ENSEMBL_REG {
-input:
-	val(meta)
-	val(genomeId)
+process PROCESS_GTF1 {
+label "process_quick"
 output:
-	path("ensembl.reg.gff.gz"),emit:output
-	path("version.xml"),emit:version
-	path("ensembl.reg.gff.gz.tbi"),emit:index
+	path("gtf.features.*"),emit:output
 script:
-	def genome = params.genomes[genomeId]
-	def url = genome.ensembl_regulatory_gff_url
+	def xxxstream=1000
 """
-hostname 1>&2
-${moduleLoad("htslib")}
+module load htslib
+set -xe
+set -o pipefail
 
-if ${url==null || url.isEmpty()} ; then
+gunzip -c ${params.gtf} |\\
+	awk '/^#/ {next;} {printf("%s\t%d\t%s\t%s\\n",\$1,int(\$4)-1,\$5,\$3); if(\$3=="gene") {  {X=${xxxstream}; printf("%s\t%s\t%s\t%s_%s\\n",\$1,(int(\$4)-X<0?0:int(\$4)-X),\$4,(\$7=="+"?"upstream":"downstream"),X); printf("%s\t%s\t%s\t%s_%s\\n",\$1,\$5,\$5+X,(\$7=="+"?"downstream":"upstream"),X);}  } }' |\\
+	LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n |\\
+	uniq |\\
+	bgzip > gtf.features.bed.gz
 
-	touch ensembl.reg.gff
+tabix -p bed -f gtf.features.bed.gz
 
-else
-
-	wget -O - "${url}" | gunzip -c | LC_ALL=C sort -T . -t '\t' -k1,1 -k4,4n > ensembl.reg.gff
-	test -s ensembl.reg.gff
-
-fi
-
-bgzip ensembl.reg.gff
-tabix -f -p gff ensembl.reg.gff.gz
-
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="description">Download ensembl ref</entry>
-	<entry key="url"><a>${url}</a></entry>
-	<entry key="version">${getVersionCmd("wget bgzip tabix")}</entry>
-</properties>
-EOF
+echo '##INFO=<ID=GTF_FEATURE,Number=.,Type=String,Description="features from ${params.gtf}">' > gtf.features.hdr
 """
 }
 
-process ANNOTATE {
-tag "${file(vcf).name} ${contig}"
-memory "3g"
-afterScript "rm -rf TMP"
-input:
-	val(meta)
-	val(genomeId)
-	val(gnomad_sv_bed)
-	val(dgv_bed)
-	val(ensembl_reg)
-	path(annotations_files)
-	tuple val(contig),val(vcf)
+
+
+process PROCESS_GTF2 {
+label "process_quick"
 output:
-	path("output.bcf"),emit:vcf
-	path("version.xml"),emit:version
+	path("gtf.genes.*"),emit:output
 script:
-	def genome = params.genomes[genomeId]
-	def gtf =  genome.gtf
-	def reference = genome.fasta
+"""
+set -xe
+module load htslib jvarkit
+set -o pipefail
+
+
+java -jar \${JVARKIT_DIST}/jvarkit.jar gtf2bed --columns "gtf.feature,gene_name" "${params.gtf}" |\\
+	awk -F '\t' '(\$4=="gene" && \$5!=".")' |\\
+	cut -f1,2,3,5 |\\
+	LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n |\\
+	uniq | bgzip > gtf.genes.bed.gz
+
+tabix -p bed -f gtf.genes.bed.gz
+
+echo '##INFO=<ID=GENE,Number=.,Type=String,Description="gene from ${params.gtf}">' > gtf.genes.hdr
 
 """
+}
+
+process DOWNLOAD_GNOMAD_SV {
+label "process_quick"
+input:
+	path(reference)
+output:
+	path("gnomad.sv.*"),emit:output
+script:
+	def fai = reference.find{it.name.endsWith(".fai")}.first()
+	def dict = reference.find{it.name.endsWith(".dict")}.first()
+"""
+module load htslib jvarkit
+set -xe
+
+mkdir -p TMP
+cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
+1:${k1_hg38}	https://storage.googleapis.com/gcp-public-data--gnomad/release/4.1/genome_sv/gnomad.v4.1.sv.sites.bed.gz
+1:${k1_hg19}	https://storage.googleapis.com/gcp-public-data--gnomad/papers/2019-sv/gnomad_v2.1_sv.sites.bed.gz
+EOF
+
+awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
+
+join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv | sort | uniq > TMP/jeter.url
+
+test -s TMP/jeter.url
+
+wget -O - `cat TMP/jeter.url` |\\
+	gunzip -c |\\
+	awk -F '\t' '(NR==1){col=-1;for(i=1;i<=NF;i++) {if(col<0 && (\$i=="GRPMAX_AF" ||\$i=="POPMAX_AF")) col=i;} next;} {if(col>1) printf("%s\\t%s\\t%s\\t%s\\t%s\\n",\$1,\$2,\$3,\$4,(\$col ~ /^[0-9Ee\\-\\.]+\$/? \$col:"."));}'  |\
+	java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${dict}" --column 1 --convert SKIP  |\\
+	LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n |\\
+        uniq | bgzip > gnomad.sv.bed.gz
+	
+tabix -f -p bed gnomad.sv.bed.gz
+
+
+echo '##INFO=<ID=GNOMAD_ID,Number=1,Type=String,Description="First GNOMAD SV ID found for this variant">' >  gnomad.sv.hdr
+echo '##INFO=<ID=GNOMAD_AF,Number=1,Type=Float,Description="GNOMAD SV MAX AF">' >> gnomad.sv.hdr
+
+"""	
+}
+
+process DOWNLOAD_ENSEMBL_REG {
+label "process_quick"
+input:
+	path(reference)
+output:
+	path("ensembl.reg.*"),emit:output
+script:
+	def fai = reference.find{it.name.endsWith(".fai")}.first()
+	def dict = reference.find{it.name.endsWith(".dict")}.first()
+"""
 hostname 1>&2
-${moduleLoad("jvarkit bedtools bcftools")}
+set -xe
+module load htslib jvarkit
+
+mkdir -p TMP
+cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
+1:${k1_hg38}	https://ftp.ensembl.org/pub/release-111/regulation/homo_sapiens/homo_sapiens.GRCh38.Regulatory_Build.regulatory_features.20221007.gff.gz
+1:${k1_hg19}	https://ftp.ensembl.org/pub/grch37/current/regulation/homo_sapiens/homo_sapiens.GRCh37.Regulatory_Build.regulatory_features.20201218.gff.gz
+EOF
+
+awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
+
+join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv | sort | uniq > TMP/jeter.url
+
+test -s TMP/jeter.url
+
+wget -O - `cat TMP/jeter.url` |\\
+	gunzip -c |\
+	awk '/^#/ {next;} {printf("%s\t%d\t%s\t%s\\n",\$1,int(\$4)-1,\$5,\$3);}' |\\
+	java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${dict}" --column 1 --convert SKIP  |\\
+	LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n | uniq |\\
+	bgzip > ensembl.reg.bed.gz
+
+tabix -p bed -f ensembl.reg.bed.gz
+
+echo '##INFO=<ID=ENS_REG,Number=.,Type=String,Description="features from Ensembl Regulation">' > ensembl.reg.hdr
+
+"""
+}
+
+process DOWNLOAD_DGV {
+label "process_quick"
+input:
+	path(reference)
+output:
+       	path("dgv.*"),emit:output
+script:
+	def fai = reference.find{it.name.endsWith(".fai")}.first()
+	def dict = reference.find{it.name.endsWith(".dict")}.first()
+"""
+hostname 1>&2
+module load htslib jvarkit
+set -xe
+
+mkdir -p TMP
+cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
+1:${k1_hg38}	http://dgv.tcag.ca/dgv/docs/GRCh38_hg38_variants_2020-02-25.txt
+1:${k1_hg19}	http://dgv.tcag.ca/dgv/docs/GRCh37_hg19_variants_2020-02-25.txt
+EOF
+
+awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
+
+join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv | sort | uniq > TMP/jeter.url
+
+test -s TMP/jeter.url
+
+wget  -O - `cat TMP/jeter.url` |\
+	awk -F '\t' '(NR==1){col=-1;for(i=1;i<=NF;i++) {if(col<0 && \$i=="frequency") col=i;} next;} {if(col>1) printf("%s\\t%s\\t%s\\t%s\\t%s\\n",\$2,\$3,\$4,\$1,(\$col ~ /^[0-9Ee\\-\\.]+\$/? \$col:"."));}'  |\
+	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${dict}" --column 1 --convert SKIP |\
+	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\\
+	bgzip > dgv.bed.gz
+
+tabix  -p bed -f dgv.bed.gz
+
+
+echo '##INFO=<ID=DGV_ID,Number=1,Type=String,Description="First DGV ID found for the variant">' >  dgv.hdr
+echo '##INFO=<ID=DGV_AF,Number=1,Type=Float,Description="DGV_FREQUENCY">' >> dgv.hdr
+"""
+}
+
+
+
+process ANNOTATE {
+label "process_quick"
+tag "${vcf.name}"
+afterScript "rm -rf TMP"
+input:
+	tuple path(vcf),path(vcfidx)
+	path(gtf1_files)
+	path(gtf2_files)
+	path(gnomad_files)
+	path(dgv_files)
+	path(ensemblreg_files)
+output:
+	tuple path("${vcf.getBaseName()}.ann.bcf"),path("${vcf.getBaseName()}.ann.bcf.csi"),emit:output
+script:
+	def overlap=0.7
+"""
+hostname 1>&2
+module load bcftools
 mkdir -p TMP
 set -x
+                
+bcftools annotate --force --annotations "${gtf1_files.find{it.name.endsWith(".gz")}.first()}" \
+	-h "${gtf1_files.find{it.name.endsWith(".hdr")}.first()}" \
+	-c "CHROM,FROM,TO,GTF_FEATURE" \
+	--merge-logic GTF_FEATURE:unique \
+	-O u -o TMP/jeter2.bcf "${vcf}"
+                
+mv TMP/jeter2.bcf TMP/jeter1.bcf
 
-bcftools view "${vcf}" "${contig}" |\
-	java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar \
-			vcfsvannotator \
-			--dgv '${dgv_bed}' \
-			--gnomad '${gnomad_sv_bed}' \
-			--ensemblreg '${ensembl_reg}' \
-			--gtf '${gtf}' |\
-	bcftools view -O u -o TMP/output.bcf
+bcftools annotate --force --annotations "${gtf2_files.find{it.name.endsWith(".gz")}.first()}" \
+	-h "${gtf2_files.find{it.name.endsWith(".hdr")}.first()}" \
+	-c "CHROM,FROM,TO,GENE" \
+	--merge-logic GENE:unique \
+	-O u -o TMP/jeter2.bcf TMP/jeter1.bcf
+                
+mv TMP/jeter2.bcf TMP/jeter1.bcf
 
-	sed -e 's/,GENE_NAME,DOID,/,-,-,/' "${annotations_files}" | while IFS='\t' read DATABASE COLS HEADER MERGELOGIC
-        do
-                test -f "\${DATABASE}"
-                test -f "\${HEADER}"
-                test -f "\${DATABASE}.tbi"
-
-                bcftools annotate --force --annotations "\${DATABASE}" \
-                        -h "\${HEADER}" \
-                        -c "\${COLS}" \
-			\${MERGELOGIC} \
-			-O u -o TMP/jeter2.bcf TMP/output.bcf
-                mv TMP/jeter2.bcf TMP/output.bcf
-        done
+bcftools annotate --force --annotations "${ensemblreg_files.find{it.name.endsWith(".gz")}.first()}" \
+	-h "${ensemblreg_files.find{it.name.endsWith(".hdr")}.first()}" \
+	-c "CHROM,FROM,TO,ENS_REG" \
+	--merge-logic ENS_REG:unique \
+	-O u -o TMP/jeter2.bcf TMP/jeter1.bcf
+                
+mv TMP/jeter2.bcf TMP/jeter1.bcf
 
 
-bcftools index -f  TMP/output.bcf
+bcftools annotate --force --annotations "${gnomad_files.find{it.name.endsWith(".gz")}.first()}" \
+	-h "${gnomad_files.find{it.name.endsWith(".hdr")}.first()}" \\
+	-c "CHROM,FROM,TO,GNOMAD_ID,GNOMAD_AF" \\
+	--merge-logic 'GNOMAD_ID:first,GNOMAD_AF:max' \\
+	--min-overlap "${overlap}:${overlap}" \\
+	-O u -o TMP/jeter2.bcf TMP/jeter1.bcf
+                
+mv TMP/jeter2.bcf TMP/jeter1.bcf
 
-mv TMP/output.bcf ./
-mv TMP/output.bcf.csi ./
+bcftools annotate --force --annotations "${dgv_files.find{it.name.endsWith(".gz")}.first()}" \
+	-h "${dgv_files.find{it.name.endsWith(".hdr")}.first()}" \\
+	-c "CHROM,FROM,TO,DGV_ID,DGV_AF" \\
+	--merge-logic 'DGV_ID:first,DGV_AF:max' \\
+	--min-overlap "${overlap}:${overlap}" \\
+	-O u -o TMP/jeter2.bcf TMP/jeter1.bcf
+                
+mv TMP/jeter2.bcf TMP/jeter1.bcf
 
-cat <<- EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="description">Annotate contig</entry>
-	<entry key="vcf">${vcf}</entry>
-	<entry key="contig">${contig}</entry>
-	<entry key="version">${getVersionCmd("bcftools")}</entry>
-</properties>
-EOF
+
+
+
+bcftools index -f TMP/jeter1.bcf
+
+mv TMP/jeter1.bcf ${vcf.getBaseName()}.ann.bcf
+mv TMP/jeter1.bcf.csi ${vcf.getBaseName()}.ann.bcf.csi
+
 """
 }

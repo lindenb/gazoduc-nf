@@ -22,20 +22,36 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-nextflow.enable.dsl=2
 
 
-include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
-include {runOnComplete} from '../../../modules/utils/functions.nf'
 include {ANNOTATE_SV_VCF_01} from '../../../subworkflows/annotation/annotation.sv.01.nf'
-include {MERGE_VERSION} from '../../../modules/version/version.merge.nf'
 
 
 workflow {
-	ann_ch = ANNOTATE_SV_VCF_01([:], params.genomeId, file(params.vcf))
+	reference = Channel.of(file(params.fasta),file(params.dict),files(params.fai)).collect()
+	ann_ch = ANNOTATE_SV_VCF_01(
+		reference, 
+		Channel.of([file(params.vcf),file(params.vcf+(params.vcf.endsWith(".bcf")?".csi":".tbi"))])
+		)
 
-	html = VERSION_TO_HTML(ann_ch.version)
-	
+	CONCAT(ann_ch.output.flatten().collect())
 	}
 
-runOnComplete(workflow)
+
+process CONCAT {
+label "process_short"
+input:
+	path("VCF/*")
+output:
+	path("annot.sv.bcf")
+	path("annot.sv.bcf.csi")
+script:
+"""
+module load bcftools
+find VCF \\( -name "*.bcf" -o -name "*.vcf.gz" \\) > jeter.list
+
+bcftools concat -a --file-list jeter.list -O b -o annot.sv.bcf
+bcftools index annot.sv.bcf
+rm jeter.list
+"""
+}
