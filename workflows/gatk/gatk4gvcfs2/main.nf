@@ -104,7 +104,6 @@ workflow {
 		hc_ch = hc_ch.mix( HC_BAM_BED( genome_ch, dbsnp_ch, beds_ch.combine(bams_ch)).output )
 		}
 
-
        if(params.genomicsDB==false) {
 		combine1_input_ch = hc_ch.map{[it[0].toRealPath(),[it[1],it[2]]]}.
 			groupTuple().
@@ -129,11 +128,6 @@ workflow {
         	}
 	else
 		{
-		smap0_ch = HC_GENOMICDB_SAMPLE_MAP(hc_ch.map{it[1]}.collate(100))
-
-		smap_ch = MERGE_SAMPLE_MAP(smap0_ch.output.collect())
-
-
 		bed_gvcfs = hc_ch.
 			map{[it[0].toRealPath(), it[1], it[2] ]}.
 			groupTuple().
@@ -149,7 +143,7 @@ workflow {
 				}
 			return L;
 			}}
-		genomiddb_ch = HC_GENOMICDB_IMPORT(genome_ch,smap_ch.output, beds2_ch)
+		genomiddb_ch = HC_GENOMICDB_IMPORT(genome_ch,beds2_ch)
 		hg = HC_GENOMICDB_GENOTYPE(genome_ch, dbsnp_ch, genomiddb_ch.output)
 		}
 	concat0_ch = VCF_CONCAT1(hg.output.collate(10).map{it.flatten()})
@@ -159,6 +153,7 @@ workflow {
 		stats_ch = BCFTOOLS_STATS(genome_ch,concat_ch.output)
 		mqc_ch = MULTIQC(file(params.sample2population), stats_ch.output)
 		}
+
 	}
 
 

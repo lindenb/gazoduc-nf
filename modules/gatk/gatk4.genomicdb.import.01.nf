@@ -32,7 +32,6 @@ maxRetries 2
 time "3h"
 input:
         tuple path(fasta),path(fai),path(dict)
-	path(sample_map)
         tuple path(bed),path("VCFS/*")
 output:
         tuple path(bed),path("database"),emit:output
@@ -44,13 +43,30 @@ module load gatk/0.0.0
 mkdir -p TMP
 set -x
 
-SQRT=`awk 'END{X=NR;if(X<10){print(X);} else {z=sqrt(X); print (z==int(z)?z:int(z)+1);}}' "${sample_map}"`
+find ./VCFS -name "*.vcf.gz" > TMP/jeter.list
+test -s TMP/jeter.list
+
+cat TMP/jeter.list | while read F
+do
+        gunzip -c "\${F}" | grep "^#CHROM" -m1 | cut -f 10 | tr "\\n" "\t" >> TMP/sample.map
+        echo "\${F}" >> TMP/sample.map
+done
+
+
+# sort on sample name
+LC_ALL=C sort -t '\t' -k1,1 -T TMP TMP/sample.map > "TMP/jeter.map"
+test -s TMP/jeter.map
+mv TMP/jeter.map TMP/sample.map
+
+
+
+SQRT=`awk 'END{X=NR;if(X<10){print(X);} else {z=sqrt(X); print (z==int(z)?z:int(z)+1);}}' TMP/sample.map`
 
 gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" GenomicsDBImport \\
     -R ${fasta} \\
     --batch-size ${(batchSize as Integer) <= 0 ? "\${SQRT}" : ""+batchSize} \\
     ${(task.cpus as Integer) > 1 ? "  --reader-threads " +task.cpus : "" } \\
-    --sample-name-map ${sample_map} \
+    --sample-name-map TMP/sample.map \
     -L "${bed}" \
     --genomicsdb-workspace-path "TMP/database"
 

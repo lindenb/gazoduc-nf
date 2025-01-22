@@ -35,7 +35,6 @@ include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf'
  */
 workflow JVARKIT_VCF_TO_BED_01 {
 	take:
-		meta
 		reference /* not used, just in case.. */
 		vcf /* path to vcf, or file with .list suffix */
 		userbed /* limit to that BED or NO_FILE (exon.bed) */
