@@ -25,30 +25,15 @@ SOFTWARE.
 
 
 process MOSDEPTH_DOWNLOAD_01 {
+label "process_quick"
 output:
-	path("mosdepth"),emit:executable
-	path("version.xml"),emit:version
+	path("mosdepth"),emit:output
 script:
-	def mosdepth_version = params.mosdepth_version?:"0.3.8"
+	def mosdepth_version = task.ext.mosdepth_version?:"0.3.11"
 	def url = "https://github.com/brentp/mosdepth/releases/download/v${mosdepth_version}/mosdepth"
 """
 hostname 1>&2
 wget -O mosdepth "${url}"
 chmod +x mosdepth
-
-##################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">download mosdepth</entry>
-        <entry key="mosdepth.version">${mosdepth_version}</entry>
-        <entry key="url"><a>${url}</a></entry>
-</properties>
-EOF
-"""
-stub:
-"""
-touch mosdepth
-echo "<properties/>" > version.xml
 """
 }

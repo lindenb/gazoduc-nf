@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -25,14 +25,8 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 include {MOSDEPTH_BAMS_01} from '../../subworkflows/mosdepth/mosdepth.01.nf'
-include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
-include {runOnComplete} from '../../modules/utils/functions.nf'
 
 if( params.help ) {
-    gazoduc.usage().
-		name("mosdepth").
-		description("apply mosdepth to a set of bams").
-		print();
     exit 0
     } else {
 	gazoduc.validate();
@@ -40,9 +34,8 @@ if( params.help ) {
 
 
 workflow {
-	ch1 = MOSDEPTH_BAMS_01([],params.genomeId, file(params.bams), file(params.bed))
-	html = VERSION_TO_HTML(params,ch1.version)
+	reference = Channel.of(file(params.fasta),file(params.fai),file(params.dict))
+	ch1 = MOSDEPTH_BAMS_01(reference, file(params.bams), file(params.bed))
 	}
 
-runOnComplete(workflow);
 

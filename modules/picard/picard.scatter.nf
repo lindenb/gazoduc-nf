@@ -29,43 +29,24 @@ include {moduleLoad} from '../utils/functions.nf'
 
 
 process SCATTER_INTERVALS_BY_NS {
-tag "${fasta.name}"
-memory "3g"
+label "process_quick"
 input:
-	val(meta)
-	path(fasta)
+	path(fasta) // fasta,fai,dict
 output:
-	path("${fasta.getSimpleName()}.${meta.OUTPUT_TYPE}.${meta.MAX_TO_MERGE}.interval_list"), emit:output
-	path("version.xml"), emit:version
-
+	path("*.interval_list"), emit:output
 script:
-	if(!meta.containsKey("OUTPUT_TYPE")) throw new IllegalArgumentException("meta.OUTPUT_TYPE is missing");
-	if(!meta.containsKey("MAX_TO_MERGE")) throw new IllegalArgumentException("meta.MAX_TO_MERGE is missing");
-
-
-	type = meta.OUTPUT_TYPE
-	maxToMerge = meta.MAX_TO_MERGE
-
+	def fasta = reference.find{it.name.endsWith("a")}.first()
+	def type = task.ext.type
+	def max_to_merge = task.ext.max_to_merge
 	"""
 	hostname 1>&2
 	${moduleLoad("picard")}
 
 	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=. -jar \${PICARD_JAR} ScatterIntervalsByNs \
-	    -R "${fasta.toRealPath()}" \
-	    --MAX_TO_MERGE "${maxToMerge}" \
-	    -O "${fasta.getSimpleName()}.${type}.${maxToMerge}.interval_list" \
+	    -R "${fasta}" \
+	    --MAX_TO_MERGE "${max_to_merge}" \
+	    -O "${fasta.getSimpleName()}.${type}.${max_to_merge}.interval_list" \
 	    -OUTPUT_TYPE "${type}"
-
-	cat << EOF > version.xml
-	<properties id="${task.process}">
-		<entry key="name">${task.process}</entry>
-		<entry key="description">call ScatterIntervalsByNs to get a list of intervals</entry>
-		<entry key="reference">${fasta}</entry>
-		<entry key="type">${type}</entry>
-		<entry key="maxToMerge">${maxToMerge}</entry>
-		<entry key="picard">\$(java -jar \${PICARD_JAR} ScatterIntervalsByNs --version 2>&1)</entry>
-	</properties>
-	EOF
 	"""
 	}
 

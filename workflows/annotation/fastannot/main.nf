@@ -132,7 +132,10 @@ script:
 """
 module load snpEff/5.2.c
 mkdir -p SNPEFFX TMP
-java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${SNPEFF_JAR} download -dataDir  "\${PWD}/SNPEFFX"  '${params.snpeff_db}'
+java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${SNPEFF_JAR} \\
+	download \\
+	-dataDir "\${PWD}/SNPEFFX"  \\
+	'${params.snpeff_db}'
 test -s SNPEFFX/*/snpEffectPredictor.bin
 mv SNPEFFX SNPEFF
 """
@@ -150,11 +153,14 @@ input:
 	path(bed)
 	tuple val(contig),val(start0),val(end),path(vcf),path(vcfidx)
 output:
-	tuple path("${contig}_${start0}_${end}.*"),emit:output
+	path("${contig}_${start0}_${end}.*"),emit:output
 script:
 	def gnomadAF = params.gnomadAF
 	def gnomadPop = params.gnomadPop
 	def soacn = params.soacn
+	def soft_filters = params.soft_filters.toLowerCase().split("[, ]");
+	def soft_filter_gnomad = soft_filters.contains("gnomad")
+	def soft_filter_so = soft_filters.contains("so")
 """
 hostname 1>&2
 module load bedtools bcftools jvarkit snpEff/5.2.c
@@ -181,7 +187,8 @@ java -jar -Xmx${task.memory.giga}G  -Djava.io.tmpdir=TMP \${SNPEFF_JAR} eff \\
 
 
 if ${!soacn.isEmpty()} ; then
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterso \
+	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterso \\
+		${soft_filter_so?"--filterout BAD_SO":""} \\
 		--acn "${soacn}" TMP/jeter1.vcf > TMP/jeter2.vcf
 	mv TMP/jeter2.vcf TMP/jeter1.vcf
 fi
@@ -193,6 +200,21 @@ java -Xmx${task.memory.giga}G  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarki
 
 mv TMP/jeter2.vcf TMP/jeter1.vcf
 
+if ${!soft_filter_gnomad}
+then
+	bcftools view -e 'FILTER ~ "GNOMAD_GENOME_InbreedingCoeff" || FILTER ~ "GNOMAD_GENOME_AC0" || FILTER  ~ "GNOMAD_GENOME_AS_VQSR" || FILTER ~ "GNOMAD_GENOME_BAD_AF"' TMP/jeter1.vcf > TMP/jeter2.vcf
+
+	mv TMP/jeter2.vcf TMP/jeter1.vcf
+fi
+
+
+if ${params.containsKey("cadd") && !params.cadd.isEmpty()}
+then
+
+	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfcadd \
+                        --tabix "${params.cadd}" TMP/jeter1.vcf > TMP/jeter2.vcf
+        mv TMP/jeter2.vcf TMP/jeter1.vcf
+fi
 
 bcftools view TMP/jeter1.vcf -O b9 -o "${contig}_${start0}_${end}.annot.bcf"
 

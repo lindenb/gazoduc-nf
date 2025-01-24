@@ -34,36 +34,25 @@ include {moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
 
 workflow MOSDEPTH_BAMS_01 {
 	take:
-		meta
-		genomeId
-		bams
+		reference
+		bams // sample, bam, bai
 		bed
 	main:
 		version_ch  = Channel.empty()
-		bams_ch = SAMTOOLS_SAMPLES([], bams)
-		version_ch = version_ch.mix(bams_ch.version)
 
 		if(bed.name.equals("NO_FILE")) {
-			acgt_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"ACGT","MAX_TO_MERGE":"1"],params.genomes[genomeId].fasta)
-                        version_ch = version_ch.mix(acgt_ch.version)
-                        bed2 = acgt_ch.bed
+			acgt_ch = SCATTER_TO_BED(reference)
+                        bed2 = acgt_ch.output
 			}
 		else
 			{
-			bed2 = Channel.fromPath(bed) // rechanged ? changed 20230517 ... for graphtyper ?? Channel.fromPath(bed)
+			bed2 = Channel.fromPath(bed)
 			}
 
-		ch1 = bams_ch.rows.
-			filter{T->T.genomeId.equals(genomeId)}.
-			combine(bed2).map{T->T[0].plus([
-			"mapq": (params.mapq?:1),
-			"bed": T[1]
-			])}
-		mosdepth_ch = MOSDEPTH_DOWNLOAD_01([:])
-		version_ch = version_ch.mix(mosdepth_ch.version)	
+		ch1 = bams_ch.rows.combine(bed2)
+		mosdepth_ch = MOSDEPTH_DOWNLOAD_01()
 	
-		ch2 = MOSDEPTH_RUN_01([:], mosdepth_ch.executable,ch1)
-		version_ch = version_ch.mix(ch2.version)
+		ch2 = MOSDEPTH_RUN_01(mosdepth_ch.output, ch1)
 
 		merge_ch = MERGE_MOSDEPTH_SUMMARY([:], ch2.summary.map{T->T[0].sample+"\t"+T[0].bam+"\t"+T[0].reference+"\t"+T[1]}.collect())
 		version_ch = version_ch.mix(merge_ch.version)

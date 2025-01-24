@@ -29,19 +29,14 @@ include {moduleLoad} from '../utils/functions.nf'
 
 
 process INTERVAL_LIST_TO_BED {
-tag "${file(interval_list).name}"
-memory "3g"
+label "process_quick"
 input:
-	val(meta)
 	path(interval_list)
 output:
-	path("${interval_list.getSimpleName()}.bed"), emit:bed
-	path("version.xml"), emit:version
+	path("${interval_list.getSimpleName()}.bed"), emit:output
 script:
-	if(!meta.containsKey("SORT")) throw new IllegalArgumentException("meta.SORT missing");
-	if(!meta.containsKey("SCORE")) throw new IllegalArgumentException("meta.SCORE missing");
-	def SORT = meta.SORT
-	def SCORE = meta.SCORE
+	def SORT = task.ext.sort?:true
+	def SCORE = task.ext.score?:1000
 """
 	hostname 1>&2
 	${moduleLoad("picard")}
@@ -51,21 +46,5 @@ script:
 		--OUTPUT "${interval_list.getSimpleName()}.bed"  \
 		--SCORE ${SCORE} \
 		--SORT ${SORT}
-		
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="description">call IntervalListToBed to convert intervals to bed</entry>
-	<entry key="interval_list">${interval_list}</entry>
-	<entry key="SCORE">${SCORE}</entry>
-	<entry key="SORT">${SORT}</entry>
-	<entry key="picard">\$(java -jar \${PICARD_JAR} IntervalListToBed --version 2>&1)</entry>
-</properties>
-EOF
-"""
-stub:
-"""
-touch "${file(interval_list).getSimpleName()}.bed"
-echo "<properties/>" > version.xml
 """
 }
