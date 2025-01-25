@@ -1,6 +1,12 @@
-library("RSpectra",lib.loc="/LAB-DATA/BiRD/users/lindenbaum-p/R")
-library("SPAtest",lib.loc="/LAB-DATA/BiRD/users/lindenbaum-p/R")
-library("SKAT",lib.loc="/LAB-DATA/BiRD/users/lindenbaum-p/R")
+#library("RSpectra",lib.loc="/LAB-DATA/BiRD/users/lindenbaum-p/R")
+#library("SPAtest",lib.loc="/LAB-DATA/BiRD/users/lindenbaum-p/R")
+#library("SKAT",lib.loc="/LAB-DATA/BiRD/users/lindenbaum-p/R")
+
+library("RSpectra")
+library("SPAtest")
+library("SKAT")
+
+
 ##library("KBAC",lib.loc="/commun/data/users/karaka/BURDEN_JVARKIT/lib")
 #besoin de : vcf.title,genotypes, population, variants
 

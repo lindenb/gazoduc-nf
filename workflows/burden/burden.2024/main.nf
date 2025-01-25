@@ -153,9 +153,10 @@ workflow BURDEN_CODING {
 		conditions_ch.view{"CONDITION: $it"}
 
 		xgene_ch = EXTRACT_GENES(genome_ch,gtf_ch,bed,vcf2bedcontig_ch.combine(conditions_ch))
-		
+
 		bed_cond_vcf_ch = xgene_ch.output.
-			flatMap{X->X[0].flatten().collect{Y->tuple(Y,X[1])}}.
+			view().
+			flatMap{X->(X[0] instanceof List ? X[0].flatten().collect{Y->tuple(Y,X[1])} : [X])}.
 			combine(vcf2bedcontig_ch)
 		
 		gene_cond_vcf_ch = Channel.empty()
@@ -192,6 +193,7 @@ workflow BURDEN_CODING {
 process BCFTOOLS_INDEX_S {
 tag "${vcf.name}"
 label 'process_low'
+conda "${moduleDir}/environment.01.yml"
 input:
 	tuple path(vcf),path(idx)
 output:
@@ -207,6 +209,7 @@ process EXTRACT_GENES {
 tag "${vcf2bed} ${condition.id}"
 memory "2g"
 afterScript "rm -rf TMP"
+conda "${moduleDir}/environment.01.yml"
 input:
 	tuple path(fasta),path(fai),path(dict)
 	tuple path(gtf), path(gtf_tbi)
@@ -243,7 +246,7 @@ else
 
 
 tabix --regions "TMP/tmp1.bed" "${gtf}" |\\
-	java -jar \${JVARKIT_DIST}/gtf2bed.jar -R "${fasta}" --columns "gtf.feature,gene_biotype" |\\
+	jvarkit gtf2bed -R "${fasta}" --columns "gtf.feature,gene_biotype" |\\
 	awk -F '\t' '(\$4=="gene" ${condition.gene_biotype.isEmpty()?"":"&& \$5==\"${condition.gene_biotype}\""})' |\\
 	cut -f1,2,3 |\\
 	bedtools slop -i -  -g "${fai}" -b ${slop} |\\
@@ -267,32 +270,39 @@ fi
 
 mkdir -p BEDS
 
-java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/bedcluster.jar \\
+jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedcluster \\
 		-R "${fasta}" --out BEDS  --size "${params.group_by_cluster_size}" \\
 		TMP/tmp3.bed
+
+# show what's in BEDS
+find BEDS -type f -name "*.bed" 1>&2
+ls BEDS/*.bed 1>&2
+
 """
 }
 
 
 
 process  DOWNLOAD_SNPEFF_DB {
+tag "${params.snpeff_db}"
+afterScript "rm -rf TMP"
+conda "${moduleDir}/environment.01.yml"
 memory "3G"
 output:
 	path("SNPEFF"),emit:output
 script:
 """
-module load snpeff/5.2
 mkdir -p SNPEFFX TMP
 snpEff -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  download -dataDir  "\${PWD}/SNPEFFX"  '${params.snpeff_db}'
 test -s SNPEFFX/*/snpEffectPredictor.bin
 mv SNPEFFX SNPEFF
-
 """
 }
 
 
 process BCFTOOLS_STATS {
 afterScript "rm -rf TMP"
+conda "${moduleDir}/environment.01.yml"
 memory "5g"
 cpus 8
 input:
@@ -305,7 +315,6 @@ output:
 	tuple path("stats.txt"),path("samples.txt"),emit:output
 script:
 """
-module load jvarkit R/3.6.0-dev
 mkdir -p TMP
 set -o pipefail
 
@@ -339,6 +348,7 @@ mv TMP/stats.txt "stats.txt"
 
 process MULTIQC_PER_POP {
 //afterScript "rm -rf TMP"
+conda "${moduleDir}/environment.01.yml"
 memory "5g"
 input:
 	tuple path(stats),path(samples2pop)
@@ -357,7 +367,7 @@ multiqc --no-ansi \\
 	"${stats}"
 
 
-java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar multiqcpostproc \\
+jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  multiqcpostproc \\
 	--sample2collection ${samples2pop} \\
 	TMP/multiqc/multiqc_data \\
 	-o TMP/TMP2
@@ -377,6 +387,7 @@ String countVariants(def f) {
 process PER_BED {
 afterScript "rm -rf TMP"
 tag "${condition.id} ${roi.name}"
+conda "${moduleDir}/environment.01.yml"
 memory "3g"
 //array 100
 errorStrategy "retry"
@@ -398,13 +409,23 @@ script:
 	def slop=20
 """
 hostname 1>&2
-module load snpeff/5.2 R/3.6.0-dev
 mkdir -p TMP VCFS
 set -x
 
+# jvarkit executable in conda
+JD1=`which jvarkit 1>&2`
+echo "\${JD1}" 1>&2
+# directory of jvarkit
+JD2=`dirname "\${JD1}"`
+find "\${JD2}/../.." 1>&2
+# find the jar itself
+JVARKIT_JAR=`find "\${JD2}/../.." -type f -name "jvarkit.jar"`
+
+test ! -z "\${JVARKIT_JAR}"
+
 # compile Minikit
 cat "${moduleDir}/Minikit.java" > TMP/Minikit.java
-javac -d TMP -cp \${JVARKIT_DIST}/jvarkit.jar -sourcepath TMP  TMP/Minikit.java
+javac -d TMP -cp \${JVARKIT_JAR} -sourcepath TMP  TMP/Minikit.java
 
 
 cat << 'EOF' > TMP/jeter.R
@@ -432,7 +453,7 @@ LC_ALL=C sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n "${roi}" > TMP/roi.bed
 if ${condition.exons_only==true}
 then
 	tabix --regions TMP/roi.bed "${gtf}" |\\
-        	java -jar \${JVARKIT_DIST}/gtf2bed.jar -R "${fasta}" --columns "gtf.feature" |\\
+        	jvarkit gtf2bed -R "${fasta}" --columns "gtf.feature" |\\
 		awk -F '\t' '(\$4=="exon")' |\\
 		cut -f1-3 |\\
 	        bedtools slop -i -  -g "${fai}" -b ${slop} |\\
@@ -557,7 +578,7 @@ ${countVariants("TMP/jeter1.bcf")}
 if ${ condition.polyx  > 1 } ; then
 
 	bcftools view TMP/jeter1.bcf |\\
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfpolyx -R "${fasta}" --tag POLYX -n "${condition.polyx}"  |\
+	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfpolyx -R "${fasta}" --tag POLYX -n "${condition.polyx}"  |\
                 bcftools view -e 'INFO/POLYX > ${condition.polyx}' -O b -o  TMP/jeter2.bcf
 	
 	mv -v TMP/jeter2.bcf TMP/jeter1.bcf
@@ -571,7 +592,7 @@ then
 	bcftools view TMP/jeter1.bcf |\\
 	snpEff -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  eff -dataDir "\${PWD}/${snpeffDir}" \\
 		 -nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf '${params.snpeff_db}' |\\
-	java -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterso \\
+	jvarkit vcffilterso \\
 		--remove-attribute  --rmnoatt \\
 		 -A '${condition.so_acn}' |\\
 	bcftools view -O b -o TMP/jeter2.bcf
@@ -584,7 +605,7 @@ fi
 if ${!phastCons.name.equals("NO_PHASTCONS") && (condition.phastCons as double) >= 0}
 then
 	bcftools view TMP/jeter1.bcf |\\
-		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfbigwig -B '${phastCons}' --tag "PHASTCONS" | \\
+		jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfbigwig -B '${phastCons}' --tag "PHASTCONS" | \\
 		 bcftools view -e 'INFO/PHASTCONS < ${condition.phastCons}'  -O b -o TMP/jeter2.bcf
 
 	mv TMP/jeter2.bcf TMP/jeter1.bcf
@@ -598,7 +619,7 @@ fi
 if ${params.containsKey("cadd") && (condition.cadd.phred as int) >0}
 then
 	bcftools view TMP/jeter1.bcf |\\
-		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfcadd --tabix '${params.cadd}' | \\
+		jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfcadd --tabix '${params.cadd}' | \\
 		bcftools view -e 'INFO/CADD_PHRED < ${condition.cadd.phred}' -O b -o TMP/jeter2.bcf
 	mv -v TMP/jeter2.bcf TMP/jeter1.bcf
 	${countVariants("TMP/jeter1.bcf")}
@@ -609,7 +630,7 @@ fi
 if ${!condition.gnomad.population.isEmpty() && condition.gnomad.AF>0}
 then
 	bcftools view TMP/jeter1.bcf |\\
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfgnomad \\
+		jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfgnomad \\
 		--bufferSize 10000 \\
 		--gnomad "${params.gnomad}" \\
 		--fields "${condition.gnomad.population}"  \\
@@ -697,7 +718,7 @@ EOF
 
 
 bcftools view -O v TMP/jeter1.bcf |\\
-java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -cp \${JVARKIT_DIST}/jvarkit.jar:TMP  Minikit \\
+java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -cp \${JVARKIT_JAR}:TMP  Minikit \\
 		--vcf-out VCFS \\
 		${condition.bed_is_data_source?"--bed ${roi}":""} \\
 		--QD "${condition.QD}" \\
@@ -753,6 +774,7 @@ bcftools index -f "${params.prefix}concat.bcf"
 
 process PLOTIT {
 tag "${assoc} ${condition.id}"
+conda "${moduleDir}/environment.01.yml"
 input:
 	tuple val(assoc),val(condition),path(results)
 output:
@@ -764,7 +786,6 @@ script:
 	def associd=  "${assoc}_${condition.id}"
 """
 hostname 1>&2
-module load R/3.6.0-dev
 mkdir -p TMP
 
 

@@ -1,0 +1,16 @@
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::bedtools
+  - bioconda::htslib
+  - bioconda::bcftools
+  - bioconda::jvarkit
+  - bioconda::multiqc
+  - bioconda::snpeff=5.1
+  - conda-forge::r-skat
+  - conda-forge::r-rspectra
+  - conda-forge::r-spatest
+## channel_priority: strict
+#   - bioconda::multiqc=1.27
+
