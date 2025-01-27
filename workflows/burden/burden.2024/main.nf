@@ -175,9 +175,8 @@ workflow BURDEN_CODING {
 			)
 		per_gene_ch.output.splitCsv(sep:'\t', header:true).
 			view{"$it"}
-		all_results_ch =  per_gene_ch.output.collectFile(name:"output.tsv")
-	
-		cleanup_ch = CLEANUP(all_results_ch)
+
+		cleanup_ch = MERGE_AND_CLEANUP(per_gene_ch.output.collect())
 
 		CONCAT_VCFS(per_gene_ch.vcfs.flatten().collect())
 
@@ -406,7 +405,7 @@ input:
 	path(snpeffDir)
 	tuple path(roi),val(condition),path(vcf2bed)
 output:
-	path("results.bed"),emit:output
+	path("results.*.bed"),emit:output
 	path("VCFS/*"),optional:true,emit:vcfs
 when:
 	condition.enabled==true
@@ -747,20 +746,31 @@ java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -cp \${JVARKIT_JAR}:TMP  Min
 		--controls TMP/controls.txt | \\
 	R --vanilla --no-save --slave
 
-cp -v TMP/results.bed ./
+MD5=`cat "${roi}" | sha1sum | cut -d ' ' -f1`
+cp -v TMP/results.bed ./"results.${condition.id}.\${MD5}.bed"
 
 """
 }
 
-process CLEANUP {
+process MERGE_AND_CLEANUP {
 label 'process_low'
+conda "${moduleDir}/environment.01.yml"
 input:
-	path(tsv)
+	path("BEDS/*")
 output:
 	path("cleanup.bed"),emit:output
+	path("burden.*"),emit:bed
 script:
 """
-awk -F '\t' '(NR==1 || \$1!="contig")' '${tsv}' > jeter.tsv
+find BEDS/ -name "*.bed" -exec cat '{}' ';' |\\
+	awk -F '\t' '(NR==1 || \$1!="contig")'  > jeter.tsv
+
+
+head -n1 jeter.tsv | sed 's/^/#/' > burden.bed
+tail -n+2 jeter.tsv | LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n >> burden.bed
+bgzip burden.bed
+tabix -p bed -f burden.bed.gz
+
 mv jeter.tsv cleanup.bed
 """
 }
