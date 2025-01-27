@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -191,6 +191,7 @@ workflow BURDEN_CODING {
 	}
 
 process BCFTOOLS_INDEX_S {
+label 'process_low'
 tag "${vcf.name}"
 label 'process_low'
 conda "${moduleDir}/environment.01.yml"
@@ -206,6 +207,7 @@ bcftools index -s "${vcf}" | awk -F '\t' '{printf("%s\\t0\\t%s\\n",\$1,\$2);}' >
 
 
 process EXTRACT_GENES {
+label 'process_low'
 tag "${vcf2bed} ${condition.id}"
 memory "2g"
 afterScript "rm -rf TMP"
@@ -284,6 +286,7 @@ ls BEDS/*.bed 1>&2
 
 
 process  DOWNLOAD_SNPEFF_DB {
+label 'process_low'
 tag "${params.snpeff_db}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/environment.01.yml"
@@ -301,6 +304,7 @@ mv SNPEFFX SNPEFF
 
 
 process BCFTOOLS_STATS {
+label 'process_low'
 afterScript "rm -rf TMP"
 conda "${moduleDir}/environment.01.yml"
 memory "5g"
@@ -347,6 +351,7 @@ mv TMP/stats.txt "stats.txt"
 
 
 process MULTIQC_PER_POP {
+label 'process_low'
 //afterScript "rm -rf TMP"
 conda "${moduleDir}/environment.01.yml"
 memory "5g"
@@ -356,7 +361,6 @@ output:
 	path("*_mqc.json"),emit:output
 script:
 """
-module load multiqc jvarkit
 export LC_ALL=en_US.utf8
 mkdir -p TMP/TMP2
 
@@ -385,6 +389,7 @@ String countVariants(def f) {
 
 
 process PER_BED {
+label 'process_low'
 afterScript "rm -rf TMP"
 tag "${condition.id} ${roi.name}"
 conda "${moduleDir}/environment.01.yml"
@@ -748,6 +753,7 @@ cp -v TMP/results.bed ./
 }
 
 process CLEANUP {
+label 'process_low'
 input:
 	path(tsv)
 output:
@@ -760,21 +766,24 @@ mv jeter.tsv cleanup.bed
 }
 
 process CONCAT_VCFS {
+label 'process_low'
+conda "${moduleDir}/environment.01.yml"
 input:
 	path("VCFS/*")
 output:
-	tuple path("${params.prefix}concat.bcf"), path("${params.prefix}concat.bcf.csi"),emit:output
+	tuple path("burden.concat.bcf"), path("burden.concat.bcf.csi"),emit:output
 script:
 """
-module load bcftools
-bcftools concat -a -O b -o "${params.prefix}concat.bcf" VCFS/*.vcf.gz
-bcftools index -f "${params.prefix}concat.bcf"
+bcftools concat -a -O b -o "burden.concat.bcf" VCFS/*.vcf.gz
+bcftools index -f "burden.concat.bcf"
 """
 }
 
 process PLOTIT {
+label 'process_low'
 tag "${assoc} ${condition.id}"
 conda "${moduleDir}/environment.01.yml"
+afterScript "rm -rf TMP"
 input:
 	tuple val(assoc),val(condition),path(results)
 output:
@@ -824,7 +833,7 @@ head(T1)
 
 colnames(T1)<-c("CHR","BP","SNP","P")
 
-library("qqman",lib.loc="/LAB-DATA/BiRD/users/lindenbaum-p/R")
+library("qqman")
 
 
 if(nrow(T1)>0) {
@@ -885,36 +894,36 @@ awk -F '\t' 'BEGIN{printf("<table class=\\"table\\">");} (NR==1) {printf("<thead
 }
 
 process MULTIQC {
+label 'process_low'
+conda "${moduleDir}/environment.01.yml"
 executor "local"
 input:
 	path(mqcs)
 output:
 	path("multiqc.zip"),emit:output
 script:
-	def prefix = params.prefix
 	def title="";
 	def comment="";
 """
 
 		hostname 1>&2
-		module load multiqc
 		mkdir -p TMP
 
 # do NOT use -type f, those are symlinks
 find .  -name "mqc.*" -o -name "*_mqc.*" | grep -v '\\.yaml\$' > TMP/jeter.list
 
 
-		mkdir -p "${prefix}multiqc"
+		mkdir -p "multiqc"
 
 		export LC_ALL=en_US.utf8
-		multiqc  --filename  "${prefix}multiqc_report.html" --no-ansi \
+		multiqc  --filename  "multiqc_report.html" --no-ansi \
 			${title}  \\
 			${comment}  \\
 			--force \\
 			`find . -name "*.yaml" | awk '{printf(" --config  %s ",\$0);}' ` \\
-			--outdir "${prefix}multiqc" \\
+			--outdir "multiqc" \\
 			--file-list TMP/jeter.list
 		
-		zip -9 -r "multiqc.zip" "${prefix}multiqc"
+		zip -9 -r "multiqc.zip" "multiqc"
 """
 }
