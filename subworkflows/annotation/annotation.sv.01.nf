@@ -37,6 +37,7 @@ workflow ANNOTATE_SV_VCF_01 {
 		gnomad_ch = DOWNLOAD_GNOMAD_SV(reference)
 		dgv_ch = DOWNLOAD_DGV(reference) 
 		ensemblreg_ch = DOWNLOAD_ENSEMBL_REG(reference)
+		decode_ch = DOWNLOAD_DECODE_LRS(reference)
 
 		
 		ann_ch= ANNOTATE(
@@ -45,7 +46,8 @@ workflow ANNOTATE_SV_VCF_01 {
 			gtf2_ch.output,
 			gnomad_ch.output,
 			dgv_ch.output,
-			ensemblreg_ch.output
+			ensemblreg_ch.output,
+			decode_ch.output
 			)
 
 	emit:
@@ -142,6 +144,48 @@ echo '##INFO=<ID=GNOMAD_AF,Number=1,Type=Float,Description="GNOMAD SV MAX AF">' 
 """	
 }
 
+/** add 27 Jan 2025 : NOT TESTED */
+process DOWNLOAD_DECODE_LRS {
+label "process_quick"
+input:
+	path(reference)
+output:
+	path("decode.*"),emit:output
+script:
+"""
+
+module load htslib jvarkit 
+
+cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
+1:${k1_hg38}	https://github.com/DecodeGenetics/LRS_SV_sets/raw/refs/heads/master/ont_sv_high_confidence_SVs.sorted.vcf.gz
+EOF
+
+
+awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
+
+join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv | sort | uniq > TMP/jeter.url
+
+if -s TMP/jeter.url
+
+	wget -O - `cat TMP/jeter.url` |\\
+		bcftools query -f '%CHROM\t%POS0\t%END\t%ID\\_%SVTYPE\\n''  |\
+		java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${dict}" --column 1 --convert SKIP  |\\
+		LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n | uniq |\\
+		bgzip >  decode.bed.gz
+
+else
+	touch decode.bed
+	bgzip decode.bed
+fi
+
+
+tabix -p bed -f decode.bed.gz
+
+echo '##INFO=<ID=DECODE_LRS,Number=.,Type=String,Description="DECODE SV. https://github.com/DecodeGenetics/LRS_SV_sets Accompanies Long-read sequencing of 3,622 Icelanders provides insight into the role of structural variants in human diseases and other traits Beyter, D. et al., Nature Genetics, 2021">' > decode.hdr
+"""
+}
+
+
 process DOWNLOAD_ENSEMBL_REG {
 label "process_quick"
 input:
@@ -235,6 +279,7 @@ input:
 	path(gnomad_files)
 	path(dgv_files)
 	path(ensemblreg_files)
+	path(decode_files)
 output:
 	tuple path("${vcf.getBaseName()}.ann.bcf"),path("${vcf.getBaseName()}.ann.bcf.csi"),emit:output
 script:
@@ -278,6 +323,17 @@ bcftools annotate --force --annotations "${gnomad_files.find{it.name.endsWith(".
 	-O u -o TMP/jeter2.bcf TMP/jeter1.bcf
                 
 mv TMP/jeter2.bcf TMP/jeter1.bcf
+
+
+bcftools annotate --force --annotations "${decode_files.find{it.name.endsWith(".gz")}.first()}" \
+	-h "${decode_files.find{it.name.endsWith(".hdr")}.first()}" \\
+	-c "CHROM,FROM,TO,DECODE_LRS" \\
+	--merge-logic 'DECODE_LRS:unique' \\
+	--min-overlap "${overlap}:${overlap}" \\
+	-O u -o TMP/jeter2.bcf TMP/jeter1.bcf
+                
+mv TMP/jeter2.bcf TMP/jeter1.bcf
+
 
 bcftools annotate --force --annotations "${dgv_files.find{it.name.endsWith(".gz")}.first()}" \
 	-h "${dgv_files.find{it.name.endsWith(".hdr")}.first()}" \\
