@@ -54,6 +54,8 @@ workflow BURDEN_CODING {
 		conditions
 		bed
 	main:
+		to_zip_ch = Channel.empty()
+		to_zip_ch = to_zip_ch.mix(conditions)
 
 		ch1 = vcfs.
 			splitText().
@@ -177,6 +179,7 @@ workflow BURDEN_CODING {
 			view{"$it"}
 
 		cleanup_ch = MERGE_AND_CLEANUP(per_gene_ch.output.collect())
+		to_zip_ch = to_zip_ch.mix(cleanup_ch.bed)
 
 		CONCAT_VCFS(per_gene_ch.vcfs.flatten().collect())
 
@@ -185,8 +188,12 @@ workflow BURDEN_CODING {
 				combine(conditions_ch).
 				combine(cleanup_ch.output)
 			)
-		MULTIQC(plot_ch.mix(multiqc_per_pop.output).flatten().collect())
+		to_zip_ch = to_zip_ch.mix(plot_ch.output)
 
+		mqc2_ch = MULTIQC(plot_ch.mix(multiqc_per_pop.output).flatten().collect())
+		to_zip_ch = to_zip_ch.mix(mqc2_ch.output)
+
+		ZIP_IT(to_zip_ch.flatten().collect())
 	}
 
 process BCFTOOLS_INDEX_S {
@@ -935,5 +942,21 @@ find .  -name "mqc.*" -o -name "*_mqc.*" | grep -v '\\.yaml\$' > TMP/jeter.list
 			--file-list TMP/jeter.list
 		
 		zip -9 -r "multiqc.zip" "multiqc"
+"""
+}
+
+
+process ZIP_IT {
+executor "local"
+input:
+	path(files)
+output:
+	path("archive.results.zip"),emit:output
+script:
+"""
+mkdir -p TMP
+cp -v ${files.join(" ")} TMP/
+mv -v TMP "${params.prefix}archive.results"
+zip -9r archive.results.zip "${params.prefix}archive.results"
 """
 }
