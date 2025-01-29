@@ -27,6 +27,7 @@ import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -115,8 +116,10 @@ public class Minikit extends Launcher {
 	private double f_missing=0.05;
 	@Parameter(names={"--gtf"},description = "gtf indexed file")
 	private String gtfPath=null;
-	@Parameter(names={"--bed"},description = "bed file for custom intervals")
+	@Parameter(names={"--bed"},description = "bed file for custom intervals or atac")
 	private Path bedPath=null;
+	@Parameter(names={"--atac"},description = "ATAC Flag. Use whole bed as a source of interval.")
+	private boolean atac_flag = false;
 	@Parameter(names={"--fisher-treshold"},description = "save VCF if fisher test is lower than this value")
 	private double fisher_treshold = 1E-6;
 	@Parameter(names={"--vcf-out"},description = "save VCF in this directory")
@@ -168,6 +171,21 @@ public class Minikit extends Launcher {
 
 private interface Splitter extends Function<VariantContext,List<Key>> {
     }
+
+private class AllVariantsSplitter implements Splitter {
+	AllVariantsSplitter() {
+		}
+	@Override
+	public List<Key> apply(VariantContext vc) {
+		final Key key = new Key();
+		key.contig = vc.getContig();
+		key.splitter = "ALL_VARIANTS";
+		key.key = bedPath.getFileName().toString();
+		key.geneName =  key.key;
+
+		return Collections.singletonList(key);
+		}
+	}
 
 private class GeneSplitter implements Splitter {
 	final List<GeneExtractor> extractors ;
@@ -517,7 +535,11 @@ public int doWork(List<String> args) {
 					);
 			
 			final Splitter splitter;
-			if(this.bedPath!=null) {
+			if(this.atac_flag) {
+				if(this.bedPath==null) throw new IllegalArgumentException("--bed missing");
+				splitter = new AllVariantsSplitter();
+				}
+			else if(this.bedPath!=null) {
 				splitter = new IntervalSplitter(this.bedPath);
 				}
 			else

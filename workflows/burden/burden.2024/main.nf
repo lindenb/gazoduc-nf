@@ -149,6 +149,12 @@ workflow BURDEN_CODING {
 				return it;
 			}.
 			map {
+				if(it.containsKey("atac") && it.atac==true) {
+					return it.plus("bed_is_data_source":false);
+					}
+				return it;
+			}.
+			map {
 				if(!it.containsKey("ignore_GT_FILTER")) it=it.plus("ignore_GT_FILTER":false);
 				if(!it.containsKey("ignore_HOM_VAR")) it=it.plus("ignore_HOM_VAR":false);
 				if(!it.containsKey("phastCons")) it=it.plus("phastCons":-1);
@@ -170,15 +176,22 @@ workflow BURDEN_CODING {
 
 		conditions_ch.view{"CONDITION: $it"}
 
-		xgene_ch = EXTRACT_GENES(genome_ch,gtf_ch,bed_ch.combine(vcf2bedcontig_ch.combine(conditions_ch)))
 
-		bed_cond_vcf_ch = xgene_ch.output.
+		bed_ch.combine(vcf2bedcontig_ch.combine(conditions_ch)).branch{T->
+			atac: T[2].containsKey("atac") && T[2].atac==true
+			gene:true
+			}.set{dispatch_ch}
+
+		xgene1_ch = EXTRACT_GENES(genome_ch,gtf_ch, dispatch_ch.gene )
+		xgene2_ch = SPLIT_ATAC(genome_ch, dispatch_ch.atac)
+
+		bed_cond_vcf_ch = xgene1_ch.output.mix(xgene2_ch.output).
 			view().
 			flatMap{X->(X[0] instanceof List ? X[0].flatten().collect{Y->tuple(Y,X[1])} : [X])}.
 			filter{!it[0].name.equals("EMPTY.bed")}.
 			combine(vcf2bedcontig_ch)
 		
-		gene_cond_vcf_ch = Channel.empty()
+		// gene_cond_vcf_ch = Channel.empty()
 
 
 		eff=DOWNLOAD_SNPEFF_DB()
@@ -241,6 +254,61 @@ bcftools index -s "${vcf}" | awk -F '\t' '{printf("%s\\t0\\t%s\\n",\$1,\$2);}' >
 """
 }
 
+process SPLIT_ATAC {
+label 'process_low'
+tag "${bed.name} ${vcf2bed.name} ${condition.id}"
+memory "2g"
+afterScript "rm -rf TMP"
+conda "${moduleDir}/environment.01.yml"
+input:
+	tuple path(fasta),path(fai),path(dict)
+	tuple path(bed),path(vcf2bed),val(condition)
+output:
+	tuple path("BEDS/*.bed"),val(condition),emit:output
+script:
+	if(!condition.containsKey("atac") || condition.atac==false) throw new IllegalArgumentException("expected atac");
+	if(!condition.containsKey("window_size")) throw new IllegalArgumentException("expected window_size");
+	if(!condition.containsKey("window_shift")) throw new IllegalArgumentException("expected window_shift");
+"""
+hostname 1>&2
+set -o pipefail
+mkdir -p TMP BEDS
+
+
+# jvarkit executable in conda
+JD1=`which jvarkit 1>&2`
+echo "\${JD1}" 1>&2
+# directory of jvarkit
+JD2=`dirname "\${JD1}"`
+# find the jar itself
+JVARKIT_JAR=`find "\${JD2}/../.." -type f -name "jvarkit.jar"`
+
+test ! -z "\${JVARKIT_JAR}"
+
+# compile Minikit
+cat "${moduleDir}/Minikit2.java" > TMP/Minikit.java
+javac -d TMP -cp \${JVARKIT_JAR} -sourcepath TMP  TMP/Minikit.java
+
+
+
+
+
+cut -f1,2,3 '${vcf2bed}' | LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n > TMP/tmp1.bed
+
+${bed.name.endsWith(".gz")?"gunzip -c":"cat"} '${bed}' |\\
+        cut -f 1,2,3 |\\
+	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
+	bedtools merge |\\
+	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
+	bedtools intersect -u -wa -a - -b TMP/tmp1.bed |\\
+	java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -cp \${JVARKIT_JAR}:TMP  Minikit -w ${condition.window_size} -s ${condition.window_shift} -o BEDS
+
+find BEDS -type f -name "*.bed" > TMP/beds.list
+test -s TMP/beds.list
+
+
+"""
+}
 
 process EXTRACT_GENES {
 label 'process_low'
@@ -255,38 +323,8 @@ input:
 output:
 	tuple path("BEDS/*.bed"),val(condition),emit:output
 script:
+	if(condition.containsKey("atac") && contidion.atac==true) throw new IllegalArgumentException("not atac");
 	def slop = 20
-if(condition.bed_is_data_source)
-"""
-hostname 1>&2
-set -o pipefail
-mkdir -p TMP
-
-cut -f1,2,3 '${vcf2bed}' | LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n > TMP/tmp1.bed
-
-
-cut -f1,2,3 ${bed} |\\
-	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
-	bedtools merge |\\
-	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
-	bedtools intersect -u -wa -a - -b TMP/tmp1.bed |\\
-	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n -k3,3n|\\
-	uniq > TMP/tmp3.bed
-
-
-mkdir -p BEDS
-
-if ! test -s TMP/tmp3.bed
-then
-	touch BEDS/EMPTY.bed
-else
-	mv TMP/tmp3.bed BEDS/${bed.getSimpleName()}.intersect.bed
-fi
-
-
-
-"""
-else
 """
 hostname 1>&2
 set -o pipefail
@@ -472,7 +510,7 @@ afterScript "rm -rf TMP"
 tag "${condition.id} ${roi.name}"
 conda "${moduleDir}/environment.01.yml"
 memory "3g"
-//array 100
+array 100
 errorStrategy "retry"
 maxRetries 2
 input:
@@ -500,7 +538,6 @@ JD1=`which jvarkit 1>&2`
 echo "\${JD1}" 1>&2
 # directory of jvarkit
 JD2=`dirname "\${JD1}"`
-find "\${JD2}/../.." 1>&2
 # find the jar itself
 JVARKIT_JAR=`find "\${JD2}/../.." -type f -name "jvarkit.jar"`
 
@@ -803,7 +840,8 @@ EOF
 bcftools view -O v TMP/jeter1.bcf |\\
 java  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -cp \${JVARKIT_JAR}:TMP  Minikit \\
 		--vcf-out VCFS \\
-		${condition.bed_is_data_source?"--bed ${roi}":""} \\
+		${condition.bed_is_data_source || condition.atac==true?"--bed ${roi}":""} \\
+		${condition.atac==true?"--atac":""} \\
 		--QD "${condition.QD}" \\
 		--FS "${condition.FS}" \\
 		--SOR "${condition.SOR}" \\
