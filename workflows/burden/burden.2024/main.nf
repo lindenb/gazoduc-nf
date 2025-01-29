@@ -44,7 +44,21 @@ log.info paramsSummaryLog(workflow)
 
 workflow {
 		ch_input = Channel.fromList(samplesheetToList(params.samplesheet, "assets/schema_samplesheet.json"))
-		BURDEN_CODING(Channel.fromPath(params.vcfs), file(params.samplesheet), Channel.fromPath(params.conditions), file(params.bed) )
+		
+		beds_ch= Channel.empty()
+		
+		if(params.bed.equals("NO_FILE")) {
+			beds_ch  = BEDS_FROM_FAI(Channel.fromPath(params.fai)).output.flatten()
+			}
+		else if(params.bed.endsWith(".list")) {
+			beds_ch = Channel.fromPath(params.bed).splitText().map{file(it.trim())}
+			}
+		else
+			{
+			beds_ch = Channel.fromPath(params.bed)
+			}
+
+		BURDEN_CODING(Channel.fromPath(params.vcfs), file(params.samplesheet), Channel.fromPath(params.conditions), beds_ch )
 		}
 
 workflow BURDEN_CODING {
@@ -52,7 +66,7 @@ workflow BURDEN_CODING {
 		vcfs
 		samplesheet
 		conditions
-		bed
+		bed_ch
 	main:
 		to_zip_ch = Channel.empty()
 		to_zip_ch = to_zip_ch.mix(conditions)
@@ -78,12 +92,14 @@ workflow BURDEN_CODING {
 		gtf_ch = Channel.value([file(params.gtf),file(params.gtf+".tbi")])
 
 		
+		input_merged_bed_ch = MERGE_INPUT_BED(bed_ch.collect())
+
 
 		stats1_ch = BCFTOOLS_STATS(
 			genome_ch,
 			ch1.flatten().collect(),
 			samplesheet,
-			bed,
+			input_merged_bed_ch.output ,
 			(params.excludeBed.equals("NO_FILE")? file("NO_EXCLUDE"): file(params.excludeBed)),
 			)
 
@@ -154,11 +170,12 @@ workflow BURDEN_CODING {
 
 		conditions_ch.view{"CONDITION: $it"}
 
-		xgene_ch = EXTRACT_GENES(genome_ch,gtf_ch,bed,vcf2bedcontig_ch.combine(conditions_ch))
+		xgene_ch = EXTRACT_GENES(genome_ch,gtf_ch,bed_ch.combine(vcf2bedcontig_ch.combine(conditions_ch)))
 
 		bed_cond_vcf_ch = xgene_ch.output.
 			view().
 			flatMap{X->(X[0] instanceof List ? X[0].flatten().collect{Y->tuple(Y,X[1])} : [X])}.
+			filter{!it[0].name.equals("EMPTY.bed")}.
 			combine(vcf2bedcontig_ch)
 		
 		gene_cond_vcf_ch = Channel.empty()
@@ -196,6 +213,19 @@ workflow BURDEN_CODING {
 		ZIP_IT(to_zip_ch.flatten().collect())
 	}
 
+
+process BEDS_FROM_FAI {
+executor "local"
+input:
+	path(fai)
+output:
+	path("*.bed"),emit:output
+script:
+"""
+awk -F '\t' '{f=sprintf("%s.bed",\$1); printf("%s\t0\t%s\\n",\$1,\$2) >> f;}' '${fai}'
+"""
+}
+
 process BCFTOOLS_INDEX_S {
 label 'process_low'
 tag "${vcf.name}"
@@ -214,19 +244,19 @@ bcftools index -s "${vcf}" | awk -F '\t' '{printf("%s\\t0\\t%s\\n",\$1,\$2);}' >
 
 process EXTRACT_GENES {
 label 'process_low'
-tag "${vcf2bed} ${condition.id}"
+tag "${bed.name} ${vcf2bed.name} ${condition.id}"
 memory "2g"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/environment.01.yml"
 input:
 	tuple path(fasta),path(fai),path(dict)
 	tuple path(gtf), path(gtf_tbi)
-	path(userbed)
-	tuple path(vcf2bed),val(condition)
+	tuple path(bed),path(vcf2bed),val(condition)
 output:
 	tuple path("BEDS/*.bed"),val(condition),emit:output
 script:
 	def slop = 20
+if(condition.bed_is_data_source)
 """
 hostname 1>&2
 set -o pipefail
@@ -234,23 +264,55 @@ mkdir -p TMP
 
 cut -f1,2,3 '${vcf2bed}' | LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n > TMP/tmp1.bed
 
-#
-# FOR EXAMPLE EACH RECORD IN THE BED IS A PEAK OF ATAC-SEQ
-#
-if ${condition.bed_is_data_source == true}
-then
 
-	# user bed MUST be defined
-	${!userbed.name.equals("NO_FILE")}
-
-	${userbed.name.endsWith(".gz")?"gunzip -c":"cat"} ${userbed} |\\
-	cut -f1,2,3 |\\
+cut -f1,2,3 ${bed} |\\
+	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
+	bedtools merge |\\
 	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
 	bedtools intersect -u -wa -a - -b TMP/tmp1.bed |\\
 	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n -k3,3n|\\
 	uniq > TMP/tmp3.bed
 
+
+mkdir -p BEDS
+
+if ! test -s TMP/tmp3.bed
+then
+	touch BEDS/EMPTY.bed
 else
+	mv TMP/tmp3.bed BEDS/${bed.getSimpleName()}.intersect.bed
+fi
+
+
+
+"""
+else
+"""
+hostname 1>&2
+set -o pipefail
+mkdir -p TMP
+
+
+# vcf available as bed
+cut -f1,2,3 '${vcf2bed}' |\\
+	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n > TMP/tmp1.bed
+
+# restrict to input bed
+cut -f1,2,3 "${bed}" |\\
+		LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
+		bedtools merge > TMP/tmp2.bed
+
+# get input bed overlapping the VCFs
+bedtools intersect -u -wa -a TMP/tmp2.bed -b TMP/tmp1.bed |\\
+		LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n >> TMP/tmp3.bed
+
+mv TMP/tmp3.bed TMP/tmp1.bed
+
+# prevent empty bed when no vcf overlap the bed
+if test ! -s TMP/tmp1.bed
+then
+	tail -n1 '${vcf2bed}' | awk -F '\t' '{printf("%s\t0\t1\\n",\$1);}' > TMP/tmp1.bed 
+fi
 
 
 tabix --regions "TMP/tmp1.bed" "${gtf}" |\\
@@ -263,28 +325,19 @@ tabix --regions "TMP/tmp1.bed" "${gtf}" |\\
 	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n > TMP/tmp3.bed
 
 
-if ${!userbed.name.equals("NO_FILE")}
-then
-	cut -f1,2,3 "${userbed}" |\
-		LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
-		bedtools merge > TMP/tmp4.bed
-
-	bedtools intersect -u -wa -a TMP/tmp3.bed -b TMP/tmp4.bed |\\
-		LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n >> TMP/tmp5.bed
-	mv TMP/tmp5.bed TMP/tmp3.bed
-fi
-
-fi
 
 mkdir -p BEDS
 
-jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedcluster \\
+if test -s TMP/tmp3.bed
+then
+	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedcluster \\
 		-R "${fasta}" --out BEDS  --size "${params.group_by_cluster_size}" \\
 		TMP/tmp3.bed
 
-# show what's in BEDS
-find BEDS -type f -name "*.bed" 1>&2
-ls BEDS/*.bed 1>&2
+	find BEDS -type f -name "*.bed" 1>&2
+else
+	touch BEDS/EMPTY.bed
+fi
 
 """
 }
@@ -308,6 +361,24 @@ mv SNPEFFX SNPEFF
 """
 }
 
+process MERGE_INPUT_BED {
+label 'process_low'
+afterScript "rm -rf TMP"
+conda "${moduleDir}/environment.01.yml"
+input:
+	path("BED/*")
+output:
+	path("all.merged.bed"),emit:output
+script:
+"""
+mkdir -p TMP
+set -o pipefail
+find BED -name "*.bed" -exec cut -f1,2,3 '{}' ';' |\\
+	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\\
+	bedtools merge > TMP/jeter.bed
+mv TMP/jeter.bed all.merged.bed
+"""
+}
 
 process BCFTOOLS_STATS {
 label 'process_low'
@@ -331,6 +402,7 @@ set -o pipefail
 find VCFS -name "*.vcf.gz" -o -name "*.bcf" > TMP/vcfs.list
 test -s TMP/vcfs.list
 
+
 cat << 'EOF' > TMP/jeter.R
 T1 <- read.csv("${samplesheet}",header=TRUE)
 T2 <- T1[T1\$status=='case',]\$sample
@@ -346,7 +418,7 @@ awk '{printf("%s\tcontrol\\n",\$1);}' TMP/controls.txt >> "samples.txt"
 
 cut -f 1 samples.txt | LC_ALL=C sort -T TMP > TMP/samples.txt
 
-bcftools concat --threads ${task.cpus} -a ${bed.name.equals("NO_FILE")?"":"--regions-file ${bed}"} --file-list TMP/vcfs.list -O u |\\
+bcftools concat --threads ${task.cpus} -a --regions-file '${bed}' --file-list TMP/vcfs.list -O u |\\
 	bcftools view ${excludeBed.name.equals("NO_EXCLUDE")?"":"--targets-file \"^${excludeBed}\" --targets-overlap 2"}  -O u --trim-unseen-allele --trim-alt-alleles --force-samples --samples-file TMP/samples.txt |\\
 	bcftools view --min-ac 1 --max-ac  1 -O u |\\
 	bcftools stats --fasta-ref ${fasta} --samples '-' > TMP/stats.txt
