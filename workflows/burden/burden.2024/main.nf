@@ -223,6 +223,9 @@ workflow BURDEN_CODING {
 		mqc2_ch = MULTIQC(plot_ch.mix(multiqc_per_pop.output).flatten().collect())
 		to_zip_ch = to_zip_ch.mix(mqc2_ch.output)
 
+		readme_ch = README(conditions_ch.collect())
+		to_zip_ch = to_zip_ch.mix(readme_ch.output)
+
 		ZIP_IT(to_zip_ch.flatten().collect())
 	}
 
@@ -1068,5 +1071,114 @@ mkdir -p TMP
 cp -v ${files.join(" ")} TMP/
 mv -v TMP "${params.prefix}archive.results"
 zip -9r archive.results.zip "${params.prefix}archive.results"
+"""
+}
+
+process README {
+conda "${moduleDir}/environment.01.yml"
+label "process_low"
+input:
+	val(json)
+output:
+	path("README.md"),emit:output
+script:
+"""
+
+cat << '__EOF__' >> jeter.txt
+
+# BURDEN
+
+## conditions
+
+the following files contains the parameters for each condition. If a parameter is not specified, the workflow uses the default values.
+
+* condition.exons_only : keep only exons in the region of interest, extending a few bases to keep the splice junctions.
+* condition.max_alleles : max number of alleles (2 = di-allelic)
+* condition.maxAF : max internal allele frequency
+* condition.types: types of variants (snv, indel) to keep
+* condition.polyx : max number of poly X (like poly-A) near the REF allele
+* condition.so_acn : sequence ontology accession for functional annotation filtering
+* condition.phastCons  : treshold for phastCons (conservation) filtering
+* condition.cadd.phred : treshold for CADD phread score filtering
+* condition.gnomad.population : gnomad population
+* condition.gnomad.AF : gnomad AF treshold
+* condition.QD : GATK INFO/QD treshold .  default: -1.0
+* condition.FS : GATK INFO/FS treshold; default: -1.0
+* condition.SOR : GATK INFO/SOR treshold : default: -1.0
+* condition.MQ : GATK INFO/MQ treshold default: 1000
+* condition.MQRankSum : GATK INFO/MQRankSum treshold: default: 1000
+* condition.minDP : min average depth. All ALT genotypes must be between min/max DP. default: 0
+* condition.maxDP : max average depth.  All ALT genotypes must be between min/max DP. default: 300
+* condition.minGQsinletion : min GQ for singleton . default: 90
+* condition.minRatioAD : min ratio ALT/(REF+ALT) for genotypes. Should be close to 0.5 for HET. default: 0.3
+* condition.f_missing: max fraction of missing genotypes in the variant. default: 0.05
+* condition.lowGQ:  genotype quality treshold:  All ALT genotypes must  have a GQ higher. default: 60
+* condition.ignore_HOM_VAR : ignore variant if there is any HOM_VAR genotype on an autosome
+* condition.ignore_GT_FILTER : skip FILTERed Genotypes
+
+
+```json
+__EOF__
+
+echo '['  > jeter.json
+
+cat << '__EOF__' >> jeter.json
+${json.collect{it.toString()}.join(",")}
+__EOF__
+
+echo ']' >> jeter.json
+
+cat jeter.json >> jeter.txt
+
+rm jeter.json
+
+cat << '__EOF__' >> jeter.txt
+```
+
+## method
+
+for each interval of interest (Gene, ATAC-SEQ peak, etc..):
+
+- remove the variant overlapping  a exclude region (blacklisted, low complexity region...) (**bcftools**)
+- keep the samples that are both present in the pedigree and in the VCF (**bcftools**)
+- convert the multiallelic variants to di-allelic (**bcftools norm**)
+- recalculate the INFO fields: AF,AN,AC (**bcftools**)
+- filter on the internal allele frequency, filter out variants with a high AF  (**bcftools**)
+- filter out the variant with a bad type (snv, indel...) (**bcftools**)
+- annotate the variants with bcftools contrast
+- filter out the variants with too many repeats (**jvarkit**)
+- functional annotation (**snpeff**)
+- filter out the variants with a bad functional annotation (e.g: synonymous variants) (**jvarkit**)
+- filter out the variants with a low phastCons score. 
+- filter out the variants with a low CADD score.
+- annotate with gnomad
+- we then use a custom java program compiled on the fly : 
+  - split each interval into new intervals for each entity of interest (Gene/transcript etc...)
+  - filter on f_missing
+  - filter on HOM_VAR
+  - filter on low/high depth
+  - filter on AD ratio
+  - filter on too many FILTERed ALT genotypes
+  - filter on low GQ
+  - filter on INFO/QD
+  - filter on INFO/FS
+  - filter on INFO/SOR
+  - filter on INFO/MQ
+  - filter on INFO/MQRank_Sum
+  - filter on INFOReadPosRank_Sum
+  - filter on Singleton qual
+  - the program write a file used by the R program below 
+- a R program is run to calculate the statistics skat, skat-o, skat-adjusted, skat-o-adjusted, fisher:
+
+```R
+__EOF__
+
+cat ${moduleDir}/karaka01.R >> jeter.txt
+
+cat << '__EOF__' >> jeter.txt
+```
+__EOF__
+
+mv jeter.txt README.md
 """
 }
