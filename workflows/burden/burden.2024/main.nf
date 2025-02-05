@@ -279,7 +279,7 @@ mkdir -p TMP BEDS
 
 
 # jvarkit executable in conda
-JD1=`which jvarkit 1>&2`
+JD1=`which jvarkit`
 echo "\${JD1}" 1>&2
 # directory of jvarkit
 JD2=`dirname "\${JD1}"`

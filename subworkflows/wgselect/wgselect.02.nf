@@ -29,64 +29,50 @@ include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 include {WGSELECT_01} from './wgselect.01.nf'
 include {LINUX_SPLIT} from '../../modules/utils/split.nf'
 include {JVARKIT_GATK_HARD_FILTERING_01} from '../jvarkit/jvarkit.gatk_hard_filtering.01.nf'
-include {JVARKIT_VCF_TO_INTERVALS_01} from '../jvarkit/jvarkit.vcf2intervals.nf'
-include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf'
+include {JVARKIT_VCF_TO_INTERVALS_01} from '../vcf2intervals'
+include {VCF_TO_BED} from '../../subworkflows/vcf2bed'
 
 workflow WGSELECT_02 {
 	take:
-		genomeId
+		reference
 		vcf
 		pedigree
 		bed /* limit to that bed */
 	main:
-		version_ch = Channel.empty()
 		
-		if( (params.wgselect.gatk_hardfiltering_percentile as double) > 0 ) {
-			vcf2bed_ch = VCF_TO_BED([:],vcf)
-			version_ch = version_ch.mix(vcf2bed_ch.version)
+		if( (params.gatk_hardfiltering_percentile as double) > 0 ) {
+			vcf2bed_ch = VCF_TO_BED(vcf)
 		
-			in_ch = vcf2bed_ch.bed.splitCsv(header:false,sep:'\t').map{T->[
-					interval: T[0]+":"+((T[1] as int)+1)+"-"+T[2],
-					vcf: T[3]
-					]}
+			in_ch = vcf2bed_ch.bed.splitCsv(header:false,sep:'\t').
+				map{T->[ T[0]+":"+((T[1] as int)+1)+"-"+T[2],file(T[3]), file(T[4])]}
 		
-			hard_filters_ch = JVARKIT_GATK_HARD_FILTERING_01([percentile: params.wgselect.gatk_hardfiltering_percentile], in_ch)
+			hard_filters_ch = JVARKIT_GATK_HARD_FILTERING_01(in_ch)
 			
-			version_ch = version_ch.mix(hard_filters_ch.version)
 			
 			hard_filters = hard_filters_ch.output
 			}
 		else
 			{
-			hard_filters = Channel.fromPath(file("NO_FILE"))
+			hard_filters = Channel.of(file("NO_FILE"))
 			}
 		
-		tobed_ch = JVARKIT_VCF_TO_INTERVALS_01([distance: params.wgselect.distance ,min_distance: params.wgselect.min_distance], vcf, bed)
-		version_ch = version_ch.mix(tobed_ch.version)
+		tobed_ch = JVARKIT_VCF_TO_INTERVALS_01(vcf, bed)
 
+		
 		wch1_ch = WGSELECT_01(
-			[:],
-			genomeId,
+			reference,
 			tobed_ch.bed.splitCsv(header:false,sep:'\t').
-				map{T->[
-					interval: T[0]+":"+((T[1] as int)+1)+":"+T[2],
-					vcf: T[3],
-					pedigree: pedigree,
-					]}.
-				combine(hard_filters).
-				map{T->T[0].plus(hard_filters:T[1])}
-				
+				map{[it[0]+":"+((it[1] as int)+1)+":"+it[2],it[3],it[4]]},
+			hard_filters,
+			pedigree
 			)
-
-		version_ch = version_ch.mix(wch1_ch.version)		
-		version_ch = MERGE_VERSION("WGSelect", version_ch.collect())
+		
 
 	emit:
-		version = version_ch /** version */
-                variants_list = wch1_ch.variants_list /** file containing count of variants at each step */
-               	contig_vcfs = wch1_ch.contig_vcfs /** path to all vcf concatenated per contigs */
-                vcfs = wch1_ch.vcfs /** path to all chunks of vcf */
-
+                //variants_list = wch1_ch.variants_list /** file containing count of variants at each step */
+               //contig_vcfs = wch1_ch.contig_vcfs /** path to all vcf concatenated per contigs */
+               //vcfs = wch1_ch.vcfs /** path to all chunks of vcf */
+		vcfs = Channel.empty()
 
 	}
 

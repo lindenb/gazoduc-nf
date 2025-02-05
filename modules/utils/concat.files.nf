@@ -23,46 +23,28 @@ SOFTWARE.
 
 */
 
-include {escapeXml} from './functions.nf'
 
 process CONCAT_FILES_01 {
-tag "N=${L.size()}"
 afterScript "rm -rf TMP"
-executor "local"
+label "process_single"
 input:
-        val(meta)
-        val(L)
+        path("INPUT/*")
 output:
-        path("concat${suffix?:".list"}"),emit:output
-	path("version.xml"),emit:version
+        path("concat*"),emit:output
 script:
-	if(meta.containsKey("suffix")) log.info("deprecated CONCAT_FILES_01.suffix")
-	if(meta.containsKey("downstream_cmd")) log.info("deprecated CONCAT_FILES_01.concat_n_files")
-	if(meta.containsKey("concat_n_files")) log.info("deprecated CONCAT_FILES_01.concat_n_files")
-	suffix = (task.ext && task.ext.suffix?task.ext.suffix:(meta.suffix?:".list"))
-	def concat_n_files = (task.ext && task.ext.concat_n_files?task.ext.concat_n_files:(meta.concat_n_files?:"."))
-	def downstream_cmd  = (task.ext && task.ext.downstream_cmd?task.ext.downstream_cmd:(meta.downstream_cmd?:""))
+	def suffix = (task.ext && task.ext.suffix ? task.ext.suffix : ".list")
+	def concat_n_files = (task.ext && task.ext.concat_n_files ? task.ext.concat_n_files:50)
+	def downstream_cmd  = (task.ext && task.ext.downstream_cmd ? task.ext.downstream_cmd:"")
 """
 hostname 1>&2
 
 mkdir -p TMP
-
-cat << EOF > TMP/jeter.txt
-${L.join("\n")}
-EOF
+find ./INPUT/ -type l > TMP/jeter.txt
 
 xargs -a TMP/jeter.txt -L ${concat_n_files} cat ${downstream_cmd} > TMP/concat.data
 
 mv TMP/concat.data "concat${suffix}"
 
 sleep 5
-#############################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="Name">${task.process}</entry>
-        <entry key="Description">Concatenate the content of N='${L.size()}' file(s)</entry>
-        <entry key="downstream.command"><pre>${escapeXml(downstream_cmd)}</pre></entry>
-</properties>
-EOF
 """
 }

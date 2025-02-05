@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -23,51 +23,42 @@ SOFTWARE.
 
 */
 
-include {moduleLoad} from '../../modules/utils/functions.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
-include { SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.02.nf'
+include { SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.nf'
+include {k1_signature} from '../../modules/utils/k1.nf'
+
+def k1 = k1_signature()
 
 workflow WGSELECT_EXCLUDE_BED_01 {
 	take:
-		meta
-		genomeId
+		genome
 	main:
-		version_ch = Channel.empty()
 		to_merge_ch = Channel.empty()
 
-		gaps_ch = SCATTER_TO_BED(["OUTPUT_TYPE":"N","MAX_TO_MERGE":"1"], ["genomeId":genomeId])
-		to_merge_ch = to_merge_ch.mix(gaps_ch.output.map{T->T.scatter_bed})
+		gaps_ch = SCATTER_TO_BED(genome)
+		to_merge_ch = to_merge_ch.mix(gaps_ch.output)
 
 		if(params.wgselect.with_rmsk as boolean) {
-			rmsk_ch = RMSK(genomeId)
-			version_ch = version_ch.mix(rmsk_ch.version)
+			rmsk_ch = RMSK(genome)
 			to_merge_ch = to_merge_ch.mix(rmsk_ch.bed)
 			}
 
 		if(params.wgselect.with_encode_exclude as boolean) {
-			x2_ch = EXCLUDE_ENCODE(genomeId)
-			version_ch = version_ch.mix(x2_ch.version)
+			x2_ch = EXCLUDE_ENCODE(genome)
 			to_merge_ch = to_merge_ch.mix(x2_ch.bed)
 			}
 
 
 		if(params.wgselect.with_lcr as boolean) {
-			x3_ch = LOW_COMPLEXITY_REGIONS(genomeId)
-			version_ch = version_ch.mix(x3_ch.version)
+			x3_ch = LOW_COMPLEXITY_REGIONS(genome)
 			to_merge_ch = to_merge_ch.mix(x3_ch.bed)
 			}
 
 		if(params.wgselect.with_simple_repeats as boolean) {
-			x4_ch = SIMPLE_REPEATS(genomeId)
-			version_ch = version_ch.mix(x4_ch.version)
+			x4_ch = SIMPLE_REPEATS(genome)
 			to_merge_ch = to_merge_ch.mix(x4_ch.bed)
 			}
 		all_x_ch = MERGE_REGIONS(to_merge_ch.collect())
-		version_ch = version_ch.mix(all_x_ch.version)
-
-		version_ch = MERGE_VERSION("blacklisted",version_ch.collect())
 	emit:
-		version = version_ch.version
 		bed = all_x_ch.bed
 	}
 
@@ -75,182 +66,167 @@ workflow WGSELECT_EXCLUDE_BED_01 {
 
 
 process RMSK {
+label "process_short"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
 input:
-	val(genomeId)
+	path(genome)
 output:
 	path("rmsk.bed"), emit:bed
-	path("version.xml"), emit:version
 script:
-	def genome = params.genomes[genomeId]
-	def reference = genome.fasta
-	def url = genome.rmsk_url
-	if(url.isEmpty()) throw new IllegalArgumentException("undefined rmsk.url for ${genome.name}");
-
+	def fai = genome.find{it.name.endsWith(".fai")}
+	def fasta = genome.find{it.name.endsWith("a")}
 """
 hostname 1>&2
 set -o pipefail
-${moduleLoad("jvarkit")}
+mkdir -p TMP
 
-wget -O - "${url}" |\
-	gunzip -c |\
-	cut -f6-8 |\
-	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 1 --convert SKIP |\
+cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter.a
+1:${k1.hg19}\thttps://hgdownload.cse.ucsc.edu/goldenPath/hg19/database/rmsk.txt.gz
+1:${k1.hg38}\thttps://hgdownload.cse.ucsc.edu/goldenPath/hg38/database/rmsk.txt.gz
+EOF
+
+awk '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' |  sort -T TMP -t '\t' -k1,1 > TMP/jeter.b
+
+URL=`join -t '\t' -1 1 -2 1 -o 1.2 TMP/jeter.a TMP/jeter.b`
+
+
+wget -O - "\${URL}" |\\
+	gunzip -c |\\
+	cut -f6-8 |\\
+	jvarkit bedrenamechr -f "${fasta}" --column 1 --convert SKIP |\
 		LC_ALL=C sort -t '\t' -T . -k1,1 -k2,2n > rmsk.bed
 
 test -s rmsk.bed
-
-#########################################################"
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="description">load bed from UCSC : repeat masked regions</entry>
-	<entry key="url"><a>${url}</a></entry>
-	<entry key="jvarkit.bedrename.version">\$( java -jar \${JVARKIT_DIST}/bedrenamechr.jar --version)</entry>
-</properties>
-EOF
 """
 }
 
 process EXCLUDE_ENCODE {
+label "process_short"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
 input:
-	val(genomeId)
+	path(genome)
 output:
 	path("excude.encode.bed"),emit:bed
-	path("version.xml"),emit:version
 script:
-	def genome = params.genomes[genomeId]
-	def reference = genome.fasta
-	// https://www.biostars.org/p/171354/
-	def url = genome.encode_exclude_url
-	if(url.isEmpty()) throw new IllegalArgumentException("undefined encode blakclist for ${reference}");
+        def fai = genome.find{it.name.endsWith(".fai")}
+        def fasta = genome.find{it.name.endsWith("a")}
 
 """
 hostname 1>&2
 set -o pipefail
-${moduleLoad("jvarkit")}
+mkdir -p TMP
 
-wget -O - "${url}" |\
+cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter.a
+1:${k1.hg19}\thttps://hgdownload.cse.ucsc.edu/goldenPath/hg19/encodeDCC/wgEncodeMapability/wgEncodeDukeMapabilityRegionsExcludable.bed.gz
+1:${k1.hg38}\thttps://github.com/Boyle-Lab/Blacklist/blob/master/lists/hg38-blacklist.v2.bed.gz?raw=true
+EOF
+
+awk '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' |  sort -T TMP -t '\t' -k1,1 > TMP/jeter.b
+
+URL=`join -t '\t' -1 1 -2 1 -o 1.2 TMP/jeter.a TMP/jeter.b`
+
+
+wget -O - "\${URL}" |\
 	gunzip -c |\
 	cut -f1-3 |\
-	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 1 --convert SKIP |\
+	jvarkit bedrenamechr -f "${fasta}" --column 1 --convert SKIP |\
 	LC_ALL=C sort -t '\t' -T . -k1,1 -k2,2n > excude.encode.bed
 
 test -s excude.encode.bed
-
-
-#########################################################"
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="description">load excludedRegions from encode</entry>
-	<entry key="url"><a>${url}</a></entry>
-	<entry key="jvarkit.bedrename.version">\$( java -jar \${JVARKIT_DIST}/bedrenamechr.jar --version)</entry>
-</properties>
-EOF
 """
 }
 
 
 process LOW_COMPLEXITY_REGIONS {
+label "process_short"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
 input:
-	val(genomeId)
+	path(genome)
 output:
 	path("lcr.bed"), emit:bed
-	path("version.xml"), emit:version
 script:
-	def genome = params.genomes[params.genomeId];
-	def reference = genome.fasta
-	def url = genome.lcr_url
-	if(url.isEmpty()) throw new IllegalArgumentException("undefined encode blakclist for ${reference}");
-
+	def fai = genome.find{it.name.endsWith(".fai")}
+	def fasta = genome.find{it.name.endsWith("a")}
 """
 hostname 1>&2
 set -o pipefail
-${moduleLoad("jvarkit")}
+mkdir -p TMP
+
+cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter.a
+1:${k1.hg19}\thttps://github.com/lh3/varcmp/blob/master/scripts/LCR-hs37d5.bed.gz?raw=true
+1:${k1.hg38}\thttps://github.com/lh3/varcmp/blob/master/scripts/LCR-hs38.bed.gz?raw=true
+EOF
+
+awk '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' |  sort -T TMP -t '\t' -k1,1 > TMP/jeter.b
+
+URL=`join -t '\t' -1 1 -2 1 -o 1.2 TMP/jeter.a TMP/jeter.b`
 		
-wget -O - "${url}" |\
+wget -O - "\${URL}" |\
 	gunzip -c |\
 	cut -f1-3 |\
-	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 1 --convert SKIP |\
-	LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n > lcr.bed
+	jvarkit bedrenamechr -f "${fasta}" --column 1 --convert SKIP |\
+	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n > lcr.bed
 
 test -s lcr.bed
-
-#########################################################"
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="description">download lowComplexity Regions.</entry>
-	<entry key="url"><a>${url}</a></entry>
-	<entry key="jvarkit.bedrename.version">\$( java -jar \${JVARKIT_DIST}/bedrenamechr.jar --version)</entry>
-</properties>
-EOF
 """
 }
 
 process SIMPLE_REPEATS {
+label "process_short"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
 input:
-	val(genomeId)
+	path(genome)
 output:
 	path("simple_repeats.bed"), emit:bed
-	path("version.xml"), emit:version
 script:
-	def genome = params.genomes[params.genomeId]
-	def reference = genome.fasta
-	def url = genome.simple_repeats_url
-	if(url.isEmpty()) throw new IllegalArgumentException("undefined encode blakclist for ${params.genomeId}");
+        def fai = genome.find{it.name.endsWith(".fai")}
+        def fasta = genome.find{it.name.endsWith("a")}
+
 """
 hostname 1>&2
 set -o pipefail
-${moduleLoad("jvarkit")}
+mkdir -p TMP
 
-wget -O - "${url}" |\
+cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter.a
+1:${k1.hg19}\thttps://hgdownload.cse.ucsc.edu/goldenPath/hg19/database/simpleRepeat.txt.gz
+1:${k1.hg38}\thttps://hgdownload.cse.ucsc.edu/goldenPath/hg38/database/simpleRepeat.txt.gz
+EOF
+
+awk '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' |  sort -T TMP -t '\t' -k1,1 > TMP/jeter.b
+
+URL=`join -t '\t' -1 1 -2 1 -o 1.2 TMP/jeter.a TMP/jeter.b`
+
+
+wget -O - "\${URL}" |\
 	gunzip -c |\
 	cut -f2-4 |\
-	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 1 --convert SKIP |\
+	jvarkit bedrenamechr -f "${fasta}" --column 1 --convert SKIP |\
 		LC_ALL=C sort -t '\t' -T . -k1,1 -k2,2n > simple_repeats.bed
 
 
 test -s simple_repeats.bed
-
-#########################################################"
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="description">download simple repeats</entry>
-	<entry key="url"><a>${url}</a></entry>
-	<entry key="jvarkit.bedrename.version">\$( java -jar \${JVARKIT_DIST}/bedrenamechr.jar --version)</entry>
-</properties>
-EOF
 """
 }
 
 
 process MERGE_REGIONS {
-tag "N=${L.size()}"
+label "process_short"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
-	val(L)
+	path("BED/*")
 output:
 	path("bad_regions.bed"),emit:bed
-	path("version.xml"),emit:version
 script:
 """
 hostname 1>&2
-${moduleLoad("bedtools")}
 set -o pipefail
-LC_ALL=C sort --merge -T . -k1,1 -k2,2n ${L.join(" ")} |\
-	cut -f1-3 |\
+cut -f1,2,3  BED/*.bed |\\
+LC_ALL=C sort  -T . -k1,1 -k2,2n  |\\
 	bedtools merge > bad_regions.bed
-
-
-#########################################################"
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="description">merge all ${L.size()} blacklisted bed(s)</entry>
-	<entry key="bedtools.version">\$(bedtools --version)</entry>
-</properties>
-EOF
 """
 }
 

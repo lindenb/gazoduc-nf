@@ -29,7 +29,8 @@ include {moduleLoad} from '../utils/functions.nf'
 
 
 process INTERVAL_LIST_TO_BED {
-label "process_quick"
+label "process_single"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
 	path(interval_list)
 output:
@@ -39,9 +40,8 @@ script:
 	def SCORE = task.ext.score?:1000
 """
 	hostname 1>&2
-	${moduleLoad("picard")}
 
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=. -jar \${PICARD_JAR} IntervalListToBed \
+	gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=."  IntervalListToBed \
 		--INPUT "${interval_list}" \
 		--OUTPUT "${interval_list.getSimpleName()}.bed"  \
 		--SCORE ${SCORE} \

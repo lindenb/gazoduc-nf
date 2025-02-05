@@ -23,11 +23,9 @@ SOFTWARE.
 
 */
 
-include {moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
-include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf'
+include {VCF_TO_BED} from '../vcf2bed'
 include {JVARKIT_VCF_TO_INTERVALS_01 as VCF_TO_INTERVALS} from '../../modules/jvarkit/jvarkit.vcf2intervals.01.nf'
 include {CONCAT_FILES_01} from '../../modules/utils/concat.files.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 
 
 
@@ -37,52 +35,39 @@ include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
  */
 workflow JVARKIT_VCF_TO_INTERVALS_01 {
 	take:
-		meta
 		vcf /* path to vcf, or file with .list suffix */
 		bed /* limit to that BED or NO_FILE */
-	main:
-		if(meta.containsKey("with_header")) throw new RuntimeException("meta.with_header defined but now use config please")
-		if(!meta.containsKey("distance")) throw new RuntimeException("meta.distance missing")
-		if(!meta.containsKey("min_distance")) throw new RuntimeException("meta.min_distance missing")
-	
-		version_ch = Channel.empty()
-		bed_ch = VCF_TO_BED([:],vcf)
-		version_ch = version_ch.mix(bed_ch.version)
+	main:	
+		bed_ch = VCF_TO_BED(vcf)
 	
 		bed2ch = INTERSECT_BED(bed_ch.bed, bed)
-		version_ch = version_ch.mix(bed2ch.version)
+
 
 		interval_vcf = bed2ch.bed.splitCsv(header:false,sep:'\t').
-			map{T->[vcf:file(T[3]),interval:T[0]+":"+((T[1] as int)+1)+"-"+T[2]]}
+			map{T->[ T[0]+":"+((T[1] as int)+1)+"-"+T[2], file("NO_FILE") ,T[3],T[4]]}
 
-		rch = VCF_TO_INTERVALS(meta, interval_vcf)
-		version_ch = version_ch.mix(rch.version)
+		rch = VCF_TO_INTERVALS(interval_vcf)
 
-		concat_ch = CONCAT_FILES_01([suffix:".bed", concat_n_files:50,downstream_cmd:""] , rch.bed.collect())
-		version_ch = version_ch.mix(concat_ch.version)
-
-		version_ch = MERGE_VERSION("jvarkit2intervals",version_ch.collect())
+		concat_ch = CONCAT_FILES_01(rch.bed.collect())
 
 	emit:
 		vcf2bed = bed_ch.bed /** original BED computed by VCF_TO_BED */
 		bed = concat_ch.output /** sliced bed , this is what we want */
-		version = version_ch
 	}
+
 
 process INTERSECT_BED {
 tag "${vcfbed.name} / ${userbed.name}"
-executor "local"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
 	path(vcfbed)
 	path(userbed)
 output:
 	path("intersect.bed"),emit:bed
-	path("version.xml"),emit:version
 script:
 """
 hostname 1>&2
-${moduleLoad("bedtools")}
 set -o pipefail
 
 mkdir TMP
@@ -96,15 +81,6 @@ else
 	bedtools intersect -a TMP/a.bed -b TMP/b.bed |\
 		sort -t '\t' -T TMP -k1,1 -k2,2n > intersect.bed
 fi
-
-#######################
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="description">intersection between vcf bed and user bed</entry>
-	<entry key="version">${getVersionCmd("bedtools")}</entry>
-</properties>
-EOF
 """
 }
 

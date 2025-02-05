@@ -29,11 +29,9 @@ executor "local"
 afterScript "rm jeter.list"
 tag "N=${L.size()}"
 input:
-	val(meta)
-	val(L)
+	path("INPUT/*")
 output:
 	path("concat.list"),emit:output
-	path("version.xml"),emit:version
 script:
 """
 hostname 1>&2

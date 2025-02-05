@@ -78,8 +78,6 @@ A **pedigree** is a tab delimited file without header with the following columns
 ## Parameters
 
 
-| Field | Description | Value | Source |
-|-----|----|----|----|
 
 
 

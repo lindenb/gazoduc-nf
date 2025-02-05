@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,53 +24,51 @@ SOFTWARE.
 */
 include {getModules;moduleLoad} from '../../modules/utils/functions.nf'
 include {WGSELECT_EXCLUDE_BED_01 } from './wgselect.exclude.bed.01.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
-include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
-include {BCFTOOLS_CONCAT_PER_CONTIG_01} from '../bcftools/bcftools.concat.contigs.01.nf' 
-
+include {BCFTOOLS_CONCAT} from '../bcftools/concat/main'
+include {SNPEFF_DOWNLOAD} from '../../modules/snpeff/download'
 
 
 workflow WGSELECT_01 {
 	take:
-		meta
-		genomeId
-		rows 
+		reference
+		rows
+		hard_filters
+		pedigree
 	main:
-		version_ch = Channel.empty()
 		
 		
-		exclude_ch = WGSELECT_EXCLUDE_BED_01([:], genomeId)
-		version_ch = version_ch.mix(exclude_ch.version)
+		exclude_ch = WGSELECT_EXCLUDE_BED_01(reference)
 
+		snpeff_sb = SNPEFF_DOWNLOAD(params.snpeff_db)
 
-		annotate_ch = ANNOTATE(meta, genomeId, rows.combine(exclude_ch.bed).map{T->T[0].plus(blacklisted:T[1])})
-
-		version_ch = version_ch.mix(annotate_ch.version.first())
 		
-		cat_files_ch = COLLECT_TO_FILE_01([:], annotate_ch.bed_vcf.map{T->T[1]}.collect())
+		rows.view()
 
-		concat_ch = BCFTOOLS_CONCAT_PER_CONTIG_01([suffix:".bcf"],  cat_files_ch.output)
-		version_ch = version_ch.mix(concat_ch.version)
+		annotate_ch = ANNOTATE(reference, rows , snpeff_sb.output, pedigree, hard_filters, exclude_ch.bed)
+
+		
+
+		concat_ch = BCFTOOLS_CONCAT( annotate_ch.output.map{[it[1],it[2]]}, file("NO_FILE"))
 
 
 
 		digest_ch = DIGEST_VARIANT_LIST(annotate_ch.variants_list.collect())
-		version_ch = version_ch.mix(digest_ch.first())
 
 
-		version_ch = MERGE_VERSION("wgselect", version_ch.collect())
 	emit:
-		version = version_ch /** version */
-		variants_list = digest_ch.output /** file containing count of variants at each step */
-		contig_vcfs = concat_ch.vcfs /** path to all vcf concatenated per contigs */
-		bed = concat_ch.bed /** path to all VCFs as bed */
-		vcfs = cat_files_ch.output /** path to all chunks of vcf */
+		//variants_list = digest_ch.output /** file containing count of variants at each step */
+		//contig_vcfs = concat_ch.vcfs /** path to all vcf concatenated per contigs */
+		//bed = concat_ch.bed /** path to all VCFs as bed */
+		// vcfs = cat_files_ch.output /** path to all chunks of vcf */
+		vcfs = Channel.empty()
 	}
 
 
 
 process ANNOTATE {
-tag "${file(row.vcf).name} ${row.bed?:row.interval}"
+label "process_low"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+tag "${vcf.name} ${interval}"
 cache "lenient"
 cpus {task.attempt}
 errorStrategy 'retry'
@@ -78,30 +76,19 @@ maxRetries 5
 memory "5g"
 afterScript "rm -rf TMP"
 input:
-	val(meta)
-	val(genomeId)
-	val(row)
+	path(genome)
+	tuple val(interval),path(vcf),path(vcfidx)
+	path(snpEffDir)
+	path(jvarkitped)
+	path(apply_hard_filters_arguments)
+	path(blacklisted)
 output:
-	tuple path("contig.bed"),path("contig.bcf"), emit: bed_vcf
-	path("variant_list.txt.gz"), emit:variants_list
-	path("version.xml"),emit:version
+	tuple val(interval),path("*contig.bcf"),path("*contig.bcf.csi"), emit: output
+	path("*variant_list.txt.gz"), emit:variants_list
 script:
-	if(!row.containsKey("pedigree")) throw new IllegalArgumentException("row.pedigree is missing");
-	if(!row.containsKey("vcf")) throw new IllegalArgumentException("row.vcf is missing");
-	if(!(row.containsKey("bed") || row.containsKey("interval"))) throw new IllegalArgumentException("row.bed/interval is missing");
-	if(!row.containsKey("hard_filters")) throw new IllegalArgumentException("row.hard_filters is missing");
-	//
-	def vcf = row.vcf.toString()
-	def jvarkitped = row.pedigree
-	def genome = params.genomes[genomeId]
-	def reference = genome.fasta	
-	def blacklisted = row.blacklisted
-	def gnomadgenome = genome.gnomad_genome
-	def gnomadgenomefilterexpr = genome.ucsc_name.equals("hg19")? params.wgselect.gnomadgenomefilterexpr_hg19 : ( genome.ucsc_name.equals("hg38")? params.wgselect.gnomadgenomefilterexpr_hg38 : "")
-	def mapability= genome.mapability_bigwig
-	def snpeffDb = genome.snpeff_database_name
-	def vep_module = genome.vep_module?:""
-	def vep_invocation = genome.vep_invocation?:""
+	def reference = genome.find{it.name.endsWith("a")}
+	def gnomadgenome = params.gnomad
+	def mapability= params.mapability_bigwig
 	def max_alleles_count = (params.wgselect.max_alleles_count as int)
 	def polyx = (params.wgselect.polyx as int)
 	def gnomadPop = (params.wgselect.gnomadPop)
@@ -118,31 +105,30 @@ script:
 	def hwe = (params.wgselect.hwe as double)
 	def minGQsingleton = (params.wgselect.minGQsingleton as int)
 	def minRatioSingleton  = (params.wgselect.minRatioSingleton as double)
-	def annot_method = (params.wgselect.annot_method)
 	def cadd_phred = (params.wgselect.cadd_phred as double)
-	def cadd_tabix = genome.cadd_tabix
-	def apply_hard_filters_arguments = row.hard_filters
+	def cadd_tabix = params.cadd
 
 """
 hostname 1>&2
-${moduleLoad("jvarkit bcftools bedtools")}
 set -x
 mkdir -p TMP
 touch TMP/variant_list.txt
-which java 1>&2
-which javac 1>&2
-javac -version 1>&2
-echo "\${JAVA_HOME}"
 
 
-	if ${row.containsKey("bed")} ; then
-		ln -s '${row.bed}' TMP/contig.bed
-	elif ${row.containsKey("interval")} ; then
-		echo '${row.interval}' | awk -F '[:-]' '{printf("%s\t%s\t%s\\n",\$1,int(\$2)-1,\$3);}' > TMP/contig.bed
-	else
-		echo "No interval or bed defined" 1>&2
-		exit -1
-	fi
+# jvarkit executable in conda
+JD1=`which jvarkit`
+echo "JD1=\${JD1}" 1>&2
+# directory of jvarkit
+JD2=`dirname "\${JD1}"`
+# find the jar itself
+JVARKIT_JAR=`find "\${JD2}/../.." -type f -name "jvarkit.jar" | head -n1`
+JVARKIT_DIST=`dirname "\${JVARKIT_JAR}"`
+
+test ! -z "\${JVARKIT_JAR}"
+
+
+
+	echo '${interval}' | awk -F '[:-]' '{printf("%s\t%s\t%s\\n",\$1,int(\$2)-1,\$3);}' > TMP/contig.bed
 
 
 	function countIt {
@@ -235,8 +221,6 @@ echo "\${JAVA_HOME}"
 	# gatk hard filtering #############################################################
 	if ${!file(apply_hard_filters_arguments).name.equals("NO_FILE") } ; then
 		## conflic betwwen java for jvarkit and gatk "Duplicate cpuset controllers detected" on stdout
-		module unload jvarkit
-		module load gatk/0.0.0
 		bcftools view -O z -o TMP/jeter1.vcf.gz TMP/jeter1.bcf
 		bcftools index -f -t TMP/jeter1.vcf.gz
 
@@ -252,8 +236,6 @@ echo "\${JAVA_HOME}"
 
 		rm TMP/jeter2.vcf.gz TMP/jeter2.vcf.gz.tbi TMP/jeter1.vcf.gz TMP/jeter1.vcf.gz.tbi
 
-		module unload gatk/0.0.0
-		module load jvarkit
 
 
 		cat <<- EOF >> version.xml
@@ -580,27 +562,10 @@ echo "\${JAVA_HOME}"
 	mv TMP/jeter2.vcf TMP/jeter1.vcf
 
 
-	cat <<- EOF >> version.xml
-        <properties>
-                <entry key="name">het singleton</entry>
-		<entry key="description">remove variant if singleton has bad quality</entry>
-		<entry key="singleton-GQ">${minGQsingleton}</entry>
-		<entry key="AD-ratio-low">${minRatioSingleton}</entry>
-		<entry key="AD-ratio-high">${1.0 - (minRatioSingleton as Double)}</entry>
-	</properties>
-	EOF
-
 
 
 	if ${!mapability.isEmpty()} ; then
 
-	cat <<- EOF >> version.xml
-        <properties>
-                <entry key="name">mapability</entry>
-		<entry key="description">remove variant if singleton overlaps region of low mapability</entry>
-		<entry key="file">${mapability}</entry>
-		<entry key="treshold">1.0</entry>
-	EOF
 
 		# DukeMapability
 		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfbigwig -tag mapability \
@@ -612,110 +577,54 @@ echo "\${JAVA_HOME}"
 		countIt "mapability" TMP/jeter1.vcf TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
 
-		echo '<entry key="enabled">true</entry></properties>' >> version.xml
-	else
-
-		echo '<entry key="enabled">false</entry></properties>' >> version.xml
-
 	fi
 
 	### GNOMAD GENOME #####################################################################################
 
-	cat <<- EOF >> version.xml
-        <properties>
-                <entry key="name">gnomad genome variant</entry>
-		<entry key="description">remove variant if frequent in gnomad genome</entry>
-		<entry key="population">${gnomadPop}</entry>
-		<entry key="AF">${gnomadAF}</entry>
-	EOF
 
-	if [ ! -z "${genome.gnomad_genome}"  ] ; then
+	if ${params.wgselect.with_gnomad==true && !params.gnomad.isEmpty()} ; then
 
-		test -f "${genome.gnomad_genome}"
+		test -f "${params.gnomad}"
 
         	# gnomad genome
-        	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfgnomad --bufferSize 1000 -F '${gnomadPop}' \
-                	-g "${genome.gnomad_genome}" --max-af "${gnomadAF}" TMP/jeter1.vcf   > TMP/jeter2.vcf
+        	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfgnomad --bufferSize 1000 -F '${gnomadPop}' \\
+                	-g "${params.gnomad}" --max-af "${gnomadAF}" TMP/jeter1.vcf   > TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
-		bcftools view -e '${gnomadgenomefilterexpr}' -O v -o TMP/jeter2.vcf TMP/jeter1.vcf
+
+		bcftools view --header-only TMP/jeter1.vcf |\\
+			grep "^##FILTER" |\\
+			tr "<," "\\n" |\\
+			grep '^ID=GNOMAD_' |\\
+			awk -F '=' '{printf("%s FILTER ~ \\"%s\\" ",(NR==1?"":" ||"),\$2);}' | tr '"' "'"  > TMP/gnomad.filters
+
+
+		bcftools view -e "`cat TMP/gnomad.filters`"  -O v -o TMP/jeter2.vcf TMP/jeter1.vcf
 		countIt "gnomadgenome.${gnomadPop}" TMP/jeter1.vcf TMP/jeter2.vcf
 	
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
 
-		echo '<entry key="enabled">true</entry></properties>' >> version.xml
-
-	else
-
-		echo '<entry key="enabled">false</entry></properties>' >> version.xml
-
 	fi
 
-	### GNOMAD EXOME #####################################################################################
-
-	cat <<- EOF >> version.xml
-        <properties>
-                <entry key="name">gnomad exome variant</entry>
-		<entry key="description">remove variant if frequent in gnomad exome</entry>
-		<entry key="population">${gnomadPop}</entry>
-		<entry key="AF">${gnomadAF}</entry>
-	EOF
-
-	if [ ! -z "${genome.gnomad_exome}"  ] ; then
-
-		test -f "${genome.gnomad_exome}"
-
-        	# gnomad exome
-        	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfgnomad   --bufferSize 1000 -F '${gnomadPop}' \
-                	-g "${genome.gnomad_exome}" --max-af "${gnomadAF}" TMP/jeter1.vcf   > TMP/jeter2.vcf
-		mv TMP/jeter2.vcf TMP/jeter1.vcf
-		bcftools view -e 'FILTER~"GNOMAD_EXOME_AC0"|| FILTER~"GNOMAD_EXOME_BAD_AF"|| FILTER~"GNOMAD_EXOME_InbreedingCoeff"|| FILTER~"GNOMAD_EXOME_RF"' -O v -o TMP/jeter2.vcf TMP/jeter1.vcf
-		countIt "gnomadexome.${gnomadPop}" TMP/jeter1.vcf TMP/jeter2.vcf
-		mv TMP/jeter2.vcf TMP/jeter1.vcf
-
-		echo '<entry key="enabled">true</entry></properties>' >> version.xml
-	else
-		
-		echo '<entry key="enabled">false</entry></properties>' >> version.xml
-
-	fi
 
  	## FUNCTIONNAL ANNOTATION ##############################################################################
-	cat <<- EOF >> version.xml
-        <properties>
-                <entry key="name">Functional annotations</entry>
-		<entry key="method">${annot_method}</entry>
-		<entry key="Sequence ontology">${soacn}</entry>
-		<entry key="Exclude Sequence ontology">${exclude_soacn}</entry>
-	EOF
 
 
-    if [ ! -z "${annot_method}" ] ; then
+	    if ${params.wgselect.with_vep==true} ; then
 
-	    if [  "${annot_method.toLowerCase()}" == "vep"  ]  && [ ! -z "${vep_module}" ] ; then
-
-		module load ${vep_module}
-		${vep_invocation} --output_file TMP/jeter2.vcf < TMP/jeter1.vcf
+		vep_toto --output_file TMP/jeter2.vcf < TMP/jeter1.vcf
  		mv TMP/jeter2.vcf TMP/jeter1.vcf
-		module unload ${vep_module}
-		${moduleLoad("jvarkit")}
-		echo '<entry key="vep version">${vep_module}</entry>' >> version.xml
+	    fi
 
 
-	    elif  [  "${annot_method.toLowerCase()}" == "snpeff" ] && [ ! -z "${snpeffDb}" ] ; then 
+	    if  ${params.wgselect.with_snpeff==true} ; then 
 
 	   	 # snpeff
-		 ${moduleLoad("snpEff/0.0.0")}
-	         java  -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar "\${SNPEFF_JAR}" eff -config "\${SNPEFF_CONFIG}" -interval "TMP/contig.bed" -nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf "${snpeffDb}" TMP/jeter1.vcf > TMP/jeter2.vcf
-	         module unload ${getModules("snpEff/0.0.0")}
-		${moduleLoad("jvarkit")}
+		 snpEff -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  eff -dataDir "\${PWD}/${snpEffDir}" \\
+			-interval "TMP/contig.bed" -nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf "${params.snpeff_db}" TMP/jeter1.vcf > TMP/jeter2.vcf
 	         mv TMP/jeter2.vcf TMP/jeter1.vcf
 
-		echo '<entry key="snpeff">${snpeffDb}</entry>' >> version.xml
 
 
-	    else
-		echo "undefined annotation method ${annot_method}:${snpeffDb}" 1>&2
-		exit -1
 	    fi
 	
 
@@ -766,59 +675,7 @@ echo "\${JAVA_HOME}"
 
 		echo "</properties>" >> version.xml
 
-    fi
 
-
-    ## Hardy-Weinberg exact test
-
-	cat <<- EOF >> version.xml
-        <properties>
-                <entry key="name">Hardy-Weinberg</entry>
-		<entry key="description">hardy-weinberg use variants with HW  on autosomal chromosomes</entry>
-	EOF
-
-
-    if ${hwe >=0} ; then
-	module load ${getModules("vcftools")}
-	
-	#set -x 
-	awk '!(\$1 ~ /^(chr)?[XY]\$/ )' "TMP/contig.bed" > TMP/autosomes.bed
-	awk '(\$1 ~ /^(chr)?[XY]\$/ )' "TMP/contig.bed" > TMP/sex.bed
-	
-	# save variants on sexual chromosomes
-	if test -s TMP/sex.bed ; then
-		bcftools view --targets-file TMP/sex.bed -O b -o TMP/jeter.sex.bcf TMP/jeter1.vcf
-	else
-		bcftools view -O b -o TMP/jeter.sex.bcf --header-only TMP/jeter1.vcf
-	fi
-	bcftools index TMP/jeter.sex.bcf
-
-
-	# use variants with HW  on autosomal chromosomes
-	if test -s TMP/autosomes.bed ; then
-		bcftools view -O v -o TMP/autosomes.vcf --targets-file TMP/autosomes.bed TMP/jeter1.vcf
-		vcftools --vcf TMP/autosomes.vcf --hwe "${hwe}"  --recode-INFO-all --recode --out TMP/autosome2
-
-		bcftools view -O b -o TMP/jeter.autosomes.bcf TMP/autosome2.recode.vcf
-		rm TMP/autosome2.recode.vcf TMP/autosomes.vcf
-	else
-		bcftools view -O b -o TMP/jeter.autosomes.bcf --header-only TMP/jeter1.vcf
-	fi
-
-	bcftools index TMP/jeter.autosomes.bcf
-
-	bcftools concat --allow-overlaps --remove-duplicates -O v -o TMP/jeter2.vcf TMP/jeter.autosomes.bcf TMP/jeter.sex.bcf
-	countIt "HW" TMP/jeter1.vcf TMP/jeter2.vcf
-	mv TMP/jeter2.vcf TMP/jeter1.vcf
-
-
-		echo '<entry key="enabled">true</entry></properties>' >> version.xml
-
-    else
-
-		echo '<entry key="enabled">false</entry></properties>' >> version.xml
-
-    fi
 
 
     # CONTRAST #############################################################################################
@@ -848,21 +705,25 @@ echo "\${JAVA_HOME}"
 	fi	
 
 
+MD5=`cat TMP/jeter1.vcf | sha1sum | cut -d ' ' -f1`
+
 bcftools view  -O u TMP/jeter1.vcf |\
-bcftools sort -T TMP --max-mem "${task.memory.giga}G" -O b -o "contig.bcf" 
-bcftools index  contig.bcf
+bcftools sort -T TMP --max-mem "${task.memory.giga}G" -O b -o "\${MD5}.contig.bcf" 
+bcftools index  "\${MD5}.contig.bcf"
 
 
-mv TMP/contig.bed ./
+
+mv TMP/contig.bed "\${MD5}.contig.bed"
 
 echo '</entry></properties>' >> version.xml
 
 # check XML is OK
-xmllint --noout version.xml
+#xmllint --noout version.xml
 
 countIt "final" TMP/jeter1.vcf contig.bcf
 gzip --best TMP/variant_list.txt
-mv TMP/variant_list.txt.gz ./
+
+mv TMP/variant_list.txt.gz "\${MD5}.variant_list.txt.gz"
 """
 }
 
@@ -885,31 +746,23 @@ EOF
 }
 
 process DIGEST_VARIANT_LIST {
-	tag "N=${L.size()}"
-	
+	label "process_single"
 	input:
-        	val(L)
+        	path("DIR/*")
         output:
-                path("${params.prefix?:""}wgselect.count.tsv"),emit:output
-                path("version.xml"),emit:version
+                path("wgselect.count.tsv"),emit:output
         script:
         	prefix = params.prefix?:""
         """
         hostname 1>&2
-        ${moduleLoad("datamash")}
+	set -o pipefail
 
-        echo "#FILTER\tIN\tOUT\tDIFF" > "${prefix}filters.count.tsv"
-        cat ${L.join(" ")} | gunzip -c | cut -f 1-4 | sort -T . -t '\t' -k1,1 |\
-        	datamash  -g 1  sum 2 sum 3 sum 4 >> "${prefix}wgselect.count.tsv"
+        echo "#FILTER\tIN\tOUT\tDIFF" > "wgselect.count.tsv"
+        find DIR -type l -name "*.gz" -exec gunzip -c '{}' ';'  |\\
+		cut -f 1-4 |\\
+		sort -T . -t '\t' -k1,1 |\\
+        	datamash  -g 1  sum 2 sum 3 sum 4 >> wgselect.count.tsv
         	
-	#######################################################################################"
-        cat <<- EOF > version.xml
-	<properties id="${task.process}">
-		<entry key="name">${task.process}</entry>
-		<entry key="description">Merging the count of ${L.size()} file(s)</entry>
-		<entry key="Output file">${prefix}wgselect.count.tsv</entry>
-	</properties>
-	EOF
         """
         }
 

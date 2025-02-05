@@ -25,27 +25,29 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 
-include {moduleLoad} from '../utils/functions.nf'
 
 
 process SCATTER_INTERVALS_BY_NS {
 label "process_quick"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
 input:
-	path(fasta) // fasta,fai,dict
+	path(reference) // fasta,fai,dict
 output:
 	path("*.interval_list"), emit:output
 script:
 	def fasta = reference.find{it.name.endsWith("a")}.first()
+	if(!task.ext.containsKey("type")) throw new IllegalArgumentException("SCATTER_INTERVALS_BY_NS type missing")
+	if(!task.ext.containsKey("max_to_merge")) throw new IllegalArgumentException("SCATTER_INTERVALS_BY_NS type missing")
 	def type = task.ext.type
 	def max_to_merge = task.ext.max_to_merge
 	"""
 	hostname 1>&2
-	${moduleLoad("picard")}
-
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=. -jar \${PICARD_JAR} ScatterIntervalsByNs \
-	    -R "${fasta}" \
-	    --MAX_TO_MERGE "${max_to_merge}" \
-	    -O "${fasta.getSimpleName()}.${type}.${max_to_merge}.interval_list" \
+	mkdir -p TMP
+	gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" ScatterIntervalsByNs \\
+	    -R "${fasta}" \\
+	    --MAX_TO_MERGE "${max_to_merge}" \\
+	    -O "${fasta.getSimpleName()}.${type}.${max_to_merge}.interval_list" \\
 	    -OUTPUT_TYPE "${type}"
 	"""
 	}

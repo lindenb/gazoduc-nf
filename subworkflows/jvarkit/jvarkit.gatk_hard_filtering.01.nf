@@ -22,9 +22,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
-
 
 
 
@@ -34,99 +31,71 @@ include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
  */
 workflow JVARKIT_GATK_HARD_FILTERING_01 {
 	take:
-		meta /* contains: percentile */
-		row /* contains: vcf  interval */
+		row /* tuple [interval,vcf,vcfidx] */
 	main:
-		if(!meta.containsKey("percentile")) throw new IllegalArgumentException("percentile undefined");
-		if((meta.percentile as double) <= 0 ) throw new IllegalArgumentException("meta.percentil <= 0");
-
-		version_ch = Channel.empty()
 		
-		rch = FOR_EACH_INTERVAL(meta, row)
-		version_ch = version_ch.mix(rch.version)
+		ch = FOR_EACH_INTERVAL(row)
 
-		concat_ch = CONCAT_TABLES(meta,rch.output.collect())
-		version_ch = version_ch.mix(concat_ch.version)
+		concat_ch = CONCAT_TABLES(ch.output.collect())
 
-		version_ch = MERGE_VERSION("gatk eval hard filtering",version_ch.collect())
 	emit:
 		output = concat_ch.output
 		pdf = concat_ch.pdf
-		version = version_ch
 	}
 
 process FOR_EACH_INTERVAL {
-tag "${row.interval} ${file(row.vcf).name}"
+tag "${interval} ${vcf.name}"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 memory '2g'
 input:
-	val(meta)
-	val(row)
+	tuple val(interval),path(vcf),path(idx)
 output:
-	path("OUT/gatk.eval.output.table.txt"),emit:output
-	path("version.xml"),emit:version
+	path("*.output.table.txt"),emit:output
 script:
-	if(!meta.containsKey("percentile")) throw new IllegalArgumentException("percentile undefined");
-	if(!row.containsKey("vcf")) throw new IllegalArgumentException("vcf undefined");
-	if(!row.containsKey("interval")) throw new IllegalArgumentException("interval undefined");
-	if((meta.percentile as double) <= 0 ) throw new IllegalArgumentException("meta.percentil <= 0");
+	if(!task.ext.containsKey("percentile")) throw new IllegalArgumentException("FOR_EACH_INTERVAL percentile undefined");
+	if((task.ext.percentile as double) <= 0 ) throw new IllegalArgumentException("meta.percentil <= 0");
+	def percentile = task.ext.percentile as double
 """
 hostname 1>&2
-${moduleLoad("jvarkit bcftools")}
 set -o pipefail
 mkdir -p TMP OUT
 
 
-bcftools view -G --regions '${row.interval}' '${row.vcf}' |\
-	java -jar -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP \${JVARKIT_DIST}/jvarkit.jar vcfgatkeval --percentile ${meta.percentile} --input-type vcf -o OUT/gatk.eval
+bcftools view -G --regions '${interval}' '${vcf}' |\\
+	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfgatkeval --percentile ${percentile} --input-type vcf -o OUT/gatk.eval
 	
-	
-###############################################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="versions">${getVersionCmd("bcftools jvarkit/jvarkit")}</entry>
-</properties>
-EOF
+mv OUT/gatk.eval.output.table.txt "${vcf.simpleName}.output.table.txt"
+
+mv OUT TMP/
 """
 }
 
 process CONCAT_TABLES {
-tag "N=${L.size()}"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 memory '2g'
 input:
-	val(meta)
-	val(L)
+	path("TABLES/*")
 output:
 	path("OUT/gatk.eval.output.filters.txt"),emit:output
 	path("OUT/gatk.eval.output.pdf"),emit:pdf
-	path("version.xml"),emit:version	
 script:
-	if(!meta.containsKey("percentile")) throw new IllegalArgumentException("percentile undefined");
-	if((meta.percentile as double) <= 0 ) throw new IllegalArgumentException("meta.percentil <= 0");
+	if(!task.ext.containsKey("percentile")) throw new IllegalArgumentException("FOR_EACH_INTERVAL percentile undefined");
+	if((task.ext.percentile as double) <= 0 ) throw new IllegalArgumentException("meta.percentil <= 0");
+	def percentile = task.ext.percentile as double
 
 """
 hostname 1>&2
-${moduleLoad("jvarkit R")}
 set -o pipefail
 mkdir -p TMP
 
-cat << EOF > TMP/jeter.list
-${L.join("\n")}
-EOF
+find TABLES  -name "*.table.txt" > TMP/jeter.list
 
-xargs -a TMP/jeter.list -L 50 cat | java -jar -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP \${JVARKIT_DIST}/jvarkit.jar vcfgatkeval --percentile ${meta.percentile} --input-type table -o TMP/gatk.eval
+xargs -a TMP/jeter.list -L 50 cat | jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfgatkeval --percentile ${percentile} --input-type table -o TMP/gatk.eval
 
 sed 's%output.pdf%TMP/gatk.eval.output.pdf%' TMP/gatk.eval.output.R | R --vanilla 
 
 mv TMP OUT
-###############################################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="versions">${getVersionCmd("bcftools jvarkit/jvarkit")}</entry>
-</properties>
-EOF
 """
 }

@@ -24,61 +24,30 @@ SOFTWARE.
 */
 
 
-include {moduleLoad;getVersionCmd;parseBoolean} from '../utils/functions.nf'
-
-
 
 process JVARKIT_VCF_TO_INTERVALS_01 {
-	tag "${row.vcf.name} ${row.contig?:""} ${row.interval?:""}"
-	memory "2g"
+	label "process_short"
+	conda "${moduleDir}/../../conda/bioinfo.01.yml"
+	afterScript "rm -rf TMP"
+	tag "${interval} ${vcf.name}"
 	input:
-		val(meta)
-		val(row) /* map : vcf , contig */
+		tuple val(interval),path(bed),path(vcf),path(idx)
 	output:
-		path("intervals.bed"),emit:bed /* chrom/start/end/vcf */
-		path("version.xml"),emit:version
+		path("*.bed"),emit:bed /* chrom/start/end/vcf */
 	script:
-		if(!meta.containsKey("distance")) throw new RuntimeException("meta.vcf2interval_distance missing")
-		if(!meta.containsKey("min_distance")) throw new RuntimeException("meta.vcf2interval_min_distance missing")
-	
-	
-		def contig = row.contig?:""
-		def interval = row.interval?:""
-		def vcf = row.vcf
-		def with_header = parseBoolean(row.with_header)
-		def distance = meta.distance?:"10mb"
-		def min_distance = meta.min_distance?:"1kb"
+		def distance = task.ext.distance?:"10mb"
+		def min_distance = task.ext.min_distance?:"1kb"
 	"""
 	hostname 1>&2
-	${moduleLoad("jvarkit bcftools")}
 	set -o pipefail
 
 	mkdir BEDS
 
-	if ${with_header} ; then
-		echo -e 'contig\tstart\tend\tvcf' > intervals.bed
-	fi
-
-
-	bcftools view -G "${vcf.toRealPath()}" ${interval.isEmpty()?"":"\"${interval}\""}  ${contig.isEmpty()?"":"\"${contig}\""} |\
-	java -Xmx${task.memory.giga}G -jar \${JVARKIT_DIST}/vcf2intervals.jar  \
-		--bed \
-		--distance "${distance}" \
-		--min-distance "${min_distance}" |\
-		awk  '{printf("%s\t%s\t%s\t${vcf.toRealPath()}\\n",\$1,\$2,\$3);}' >> intervals.bed
-	
-	#######################
-	cat <<- EOF > version.xml
-	<properties id="${task.process}">
-		<entry key="name">${task.process}</entry>
-		<entry key="description">convert vcf to bed using jvarkit/vcf2intervals</entry>
-		<entry key="vcf">${vcf}</entry>
-		<entry key="contig">${contig}</entry>
-		<entry key="interval">${interval}</entry>
-		<entry key="distance">${distance}</entry>
-		<entry key="min_distance">${min_distance}</entry>
-		<entry key="versions">${getVersionCmd("jvarkit/vcf2intervals awk bcftools")}</entry>
-	</properties>
-	EOF
+	bcftools view -G "${vcf}" ${bed.name.endsWith(".bed")?"\"${bed}\"":"\"${interval}\""} |\\
+	jvarkit -Xmx${task.memory.giga}G vcf2intervals  \\
+		--bed \\
+		--distance "${distance}" \\
+		--min-distance "${min_distance}" |\\
+		awk  '{printf("%s\t%s\t%s\t${vcf.toRealPath()}\t${idx.toRealPath()}\\n",\$1,\$2,\$3);}' >> intervals.bed
 	"""
 	}

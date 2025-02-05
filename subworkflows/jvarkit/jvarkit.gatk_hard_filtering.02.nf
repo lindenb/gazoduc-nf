@@ -35,8 +35,7 @@ include {JVARKIT_VCF_TO_INTERVALS_01} from './jvarkit.vcf2intervals.nf'
  */
 workflow JVARKIT_GATK_HARD_FILTERING_02 {
 	take:
-		meta
-		genomeId
+		reference
 		vcf /* path to one or more vcfs */
 		bed /* limit to that BED or NO_FILE */
 	main:
@@ -44,7 +43,7 @@ workflow JVARKIT_GATK_HARD_FILTERING_02 {
 		if(!meta.containsKey("hard_filtering")) throw new IllegalArgumentException("hard_filtering");
 		
 		version_ch = Channel.empty()
-		intervals_ch = JVARKIT_VCF_TO_INTERVALS_01([:], vcf, bed)
+		intervals_ch = JVARKIT_VCF_TO_INTERVALS_01(vcf, bed)
 		version_ch = version_ch.mix(intervals_ch.version)
 
 		contig_vcf_ch = intervals_ch.bed.splitCsv(sep:'\t',header:false)

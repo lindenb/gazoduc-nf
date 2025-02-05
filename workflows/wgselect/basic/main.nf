@@ -23,27 +23,22 @@ SOFTWARE.
 
 */
 
-include {dumpParams;runOnComplete} from '../../../modules/utils/functions.nf'
 
 
 if(params.help) {
-        dumpParams(params);
 	exit 0
 	}
-else
-    	{
-        dumpParams(params);	
-        }
 
 
 include {WGSELECT_02} from '../../../subworkflows/wgselect/wgselect.02.nf'
-include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
 
 
 
 workflow {
-		ch1 = WGSELECT_02(params.genomeId, file(params.vcf), file(params.pedigree), file(params.bed))
-		html = VERSION_TO_HTML(ch1.version)
+		if(params.vcf.equals("NO_FILE")) throw new RuntimeException("undefined --vcf");
+		if(params.fasta.equals("NO_FILE")) throw new RuntimeException("undefined --fasta");
+
+		genome = Channel.of(file(params.fasta), file(params.fai), file(params.dict)).collect()
+		ch1 = WGSELECT_02(genome, Channel.fromPath(params.vcf), file(params.pedigree), file(params.bed))
 		}
 
-runOnComplete(workflow)

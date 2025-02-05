@@ -23,9 +23,7 @@ SOFTWARE.
 
 */
 
-log.info("SCATTER_TO_BED deprecated")
-
-include { SCATTER_INTERVALS_BY_NS } from '../../modules/picard/picard.scatter.nf'
+include { SCATTER_INTERVALS_BY_NS  } from '../../modules/picard/picard.scatter.nf'
 include { INTERVAL_LIST_TO_BED }  from '../../modules/picard/picard.interval2bed.nf'
 
 workflow SCATTER_TO_BED {
