@@ -220,9 +220,13 @@ then
 	bcftools query -l '${vcf}' | sort | uniq > TMP/sn.a
 	sort -T TMP -t '\t' -k1,1 '${samples}' | uniq > TMP/sn.b
 	join -t '\t' -1 1 -2 1 -o '2.1,2.2' TMP/sn.a TMP/sn.b > TMP/samples_pheno.tsv
+	head TMP/samples_pheno.tsv 1>&2
 	cut -f 1 TMP/samples_pheno.tsv > TMP/samples.txt
-	awk -F '\t' '(\$2=="controls")' TMP/samples_pheno.tsv | cut -f1 | sort | uniq > TMP/controls.txt
+	head TMP/samples.txt 1>&2
+	awk -F '\t' '(\$2=="control")' TMP/samples_pheno.tsv | cut -f1 | sort | uniq > TMP/controls.txt
+	head TMP/controls.txt 1>&2
 	awk -F '\t' '(\$2=="case")' TMP/samples_pheno.tsv | cut -f1 | sort | uniq > TMP/cases.txt
+	head TMP/cases.txt 1>&2
 fi
 
 bcftools csq \\
