@@ -19,7 +19,7 @@ main:
 		set { ch2 }
 
 	ch3 = VCF2BED(ch2)
-	ch4 = MERGE(ch3.output)
+	ch4 = MERGE(ch3.output.collect())
 emit:
 	bed = ch4.output
 	chromosomes = ch4.chromosomes
@@ -61,7 +61,7 @@ xargs -a TMP/jeter.list cat |\\
 	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter.bed
 
 cut -f 1 TMP/jeter.bed | uniq |\\
-	sort | uniq > TMP/chroms.txt
+	LC_ALL=C sort | uniq > TMP/chroms.txt
 
 cut -f1,23 TMP/jeter.bed |\
 	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n | uniq > TMP/contigs.bed
