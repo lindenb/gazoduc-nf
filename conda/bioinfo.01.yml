@@ -9,3 +9,7 @@ dependencies:
   - bioconda::multiqc>=1.27
   - bioconda::snpeff>=5.2
   - bioconda::ensembl-vep=113.3
+  - conda-forge::datamash
+  - bioconda::plink=1.90b6.12
+  - bioconda::plink2=2.00a5.10
+  
