@@ -24,7 +24,7 @@ SOFTWARE.
 */
 
 include {VCF_TO_BED} from '../vcf2bed'
-include {BCFTOOLS_CONCAT} from '../bcftools/concat'
+include {BCFTOOLS_CONCAT_ALL} from '../bcftools/concat.all'
 
 
 workflow TRUVARI_01 {
@@ -39,7 +39,7 @@ workflow TRUVARI_01 {
 
 	perctg_ch = PER_CONTIG(genome, vcf2bed_ch.chromosomes.splitText().map{it.trim()},ch2)
 
-	concat_ch = BCFTOOLS_CONCAT(perctg_ch.output,file("NO_FILE"))
+	concat_ch = BCFTOOLS_CONCAT_ALL(perctg_ch.output , file("NO_FILE"))
 
 	emit:
 		output = concat_ch.output
