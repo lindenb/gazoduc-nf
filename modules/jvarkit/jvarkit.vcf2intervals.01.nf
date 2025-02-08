@@ -41,13 +41,16 @@ process JVARKIT_VCF_TO_INTERVALS_01 {
 	hostname 1>&2
 	set -o pipefail
 
-	mkdir BEDS
+	mkdir -p TMP
 
 	bcftools view -G "${vcf}" ${bed.name.endsWith(".bed")?"\"${bed}\"":"\"${interval}\""} |\\
-	jvarkit -Xmx${task.memory.giga}G vcf2intervals  \\
+	jvarkit  -Djava.io.tmpdir=TMP -Xmx${task.memory.giga}G vcf2intervals  \\
 		--bed \\
 		--distance "${distance}" \\
 		--min-distance "${min_distance}" |\\
-		awk  '{printf("%s\t%s\t%s\t${vcf.toRealPath()}\t${idx.toRealPath()}\\n",\$1,\$2,\$3);}' >> intervals.bed
+		awk  '{printf("%s\t%s\t%s\t${vcf.toRealPath()}\t${idx.toRealPath()}\\n",\$1,\$2,\$3);}' > TMP/intervals.bed
+
+	MD5=`echo '${interval} ${bed} ${vcf} ${idx}' | sha1sum | cut -d ' ' -f1`	
+	mv TMP/intervals.bed "\${MD5}.vcf2interval.bed"
 	"""
 	}

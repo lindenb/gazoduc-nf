@@ -64,8 +64,10 @@ mkdir -p TMP OUT
 
 bcftools view -G --regions '${interval}' '${vcf}' |\\
 	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfgatkeval --percentile ${percentile} --input-type vcf -o OUT/gatk.eval
-	
-mv OUT/gatk.eval.output.table.txt "${vcf.simpleName}.output.table.txt"
+
+
+MD5=`echo '${interval} ${vcf} ${idx}' | md5sum | cut -d ' ' -f1`	
+mv OUT/gatk.eval.output.table.txt "\${MD5}.${vcf.simpleName}.output.table.txt"
 
 mv OUT TMP/
 """

@@ -69,17 +69,12 @@ process ANNOTATE {
 label "process_low"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 tag "${vcf.name} ${interval}"
-cache "lenient"
-cpus {task.attempt}
-errorStrategy 'retry'
-maxRetries 5
-memory "5g"
 afterScript "rm -rf TMP"
 input:
 	path(genome)
 	tuple val(interval),path(vcf),path(vcfidx)
 	path(snpEffDir)
-	path(jvarkitped)
+	path(pedigree)
 	path(apply_hard_filters_arguments)
 	path(blacklisted)
 output:
@@ -145,36 +140,15 @@ test ! -z "\${JVARKIT_JAR}"
 		fi
 	}
 
-	cat <<-EOF > version.xml
-	<properties id="${task.process}">
-		<entry key="name">${task.process}</entry>
-		<entry key="description">wgselect for one bed</entry>
-		<entry key="vcf">${vcf}</entry>
-		<entry key="ped">${jvarkitped}</entry>
-		<entry key="steps">
-	EOF
-
 	## Extract case/controls from pedigree
-	if [ "${jvarkitped.name}" == "NO_FILE" ] ; then
-		touch TMP/cases.txt TMP/controls.txt
-
-		cat <<-EOF >> version.xml
-		<properties>
-			<entry key="description">extract case/controls from pedigree. No pedigree was provided, so there is none.</entry>
-		</properties>
-		EOF
-		
+	if ${!pedigree.name.contains(".")} ; then
+		touch TMP/cases.txt TMP/controls.txt TMP/pedigree.ped
 	else
 		# extract list of samples cases and controls
-		awk -F '\t' '(\$6=="case" ||  \$6=="affected") {print \$2;}' "${jvarkitped}" | sort | uniq > TMP/cases.txt
-		awk -F '\t' '(\$6=="control" ||  \$6=="unaffected") {print \$2;}' "${jvarkitped}" | sort | uniq > TMP/controls.txt
-		cat <<-EOF >> version.xml
-		<properties>
-			<entry key="description">extract case/controls from pedigree</entry>
-			<entry key="cases.count">\$(wc -l < TMP/cases.txt)</entry>
-			<entry key="controls.count">\$(wc -l < TMP/controls.txt)</entry>
-		</properties>
-		EOF
+		awk -F '\t' '(\$2=="case" ||  \$2=="affected") {print \$1;}' "${pedigree}" | sort | uniq > TMP/cases.txt
+		awk -F '\t' '(\$2=="control" ||  \$2=="unaffected") {print \$1;}' "${pedigree}" | sort | uniq > TMP/controls.txt
+		awk -F '\t' '{printf("%s\t%s\t0\t0\t0\tcase\\n",\$1,\$1);}' TMP/cases.txt >  TMP/pedigree.ped
+		awk -F '\t' '{printf("%s\t%s\t0\t0\t0\tcontrol\\n",\$1,\$1);}' TMP/controls.txt >> TMP/pedigree.ped
 	fi
 
 	# blacklisted region overlapping #####################################################################"
@@ -183,12 +157,6 @@ test ! -z "\${JVARKIT_JAR}"
 	if [ ! -s TMP/jeter.blacklisted.bed ] ; then
 		tail -1 "${reference}.fai" | awk '{printf("%s\t0\t1\\n",\$1);}' > TMP/jeter.blacklisted.bed
 	fi
-	cat <<-EOF >> version.xml
-	<properties>
-		<entry key="description">excluded regions are reduced by overlap over bed file using bedtools</entry>
-		<entry key="vcf">${vcf}</entry>
-	</properties>
-	EOF
 	
 	
 
@@ -204,14 +172,6 @@ test ! -z "\${JVARKIT_JAR}"
 
 	fi	
 
-	cat <<- EOF >> version.xml
-	<properties>
-		<entry key="description">extract variants from main vcf in bed region</entry>
-		<entry key="vcf">${vcf}</entry>
-	</properties>
-	EOF
-
-
 	if ${params.wgselect.with_count as boolean} ; then
 		bcftools query -f '.\\n' TMP/jeter1.bcf | awk 'END{printf("initial\t%s\t0\t0\t\\n",NR);}' >> TMP/variant_list.txt
 	fi
@@ -219,30 +179,22 @@ test ! -z "\${JVARKIT_JAR}"
 
 
 	# gatk hard filtering #############################################################
-	if ${!file(apply_hard_filters_arguments).name.equals("NO_FILE") } ; then
+	if ${apply_hard_filters_arguments.name.contains(".")} ; then
 		## conflic betwwen java for jvarkit and gatk "Duplicate cpuset controllers detected" on stdout
 		bcftools view -O z -o TMP/jeter1.vcf.gz TMP/jeter1.bcf
 		bcftools index -f -t TMP/jeter1.vcf.gz
 
-		gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" VariantFiltration \
-	        	-L "TMP/contig.bed" \
-		        -V 'TMP/jeter1.vcf.gz' \
-	        	-R '${reference}' \
-		        -O TMP/jeter2.vcf.gz \
-        		--arguments_file ${apply_hard_filters_arguments}
+		gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" VariantFiltration \\
+	        	-L "TMP/contig.bed" \\
+		        -V 'TMP/jeter1.vcf.gz' \\
+	        	-R '${reference}' \\
+		        -O TMP/jeter2.vcf.gz \\
+        		--arguments_file "${apply_hard_filters_arguments}"
 
 		bcftools view --apply-filters 'PASS,.'  -O b -o TMP/jeter1.bcf TMP/jeter2.vcf.gz
 		countIt "gatkHardFilters" TMP/jeter1.vcf.gz TMP/jeter2.vcf.gz
 
 		rm TMP/jeter2.vcf.gz TMP/jeter2.vcf.gz.tbi TMP/jeter1.vcf.gz TMP/jeter1.vcf.gz.tbi
-
-
-
-		cat <<- EOF >> version.xml
-		<properties>
-			<entry key="description">remove variant failing gatk hard filters</entry>
-		</properties>
-		EOF
 		
 	fi
 
@@ -252,13 +204,6 @@ test ! -z "\${JVARKIT_JAR}"
 	countIt "too_many_alts" TMP/jeter1.bcf TMP/jeter2.bcf
 	mv TMP/jeter2.bcf TMP/jeter1.bcf
 
-	cat <<- EOF >> version.xml
-	<properties>
-		<entry key="description">select variants on min/max number of alleles (diallelic is 2)</entry>
-		<entry key="min-alleles">2 (including REF)</entry>
-		<entry key="max-alleles">${max_alleles_count} (use <code>--max_alleles_count 'x'</code> to change this)</entry>
-	</properties>
-	EOF
 
 
 	# remove in blaclisted regions ############################################################################
@@ -266,26 +211,13 @@ test ! -z "\${JVARKIT_JAR}"
 	countIt "blackListedRegions" TMP/jeter1.bcf TMP/jeter2.bcf
 	mv TMP/jeter2.bcf TMP/jeter1.bcf
 	
-	cat <<- EOF >> version.xml
-	<properties>
-		<entry key="description">Ignore variants overlapping blacklisted region</entry>
-		<entry key="exclude bed">${blacklisted}</entry>
-	</properties>
-	EOF
-
 
 	# remove all annotations ################################################################################
-	bcftools annotate --force -x '^INFO/AC,INFO/AN,INFO/ReadPosRankSum,INFO/MQRankSum,INFO/MQ,INFO/FS,INFO/QD,INFO/SOR,FILTER' -O u -o TMP/jeter2.bcf TMP/jeter1.bcf
+	bcftools annotate --force \\
+		-x '^INFO/AC,INFO/AN,INFO/ReadPosRankSum,INFO/MQRankSum,INFO/MQ,INFO/FS,INFO/QD,INFO/SOR,FILTER' \\
+		-O u -o TMP/jeter2.bcf TMP/jeter1.bcf
 	countIt "annotateX" TMP/jeter1.bcf TMP/jeter2.bcf
 	mv TMP/jeter2.bcf TMP/jeter1.bcf
-
-
-	cat <<- EOF >> version.xml
-	<properties>
-		<entry key="description">remove annotations from original VCF</entry>
-		<entry key="bcftools.annotate.x">^INFO/AC,INFO/AN,INFO/ReadPosRankSum,INFO/MQRankSum,INFO/MQ,INFO/FS,INFO/QD,INFO/SOR,FILTER</entry>
-	</properties>
-	EOF
 
 
 	# could happen that some variant are discarded here: saw some gatk4 variants where *NO* genotype was called. #############################
@@ -295,12 +227,6 @@ test ! -z "\${JVARKIT_JAR}"
 		rm TMP/jeter.samples
 		countIt "samples" TMP/jeter1.bcf TMP/jeter2.bcf
 		mv TMP/jeter2.bcf TMP/jeter1.bcf
-
-		cat <<- EOF >> version.xml
-		<properties>
-			<entry key="description">remove unused samples. Remove unused alleles. Saw some gatk4 variants where *NO* genotype was called</entry>
-		</properties>
-		EOF
 	fi
 
 
@@ -309,35 +235,20 @@ test ! -z "\${JVARKIT_JAR}"
 	countIt "filltags" TMP/jeter1.bcf TMP/jeter2.bcf
 	mv TMP/jeter2.bcf TMP/jeter1.bcf
 
-	cat <<- EOF >> version.xml
-	<properties>
-		<entry key="description">fill tags in INFO using <code>bcftools  +fill-tags</code></entry>
-		<entry key="tags">AC,AN,AF</entry>
-	</properties>
-	EOF
-
-
-
 	## too many no-call ("genotyping rate" >= 95%) #################################################
 	bcftools view -i 'CHROM=="Y" || CHROM=="chrY" ||  F_MISSING < ${f_missing}' -O b -o TMP/jeter2.bcf TMP/jeter1.bcf
 	countIt "F_MISSING_${f_missing}" TMP/jeter1.bcf TMP/jeter2.bcf
-
-	cat <<- EOF >> version.xml
-	<properties>
-		<entry key="description">remove to many NO_CALL <code>./.</code></entry>
-		<entry key="when">CHROM!=Y or F_MISSING &lt;= ${f_missing})</entry>
-	</properties>
-	EOF
-
 	mv TMP/jeter2.bcf TMP/jeter1.bcf
-	
-	## sex et homvar (1 homvar and 0 het)
-	cat <<- EOF >> version.xml
-	<properties>
-                <entry key="description">remove variant on autosome if no HET and found at least one HOM_VAR.</entry>
-	EOF
 
-	if ${params.wgselect.with_homvar as boolean} ; then
+	## update VCF ID. Useful for plink stuff #########################################################
+	if ${params.wgselect.with_setid == true } ; then
+		bcftools annotate --set-id +'%VKX'  -O b -o TMP/jeter2.bcf TMP/jeter1.bcf
+		mv TMP/jeter2.bcf TMP/jeter1.bcf
+	fi
+
+	
+	## sex et homvar (1 homvar and 0 het) ################################################################
+	if ${params.wgselect.with_homvar == true } ; then
 		bcftools view -O v -o TMP/jeter2.vcf TMP/jeter1.bcf
 		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfpar TMP/jeter2.vcf > TMP/jeter1.vcf
 		bcftools view -e 'INFO/SEX=0 &&  COUNT(GT="RA")==0 && COUNT(GT="AA")>0' -O u -o TMP/jeter2.bcf TMP/jeter1.vcf
@@ -345,38 +256,14 @@ test ! -z "\${JVARKIT_JAR}"
 		mv TMP/jeter2.bcf TMP/jeter1.bcf
 		rm TMP/jeter1.vcf TMP/jeter2.vcf
 
-	cat <<- EOF >> version.xml
-		<entry key="enabled">true</entry>
-	</properties>
-	EOF
-
-	else
-
-	cat <<- EOF >> version.xml
-		<entry key="enabled">false</entry>
-	</properties>
-	EOF
-
 	fi
 
 	# split multiallelic #################################################################################""
-	cat <<- EOF >> version.xml
-	<properties>
-                <entry key="description">Split multiallelic with <code>bcftools norm --multiallelics --both</code></entry>
-	EOF
-
-
 	if [ "${max_alleles_count}" != "2" ] ; then
 
 		bcftools norm -f "${reference}" --multiallelics -both  -O u -o TMP/jeter2.bcf TMP/jeter1.bcf
 		countIt "norm" TMP/jeter1.bcf TMP/jeter2.bcf
 		mv TMP/jeter2.bcf TMP/jeter1.bcf
-
-		echo '<entry key="enabled">true</entry></properties>' >> version.xml
-
-	else
-
-		echo '<entry key="enabled">false</entry></properties>' >> version.xml
 	fi
 
 	# not in pedigree ###########################################################################
@@ -386,26 +273,9 @@ test ! -z "\${JVARKIT_JAR}"
 	mv TMP/jeter2.vcf TMP/jeter1.vcf
 	rm TMP/jeter1.bcf
 
-	cat <<- EOF >> version.xml
-	<properties>
-		<entry key="name">remove-samples-not-in-pedigree</entry>
-		<entry key="description">after some samples have been removed (e.g: there in the vcf but not in cases/ctrls). There can be some variants without any ALT allele because that will be removed here.</entry>
-	</properties>
-	EOF
-
 
 	# ignore spanning deletions #################################################################
 	awk -F '\t' '(\$0 ~ /^#/ || \$5!="*")'  TMP/jeter1.vcf > TMP/jeter2.vcf
-
-
-	cat <<- EOF >> version.xml
-	<properties>
-		<entry key="name">ignore spanning deletions.</entry>
-		<entry key="description">after <code>bcftools norm</code>, we remove variants where the only allele is <code>&lt;*&gt;</code>. See <a>https://gatk.broadinstitute.org/hc/en-us/articles/360035531912-Spanning-or-overlapping-deletions-allele-</a></entry>
-	</properties>
-	EOF
-
-
 
 	countIt "spandel" TMP/jeter1.vcf TMP/jeter2.vcf
 	mv TMP/jeter2.vcf TMP/jeter1.vcf
@@ -413,11 +283,6 @@ test ! -z "\${JVARKIT_JAR}"
 
 	## polyx ###################################################################################
 
-	cat <<- EOF >> version.xml
-	<properties>
-		<entry key="description">remove variant near a poly-x</entry>
-		<entry key="poly-x">${polyx}</entry>
-	EOF
 
 	if ${ (polyx as int) > 1 } ; then
 		echo "##show me vcf" 1>&2
@@ -427,20 +292,11 @@ test ! -z "\${JVARKIT_JAR}"
 		bcftools view -e 'FILTER~"POLYX_ge_${polyx}"' > TMP/jeter2.vcf
 		countIt "polyx${polyx}" TMP/jeter1.vcf TMP/jeter2.vcf
 
-		echo '<entry key="enabled">true</entry></properties>' >> version.xml
-
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
-	else
-
-		echo '<entry key="enabled">false</entry></properties>' >> version.xml
 	fi
 	
 	## CADD ######################################################################################
 
-	cat <<- EOF >> version.xml
-	<properties>
-		<entry key="description">remove variant with low CADD phred score</entry>
-	EOF
 
 	if ${!cadd_tabix.isEmpty() && (cadd_phred as double) > 0}  ; then
         	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfcadd \
@@ -452,67 +308,28 @@ test ! -z "\${JVARKIT_JAR}"
 		countIt "CADD" TMP/jeter1.vcf TMP/jeter2.vcf
 	      	mv TMP/jeter2.vcf TMP/jeter1.vcf
 
-		cat <<- EOF >> version.xml
-			<entry key="cadd.phred">${cadd_phred}</entry>
-			<entry key="cadd.file">${cadd_tabix}</entry>
-			<entry key="enabled">true</entry>
-		</properties>
-		EOF
-
-
-	else
-
-		echo '<entry key="enabled">false</entry></properties>' >> version.xml
-
 	fi
 
 
-
-
-
 	# test MAF
-
-	cat <<- EOF >> version.xml 
-	<properties>
-		<entry key="name">internal maf</entry>
-		<entry key="description">remove variant if internal MAF is too high. Nextflow parameter is <code>--maxmaf (value [0.0 -  1.0] )</code> </entry>
-		<entry key="max MAF">${maxmaf}</entry>
-	EOF
 	
-	if ${maxmaf>=0} && test -s TMP/cases.txt && test -s TMP/controls.txt ; then
+	if ${maxmaf>=0} && test -s TMP/pedigree.ped ; then
 		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfburdenmaf \
-			--pedigree "${jvarkitped}" --prefix "" --min-maf 0  --max-maf "${maxmaf}"  TMP/jeter1.vcf   > TMP/jeter2.vcf
+			--pedigree TMP/pedigree.ped --prefix "" --min-maf 0  --max-maf "${maxmaf}"  TMP/jeter1.vcf   > TMP/jeter2.vcf
 		countIt "MAF" TMP/jeter1.vcf TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
-
-		echo '<entry key="enabled">true</entry></properties>' >> version.xml
-	else
-	
-		echo '<entry key="enabled">false (or no case/controls)</entry></properties>' >> version.xml
 
 	fi
 
 	# fisher per variant
-	cat <<- EOF >> version.xml
-        <properties>
-                <entry key="name">fisher H</entry>
-		<entry key="description">remove variant if fisher test per variant is tool low</entry>
-		<entry key="min-fisher">${fisherh}</entry>
-		<entry key="max-fisher">1.0</entry>
-	EOF
-	
-	if ${fisherh >= 0.0} && test -s TMP/cases.txt && test -s TMP/controls.txt ; then
-		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfburdenfisherh --filter '' --pedigree "${jvarkitped}" --min-fisher "${fisherh}"  TMP/jeter1.vcf   > TMP/jeter2.vcf
+	if ${fisherh >= 0.0} && test -s TMP/pedigree.ped ; then
+		java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfburdenfisherh --filter '' \\
+			--pedigree TMP/pedigree.ped \\
+			--min-fisher "${fisherh}"  TMP/jeter1.vcf   > TMP/jeter2.vcf
 		countIt "fisherH" TMP/jeter1.vcf TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
 		bcftools annotate -x 'FILTER/CTRL_CASE_RATIO' TMP/jeter1.vcf > TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
-
-		echo '<entry key="enabled">true</entry></properties>' >> version.xml
-
-	else
-
-		echo '<entry key="enabled">false (or not case/control)</entry></properties>' >> version.xml
 
 	fi
 
@@ -523,24 +340,7 @@ test ! -z "\${JVARKIT_JAR}"
 	mv TMP/jeter2.vcf TMP/jeter1.vcf
 
 
-	cat <<- EOF >> version.xml
-        <properties>
-                <entry key="name">depth</entry>
-		<entry key="description">remove variant if INFO/DP per variant is tool low / too high</entry>
-		<entry key="min DP">${minDP}</entry>
-		<entry key="max DP">${maxDP}</entry>
-	</properties>
-	EOF
-
-
 	# all genotypes with ALT must have GQ >= 'x'
-	cat <<- EOF >> version.xml
-        <properties>
-                <entry key="name">LOW GQ</entry>
-		<entry key="description">ALL genotypes carrying a ALT must be GQ >= ${lowGQ}</entry>
-		<entry key="GQ">${lowGQ}</entry>
-	EOF
-
 
 	if [ "${lowGQ}" -gt 0 ] ; then
 		## low GQ all genotypes carrying a ALT must be GQ > 'x'
@@ -548,24 +348,17 @@ test ! -z "\${JVARKIT_JAR}"
 		countIt "lowGQ${lowGQ}" TMP/jeter1.vcf TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
 
-		echo '<entry key="enabled">true</entry></properties>' >> version.xml
-
-	else
-		
-		echo '<entry key="enabled">false</entry></properties>' >> version.xml
-
 	fi
 
 	## singleton
-	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterjdk --nocode  -e 'Genotype singleton=null; for(final Genotype g: variant.getGenotypes()) {if(g.isCalled() && !g.isHomRef()) { if(singleton!=null) return true;singleton=g;}} if(singleton!=null && singleton.isFiltered()) return false; if(singleton!=null && singleton.isHet() && singleton.hasGQ() && singleton.getGQ()<${minGQsingleton}) return false; if(singleton !=null && singleton.hasAD() && singleton.isHet() && singleton.getAD().length==2) {int array[]=singleton.getAD();double r= array[1]/(double)(array[0]+array[1]);if(r< ${minRatioSingleton} || r>(1.0 - ${minRatioSingleton})) return false;} return true; ' TMP/jeter1.vcf > TMP/jeter2.vcf
+	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterjdk \\
+		--nocode  \\
+		-e 'Genotype singleton=null; for(final Genotype g: variant.getGenotypes()) {if(g.isCalled() && !g.isHomRef()) { if(singleton!=null) return true;singleton=g;}} if(singleton!=null && singleton.isFiltered()) return false; if(singleton!=null && singleton.isHet() && singleton.hasGQ() && singleton.getGQ()<${minGQsingleton}) return false; if(singleton !=null && singleton.hasAD() && singleton.isHet() && singleton.getAD().length==2) {int array[]=singleton.getAD();double r= array[1]/(double)(array[0]+array[1]);if(r< ${minRatioSingleton} || r>(1.0 - ${minRatioSingleton})) return false;} return true; ' \\
+		TMP/jeter1.vcf > TMP/jeter2.vcf
 	countIt "singleton" TMP/jeter1.vcf TMP/jeter2.vcf
 	mv TMP/jeter2.vcf TMP/jeter1.vcf
 
-
-
-
 	if ${!mapability.isEmpty()} ; then
-
 
 		# DukeMapability
 		java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfbigwig -tag mapability \
@@ -587,21 +380,26 @@ test ! -z "\${JVARKIT_JAR}"
 		test -f "${params.gnomad}"
 
         	# gnomad genome
-        	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfgnomad --bufferSize 1000 -F '${gnomadPop}' \\
-                	-g "${params.gnomad}" --max-af "${gnomadAF}" TMP/jeter1.vcf   > TMP/jeter2.vcf
+        	java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfgnomad \\
+			--bufferSize 1000 \\
+			-F '${gnomadPop}' \\
+                	-g "${params.gnomad}" \\
+			--max-af "${gnomadAF}" TMP/jeter1.vcf   > TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
 
-		bcftools view --header-only TMP/jeter1.vcf |\\
-			grep "^##FILTER" |\\
-			tr "<," "\\n" |\\
-			grep '^ID=GNOMAD_' |\\
-			awk -F '=' '{printf("%s FILTER ~ \\"%s\\" ",(NR==1?"":" ||"),\$2);}' | tr '"' "'"  > TMP/gnomad.filters
+		if ${params.with_gnomad_filtered} ; then
 
+			bcftools view --header-only TMP/jeter1.vcf |\\
+				grep "^##FILTER" |\\
+				tr "<," "\\n" |\\
+				grep '^ID=GNOMAD_' |\\
+				awk -F '=' '{printf("%s FILTER ~ \\"%s\\" ",(NR==1?"":" ||"),\$2);}' | tr '"' "'"  > TMP/gnomad.filters
 
-		bcftools view -e "`cat TMP/gnomad.filters`"  -O v -o TMP/jeter2.vcf TMP/jeter1.vcf
-		countIt "gnomadgenome.${gnomadPop}" TMP/jeter1.vcf TMP/jeter2.vcf
-	
-		mv TMP/jeter2.vcf TMP/jeter1.vcf
+			bcftools view -e "`cat TMP/gnomad.filters`"  -O v -o TMP/jeter2.vcf TMP/jeter1.vcf
+			countIt "gnomadgenome.${gnomadPop}" TMP/jeter1.vcf TMP/jeter2.vcf
+
+			mv TMP/jeter2.vcf TMP/jeter1.vcf
+		fi	
 
 	fi
 
@@ -623,11 +421,7 @@ test ! -z "\${JVARKIT_JAR}"
 			-interval "TMP/contig.bed" -nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf "${params.snpeff_db}" TMP/jeter1.vcf > TMP/jeter2.vcf
 	         mv TMP/jeter2.vcf TMP/jeter1.vcf
 
-
-
 	    fi
-	
-
 
 	    if ${!soacn.isEmpty()} ; then
 	    
@@ -638,13 +432,6 @@ test ! -z "\${JVARKIT_JAR}"
 			--acn "${soacn}" \
 		   	TMP/jeter1.vcf  > TMP/jeter2.vcf
 
-		cat <<- EOF
-		<entry key="sequence.ontology">
-			<properties>
-				<entry key="terms">${soacn}</entry>
-			</properties>
-		</entry>
-		EOF
 		countIt "prediction" TMP/jeter1.vcf TMP/jeter2.vcf
 	        mv TMP/jeter2.vcf TMP/jeter1.vcf
 
@@ -660,33 +447,13 @@ test ! -z "\${JVARKIT_JAR}"
 			--acn "${exclude_soacn}" \
 		   	TMP/jeter1.vcf   2> /dev/null > TMP/jeter2.vcf
 
-		cat <<- EOF
-		<entry key="exclude_sequence.ontology">
-			<properties>
-				<entry key="terms">${exclude_soacn}</entry>
-			</properties>
-		</entry>
-		EOF
 		countIt "exclude.prediction" TMP/jeter1.vcf TMP/jeter2.vcf
 	        mv TMP/jeter2.vcf TMP/jeter1.vcf
 
 	    fi
 
 
-		echo "</properties>" >> version.xml
-
-
-
-
     # CONTRAST #############################################################################################
-
-	cat <<- EOF >> version.xml
-        <properties>
-                <entry key="name">contrast</entry>
-		<entry key="description">add <code>PASSOC,FASSOC,NASSOC,NOVELAL,NOVELGT</code> with <code>bcftools +contrast</code></entry>
-	EOF
-	
-
 
 	if ${(params.wgselect.with_contrast as boolean)}  && test -s TMP/cases.txt && test -s TMP/controls.txt ; then
 		bcftools +contrast \
@@ -695,12 +462,6 @@ test ! -z "\${JVARKIT_JAR}"
 			-a PASSOC,FASSOC,NASSOC,NOVELAL,NOVELGT -O v -o TMP/jeter2.vcf TMP/jeter1.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
 
-
-		echo '<entry key="enabled">true</entry></properties>' >> version.xml
-
-	else
-
-		echo '<entry key="enabled">false</entry></properties>' >> version.xml
 
 	fi	
 
@@ -715,10 +476,7 @@ bcftools index  "\${MD5}.contig.bcf"
 
 mv TMP/contig.bed "\${MD5}.contig.bed"
 
-echo '</entry></properties>' >> version.xml
 
-# check XML is OK
-#xmllint --noout version.xml
 
 countIt "final" TMP/jeter1.vcf contig.bcf
 gzip --best TMP/variant_list.txt

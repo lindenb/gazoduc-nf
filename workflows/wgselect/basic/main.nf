@@ -39,6 +39,6 @@ workflow {
 		if(params.fasta.equals("NO_FILE")) throw new RuntimeException("undefined --fasta");
 
 		genome = Channel.of(file(params.fasta), file(params.fai), file(params.dict)).collect()
-		ch1 = WGSELECT_02(genome, Channel.fromPath(params.vcf), file(params.pedigree), file(params.bed))
+		ch1 = WGSELECT_02(genome, Channel.fromPath(params.vcf), file(params.samples), file(params.bed))
 		}
 
