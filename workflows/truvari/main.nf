@@ -24,11 +24,8 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-
-
-include {TRUVARI_01} from '../../subworkflows/truvari/truvari.01.nf'
-include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
-include {runOnComplete;moduleLoad;dumpParams} from '../../modules/utils/functions.nf'
+include {TRUVARI_01} from '../../subworkflows/truvari'
+include {runOnComplete;dumpParams} from '../../modules/utils/functions.nf'
 
 if( params.help ) {
     dumpParams(params);
@@ -40,8 +37,15 @@ if( params.help ) {
 
 
 workflow {
-	ch1 = TRUVARI_01(params, params.genomeId, file(params.vcfs))
-	html = VERSION_TO_HTML(ch1.version)
+	genome = Channel.of(file(params.fasta),file(params.fai),file(params.dict)).collect()	
+	if(params.vcfs.endsWith(".list")) {
+		vcf_ch = Channel.fromPath(params.vcfs).splitText().map{file(it.trim())}
+		}
+	else
+		{
+		vcf_ch = Channel.fromPath(params.vcfs)
+		}
+	ch1 = TRUVARI_01(genome, vcf_ch)
 	}
 
 runOnComplete(workflow)

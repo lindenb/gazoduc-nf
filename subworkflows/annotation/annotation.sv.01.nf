@@ -22,9 +22,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include {k1_signature} from '../../module/utils/k1.nf'
 
-def k1_hg19=249250621
-def k1_hg38=248956422
+def k1 = k1_signature()
 
 
 workflow ANNOTATE_SV_VCF_01 {
@@ -118,8 +118,8 @@ set -xe
 
 mkdir -p TMP
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:${k1_hg38}	https://storage.googleapis.com/gcp-public-data--gnomad/release/4.1/genome_sv/gnomad.v4.1.sv.sites.bed.gz
-1:${k1_hg19}	https://storage.googleapis.com/gcp-public-data--gnomad/papers/2019-sv/gnomad_v2.1_sv.sites.bed.gz
+1:${k1.hg38}	https://storage.googleapis.com/gcp-public-data--gnomad/release/4.1/genome_sv/gnomad.v4.1.sv.sites.bed.gz
+1:${k1.hg19}	https://storage.googleapis.com/gcp-public-data--gnomad/papers/2019-sv/gnomad_v2.1_sv.sites.bed.gz
 EOF
 
 awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
@@ -202,8 +202,8 @@ module load htslib jvarkit
 
 mkdir -p TMP
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:${k1_hg38}	https://ftp.ensembl.org/pub/release-111/regulation/homo_sapiens/homo_sapiens.GRCh38.Regulatory_Build.regulatory_features.20221007.gff.gz
-1:${k1_hg19}	https://ftp.ensembl.org/pub/grch37/current/regulation/homo_sapiens/homo_sapiens.GRCh37.Regulatory_Build.regulatory_features.20201218.gff.gz
+1:${k1.hg38}	https://ftp.ensembl.org/pub/release-111/regulation/homo_sapiens/homo_sapiens.GRCh38.Regulatory_Build.regulatory_features.20221007.gff.gz
+1:${k1.hg19}	https://ftp.ensembl.org/pub/grch37/current/regulation/homo_sapiens/homo_sapiens.GRCh37.Regulatory_Build.regulatory_features.20201218.gff.gz
 EOF
 
 awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
@@ -242,8 +242,8 @@ set -xe
 
 mkdir -p TMP
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:${k1_hg38}	http://dgv.tcag.ca/dgv/docs/GRCh38_hg38_variants_2020-02-25.txt
-1:${k1_hg19}	http://dgv.tcag.ca/dgv/docs/GRCh37_hg19_variants_2020-02-25.txt
+1:${k1.hg38}	http://dgv.tcag.ca/dgv/docs/GRCh38_hg38_variants_2020-02-25.txt
+1:${k1.hg19}	http://dgv.tcag.ca/dgv/docs/GRCh37_hg19_variants_2020-02-25.txt
 EOF
 
 awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv

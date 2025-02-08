@@ -8,6 +8,7 @@ List makeSQRT(def L1) {
         def returnList = [];
         def currList = [];
         int i=0;
+	//System.err.println("L.size "+L.size()+ " "+n+" "+L);
         for(;;) {
                 if(i<L.size()) currList.add(L.get(i));
                 if(i==L.size() || currList.size()==n) {
@@ -17,6 +18,7 @@ List makeSQRT(def L1) {
                         }
                 i++;
                 }
+	//System.err.println("return "+returnList);
         return returnList;
         }
 
@@ -28,8 +30,10 @@ main:
 	ch1 = CONTIGS(vcfs,bed)
 	ch2 = ch1.output.splitText().
 		map{[it[0].trim(),[it[1],it[2]]]}.
+		groupTuple().
 		flatMap{makeSQRT(it)}.
-		map{[it[0],it[1].flatten()]}
+		map{[it[0], it[1].flatten()]}
+
 	ch3 = LEVEL1(ch2,bed)
 	ch4 = LEVEL2(ch3.output.groupTuple().map{[it[0],it[1].flatten()]})
 
