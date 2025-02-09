@@ -24,9 +24,8 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-include {PLOT_COVERAGE_01} from '../../subworkflows/plotdepth/plot.coverage.01.nf'
+include {PLOT_COVERAGE_01} from '../../subworkflows/plotdepth'
 include {dumpParams; runOnComplete} from '../../modules/utils/functions.nf'
-include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 
 
 if( params.help ) {
@@ -38,8 +37,13 @@ if( params.help ) {
 
 
 workflow {
-	ch1 = PLOT_COVERAGE_01([:],params.genomeId,file(params.bams), file(params.bed))
-	html = VERSION_TO_HTML(ch1.version)
+	reference = Channel.of(file(params.fasta), file(params.fai), file(params.dict)).collect()
+	ch1 = Channel.fromPath(params.bams).
+		splitText().
+		map{it.trim()}.
+		map{[file(it),file(it+(it.endsWith(".bam")?".bai":".crai"))]}
+
+	ch1 = PLOT_COVERAGE_01(reference, ch1 , file(params.bed))
 	}
 
 runOnComplete(workflow);
