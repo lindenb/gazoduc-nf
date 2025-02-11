@@ -24,9 +24,13 @@ SOFTWARE.
 */
 include {getModules;moduleLoad} from '../../modules/utils/functions.nf'
 include {WGSELECT_EXCLUDE_BED_01 } from './wgselect.exclude.bed.01.nf'
-include {BCFTOOLS_CONCAT} from '../bcftools/concat/main'
+include {BCFTOOLS_CONCAT_CONTIGS} from '../bcftools/concat.contigs/main'
 include {SNPEFF_DOWNLOAD} from '../../modules/snpeff/download'
 
+String extractContig(String rgn) {
+	int i=rgn.indexOf(":");
+	return rgn.substring(0,i);
+	}
 
 workflow WGSELECT_01 {
 	take:
@@ -48,7 +52,7 @@ workflow WGSELECT_01 {
 
 		
 
-		concat_ch = BCFTOOLS_CONCAT( annotate_ch.output.map{[it[1],it[2]]}, file("NO_FILE"))
+		concat_ch = BCFTOOLS_CONCAT_CONTIGS( annotate_ch.output.map{[extractContig(it[0]),it[1],it[2]]}, file("NO_FILE"))
 
 
 
@@ -83,7 +87,7 @@ output:
 script:
 	def reference = genome.find{it.name.endsWith("a")}
 	def gnomadgenome = params.gnomad
-	def mapability= params.mapability_bigwig
+	def mapability= params.mapability_bigwig?:""
 	def max_alleles_count = (params.wgselect.max_alleles_count as int)
 	def polyx = (params.wgselect.polyx as int)
 	def gnomadPop = (params.wgselect.gnomadPop)
@@ -387,7 +391,7 @@ test ! -z "\${JVARKIT_JAR}"
 			--max-af "${gnomadAF}" TMP/jeter1.vcf   > TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
 
-		if ${params.with_gnomad_filtered} ; then
+		if ${params.wgselect.with_gnomad_filtered} ; then
 
 			bcftools view --header-only TMP/jeter1.vcf |\\
 				grep "^##FILTER" |\\
