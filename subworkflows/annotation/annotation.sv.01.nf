@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {k1_signature} from '../../module/utils/k1.nf'
+include {k1_signature} from '../../modules/utils/k1.nf'
 
 def k1 = k1_signature()
 
@@ -56,12 +56,12 @@ workflow ANNOTATE_SV_VCF_01 {
 
 process PROCESS_GTF1 {
 label "process_quick"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 output:
 	path("gtf.features.*"),emit:output
 script:
 	def xxxstream=1000
 """
-module load htslib
 set -xe
 set -o pipefail
 
@@ -81,12 +81,12 @@ echo '##INFO=<ID=GTF_FEATURE,Number=.,Type=String,Description="features from ${p
 
 process PROCESS_GTF2 {
 label "process_quick"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 output:
 	path("gtf.genes.*"),emit:output
 script:
 """
 set -xe
-module load htslib jvarkit
 set -o pipefail
 
 
@@ -104,7 +104,9 @@ echo '##INFO=<ID=GENE,Number=.,Type=String,Description="gene from ${params.gtf}"
 }
 
 process DOWNLOAD_GNOMAD_SV {
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 label "process_quick"
+afterScript "rm -rf TMP"
 input:
 	path(reference)
 output:
@@ -113,7 +115,6 @@ script:
 	def fai = reference.find{it.name.endsWith(".fai")}.first()
 	def dict = reference.find{it.name.endsWith(".dict")}.first()
 """
-module load htslib jvarkit
 set -xe
 
 mkdir -p TMP
@@ -144,20 +145,22 @@ echo '##INFO=<ID=GNOMAD_AF,Number=1,Type=Float,Description="GNOMAD SV MAX AF">' 
 """	
 }
 
-/** add 27 Jan 2025 : NOT TESTED */
 process DOWNLOAD_DECODE_LRS {
 label "process_quick"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
 input:
 	path(reference)
 output:
 	path("decode.*"),emit:output
 script:
+	def fai = reference.find{it.name.endsWith(".fai")}
+	def dict = reference.find{it.name.endsWith(".dict")}
 """
 
-module load htslib jvarkit 
-
+mkdir -p TMP
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:${k1_hg38}	https://github.com/DecodeGenetics/LRS_SV_sets/raw/refs/heads/master/ont_sv_high_confidence_SVs.sorted.vcf.gz
+1:${k1.hg38}	https://github.com/DecodeGenetics/LRS_SV_sets/raw/refs/heads/master/ont_sv_high_confidence_SVs.sorted.vcf.gz
 EOF
 
 
@@ -166,9 +169,9 @@ awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T 
 join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv | sort | uniq > TMP/jeter.url
 
 if -s TMP/jeter.url
-
+then
 	wget -O - `cat TMP/jeter.url` |\\
-		bcftools query -f '%CHROM\t%POS0\t%END\t%ID\\_%SVTYPE\\n''  |\
+		bcftools query -f '%CHROM\t%POS0\t%END\t%ID\\_%SVTYPE\\n'  |\
 		java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${dict}" --column 1 --convert SKIP  |\\
 		LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n | uniq |\\
 		bgzip >  decode.bed.gz
@@ -188,6 +191,8 @@ echo '##INFO=<ID=DECODE_LRS,Number=.,Type=String,Description="DECODE SV. https:/
 
 process DOWNLOAD_ENSEMBL_REG {
 label "process_quick"
+afterScript "rm -rf TMP"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
 	path(reference)
 output:
@@ -198,7 +203,6 @@ script:
 """
 hostname 1>&2
 set -xe
-module load htslib jvarkit
 
 mkdir -p TMP
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
@@ -228,6 +232,8 @@ echo '##INFO=<ID=ENS_REG,Number=.,Type=String,Description="features from Ensembl
 
 process DOWNLOAD_DGV {
 label "process_quick"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
 input:
 	path(reference)
 output:
@@ -237,7 +243,6 @@ script:
 	def dict = reference.find{it.name.endsWith(".dict")}.first()
 """
 hostname 1>&2
-module load htslib jvarkit
 set -xe
 
 mkdir -p TMP
@@ -270,6 +275,7 @@ echo '##INFO=<ID=DGV_AF,Number=1,Type=Float,Description="DGV_FREQUENCY">' >> dgv
 
 process ANNOTATE {
 label "process_quick"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 tag "${vcf.name}"
 afterScript "rm -rf TMP"
 input:
@@ -286,7 +292,6 @@ script:
 	def overlap=0.7
 """
 hostname 1>&2
-module load bcftools
 mkdir -p TMP
 set -x
                 
