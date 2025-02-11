@@ -14,7 +14,7 @@ if(!params.containsKey("step_id")) throw new IllegalStateException("undefined pa
 if(!params.containsKey("step_name")) throw new IllegalStateException("undefined params.step_name with include+addParams");
 
 
-include {moduleLoad;runOnComplete;dumpParams} from '../../modules/utils/functions.nf'
+include {runOnComplete;dumpParams} from '../../modules/utils/functions.nf'
 include {PIHAT01} from '../../subworkflows/pihat/pihat.01.nf' 
 
 
@@ -63,6 +63,8 @@ workflow ACP_VCF_STEP {
 
 process PLINK_CLUSTER {
 	tag "${genome_bcf.name} ${genome_plink.name}"
+	conda "${moduleDir}/../../conda/bioinfo.01.yml"
+
 	input:
 		path(genome_bcf)
 		path(genome_plink)
@@ -73,7 +75,6 @@ process PLINK_CLUSTER {
 		def num_components = 3
 	"""
 	hostname 2>&1
-	${moduleLoad("plink")}
 	mkdir -p TMP
 
 	plink --bcf '${genome_bcf}' \\
@@ -98,6 +99,7 @@ process PLINK_CLUSTER {
 
 process PLINK_ASSOC {
 	tag "${genome_bcf.name} ${cluster_mds.name}"
+	conda "${moduleDir}/../../conda/bioinfo.01.yml"
 	input:
 		tuple path(fasta),path(fai),path(dict)
 		path(genome_bcf)
@@ -110,7 +112,6 @@ process PLINK_ASSOC {
 		def treshold = 5E-8
 	"""
 	hostname 2>&1
-	${moduleLoad("plink bcftools jvarkit")}
 	mkdir -p TMP
 
 	# create pheno file https://www.cog-genomics.org/plink/1.9/input#pheno
@@ -132,7 +133,7 @@ process PLINK_ASSOC {
 		awk -F ':' '{printf("%s\t%s\t.\t%s\t%s\t.\t.\t.\\n",\$1,\$2,\$3,\$4);}' |\
 		sed 's/^chr//' >> TMP/jeter.vcf
 	
-	java -jar \${JVARKIT_DIST}/jvarkit.jar vcfsetdict -R '${fasta}'  --onNotFound SKIP TMP/jeter.vcf |\
+	jvarkit vcfsetdict -R '${fasta}'  --onNotFound SKIP TMP/jeter.vcf |\
 		bcftools sort -T TMP/tmp -O b -o variants_to_remove.bcf
 	bcftools index -f variants_to_remove.bcf
 	"""
@@ -150,6 +151,7 @@ process CLEANUP_VCF {
 
 process PLOT_ASSOC {
 tag "${assoc.name}"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
 	tuple path(fasta),path(fai),path(dict)
 	path(assoc)
@@ -161,8 +163,16 @@ script:
 	def nhead = 10
 """
 hostname 1>&2
-${moduleLoad("jvarkit")}
 mkdir -p TMP
+
+JD1=`which jvarkit`
+echo "JD1=\${JD1}" 1>&2
+# directory of jvarkit
+JD2=`dirname "\${JD1}"`
+# find the jar itself
+JVARKIT_JAR=`find "\${JD2}/../.." -type f -name "jvarkit.jar" | head -n1`
+JVARKIT_DIST=`dirname "\${JVARKIT_JAR}"`
+
 
 cat << __EOF__ > TMP/Minikit.java
 import java.awt.Color;
@@ -333,7 +343,7 @@ public static void main(final String[] args)
 __EOF__
 
 javac -d TMP -cp \${JVARKIT_DIST}/jvarkit.jar TMP/Minikit.java
-java -cp \${JVARKIT_DIST}/jvarkit.jar:TMP Minikit
+java -Djava.awt.headless=true -cp \${JVARKIT_DIST}/jvarkit.jar:TMP Minikit
 
 
 cat << __EOF__ > TMP/jeter.html
@@ -388,6 +398,8 @@ EOF
 
 process PLOT_IT {
 	tag "${row.label1} vs ${row.label2}"
+	conda "${moduleDir}/../../conda/bioinfo.01.yml"
+
 	input:
 		val(row)
                 path(sample2collection)
@@ -398,7 +410,6 @@ process PLOT_IT {
 		def title = row.label1+"_"+row.label2
 	"""
 	hostname 2>&1
-	${moduleLoad("r/3.6.3")}
 	mkdir -p TMP
 
 echo "IID\tcollection" > TMP/sn2col.tsv
