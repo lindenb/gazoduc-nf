@@ -44,47 +44,41 @@ public class Minikit {
 		scores.put("upstream_gene_variant", 0.1);
 		}
 	
-	private void dump(String contig,String pos, String ref, String alt,List<List<String>> predictions)  throws Exception  {
-		final Set<String> gene_names =  predictions.stream().
-				map(P->P.get(3)).
-				filter(S->!S.isEmpty()).
-				collect(Collectors.toSet());
+	private void dump(String contig,String pos, String id, String ref, String alt,List<List<String>> predictions)  throws Exception  {
 		
-			
-		for(String gene_name: gene_names) {
 			Double best_score=null;
 			String best_pred=null;
+			String best_gene = null;
+			// un seul gene par position sinon ca plante
 			
 			for(List<String> pred : predictions) {
 				if(!pred.get(0).equalsIgnoreCase(alt)) continue;
-				if(!pred.get(3).equals(gene_name)) continue;
 				for(String pred_key: this.amp.split(pred.get(1))) {
 					Double v = scores.getOrDefault(pred_key, null);
 					if(v==null) throw new IOException(String.join("|",pred));
 					if(best_score==null || best_score.compareTo(v)<0) {
 						best_score=v;
 						best_pred = pred_key;
-						gene_name = pred.get(3);
+						best_gene = pred.get(3);
 						}
 					}
 	 			}
+			
 			if(best_score!=null) {
 				System.out.print(contig);
-				System.out.print(":");
+                                System.out.print(" ");
 				System.out.print(pos);
-				System.out.print(":");
-				System.out.print(ref);
-				System.out.print(":");
-				System.out.print(alt);
+                                System.out.print(" ");
+				System.out.print(id);
 				System.out.print(" ");
-				System.out.print(gene_name);
+				System.out.print(best_gene);
 				System.out.print(" ");
 				System.out.print(best_pred);
 				System.out.print(" ");
 				System.out.print(best_score);
 				System.out.println();
 				}
-			}
+			
 		}
 	private void run()  throws Exception {
 		final Pattern semicolon = Pattern.compile("[;]"); 
@@ -105,7 +99,7 @@ public class Minikit {
 						map(PRED->Arrays.asList(pipe.split(PRED))).
 						filter(L->!L.get(1).equals("intergenic_region")).
 						collect(Collectors.toList());
-				dump(tokens[0],tokens[1],tokens[3],tokens[4],predictions);
+				dump(tokens[0],tokens[1],tokens[2],tokens[3],tokens[4],predictions);
 				}
 			}
 		}

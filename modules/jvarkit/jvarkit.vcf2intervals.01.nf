@@ -33,8 +33,10 @@ process JVARKIT_VCF_TO_INTERVALS_01 {
 	input:
 		tuple val(interval),path(bed),path(vcf),path(idx)
 	output:
-		path("*.bed"),emit:bed /* chrom/start/end/vcf */
+		path("*.bed"),emit:bed /* chrom/start/end/vcf/idx */
 	script:
+		if(!task.ext.containsKey("distance")) throw new IllegalStateException("task.ext.distance missing for ${task.process}");
+		if(!task.ext.containsKey("min_distance")) throw new IllegalStateException("task.ext.min_distance missing for ${task.process}");
 		def distance = task.ext.distance?:"10mb"
 		def min_distance = task.ext.min_distance?:"1kb"
 	"""
