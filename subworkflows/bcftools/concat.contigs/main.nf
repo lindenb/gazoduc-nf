@@ -30,11 +30,12 @@ main:
 	ch2 = vcfs.
 		map{[it[0],[it[1],it[2]]]}.
 		groupTuple().
+		map{[it[0],it[1].sort{t->t[0].name}]}. // prevent cache invalidation due to order
 		flatMap{makeSQRT(it)}.
 		map{[it[0], it[1].flatten()]}
 
 	ch3 = LEVEL1(ch2,bed)
-	ch4 = LEVEL2(ch3.output.groupTuple().map{[it[0],it[1].flatten()]})
+	ch4 = LEVEL2(ch3.output.groupTuple().map{[it[0],it[1].flatten().sort()]})
 
 emit:	
 	output = ch4.output

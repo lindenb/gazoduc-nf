@@ -2,32 +2,129 @@
 
 include {SNPEFF_DOWNLOAD} from '../../modules/snpeff/download'
 include {JVARKIT_VCF_TO_INTERVALS_01} from '../../subworkflows/vcf2intervals'
+include {BCFTOOLS_CONCAT_CONTIGS} from '../../subworkflows/bcftools/concat.contigs'
 
 workflow {
 	if(!file(params.vcf).name.contains(".")) throw new IllegalArgumentException("--vcf missing");
 	if(!file(params.samplesheet).name.contains(".")) throw new IllegalArgumentException("--samplesheet missing");
 	reference = Channel.of(file(params.fasta), file(params.fai), file(params.dict)).collect()
+	user_bed = file(params.bed)
 
-	tobed_ch = JVARKIT_VCF_TO_INTERVALS_01(Channel.fromPath(params.vcf), file(params.bed))
+	tobed_ch = JVARKIT_VCF_TO_INTERVALS_01(Channel.fromPath(params.vcf), user_bed)
 
 	snpeff_ch = SNPEFF_DOWNLOAD(params.snpeff_db)
 
+	snsheet_ch = DIGEST_SAMPLESHEET( tobed_ch.bed.
+			splitCsv(header:false,sep:'\t').
+			map{it[3]}.
+			first() ,
+		file(params.samplesheet)
+		)
 	
 	wch1_ch = WGSELECT(
 			reference,
 			snpeff_ch.output,
-			file(params.samplesheet),
+			snsheet_ch.output,
 			tobed_ch.bed.splitCsv(header:false,sep:'\t').
 				map{[it[0],((it[1] as int)+1),(it[2] as int),file(it[3]),file(it[4])]}.
 				filter{it[0].matches("(chr)?[0-9XY]+")}
 			)
 
-	wch2_ch = MERGE_BCF(
-		wch1_ch.output.groupTuple().map{[it[0],it[1].flatten()]}
+	wch1_ch = wch1_ch.output.map{[(it[0].startsWith("chr") ? it[0].substring(3) : it[0] ) , it[1], it[2] ]}
+
+
+	wch2_ch = BCFTOOLS_CONCAT_CONTIGS(
+		wch1_ch ,
+		user_bed
 		)
 	pgen_ch = PLINK2_VCF2PGEN(wch2_ch.output)
 	bgen_ch = PLINK2_MERGE_PGEN(pgen_ch.output.collect())
+
+	pca_ch = RUN_PCA(snsheet_ch.output, wch2_ch.output)
+	covar_ch = MAKE_COVARIATES(pca_ch.output)
+
+	step1 = STEP1( 
+		bgen_ch.output /* bgen file */,
+		covar_ch.output /* covariates */, 
+		snsheet_ch.output /* samples, sex, phenotype */, 
+		pca_ch.output /* contains list of SNP to retain for step 1 */
+		)
 	}
+
+
+
+process DIGEST_SAMPLESHEET {
+label "process_single"
+tag "${vcf.name}"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
+input:
+	path(vcf)
+	path(samplesheet)
+output:
+	path("pedigree.*"),emit:output
+script:
+"""
+hostname 1>&2
+mkdir -p TMP
+set -x
+export LC_ALL=C
+
+
+# samples in VCF
+bcftools query -l "${vcf}" | sort | uniq > TMP/in.vcf.samples.txt
+test -s TMP/in.vcf.samples.txt
+
+
+cat << 'EOF' > TMP/jeter.R
+
+SN= read.table("TMP/in.vcf.samples.txt",header=TRUE,sep="\\t", stringsAsFactors=FALSE,col.names=c("sample"))
+
+
+T1 <- read.table("${samplesheet}",header=TRUE,sep="\\t", stringsAsFactors=FALSE)
+
+required_columns <- c("sample", "sex", "status")
+missing_columns <- setdiff(required_columns, colnames(T1))
+
+if (length(missing_columns) > 0) {
+  stop(paste("Erreur : Les colonnes suivantes sont manquantes dans le fichier :", paste(missing_columns, collapse=", ")))
+}
+
+
+
+T1 <- T1[T1\$sample %in% SN\$sample,]
+
+if (any(duplicated(T1\$sample))) {
+  stop("DUPLICATE SAMPLES")
+}
+
+T2 <- T1[T1\$status=='case',]\$sample
+write.table(T2,"TMP/cases.txt",sep="\t", row.names=FALSE, quote=FALSE, col.names = FALSE)
+T2 <- T1[T1\$status=='control',]\$sample
+write.table(T2,"TMP/controls.txt",sep="\t", row.names=FALSE, quote=FALSE, col.names = FALSE)
+
+
+# Conversion des valeurs de sex pour PLINK (1 = male, 2 = female, 0 = unknown)
+T1\$sex <- ifelse(T1\$sex == "male", 1, ifelse(T1\$sex == "female", 2, 0))
+T1\$status <- ifelse(T1\$status == "case" , "1", ifelse(T1\$status == "control" , "0" , "NA"))
+
+# header
+T1\$FID <- T1\$sample
+T1\$IID <- T1\$sample
+
+T1 <- T1[, c("FID", "IID", "sex", "status")]
+write.table(T1,file="TMP/plink.ped", quote=FALSE, row.names=FALSE, col.names=TRUE, sep="\t")
+EOF
+
+R --no-save --vanilla < TMP/jeter.R
+
+
+sort TMP/cases.txt > pedigree.cases.txt
+sort TMP/controls.txt > pedigree.controls.txt
+cat TMP/cases.txt TMP/controls.txt > pedigree.all.samples.txt
+mv TMP/plink.ped pedigree.plink.ped
+"""
+}
 
 process WGSELECT {
 label "process_short"
@@ -37,10 +134,10 @@ afterScript "rm -rf TMP"
 input:
 	path(genome)
 	path(snpeffDir)
-	path(samplesheet)
+	path(samplesheet_files)
 	tuple val(contig),val(start1),val(end),path(vcf),path(vcf_idx)
 output:
-	tuple val(contig),path("wgselect*"),emit:output
+	tuple val(contig),path("*.bcf"),path("*.csi"),emit:output
 script:
 	def interval  = "${contig}:${start1}-${end}"
 	def fasta = genome.find{it.name.endsWith("a")}
@@ -48,61 +145,23 @@ script:
 	def max_alleles = 3
 	def polyx = 10
 	def p_assoc = 1E-6
+	def f_missing = 0.01
 	def gnomad_population = params.gnomad_population?:"AF_nfe"
+	def minDP=15
+	def maxDP=300
+	def all_samples = samplesheet_files.find{it.name.endsWith("all.samples.txt")}
+	def controls_file = samplesheet_files.find{it.name.endsWith(".controls.txt")}
+	def cases_file = samplesheet_files.find{it.name.endsWith(".cases.txt")}
 """
 hostname 1>&2
 mkdir -p TMP
 set -x
 export LC_ALL=C
 
-cat << 'EOF' > TMP/jeter.R
-T1 <- read.table("${samplesheet}",header=TRUE,sep="\\t")
-T2 <- T1[T1\$status=='case',]\$sample
-write.table(T2,"TMP/cases.txt",sep="\t", row.names=FALSE, quote=FALSE, col.names = FALSE)
-T2 <- T1[T1\$status=='control',]\$sample
-write.table(T2,"TMP/controls.txt",sep="\t", row.names=FALSE, quote=FALSE, col.names = FALSE)
-EOF
-
-
-	# extract case and controls from pedigree
-	R --no-save --vanilla < TMP/jeter.R
-
-	# samples in VCF
-	bcftools query -l "${vcf}" | sort | uniq > TMP/in.vcf.samples.txt
-	test -s TMP/in.vcf.samples.txt
-
-	# keep cases in VCF
-	sort TMP/cases.txt | uniq > TMP/jeter.txt
-	mv TMP/jeter.txt TMP/cases.txt
-	comm -12 TMP/cases.txt TMP/in.vcf.samples.txt > TMP/jeter.txt
-	mv TMP/jeter.txt TMP/cases.txt
-	test -s TMP/cases.txt
-
-	
-	# keep controls in VCF
-	sort TMP/controls.txt | uniq > TMP/jeter.txt
-	mv TMP/jeter.txt TMP/controls.txt
-	comm -12 TMP/controls.txt TMP/in.vcf.samples.txt > TMP/jeter.txt
-	mv TMP/jeter.txt TMP/controls.txt
-	test -s TMP/controls.txt
-
-
-	# check no common case/controls
-	comm -12 TMP/cases.txt TMP/controls.txt > TMP/jeter.txt
-	cat TMP/jeter.txt 1>&2
-	test ! -s TMP/jeter.txt
-	
-
-	cat TMP/cases.txt TMP/controls.txt | sort -T TMP | uniq  > TMP/samples.txt
-
-	# check it's ok
-	comm -12 TMP/in.vcf.samples.txt TMP/samples.txt > TMP/jeter.txt
-	test -s TMP/jeter.txt
-
 	# select samples in region
 	bcftools view --threads ${task.cpus} \\
 		--regions "${interval}" \\
-		--samples-file TMP/samples.txt  \\
+		--samples-file ${all_samples}  \\
 		--trim-unseen-allele \\
 		--trim-alt-alleles \\
 		--no-update \\
@@ -133,6 +192,17 @@ EOF
 	bcftools view --threads ${task.cpus} -e 'ALT=="*"' -O u -o TMP/jeter2.bcf TMP/jeter1.bcf 
 	mv TMP/jeter2.bcf TMP/jeter1.bcf
 
+
+	## F_MISSING ##################################################################################
+	bcftools view --exclude-uncalled    ${contig.matches("(chr)?Y")?"":"-i \"F_MISSING < ${f_missing}\""}  -O u  -o TMP/jeter2.bcf TMP/jeter1.bcf
+	mv TMP/jeter2.bcf TMP/jeter1.bcf
+
+	## high and low depth ########################################################################
+	bcftools view TMP/jeter1.bcf |\\
+		jvarkit -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP  vcffilterjdk --nocode -e 'final double dp= variant.getGenotypes().stream().filter(G->G.isCalled() && G.hasDP()).mapToInt(G->G.getDP()).average().orElse(${minDP}); if( dp<${minDP} || dp>${maxDP}) return false; return true;' |\\
+		bcftools view -O u -o TMP/jeter2.bcf
+	mv TMP/jeter2.bcf TMP/jeter1.bcf
+
 	## polyx ###################################################################################
 	if ${ (polyx as int) > 1 } ; then
 	
@@ -143,7 +213,7 @@ EOF
 	fi
 
 	# bcftools contrast ########################################################################
-	bcftools +contrast -0 TMP/controls.txt -1 TMP/cases.txt -O u TMP/jeter1.bcf |\\
+	bcftools +contrast -0 ${controls_file} -1 ${cases_file} -O u TMP/jeter1.bcf |\\
  		bcftools view -e 'INFO/PASSOC < ${p_assoc}' -O b -o TMP/jeter2.bcf
 	mv -v TMP/jeter2.bcf TMP/jeter1.bcf
 
@@ -182,7 +252,7 @@ EOF
 	mv TMP/jeter2.bcf TMP/jeter1.bcf
 
 	# update variant ID #######################################################################################
-	bcftools annotate --set-id +'%CHROM:%POS:%REF:%FIRST_ALT' --threads ${task.cpus} -O u -o TMP/jeter2.bcf TMP/jeter1.bcf
+	bcftools annotate --set-id '%CHROM:%POS:%REF:%FIRST_ALT' --threads ${task.cpus} -O u -o TMP/jeter2.bcf TMP/jeter1.bcf
 	mv TMP/jeter2.bcf TMP/jeter1.bcf
 
 
@@ -192,48 +262,19 @@ bcftools index --threads ${task.cpus} "wgselect.${contig}_${start1}_${end}.bcf"
 }
 
 
-process MERGE_BCF {
-label "process_medium"
-tag "${contig}"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-afterScript "rm -rf TMP"
-input:
-	tuple val(contig),path("VCF/*")
-output:
-	tuple val(contig),path("concat.${contig}.bcf"),path("concat.${contig}.bcf.csi"),emit:output
-script:
-"""
-mkdir TMP
-#
-# create a file POS of 1st variant  / VCF
-#
-find VCF -type l -name "*.bcf" | while read F
-do
-	bcftools query -f "%POS\\n" "\${F}" | head -n 1 | awk -F '\t' -vF="\$F" '{printf("%s\t%s\\n",\$1,F);}' >> TMP/jeter.tsv
-done
-sort -T TMP -k1,1n -t '\t' TMP/jeter.tsv | cut -f 2 > TMP/jeter.list
-
-
-bcftools concat --threads ${task.cpus}  --file-list TMP/jeter.list  -O b9 -o TMP/jeter.bcf
-bcftools index --threads ${task.cpus}  TMP/jeter.bcf
-
-
-mv TMP/jeter.bcf concat.${contig}.bcf
-mv TMP/jeter.bcf.csi concat.${contig}.bcf.csi
-"""
-}
 
 
 process PLINK2_VCF2PGEN {
 label "process_short"
 afterScript "rm -rf TMP"
-tag "${config} ${vcf.name}"
+tag "${contig}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
-	tuple val(contig),path(vcf),path(vcfidx)
+	tuple val(contig),path(vcf_files)
 output:
-	path("${vcf.baseName}.*"),emit:output
+	path("${contig}.*"),emit:output
 script:
+	def vcf = vcf_files.find{it.name.endsWith(".vcf.gz") || it.name.endsWith(".bcf")}
 """
 set -o pipefail
 mkdir -p TMP
@@ -241,7 +282,7 @@ mkdir -p TMP
 plink2 ${vcf.name.endsWith(".bcf")?"--bcf":"--vcf"} "${vcf}"  \\
 	--make-pgen erase-phase \\
 	--threads ${task.cpus} \\
-	--out "${vcf.baseName}"
+	--out "${contig}"
 """
 }
 
@@ -277,12 +318,24 @@ fi
 """
 }
 
+process MAKE_COVARIATES {
+executor "local"
+input:
+	path(plink_files)
+output:
+	path("covariates.tsv"),emit:output
+script:
+	mds = plink_files.find{it.name.endsWith(".mds")}
+"""
+awk 'BEGIN{printf("FID\tIID\tY1\tY2\tY3\\n");} (NR>1) {N=split(\$1,a,/_/);SN="";for(i=1;i<= N/4;i++) {SN=sprintf("%s%s%s",SN,(i==1?"":"_"),a[i]);} printf("%s\t%s\t%s\t%s\t%s\\n",SN,SN,\$4,\$5,\$6);}' "${mds}" > covariates.tsv
+"""
+}
+
 
 workflow TODO {
 	bgen = Channel.of(file(params.bgen),file(params.bgen.substring(0,params.bgen.lastIndexOf("."))+".sample")).collect()
 	prune_ch = LD_PRUNING(bgen)
 	vcf_ch = MAKE_VCF(bgen)
-	step1 = STEP1(bgen,file(params.covarFile), file(params.phenoFile), prune_ch.output )
 
 	annot_ch = ANNOT_VCF(vcf_ch.output, snpeff_db.output)
 	annot2_ch = MAKE_ANNOT_FILE(annot_ch.output)
@@ -296,13 +349,12 @@ process LD_PRUNING {
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
-	path(genome)
-	path(samplesheet)
+	//path(genome)
 	path(bgen_files)
 output:
-	path("keep.txt"),emit:output
+	//path("keep.txt"),emit:output
 script:
-	def fai = genome.find{it.name.endsWith(".fai")}
+	//def fai = genome.find{it.name.endsWith(".fai")}
 	def bgen = bgen_files.find{it.name.endsWith(".bgen")}
 	def sample = bgen_files.find{it.name.endsWith(".sample")}
 
@@ -316,6 +368,7 @@ set -x
 
 plink2 --bgen ${bgen} ref-first \\
 	--sample ${sample} \\
+	--allow-no-sex \\
 	--rm-dup force-first \\
         --indep-pairwise 50 1 0.2 \\
         --out TMP/plink
@@ -401,28 +454,26 @@ afterScript "rm -rf TMP"
 input:
 	path(bgen_files)
         path(covariates)
-	path(phenoFile)
-	path(keep_rs)
+	path(pheno_files)
+	path(plink_files)
 output:
 	path("${params.prefix}step1_pred.list"),emit:output
 	path("${params.prefix}step1.log"),emit:log
 script:
-	def bgen = bgen_files.find{it.name.endsWith(".bgen")}
-	def sample = bgen_files.find{it.name.endsWith(".sample")}
+	def pgen = bgen_files.find{it.name.endsWith(".pgen")}
+	def keep_rs = plink_files.find{it.name.endsWith("keep.id.txt")}
 	def args = "--bsize 1000 --bt --phenoCol Y1 "
+	def ped = pheno_files.find{it.name.endsWith(".plink.ped")}
 """
 
 mkdir -p TMP/OUT
 set -x
 
-cut -d ' ' -f1,2,3 "${sample}" > TMP/jeter.sample
-
 
 regenie \\
   --step 1 \\
-  --bgen ${bgen} \\
-  --sample TMP/jeter.sample \\
-  --phenoFile ${phenoFile} \\
+  --pgen \$(basename ${pgen} .pgen) \\
+  --phenoFile ${ped} \\
   --covarFile "${covariates}" \\
   --extract '${keep_rs}' \\
   ${args} \\
@@ -551,12 +602,14 @@ find ./
 
 
 
-workflow PCA {
+workflow RUN_PCA {
 	take:
-		vcfs //[contig,vcf,vcf_idx]
+		pedigree_files
+		rows //[contig,(vcf+vcf_idx)]
 	main:
-		ch1 = PCA_PER_CONTIG(vcfs.filter{it[0].matches("(chr)?[0-9]+")})
-		ch2 = MERGE_PIHAT_VCF(ch1.output.collect().flatten())
+		ch1 = PCA_PER_CONTIG(pedigree_files, rows.filter{it[0].matches("(chr)?[0-9]+")})
+		all_plink_ch = ch1.output.collect().flatten().collect()
+		ch2 = MERGE_PIHAT(all_plink_ch)
 	emit:
 		output = ch2.output
 }
@@ -565,33 +618,49 @@ workflow PCA {
 process PCA_PER_CONTIG {
 label "process_short"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
-tag "${vcf.name}/${contig}"
+tag "${contig}"
 afterScript "rm -rf TMP"
 input:
-        tuple val(contig),path(vcf),path(vcf_idx)
+	path(pedigree_files)
+        tuple val(contig),path(vcf_files)
 output:
-	path("${contig}.*"),emit:output
+	path("plink.${contig}.*"),emit:output
 script:
-	def filters = params.pihat.filters
-	def pihatmaf = (params.pihat.MAF as double)
-	def pihatMinGQ = (params.pihat.min_GQ as int)
-	def f_missing= (params.pihat.f_missing as double)
-	def minDP= (params.pihat.min_DP as int)
-	def maxDP= (params.pihat.max_DP as int)
-	def gnomad_genome_path = params.gnomad
+	def vcf = vcf_files.find{it.name.endsWith(".bcf") || it.name.endsWith(".vcf.gz")}
+	def pihatmaf = 0.1
+	def pihatMinGQ = 20
+	def f_missing= 0.05
+	def minDP= 10
+	def maxDP= 300
+	def ped = pedigree_files.find{it.name.endsWith(".plink.ped")}
 """
 hostname 1>&2
+set -o pipefail
 set -x
 
-mkdir TMP
+mkdir -p TMP
 
 echo '${contig}' | sed 's/^chr//' > TMP/chroms.txt
 
-bcftools view -m2 -M2 --regions `cat TMP/chroms.txt` --types snps -O u "${vcf}" |\
-	bcftools view --targets-overlap 2 --exclude-uncalled  --min-af "${pihatmaf}" --max-af "${1.0 - (pihatmaf as Double)}"  -i 'AC>0 ${contig.matches("(chr)?Y")?"":"&& F_MISSING < ${f_missing}"}'  -O v |\
-	jvarkit -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP  vcffilterjdk --nocode -e 'final double dp= variant.getGenotypes().stream().filter(G->G.isCalled() && G.hasDP()).mapToInt(G->G.getDP()).average().orElse(${minDP}); if( dp<${minDP} || dp>${maxDP}) return false; if (variant.getGenotypes().stream().filter(G->G.isCalled() && G.hasGQ()).anyMatch(G->G.getGQ()< ${pihatMinGQ} )) return false; return true;' |\
-	bcftools annotate  -x '^INFO/AC,INFO/AF,INFO/AN,QUAL,^FORMAT/GT' -O b -o TMP/jeter2.bcf
-	mv -v TMP/jeter2.bcf TMP/jeter1.bcf
+bcftools view -m2 -M2  --apply-filters '.,PASS' --regions `cat TMP/chroms.txt` --types snps -O u "${vcf}" |\
+	bcftools view --exclude-uncalled  --min-af "${pihatmaf}" --max-af "${1.0 - (pihatmaf as Double)}"  -i 'AC>0 ${contig.matches("(chr)?Y")?"":"&& F_MISSING < ${f_missing}"}'  -O v |\\
+	jvarkit -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP  vcffilterjdk --nocode -e 'final double dp= variant.getGenotypes().stream().filter(G->G.isCalled() && G.hasDP()).mapToInt(G->G.getDP()).average().orElse(${minDP}); if( dp<${minDP} || dp>${maxDP}) return false; if (variant.getGenotypes().stream().filter(G->G.isCalled() && G.hasGQ()).anyMatch(G->G.getGQ()< ${pihatMinGQ} )) return false; return true;' |\\
+	bcftools annotate  -x '^INFO/AC,INFO/AF,INFO/AN,QUAL,^FORMAT/GT' -O z -o TMP/jeter2.vcf.gz
+
+mv -v TMP/jeter2.vcf.gz TMP/jeter1.vcf.gz
+bcftools query -f "\\n" TMP/jeter1.vcf.gz | wc -l 1>&2
+
+# convert VCF to plink (BCF marche pas ?)
+plink \\
+	--vcf TMP/jeter1.vcf.gz \\
+	--pheno '${ped}' --pheno-name sex \\
+	--allow-extra-chr \\
+	--allow-no-sex \\
+	--threads ${task.cpus} \\
+	--make-bed \\
+	--out TMP/jeter1 1>&2
+
+find TMP -type f 1>&2
 
 #
 # Dans le fichier hardyweinberg.hwe enlever les variants dont la colonne P < 0.00001
@@ -599,104 +668,145 @@ bcftools view -m2 -M2 --regions `cat TMP/chroms.txt` --types snps -O u "${vcf}" 
 ##	--allow-no-sex \\
 
 plink \\
-	--bcf TMP/jeter.bcf \\
+	--bfile TMP/jeter1 \\
+	--allow-extra-chr \\
+	--allow-no-sex \\
 	--hardy gz \\
-	--out "TMP/hardyweinberg.txt"
+	--threads ${task.cpus} \\
+	--out "TMP/hardyweinberg.txt" 1>&2
 
+find TMP -type f 1>&2
+file TMP/hardyweinberg.txt.hwe.gz 1>&2
 
 gunzip -c TMP/hardyweinberg.txt.hwe.gz |\\
 	awk '(\$9 <  0.00001) {print \$2}'  > TMP/xclude_ids.txt
 
-if [ -s "TMP/xclude_ids.txt" ] ; then
-	bcftools view \\
-		-e 'ID=@TMP/xclude_ids.txt' \\
-		-O b -o TMP/jeter2.bcf TMP/jeter.bcf
-	mv TMP/jeter2.bcf TMP/jeter.bcf
-fi
+wc -l TMP/xclude_ids.txt 1>&2
+
+
+# remove variants with those IDS
+plink \\
+	--bfile TMP/jeter1 \\
+	--allow-extra-chr \\
+	--allow-no-sex \\
+	--threads ${task.cpus} \\
+	--make-bed \\
+	--exclude TMP/xclude_ids.txt \\
+	--out TMP/jeter2 1>&2
+
+# rm -v TMP/jeter1*
+find TMP -type f 1>&2
 
 #
 # selection de SNP independants 
 #
 plink \\
-	--bcf  TMP/jeter.bcf \\
+	--bfile  TMP/jeter2 \\
+	--allow-extra-chr \\
+	--allow-no-sex \\
 	--indep-pairwise 50 10 0.2 \\
-	--out TMP/plink
+	--out TMP/jeter3 1>&2
 
+find TMP -type f 1>&2
+wc TMP/jeter3.prune.in 1>&2
+head TMP/jeter3.prune.in 1>&2
 
-plink -\\
-	--bcf  TMP/jeter.bcf \\
-	--extract TMP/plink.prune.in \\
-	--recode vcf \\
-	--out TMP/pruned_data
-
-test -f TMP/pruned_data.vcf
 
 plink \\
-	--bcf  TMP/jeter.bcf \\
+	--bfile  TMP/jeter2 \\
+	--allow-extra-chr \\
+	--allow-no-sex \\
+	--extract TMP/jeter3.prune.in \\
+	--make-bed \\
+	--out TMP/jeter4 1>&2
+
+# rm -v TMP/jeter2*
+find TMP -type f 1>&2
+
+plink \\
+	--bfile  TMP/jeter4 \\
+	--allow-extra-chr \\
+	--allow-no-sex \\
 	--r2 --ld-window 50 --ld-window-kb 5000 --ld-window-r2 0.2 \\
-	--out TMP/ld
-test -f TMP/ld.ld
+	--out TMP/jeter5 1>&2
 
-awk '{print \$3;}'  TMP/ld.ld  | uniq  | sort -T . | uniq > TMP/snpInLD.txt
+test -f TMP/jeter5.ld
+
+find TMP -type f 1>&2
+awk '{print \$3;}'  TMP/jeter5.ld  | uniq  | sort -T TMP | uniq > TMP/snpInLD.txt
 
 plink \\
-	--vcf TMP/pruned_data.vcf \\
+	--bfile TMP/jeter4 \\
+	--allow-extra-chr \\
+	--allow-no-sex \\
 	--exclude TMP/snpInLD.txt \\
-	--recode vcf \\
-	--out TMP/indepSNP_data
+	--make-bed \\
+	--out TMP/plink.${contig}.indepSNP_data
 
 #
 # it is not recommened to use more than 1000000 variants in step 1 of regenie
 #
+# find TMP -type f 1>&2
+# awk '{print \$2}' TMP/plink.${contig}.indepSNP_data.bim | sort -T TMP | uniq > TMP/${contig}.keep.id.txt
 
-awk '{print \$2}' TMP/indepSNP_data.bim | sort | uniq > TMP/keep.id.txt
-
-mv TMP/keep.id.txt "${contig}.keep.id.txt"
-
-bcftools view --threads ${task.cpus} -O b -o "${contig}.bcf" TMP/indepSNP_data.vcf
-bcftools index --threads ${task.cpus} "${contig}.bcf"
+mv -v TMP/plink.${contig}.* ./
+"""
 }
 
 
 
-process MERGE_PIHAT_VCF {
+process MERGE_PIHAT {
 label "process_short"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
-	path("VCF/*")
+	path("PLINK/*")
 output:
-	path("${prefix}plink.genome.txt.gz"),emit:plink_genome
-	path("genome.bcf"),optional:true,emit:genome_bcf
-	//multiqc 
-	path("${prefix}*.png"),emit:images
-        path("${prefix}multiqc.*"),emit:multiqc
-	path("version.xml"),emit:version
-	        
+	path("plink*"),emit:output
 script:
-	prefix = (params.prefix?:"")+params.step_id+"."
-
-	maxPiHat = (params.pihat.pihat_max as double)
-	def save_genome_vcf = task.ext.save_genome_vcf
-
-	def whatispihat = "The probable relatives and duplicates are detected based on pairwise identify-by-state (IBS) from which a variable called PIHAT is calculated via PLINK"
-
+	def num_components=3
 """
 hostname 2>&1
 set -x
 mkdir -p TMP
+find PLINK/ 1>&2
 
-find VCF -type l -name "*.bcf" | sort -V > TMP/jeter.list
-
-bcftools concat --threads ${task.cpus} -O b --file-list jeter.list -o "TMP/jeter.bcf"
+find PLINK/  -name "*.bim" | sed 's/\\.bim\$//' | sort > TMP/jeter.list
+test -s TMP/jeter.list
 
 plink \\
-	--double-id \\
-	--bcf TMP/jeter.bcf \\
-	--genome \\
-	--out TMP/plink
+	--merge-list TMP/jeter.list \\
+        --allow-extra-chr \\
+        --allow-no-sex \\
+        --make-bed \\
+        --out TMP/jeter1 1>&2
 
-mv TMP/plink* ./
+# it is not recommened to use more than 1000000 variants in step 1 of regenie
+#
+awk 'BEGIN {srand(0);} {printf("%f\t%s\\n", rand(), \$2);}' TMP/jeter1.bim |\\
+	LC_ALL=C sort -T TMP -t '\t' -k1,1g |\\
+	cut -f 2 |\\
+	head -n 1000000 > TMP/plink.keep.id.txt
+
+test -s TMP/plink.keep.id.txt
+
+plink \\
+	--bfile TMP/jeter1 \\
+	--genome \\
+	--out TMP/plink 1>&2
+
+find TMP -type f 1>&2
+
+plink \\
+	--bfile TMP/jeter1 \\
+	--read-genome TMP/plink.genome \\
+	--mds-plot ${num_components} \\
+	--cluster \\
+	-out TMP/plink 1>&2
+
+find TMP -type f 1>&2
+
+mv -v TMP/plink* ./
 """
 }
 
