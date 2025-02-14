@@ -38,9 +38,9 @@ workflow {
 		user_bed
 		)
 	pgen_ch = PLINK2_VCF2PGEN(wch2_ch.output)
-	bgen_ch = PLINK2_MERGE_PGEN(pgen_ch.output.collect())
+	bgen_ch = PLINK2_MERGE_PGEN(snsheet_ch.output, pgen_ch.output.collect())
 
-	pca_ch = RUN_PCA(snsheet_ch.output, wch2_ch.output)
+	pca_ch = RUN_PCA(wch2_ch.output)
 	covar_ch = MAKE_COVARIATES(pca_ch.output)
 
 	step1 = STEP1( 
@@ -293,13 +293,16 @@ label "process_short"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
+	path(pedigree_files)
         path("INPUT/*")
 output:
         path("merged.*"),emit:output
 script:
+	def ped = pedigree_files.find{it.name.endsWith(".plink.ped")}
 """
 set -o pipefail
 mkdir -p TMP
+set -x
 find INPUT -type l -name "*.pgen" | sed 's/\\.pgen\$//' > TMP/jeter.list
 
 if test `wc -l < TMP/jeter.list` -eq 1
@@ -315,6 +318,33 @@ plink2 --pmerge-list TMP/jeter.list \\
 	--threads ${task.cpus} \\
         --out "merged"
 fi
+
+
+#
+# UPDATE file psam with the information of the pedigree
+#
+
+# sort on name, keep original order in 1st column
+awk -F '\t' '(NR>1) {printf("%d\t%s\\n",NR,\$1);}' merged.psam |\\
+	sort -T TMP -t '\t' -k2,2 > TMP/jeter.a
+
+head TMP/jeter.a 1>&2
+
+cut -f2,3,4 "${ped}" |\\
+	tail -n +2 |\\
+	sort -T TMP -t '\t' -k1,1 > TMP/jeter.b
+
+head TMP/jeter.b 1>&2
+
+
+join -t '\t' -1 2 -2 1 -e 'NA' -a 1 -o '1.1,1.2,2.2,2.3' TMP/jeter.a TMP/jeter.b |\\
+	sort -t '\t' -k1,1n |\\
+	cut -f 2- |\\
+	awk -F '\t' 'BEGIN{printf("#FID\tIID\tSEX\tstatus\\n");} {printf("%s\t%s\t%s\t%s\\n",\$1,\$1,\$2,\$3);}' > TMP/merged.new.psam
+
+mv  merged.psam original.merged.psam
+
+mv  TMP/merged.new.psam merged.psam
 """
 }
 
@@ -327,7 +357,7 @@ output:
 script:
 	mds = plink_files.find{it.name.endsWith(".mds")}
 """
-awk 'BEGIN{printf("FID\tIID\tY1\tY2\tY3\\n");} (NR>1) {N=split(\$1,a,/_/);SN="";for(i=1;i<= N/4;i++) {SN=sprintf("%s%s%s",SN,(i==1?"":"_"),a[i]);} printf("%s\t%s\t%s\t%s\t%s\\n",SN,SN,\$4,\$5,\$6);}' "${mds}" > covariates.tsv
+awk 'BEGIN{printf("FID\tIID\tY1\tY2\tY3\\n");} (NR>1) {printf("%s\t%s\t%s\t%s\t%s\\n",\$1,\$2,\$4,\$5,\$6);}' "${mds}" > covariates.tsv
 """
 }
 
@@ -408,6 +438,9 @@ awk '{print \$2}' TMP/indepSNP_data.bim |\\
 
 mv TMP/keep.txt ./
 
+
+
+
 """
 }
 
@@ -474,6 +507,7 @@ regenie \\
   --step 1 \\
   --pgen \$(basename ${pgen} .pgen) \\
   --phenoFile ${ped} \\
+  --phenoColList `head -n 1 ${ped} | cut -f4- |tr "\t" ","` \\
   --covarFile "${covariates}" \\
   --extract '${keep_rs}' \\
   ${args} \\
@@ -604,10 +638,9 @@ find ./
 
 workflow RUN_PCA {
 	take:
-		pedigree_files
 		rows //[contig,(vcf+vcf_idx)]
 	main:
-		ch1 = PCA_PER_CONTIG(pedigree_files, rows.filter{it[0].matches("(chr)?[0-9]+")})
+		ch1 = PCA_PER_CONTIG(rows.filter{it[0].matches("(chr)?[0-9]+")})
 		all_plink_ch = ch1.output.collect().flatten().collect()
 		ch2 = MERGE_PIHAT(all_plink_ch)
 	emit:
@@ -621,7 +654,6 @@ conda "${moduleDir}/../../conda/bioinfo.01.yml"
 tag "${contig}"
 afterScript "rm -rf TMP"
 input:
-	path(pedigree_files)
         tuple val(contig),path(vcf_files)
 output:
 	path("plink.${contig}.*"),emit:output
@@ -632,7 +664,6 @@ script:
 	def f_missing= 0.05
 	def minDP= 10
 	def maxDP= 300
-	def ped = pedigree_files.find{it.name.endsWith(".plink.ped")}
 """
 hostname 1>&2
 set -o pipefail
@@ -653,7 +684,6 @@ bcftools query -f "\\n" TMP/jeter1.vcf.gz | wc -l 1>&2
 # convert VCF to plink (BCF marche pas ?)
 plink \\
 	--vcf TMP/jeter1.vcf.gz \\
-	--pheno '${ped}' --pheno-name sex \\
 	--allow-extra-chr \\
 	--allow-no-sex \\
 	--threads ${task.cpus} \\
@@ -805,6 +835,9 @@ plink \\
 	-out TMP/plink 1>&2
 
 find TMP -type f 1>&2
+
+
+
 
 mv -v TMP/plink* ./
 """
