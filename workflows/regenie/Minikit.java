@@ -122,6 +122,7 @@ public class Minikit extends Launcher {
 	}
 
 	private void dump(SortingCollection<String> sorter, VariantContext ctx) throws Exception {
+		if(ctx.getAttributeAsDouble("AF",1.0) >= 0.01) return;
 
 		final List<String> anns = ctx.getAttributeAsStringList(ANN, ".");
 		final List<List<String>> predictions = anns.stream().map(PRED -> Arrays.asList(CharSplitter.PIPE.split(PRED)))

@@ -590,7 +590,6 @@ mv TMP/jeter.annot.txt "regenie.annot.txt"
 mv TMP/jeter.mask.txt "regenie.mask.txt"
 mv TMP/jeter.setfile.txt "regenie.setfile.txt"
 
-
 """
 }
 
@@ -607,7 +606,7 @@ input:
 	path(mask)
 	path(setfile)
 output:
-        path("${params.prefix}step1.log"),emit:log
+        path("*.regenie"),emit:output
 script:
 	def pgen = bgen_files.find{it.name.endsWith(".pgen")}
 	def args = "--bsize 1000 --bt --phenoCol status "
@@ -636,7 +635,6 @@ regenie \\
   --bsize 200 \\
   --weights-col 4
 
-find ./
 """
 }
 
