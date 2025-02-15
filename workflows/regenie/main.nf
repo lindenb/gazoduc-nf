@@ -49,6 +49,18 @@ workflow {
 		snsheet_ch.output /* samples, sex, phenotype */, 
 		pca_ch.output /* contains list of SNP to retain for step 1 */
 		)
+
+	annot2_ch = MAKE_ANNOT_FILE(wch2_ch.output.map{it[1].flatten().collect()})
+
+	step2 = STEP2(
+		bgen_ch.output,
+		covar_ch.output,
+		snsheet_ch.output, 
+		step1.output,
+		annot2_ch.output,
+		annot2_ch.mask, 
+		annot2_ch.setfile
+		)
 	}
 
 
@@ -368,9 +380,7 @@ workflow TODO {
 	vcf_ch = MAKE_VCF(bgen)
 
 	annot_ch = ANNOT_VCF(vcf_ch.output, snpeff_db.output)
-	annot2_ch = MAKE_ANNOT_FILE(annot_ch.output)
 
-	step2 = STEP2(bgen,file(params.covarFile), file(params.phenoFile),  step1.output, annot2_ch.output, annot2_ch.mask,  annot2_ch.setfile)
 	}
 
 /** STEP 1 of regenie cannot use more than 'X' alleles,  LD PRUNING is required */
@@ -544,47 +554,46 @@ bcftools view "${vcf}" |\\
 }
 
 process MAKE_ANNOT_FILE {
-tag "${vcf.name}"
+label "process_medium"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
-        path(vcf)
+        path("VCF/*")
 output:
-	path("${vcf.getSimpleName()}.annot.txt"),emit:output
-	path("${vcf.getSimpleName()}.mask.txt"),emit:mask
-	path("${vcf.getSimpleName()}.setfile.txt"),emit:setfile
+	path("regenie.annot.txt"),emit:output
+	path("regenie.mask.txt"),emit:mask
+	path("regenie.setfile.txt"),emit:setfile
 script:
 """
 set -o pipefail
 mkdir -p TMP
+find "VCF" -type l \\( -name "*.vcf.gz" -o -name "*.bcf" \\) > TMP/jeter.list
+
+JD1=`which jvarkit`
+echo "JD1=\${JD1}" 1>&2
+# directory of jvarkit
+JD2=`dirname "\${JD1}"`
+# find the jar itself
+JVARKIT_JAR=`find "\${JD2}/../.." -type f -name "jvarkit.jar" | head -n1`
+
+
+
 cp -v "${moduleDir}/Minikit.java" TMP/
-javac -sourcepath TMP -d TMP TMP/Minikit.java
+javac -sourcepath TMP -cp "\${JVARKIT_JAR}" -d TMP TMP/Minikit.java
 
 # fix me the sort/uniq shouldn't be here
-bcftools view "${vcf}" |\\
-	java -cp TMP Minikit |\\
-	sort -t ' ' -k3,3 --unique -T TMP > TMP/jeter.txt
-
-cut -d ' ' -f 3- TMP/jeter.txt > TMP/jeter2.txt
-
-echo -n "Mask1 " > TMP/mask.txt
-
-cut -d ' ' -f 3 TMP/jeter2.txt | sort | uniq | paste -sd ',' >> TMP/mask.txt
+bcftools concat --file-list TMP/jeter.list --drop-genotypes |\\
+	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -cp TMP:\${JVARKIT_JAR} Minikit -a TMP/jeter.annot.txt -s TMP/jeter.setfile.txt -m TMP/jeter.mask.txt
 
 
-cut -d ' ' -f1 TMP/jeter.txt | uniq | sort | uniq | while read C
-do
-	echo -n "VC\${C} \${C} " >> TMP/set_file.txt
-	awk -vC=\${C} -F ' ' 'BEGIN {N=0;} {if(\$1!=C) next; if(N==0) {printf("%d",\$2);} printf("%s%s",(N==0?" ":","),\$3);N++;} END {printf("\\n");}' TMP/jeter.txt  >> TMP/set_file.txt
-done
-
-mv TMP/jeter2.txt "${vcf.getSimpleName()}.annot.txt"
-mv TMP/mask.txt "${vcf.getSimpleName()}.mask.txt"
-mv TMP/set_file.txt "${vcf.getSimpleName()}.setfile.txt"
+mv TMP/jeter.annot.txt "regenie.annot.txt"
+mv TMP/jeter.mask.txt "regenie.mask.txt"
+mv TMP/jeter.setfile.txt "regenie.setfile.txt"
 
 
 """
 }
+
 
 process STEP2 {
 conda "${moduleDir}/../../conda/regenie.yml"
@@ -592,7 +601,7 @@ afterScript "rm -rf TMP"
 input:
         path(bgen_files)
         path(covariates)
-        path(phenoFile)
+        path(pheno_files)
 	path(pred_list)
 	path(annot)
 	path(mask)
@@ -600,21 +609,18 @@ input:
 output:
         path("${params.prefix}step1.log"),emit:log
 script:
-	def bgen = bgen_files.find{it.name.endsWith(".bgen")}
-	def sample = bgen_files.find{it.name.endsWith(".sample")}
-	def args = "--bsize 1000 --bt --phenoCol Y1 "
+	def pgen = bgen_files.find{it.name.endsWith(".pgen")}
+	def args = "--bsize 1000 --bt --phenoCol status "
+	def ped = pheno_files.find{it.name.endsWith(".plink.ped")}
 """
 
 mkdir -p TMP/OUT
 set -x
-cut -d ' ' -f1,2,3 "${sample}" > TMP/jeter.sample
-
 
 regenie \\
-	--step 2 \\
-  --bgen ${bgen} \\
-  --sample TMP/jeter.sample \\
-  --phenoFile ${phenoFile} \\
+  --step 2 \\
+  --pgen \$(basename ${pgen} .pgen) \\
+  --phenoFile ${ped} \\
   --covarFile "${covariates}" \\
   --pred ${pred_list} \\
   --mask-def ${mask} \\
