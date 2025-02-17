@@ -3,6 +3,7 @@
 include {SNPEFF_DOWNLOAD} from '../../modules/snpeff/download'
 include {JVARKIT_VCF_TO_INTERVALS_01} from '../../subworkflows/vcf2intervals'
 include {BCFTOOLS_CONCAT_CONTIGS} from '../../subworkflows/bcftools/concat.contigs'
+include {GHOSTSCRIPT_MERGE} from '../..//modules/gs/merge'
 
 workflow {
 	if(!file(params.vcf).name.contains(".")) throw new IllegalArgumentException("--vcf missing");
@@ -49,18 +50,30 @@ workflow {
 		snsheet_ch.output /* samples, sex, phenotype */, 
 		pca_ch.output /* contains list of SNP to retain for step 1 */
 		)
+	
+	
+	annot2_ch = MAKE_ANNOT_PER_CTG(wch2_ch.output)
+	
+	
+	af_ch = Channel.of(0.1, 0.05, 0.01, 0.001)
+	tests_ch = Channel.of("skato","acato-full","skat","skato-acat","acatv","acato")
+	mask_ch = annot2_ch.output.map{it[2]}.splitCsv(sep:"\t",header:false).map{it[0]}.unique()
+	status_ch = Channel.of("status")
+	
+	ch4 =  annot2_ch.combine(af_ch).combine(tests_ch).combine(mask_ch).combine(status_ch)
 
-	annot2_ch = MAKE_ANNOT_FILE(wch2_ch.output.map{it[1].flatten().collect()})
-
-	step2 = STEP2(
+	step2_ch = STEP2(
 		bgen_ch.output,
 		covar_ch.output,
 		snsheet_ch.output, 
 		step1.output,
-		annot2_ch.output,
-		annot2_ch.mask, 
-		annot2_ch.setfile
+		ch4
 		)
+	ch5 = MERGE_AND_PLOT(
+		reference,
+		step2_ch.map{[ [it[0] /* freq */ ,it[1] /* test */ ,it[2] /* mask */,it[3] /* status */] , it[4] /* regenie file */ ] }.groupTuple()
+		)
+	GHOSTSCRIPT_MERGE(ch5.output.flatten().filter{it.name.endsWith(".pdf")}.map{["REGENIE",it]}.groupTuple())
 	}
 
 
@@ -139,7 +152,7 @@ mv TMP/plink.ped pedigree.plink.ped
 }
 
 process WGSELECT {
-label "process_short"
+label "process_quick"
 tag "${contig}:${start1}-${end} ${vcf.name}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
@@ -268,7 +281,7 @@ export LC_ALL=C
 	mv TMP/jeter2.bcf TMP/jeter1.bcf
 
 
-bcftools view --threads ${task.cpus} -O b9 -o "wgselect.${contig}_${start1}_${end}.bcf" TMP/jeter1.bcf
+bcftools view --threads ${task.cpus} -O b -o "wgselect.${contig}_${start1}_${end}.bcf" TMP/jeter1.bcf
 bcftools index --threads ${task.cpus} "wgselect.${contig}_${start1}_${end}.bcf"
 """
 }
@@ -553,21 +566,20 @@ bcftools view "${vcf}" |\\
 """
 }
 
-process MAKE_ANNOT_FILE {
+process MAKE_ANNOT_PER_CTG {
+tag "chr${contig}"
 label "process_medium"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
-        path("VCF/*")
+        tuple val(contig),path(vcf_files)
 output:
-	path("regenie.annot.txt"),emit:output
-	path("regenie.mask.txt"),emit:mask
-	path("regenie.setfile.txt"),emit:setfile
+	tuple val(contig),path("regenie.${contig}.annot.txt"),path("regenie.${contig}.mask.txt"),path("regenie.${contig}.setfile.txt"),emit:output
 script:
+	def vcf = vcf_files.find{it.name.endsWith(".bcf") || it.name.endsWith(".vcf.gz")}
 """
 set -o pipefail
 mkdir -p TMP
-find "VCF" -type l \\( -name "*.vcf.gz" -o -name "*.bcf" \\) > TMP/jeter.list
 
 JD1=`which jvarkit`
 echo "JD1=\${JD1}" 1>&2
@@ -576,25 +588,23 @@ JD2=`dirname "\${JD1}"`
 # find the jar itself
 JVARKIT_JAR=`find "\${JD2}/../.." -type f -name "jvarkit.jar" | head -n1`
 
-
-
 cp -v "${moduleDir}/Minikit.java" TMP/
 javac -sourcepath TMP -cp "\${JVARKIT_JAR}" -d TMP TMP/Minikit.java
 
 # fix me the sort/uniq shouldn't be here
-bcftools concat --file-list TMP/jeter.list --drop-genotypes |\\
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -cp TMP:\${JVARKIT_JAR} Minikit -a TMP/jeter.annot.txt -s TMP/jeter.setfile.txt -m TMP/jeter.mask.txt
+bcftools view -G '${vcf}' |\\
+	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -cp TMP:\${JVARKIT_JAR} Minikit -a TMP/jeter.annot.txt -s TMP/jeter.setfile.txt -m TMP/jeter.mask.txt -w 5000
 
 
-mv TMP/jeter.annot.txt "regenie.annot.txt"
-mv TMP/jeter.mask.txt "regenie.mask.txt"
-mv TMP/jeter.setfile.txt "regenie.setfile.txt"
-
+mv -v TMP/jeter.annot.txt "regenie.${contig}.annot.txt"
+mv -v TMP/jeter.mask.txt "regenie.${contig}.mask.txt"
+mv -v TMP/jeter.setfile.txt "regenie.${contig}.setfile.txt"
 """
 }
 
 
 process STEP2 {
+tag "${contig} ${freq} ${test_name} ${mask_name} ${status_name}"
 conda "${moduleDir}/../../conda/regenie.yml"
 afterScript "rm -rf TMP"
 input:
@@ -602,19 +612,18 @@ input:
         path(covariates)
         path(pheno_files)
 	path(pred_list)
-	path(annot)
-	path(mask)
-	path(setfile)
+	tuple val(contig),path(annot),path(mask),path(setfile),val(freq),val(test_name),val(mask_name),val(status_name)
 output:
-        path("*.regenie"),emit:output
+        tuple val(freq),val(test_name),val(mask_name),val(status_name),path("*.regenie"),emit:output
 script:
 	def pgen = bgen_files.find{it.name.endsWith(".pgen")}
-	def args = "--bsize 1000 --bt --phenoCol status "
 	def ped = pheno_files.find{it.name.endsWith(".plink.ped")}
 """
 
 mkdir -p TMP/OUT
 set -x
+
+awk '(\$1=="${mask_name}")'  '${mask}' > TMP/jeter.mask
 
 regenie \\
   --step 2 \\
@@ -622,18 +631,158 @@ regenie \\
   --phenoFile ${ped} \\
   --covarFile "${covariates}" \\
   --pred ${pred_list} \\
-  --mask-def ${mask} \\
-  ${args} \\
+  --mask-def TMP/jeter.mask \\
+  --phenoCol ${status_name} \\
+  --bt \\
+  --bsize 1000 \\
   --set-list ${setfile} \\
   --lowmem \\
   --lowmem-prefix TMP/regenie_tmp_preds \\
   --threads ${task.cpus} \\
-  --out "${params.prefix}step2" \\
+  --out "step2.${contig}.${freq}.${test_name}.${mask_name}.${status_name}" \\
   --anno-file ${annot} \\
-  --aaf-bins 0.1,0.05,0.01 \\
+  --aaf-bins ${freq} \\
+  --vc-maxAAF 0.01 \\
   --write-mask \\
   --bsize 200 \\
+  --vc-tests "${test_name}" \\
+  --check-burden-files \\
   --weights-col 4
+
+"""
+}
+
+
+process MERGE_AND_PLOT {
+tag "${key[0]} ${key[1]} ${key[2]} ${key[3]}"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
+label "process_quick"
+input:
+	path(genome)
+	tuple val(key),path("INPUT/*")
+output:
+	path("regenie.*"),emit:output
+script:
+
+	def dict = genome.find{it.name.endsWith(".dict")}
+	def fai = genome.find{it.name.endsWith(".fai")}
+	def fasta = genome.find{it.name.endsWith("a")}
+	def freq = key[0]
+	def test_name = key[1]
+	def mask_name = key[2]
+	def status_name = key[3]
+
+"""
+mkdir -p TMP
+
+cut -f1,2 '${fai}' | awk -F '\t' '( \$1 ~ /^(chr)?[0-9XY]+\$/ )' > TMP/jeter.fai
+
+
+cat INPUT/*.regenie | grep -v "^#" | grep '^CHROM' -m1 | tr " " "\t" > TMP/jeter.tsv
+test -s TMP/jeter.tsv
+
+set -o pipefail
+
+
+cat INPUT/*.regenie |\\
+	grep -v "^#" |\\
+	grep -v '^CHROM' |\
+	LC_ALL=C sort -T TMP -t ' ' -k1,1V -k2,2n |\\
+	uniq |\\
+	tr " " "\t" |\\
+	jvarkit bedrenamechr -R "${dict}" --column 1 --convert SKIP >> TMP/jeter.tsv
+
+cat << '__EOF__' > TMP/jeter.R
+
+fai <- read.table("TMP/jeter.fai", header=FALSE, sep="\t", stringsAsFactors=FALSE, colClasses=c("character","double"))
+colnames(fai) <- c("contig", "size")
+
+pos2index <- function(CHROM, POS) {  
+  total_size <- 0.0
+  for (i in 1:nrow(fai)) {
+    if (fai\$contig[i] == CHROM) {
+      return(total_size + POS)
+    }
+    total_size <- total_size + fai\$size[i]
+  }
+    stop("Chromosome non trouve")
+}
+
+data <- read.table("TMP/jeter.tsv", header=TRUE, sep="\t", stringsAsFactors=FALSE)
+data\$x <- mapply(pos2index, data\$CHROM, data\$GENPOS)
+
+chrom_positions <- c(0, cumsum(fai\$size))
+chrom_colors <- rep(c("azure", "azure2"), length.out=nrow(fai))
+
+
+last_chrom <- fai\$contig[nrow(fai)]
+last_size <- fai\$size[nrow(fai)]
+max_genome_size <- pos2index(last_chrom, last_size)
+
+
+
+pdf("TMP/jeter.pdf", width=20, height=6)
+
+x_lim <-  c(0,max_genome_size)
+y_lim <- c(0,1+max(data\$LOG10P))
+
+plot(	NULL,
+	main="Test ${test_name} Mask:${mask_name} Status:${status_name} AF:${freq}",
+	sub= "${params.prefix}regenie",
+	xlab="${fasta}",
+	ylab="-log10(PVALUE)",
+	xlim = x_lim,
+	ylim = y_lim
+	)
+
+for (i in seq_along(fai\$contig)) {
+  rect(chrom_positions[i], par("usr")[3], chrom_positions[i+1], par("usr")[4], col=chrom_colors[i], border=NA)
+}
+
+# real plot
+points(data\$x,
+	data\$LOG10P,
+	pch=20,
+	col="black",
+	xlim = x_lim,
+	ylim = y_lim
+	)
+
+# vertical bars
+abline(v=chrom_positions, col="black", lty=2)
+abline(h=6,col="red",lty=2)
+abline(h=5,col="green",lty=2)
+
+dev.off()
+__EOF__
+
+R --no-save < TMP/jeter.R
+
+
+bgzip TMP/jeter.tsv
+tabix -S 1 -s 1 -b 1 -e 1 TMP/jeter.tsv.gz
+mv TMP/jeter.tsv.gz     regenie.${test_name}.${mask_name}.${status_name}.${freq}.tsv.gz
+mv TMP/jeter.pdf     regenie.${test_name}.${mask_name}.${status_name}.${freq}.pdf
+mv TMP/jeter.tsv.gz.tbi regenie.${test_name}.${mask_name}.${status_name}.${freq}.tsv.gz.tbi
+
+"""
+}
+
+process ZORG {
+script:
+"""
+
+
+
+
+
+
+# add column 'x'
+
+
+
+
 
 """
 }

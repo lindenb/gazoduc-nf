@@ -29,9 +29,12 @@ import htsjdk.variant.vcf.VCFIterator;
 import htsjdk.variant.vcf.VCFIteratorBuilder;
 
 public class Minikit extends Launcher {
-	private final String ANN = "ANN";
-	private final String CADD_PHRED = "CADD_PHRED";
+	private static final String ANN = "ANN";
+	private static final String CADD_PHRED = "CADD_PHRED";
+	private static final String SLIDING_WINDOW = "sliding_window";
 
+	@Parameter(names = "-w", description = "window size")
+	private int window_size = 5_000;
 	@Parameter(names = "-a", description = "output annotation file", required = true)
 	private Path annotationFileOut = null;
 	@Parameter(names = "-s", description = "set list file output", required = true)
@@ -42,21 +45,30 @@ public class Minikit extends Launcher {
 	private WritingSortingCollection writingSortingCollection = new WritingSortingCollection();
 
 	private static class Prediction {
-		String name;
-		double score;
+		final String name;
+		final double score;
 		boolean found = false;
-		Set<String> masks = new HashSet<>();
+		final Set<String> masks = new HashSet<>();
 
-		Prediction() {
-			masks.add("ALL");
-		}
+		Prediction(String name,double score) {
+			this.name  = name;
+			this.score  = score;
+			if(name.startsWith(SLIDING_WINDOW)) {
+				masks.add(this.name);
+				}
+			else
+				{
+				masks.add("ALL");
+				}
+			}
 
 		void andMask(String... array) {
 			for (String s : array)
 				this.masks.add(s);
+			}
 		}
-	}
 
+	private Prediction sliding_prediction = null;
 	private final Map<String, Prediction> scores = new HashMap<>(50);
 
 	private static class RowCodec extends AbstractDataCodec<String> {
@@ -81,9 +93,7 @@ public class Minikit extends Launcher {
 	}
 
 	private Prediction makeScore(String pred, double score) {
-		final Prediction p = new Prediction();
-		p.name = pred;
-		p.score = score;
+		final Prediction p = new Prediction(pred,score);
 		this.scores.put(pred, p);
 		return p;
 	}
@@ -92,37 +102,39 @@ public class Minikit extends Launcher {
 		makeScore("3_prime_UTR_variant", 0.1).andMask("UTR", "UTR3");
 		makeScore("5_prime_UTR_premature_start_codon_gain_variant", 0.2).andMask("UTR", "UTR5");
 		makeScore("5_prime_UTR_truncation", 0.5).andMask("UTR", "UTR5");
-		;
+		makeScore("3_prime_UTR_truncation", 0.5).andMask("UTR", "UTR3");
 		makeScore("5_prime_UTR_variant", 0.2).andMask("UTR", "UTR5");
-		;
 		makeScore("bidirectional_gene_fusion", 1.0);
-		makeScore("conservative_inframe_deletion", 0.1);
-		makeScore("conservative_inframe_insertion", 0.3);
+		makeScore("conservative_inframe_deletion", 0.1).andMask("protein_altering");
+		makeScore("conservative_inframe_insertion", 0.3).andMask("protein_altering");;
 		makeScore("disruptive_inframe_deletion", 0.2).andMask("protein_altering");
 		makeScore("disruptive_inframe_insertion", 0.2).andMask("protein_altering");
 		makeScore("downstream_gene_variant", 0.1).andMask("downstream", "updownstream");
 		makeScore("exon_loss_variant", 1.0).andMask("protein_altering");
 		makeScore("frameshift_variant", 0.4);
-		makeScore("initiator_codon_variant", 0.3);
-		makeScore("intergenic_region", 0.01);
-		makeScore("intragenic_variant", 0.001);
-		makeScore("intron_variant", 0.05);
+		makeScore("initiator_codon_variant", 0.3).andMask("protein_altering");
+		makeScore("intergenic_region", 0.001);
+		makeScore("intragenic_variant", 0.01);
+		makeScore("intron_variant", 0.05).andMask("intronic");
 		makeScore("missense_variant", 0.9).andMask("protein_altering");
-		makeScore("non_coding_transcript_exon_variant", 0.1);
-		makeScore("non_coding_transcript_variant", 0.1);
+		makeScore("non_coding_transcript_exon_variant", 0.1).andMask("non_coding");
+		makeScore("non_coding_transcript_variant", 0.1).andMask("non_coding");
 		makeScore("splice_acceptor_variant", 0.5).andMask("protein_altering", "splice");
 		makeScore("splice_donor_variant", 0.5).andMask("protein_altering", "splice");
 		makeScore("splice_region_variant", 0.5).andMask("protein_altering", "splice");
 		makeScore("start_lost", 0.6).andMask("protein_altering");
 		makeScore("stop_gained", 0.9).andMask("protein_altering");
 		makeScore("stop_lost", 0.6).andMask("protein_altering");
-		makeScore("stop_retained_variant", 0.2);
-		makeScore("synonymous_variant", 0.1);
+		makeScore("stop_retained_variant", 0.2).andMask("synonymous");
+		makeScore("synonymous_variant", 0.1).andMask("synonymous");
 		makeScore("upstream_gene_variant", 0.1).andMask("upstream", "updownstream");
 	}
 
 	private void dump(SortingCollection<String> sorter, VariantContext ctx) throws Exception {
-		if(ctx.getAttributeAsDouble("AF",1.0) >= 0.01) return;
+		// if(ctx.getAttributeAsDouble("AF",1.0) >= 0.01) return;
+
+		final int  win_pos = 1 + (((int)(ctx.getStart()/(double)this.window_size)) * this.window_size);
+
 
 		final List<String> anns = ctx.getAttributeAsStringList(ANN, ".");
 		final List<List<String>> predictions = anns.stream().map(PRED -> Arrays.asList(CharSplitter.PIPE.split(PRED)))
@@ -184,6 +196,32 @@ public class Minikit extends Launcher {
 			sorter.add(sb.toString());
 		}
 
+		if(win_pos>0) // always true anyway...
+			{
+			sliding_prediction.found = true;
+
+			final StringBuilder sb = new StringBuilder();
+			sb.append(ctx.getContig());
+			sb.append(" ");
+			sb.append(win_pos);
+			sb.append(" ");
+			sb.append(ctx.getID());
+			sb.append(" ");
+			sb.append(ctx.getContig()+ "_" + (win_pos) + "_" + (win_pos - 1 + this.window_size) );
+			sb.append(" ");
+			sb.append(sliding_prediction.name);
+			sb.append(" ");
+			sb.append(sliding_prediction.score);
+			sb.append(" ");
+			if (cadd_phred == null) {
+				sb.append(0.0);
+			} else {
+				sb.append(cadd_phred.doubleValue());
+				}
+			sorter.add(sb.toString());
+			}
+
+
 	}
 
 	private static int compareX(String a, String b, int level) {
@@ -203,6 +241,8 @@ public class Minikit extends Launcher {
 	@Override
 	public int doWork(List<String> args) {
 		try {
+			this.sliding_prediction = makeScore(SLIDING_WINDOW+"_"+this.window_size , 0.1);
+
 			final SortingCollection<String> sorter = SortingCollection.newInstance(String.class, new RowCodec(),
 					(A, B) -> compareX(A, B, 2), writingSortingCollection.getMaxRecordsInRam(),
 					writingSortingCollection.getTmpPaths());
