@@ -38,7 +38,7 @@ workflow {
 		wch1_ch ,
 		user_bed
 		)
-	pgen_ch = PLINK2_VCF2PGEN(wch2_ch.output)
+	pgen_ch = PLINK2_VCF2PGEN(snsheet_ch.output, wch2_ch.output)
 	bgen_ch = PLINK2_MERGE_PGEN(snsheet_ch.output, pgen_ch.output.collect())
 
 	pca_ch = RUN_PCA(wch2_ch.output)
@@ -52,7 +52,7 @@ workflow {
 		)
 	
 	
-	annot2_ch = MAKE_ANNOT_PER_CTG(wch2_ch.output)
+	annot2_ch = MAKE_ANNOT_PER_CTG(wch2_ch.output.combine(Channel.of("5000","")))
 	
 	
 	af_ch = Channel.of(0.1, 0.05, 0.01, 0.001)
@@ -288,23 +288,29 @@ bcftools index --threads ${task.cpus} "wgselect.${contig}_${start1}_${end}.bcf"
 
 
 
-
+/** TODO fix split-par argyment */
 process PLINK2_VCF2PGEN {
 label "process_short"
 afterScript "rm -rf TMP"
-tag "${contig}"
+tag "chr${contig}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
+	path(pedigree_files)
 	tuple val(contig),path(vcf_files)
 output:
 	path("${contig}.*"),emit:output
 script:
 	def vcf = vcf_files.find{it.name.endsWith(".vcf.gz") || it.name.endsWith(".bcf")}
+	def ped = pedigree_files.find{it.name.endsWith(".plink.ped")}
+	def args = contig.matches("(chr)?[XY]")?" --update-sex ${ped} --split-par hg38":""
 """
 set -o pipefail
 mkdir -p TMP
 
+
+
 plink2 ${vcf.name.endsWith(".bcf")?"--bcf":"--vcf"} "${vcf}"  \\
+	${args} \\
 	--make-pgen erase-phase \\
 	--threads ${task.cpus} \\
 	--out "${contig}"
@@ -505,6 +511,7 @@ mv TMP/sites.vcf.gz ./
 }
 
 process STEP1 {
+label "process_quick_high"
 conda "${moduleDir}/../../conda/regenie.yml"
 afterScript "rm -rf TMP"
 input:
@@ -567,14 +574,14 @@ bcftools view "${vcf}" |\\
 }
 
 process MAKE_ANNOT_PER_CTG {
-tag "chr${contig}"
-label "process_medium"
+tag "chr${contig} ${win_size}"
+label "process_quick_high"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
-        tuple val(contig),path(vcf_files)
+        tuple val(contig),path(vcf_files),val(win_size)
 output:
-	tuple val(contig),path("regenie.${contig}.annot.txt"),path("regenie.${contig}.mask.txt"),path("regenie.${contig}.setfile.txt"),emit:output
+	tuple val(contig),path("regenie.${contig}${win_size.isEmpty()?"":".w"+win_size}.annot.txt"),path("regenie.${contig}.mask.txt"),path("regenie.${contig}.setfile.txt"),emit:output
 script:
 	def vcf = vcf_files.find{it.name.endsWith(".bcf") || it.name.endsWith(".vcf.gz")}
 """
@@ -591,12 +598,18 @@ JVARKIT_JAR=`find "\${JD2}/../.." -type f -name "jvarkit.jar" | head -n1`
 cp -v "${moduleDir}/Minikit.java" TMP/
 javac -sourcepath TMP -cp "\${JVARKIT_JAR}" -d TMP TMP/Minikit.java
 
-# fix me the sort/uniq shouldn't be here
-bcftools view -G '${vcf}' |\\
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -cp TMP:\${JVARKIT_JAR} Minikit -a TMP/jeter.annot.txt -s TMP/jeter.setfile.txt -m TMP/jeter.mask.txt -w 5000
+bcftools norm --remove-duplicates -O u '${vcf}' |\\
+	bcftools view -G -O v |\\
+	java -Xmx${task.memory.giga}g \
+		-Djava.io.tmpdir=TMP  \\
+		-cp TMP:\${JVARKIT_JAR} Minikit \\
+			-a TMP/jeter.annot.txt \\
+			-s TMP/jeter.setfile.txt \\
+			-m TMP/jeter.mask.txt \\
+			${win_size.isEmpty()?"":"-w "+win_size}
 
 
-mv -v TMP/jeter.annot.txt "regenie.${contig}.annot.txt"
+mv -v TMP/jeter.annot.txt "regenie.${contig}${win_size.isEmpty()?"":".w"+win_size}.annot.txt"
 mv -v TMP/jeter.mask.txt "regenie.${contig}.mask.txt"
 mv -v TMP/jeter.setfile.txt "regenie.${contig}.setfile.txt"
 """
@@ -604,7 +617,8 @@ mv -v TMP/jeter.setfile.txt "regenie.${contig}.setfile.txt"
 
 
 process STEP2 {
-tag "${contig} ${freq} ${test_name} ${mask_name} ${status_name}"
+label "process_quick_high"
+tag "chr${contig} AAF=${freq} ${test_name} ${mask_name} ${status_name}"
 conda "${moduleDir}/../../conda/regenie.yml"
 afterScript "rm -rf TMP"
 input:
@@ -614,7 +628,7 @@ input:
 	path(pred_list)
 	tuple val(contig),path(annot),path(mask),path(setfile),val(freq),val(test_name),val(mask_name),val(status_name)
 output:
-        tuple val(freq),val(test_name),val(mask_name),val(status_name),path("*.regenie"),emit:output
+        tuple val(freq),val(test_name),val(mask_name),val(status_name),path("*.regenie.gz"),emit:output
 script:
 	def pgen = bgen_files.find{it.name.endsWith(".pgen")}
 	def ped = pheno_files.find{it.name.endsWith(".plink.ped")}
@@ -639,16 +653,17 @@ regenie \\
   --lowmem \\
   --lowmem-prefix TMP/regenie_tmp_preds \\
   --threads ${task.cpus} \\
-  --out "step2.${contig}.${freq}.${test_name}.${mask_name}.${status_name}" \\
+  --out "step2.${contig}.${freq}.${test_name}.${mask_name}" \\
   --anno-file ${annot} \\
   --aaf-bins ${freq} \\
-  --vc-maxAAF 0.01 \\
+  --vc-maxAAF ${freq} \\
   --write-mask \\
   --bsize 200 \\
   --vc-tests "${test_name}" \\
   --check-burden-files \\
   --weights-col 4
 
+gzip *.regenie
 """
 }
 
@@ -679,13 +694,14 @@ mkdir -p TMP
 cut -f1,2 '${fai}' | awk -F '\t' '( \$1 ~ /^(chr)?[0-9XY]+\$/ )' > TMP/jeter.fai
 
 
-cat INPUT/*.regenie | grep -v "^#" | grep '^CHROM' -m1 | tr " " "\t" > TMP/jeter.tsv
+cat INPUT/*.regenie.gz | gunzip -c | grep -v "^#" | grep '^CHROM' -m1 | tr " " "\t" > TMP/jeter.tsv
 test -s TMP/jeter.tsv
 
 set -o pipefail
 
 
-cat INPUT/*.regenie |\\
+cat INPUT/*.regenie.gz |\\
+	gunzip -c |\\
 	grep -v "^#" |\\
 	grep -v '^CHROM' |\
 	LC_ALL=C sort -T TMP -t ' ' -k1,1V -k2,2n |\\

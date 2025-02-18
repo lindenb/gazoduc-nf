@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -34,7 +35,7 @@ public class Minikit extends Launcher {
 	private static final String SLIDING_WINDOW = "sliding_window";
 
 	@Parameter(names = "-w", description = "window size")
-	private int window_size = 5_000;
+	private int window_size = -1;
 	@Parameter(names = "-a", description = "output annotation file", required = true)
 	private Path annotationFileOut = null;
 	@Parameter(names = "-s", description = "set list file output", required = true)
@@ -99,47 +100,26 @@ public class Minikit extends Launcher {
 	}
 
 	public Minikit() {
-		makeScore("3_prime_UTR_variant", 0.1).andMask("UTR", "UTR3");
-		makeScore("5_prime_UTR_premature_start_codon_gain_variant", 0.2).andMask("UTR", "UTR5");
-		makeScore("5_prime_UTR_truncation", 0.5).andMask("UTR", "UTR5");
-		makeScore("3_prime_UTR_truncation", 0.5).andMask("UTR", "UTR3");
-		makeScore("5_prime_UTR_variant", 0.2).andMask("UTR", "UTR5");
-		makeScore("bidirectional_gene_fusion", 1.0);
-		makeScore("conservative_inframe_deletion", 0.1).andMask("protein_altering");
-		makeScore("conservative_inframe_insertion", 0.3).andMask("protein_altering");;
-		makeScore("disruptive_inframe_deletion", 0.2).andMask("protein_altering");
-		makeScore("disruptive_inframe_insertion", 0.2).andMask("protein_altering");
-		makeScore("downstream_gene_variant", 0.1).andMask("downstream", "updownstream");
-		makeScore("exon_loss_variant", 1.0).andMask("protein_altering");
-		makeScore("frameshift_variant", 0.4);
-		makeScore("initiator_codon_variant", 0.3).andMask("protein_altering");
-		makeScore("intergenic_region", 0.001);
-		makeScore("intragenic_variant", 0.01);
-		makeScore("intron_variant", 0.05).andMask("intronic");
-		makeScore("missense_variant", 0.9).andMask("protein_altering");
-		makeScore("non_coding_transcript_exon_variant", 0.1).andMask("non_coding");
-		makeScore("non_coding_transcript_variant", 0.1).andMask("non_coding");
-		makeScore("splice_acceptor_variant", 0.5).andMask("protein_altering", "splice");
-		makeScore("splice_donor_variant", 0.5).andMask("protein_altering", "splice");
-		makeScore("splice_region_variant", 0.5).andMask("protein_altering", "splice");
-		makeScore("start_lost", 0.6).andMask("protein_altering");
-		makeScore("stop_gained", 0.9).andMask("protein_altering");
-		makeScore("stop_lost", 0.6).andMask("protein_altering");
-		makeScore("stop_retained_variant", 0.2).andMask("synonymous");
-		makeScore("synonymous_variant", 0.1).andMask("synonymous");
-		makeScore("upstream_gene_variant", 0.1).andMask("upstream", "updownstream");
+
 	}
 
-	private void dump(SortingCollection<String> sorter, VariantContext ctx) throws Exception {
+	private void dump(final SortingCollection<String> sorter, final VariantContext ctx) throws Exception {
 		// if(ctx.getAttributeAsDouble("AF",1.0) >= 0.01) return;
-
-		final int  win_pos = 1 + (((int)(ctx.getStart()/(double)this.window_size)) * this.window_size);
-
-
-		final List<String> anns = ctx.getAttributeAsStringList(ANN, ".");
-		final List<List<String>> predictions = anns.stream().map(PRED -> Arrays.asList(CharSplitter.PIPE.split(PRED)))
-				.filter(L -> L.size() > 1).filter(L -> !L.get(1).equals("intergenic_region"))
-				.collect(Collectors.toList());
+		final List<List<String>> predictions;
+		final int  win_pos;
+		
+		if(this.window_size>0) {
+			win_pos = 1 + (((int)(ctx.getStart()/(double)this.window_size)) * this.window_size);
+			predictions = Collections.emptyList();
+			}
+		else
+			{
+			win_pos = -1;
+			final List<String> anns = ctx.getAttributeAsStringList(ANN, ".");
+			predictions = anns.stream().map(PRED -> Arrays.asList(CharSplitter.PIPE.split(PRED)))
+					.filter(L -> L.size() > 1).filter(L -> !L.get(1).equals("intergenic_region"))
+					.collect(Collectors.toList());
+			}
 
 		final String altstr = ctx.getAlternateAllele(0).getDisplayString();
 		Double cadd_phred = null;
@@ -194,7 +174,7 @@ public class Minikit extends Launcher {
 				sb.append(cadd_phred.doubleValue());
 			}
 			sorter.add(sb.toString());
-		}
+			}
 
 		if(win_pos>0) // always true anyway...
 			{
@@ -241,8 +221,45 @@ public class Minikit extends Launcher {
 	@Override
 	public int doWork(List<String> args) {
 		try {
-			this.sliding_prediction = makeScore(SLIDING_WINDOW+"_"+this.window_size , 0.1);
-
+			if(this.window_size>0) {
+				this.sliding_prediction = makeScore(SLIDING_WINDOW+"_"+this.window_size , 0.1);
+				}
+			else
+				{
+				this.sliding_prediction = null;
+				makeScore("3_prime_UTR_variant", 0.1).andMask("UTR", "UTR3");
+				makeScore("5_prime_UTR_premature_start_codon_gain_variant", 0.2).andMask("UTR", "UTR5");
+				makeScore("5_prime_UTR_truncation", 0.5).andMask("UTR", "UTR5");
+				makeScore("3_prime_UTR_truncation", 0.5).andMask("UTR", "UTR3");
+				makeScore("5_prime_UTR_variant", 0.2).andMask("UTR", "UTR5");
+				makeScore("bidirectional_gene_fusion", 1.0);
+				makeScore("conservative_inframe_deletion", 0.1).andMask("protein_altering");
+				makeScore("conservative_inframe_insertion", 0.3).andMask("protein_altering");;
+				makeScore("disruptive_inframe_deletion", 0.2).andMask("protein_altering");
+				makeScore("disruptive_inframe_insertion", 0.2).andMask("protein_altering");
+				makeScore("downstream_gene_variant", 0.1).andMask("downstream", "updownstream");
+				makeScore("exon_loss_variant", 1.0).andMask("protein_altering");
+				makeScore("frameshift_variant", 0.4);
+				makeScore("exon_loss_variant", 1.0).andMask("protein_altering");
+				makeScore("gene_fusion", 0.9).andMask("protein_altering");
+				makeScore("intergenic_region", 0.001);
+				makeScore("intragenic_variant", 0.01);
+				makeScore("initiator_codon_variant",0.5).andMask("protein_altering");
+				makeScore("intron_variant", 0.05).andMask("intronic");
+				makeScore("missense_variant", 0.9).andMask("protein_altering");
+				makeScore("non_coding_transcript_exon_variant", 0.1).andMask("non_coding");
+				makeScore("non_coding_transcript_variant", 0.1).andMask("non_coding");
+				makeScore("splice_acceptor_variant", 0.5).andMask("protein_altering", "splice");
+				makeScore("splice_donor_variant", 0.5).andMask("protein_altering", "splice");
+				makeScore("splice_region_variant", 0.5).andMask("protein_altering", "splice");
+				makeScore("start_retained_variant",0.1).andMask("synonymous");
+				makeScore("start_lost", 0.6).andMask("protein_altering");
+				makeScore("stop_gained", 0.9).andMask("protein_altering");
+				makeScore("stop_lost", 0.6).andMask("protein_altering");
+				makeScore("stop_retained_variant", 0.2).andMask("synonymous");
+				makeScore("synonymous_variant", 0.1).andMask("synonymous");
+				makeScore("upstream_gene_variant", 0.1).andMask("upstream", "updownstream");
+				}
 			final SortingCollection<String> sorter = SortingCollection.newInstance(String.class, new RowCodec(),
 					(A, B) -> compareX(A, B, 2), writingSortingCollection.getMaxRecordsInRam(),
 					writingSortingCollection.getTmpPaths());
