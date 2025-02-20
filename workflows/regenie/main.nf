@@ -57,10 +57,14 @@ workflow {
 	
 	af_ch = Channel.of(0.1, 0.05, 0.01, 0.001)
 	tests_ch = Channel.of("skato","acato-full","skat","skato-acat","acatv","acato")
-	mask_ch = annot2_ch.output.map{it[2]}.splitCsv(sep:"\t",header:false).map{it[0]}.unique()
 	status_ch = Channel.of("status")
+
+	ch4 = annot2_ch.output.
+		map{[it[2]].plus(it)}.
+		splitCsv(sep:'\t',header:false).
+		map{T->{T[0]=T[0][0];return T;}}.
+		combine(af_ch).combine(tests_ch).combine(status_ch)
 	
-	ch4 =  annot2_ch.combine(af_ch).combine(tests_ch).combine(mask_ch).combine(status_ch)
 
 	step2_ch = STEP2(
 		bgen_ch.output,
@@ -69,6 +73,9 @@ workflow {
 		step1.output,
 		ch4
 		)
+
+
+
 	ch5 = MERGE_AND_PLOT(
 		reference,
 		step2_ch.map{[ [it[0] /* freq */ ,it[1] /* test */ ,it[2] /* mask */,it[3] /* status */] , it[4] /* regenie file */ ] }.groupTuple()
@@ -626,7 +633,7 @@ input:
         path(covariates)
         path(pheno_files)
 	path(pred_list)
-	tuple val(contig),path(annot),path(mask),path(setfile),val(freq),val(test_name),val(mask_name),val(status_name)
+	tuple val(mask_name),val(contig),path(annot),path(mask),path(setfile),val(freq),val(test_name),val(status_name)
 output:
         tuple val(freq),val(test_name),val(mask_name),val(status_name),path("*.regenie.gz"),emit:output
 script:
