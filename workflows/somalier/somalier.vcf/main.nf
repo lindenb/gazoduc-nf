@@ -37,7 +37,8 @@ if( params.help ) {
 
 
 workflow {
-	SOMALIER_VCF_01([:], params.genomeId, file(params.vcf), file(params.pedigree))
+	genome = Channel.of(file(params.fasta), file(params.fai), file(params.dict)).collect()
+	SOMALIER_VCF_01(genome, file(params.vcf), file(params.pedigree))
 	}
 
 

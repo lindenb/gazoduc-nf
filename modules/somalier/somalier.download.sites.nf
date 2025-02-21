@@ -23,47 +23,44 @@ SOFTWARE.
 
 */
 include {moduleLoad} from '../utils/functions.nf'
+include {k1_signature} from '../utils/k1.nf'
 
-String getURL(fai) {
-	if(fai.name.contains("hs37d5")) return "https://github.com/brentp/somalier/files/3412453/sites.hg19.vcf.gz";
-        if(fai.name.contains("hs38me")) return "https://github.com/brentp/somalier/files/3412456/sites.hg38.vcf.gz";
-	return "TODO";
-	}
+def k1 = k1_signature()
 
 process SOMALIER_DOWNLOAD_SITES {
-tag "${fasta.name}"
+label "process_short"
 afterScript "rm -rf TMP"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
-	tuple path(fasta),path(fai),path(dict)
+	path(genome)
 output:
-	tuple path("sites.vcf.gz"), path("sites.vcf.gz.tbi"), emit:output
-	path("version.xml"), emit:version
+	path("sites.vcf.*"),emit:output
 script:
-	def url = getURL(fai)
+	def fasta = genome.find{it.name.endsWith("a")}
+	def fai = genome.find{it.name.endsWith(".fai")}
 """
 hostname 1>&2
-${moduleLoad("jvarkit bcftools")}
 set -o pipefail
 set -x
 mkdir -p TMP
 
-wget -O - "${url}" |\
-	gunzip -c |\
-	java -jar \${JVARKIT_DIST}/jvarkit.jar vcfsetdict -R "${fasta}"  --onNotFound SKIP |\
+cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
+1:${k1.hg19}\t
+EOF
+
+cut -f1,2 "${fai}" |tr "\t" ":" | sort -T TMP  > TMP/jeter2.tsv
+
+URL=`join -t '\t' -1 1 -2 1 -o "1.2" TMP/jeter1.tsv TMP/jeter2.tsv`
+
+test ! -z "\${URL}"
+
+wget -O - "\${URL}" |\\
+	gunzip -c |\\
+	jvarkit  vcfsetdict -R "${fasta}"  --onNotFound SKIP |\\
 	bcftools sort -T TMP/sort -o TMP/sites.vcf.gz -O z
 
 bcftools index -f -t TMP/sites.vcf.gz
 
 mv -v TMP/sites* ./
-
-##################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">download VCF sites for somalier</entry>
-        <entry key="url"><a>${url}</a></entry>
-	<entry key="bcftools.version">\$( bcftools --version-only)</entry>
-</properties>
-EOF
 """
 }

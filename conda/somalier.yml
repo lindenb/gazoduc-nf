@@ -1,0 +1,7 @@
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::somalier=0.2.19
+  - bioconda::bcftools=1.21
+  - bioconda::samtools=1.21

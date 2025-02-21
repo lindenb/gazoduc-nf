@@ -33,19 +33,15 @@ include {SOMALIER_DOWNLOAD_SITES} from '../../modules/somalier/somalier.download
 
 workflow SOMALIER_VCF_01 {
 	take:
-		meta
-		genomeId
+		genome
 		vcf
 		pedigree
 	main:
 		version_ch = Channel.empty()
-		exe_ch = DOWNLOAD_SOMALIER([:])
-		version_ch = version_ch.mix(exe_ch.version)
 
-		sites_ch = SOMALIER_DOWNLOAD_SITES([:], genomeId)
-		version_ch = version_ch.mix(sites_ch.version)
+		sites_ch = SOMALIER_DOWNLOAD_SITES(genome)
 	
-		if(!pedigree.name.equals("NO_FILE")) {
+		if(pedigree.name.contains(".")) {
 			vcf_samples_ch = VCF_INTER_PED_01(["pedigree_type","other"],vcf,pedigree)	
 			version_ch = version_ch.mix(vcf_samples_ch.version)
 			ped_ch = vcf_samples_ch.pedigree
@@ -55,12 +51,8 @@ workflow SOMALIER_VCF_01 {
 			ped_ch = pedigree
 			}
 	
-		somalier_ch = APPLY_SOMALIER([:], genomeId , exe_ch.executable ,sites_ch.vcf ,vcf, ped_ch)
-		version_ch = version_ch.mix(somalier_ch.version)
-
-		version_ch = MERGE_VERSION("somalier.vcf", version_ch.collect())
+		somalier_ch = APPLY_SOMALIER(genome ,sites_ch.vcf , ped_ch,vcf)
 	emit:
-		version = version_ch
 		zip = somalier_ch.zip
 	}
 
@@ -68,23 +60,20 @@ workflow SOMALIER_VCF_01 {
 process APPLY_SOMALIER {
 tag "${vcf.name}"
 afterScript "rm -rf extracted TMP"
+conda "${moduleDir}/../../conda/somalier.yml"
 input:
-	val(meta)
-	val(genomeId)
-	val(somalier)
-	val(sites)
-	path(vcf)
+	path(genome)
+	path(vcf_sites)
 	path(pedigree)
+	tuple path(vcf),path(vcf_idx)
 output:
-	path("${params.prefix?:""}somalier.vcf.zip"),emit:zip
-	path("version.xml"),emit:version
+	path("somalier.vcf.zip"),emit:zip
 script:
 	def prefix = params.prefix?:""
-	def genome = params.genomes[genomeId]
-	def reference = genome.fasta
+	def reference = genome.find{it.name.endsWith("a")}
+	def sites = vcf_sites.find{it.name.endsWith("vcf.gz")}
 """
 hostname 1>&2
-${moduleLoad("bcftools")}
 set -o pipefail
 set -x
 
@@ -125,23 +114,13 @@ fi
 bcftools index TMP/jeter.bcf
 
 
-${somalier} extract -d extracted \
+somalier extract -d extracted \
 	--sites "${sites}" \
 	-f "${reference}" TMP/jeter.bcf
 
 mkdir "${prefix}somalier.vcf"
 
-find \${PWD}/extracted -type f -name "*.somalier" | xargs ${somalier} relate --output-prefix=${prefix}somalier.vcf/${prefix}vcf ${pedigree.name.equals("NO_FILE")?"":"-p TMP/jeter.ped"}
-
-##################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">run somalier on vcf</entry>
-        <entry key="vcf">${vcf}</entry>
-        <entry key="pedigree">${pedigree}</entry>
-</properties>
-EOF
+find \${PWD}/extracted -type f -name "*.somalier" | xargs somalier relate --output-prefix=${prefix}somalier.vcf/${prefix}vcf ${pedigree.name.equals("NO_FILE")?"":"-p TMP/jeter.ped"}
 
 
 

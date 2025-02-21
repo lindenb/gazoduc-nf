@@ -3,7 +3,7 @@
 include {SNPEFF_DOWNLOAD} from '../../modules/snpeff/download'
 include {JVARKIT_VCF_TO_INTERVALS_01} from '../../subworkflows/vcf2intervals'
 include {BCFTOOLS_CONCAT_CONTIGS} from '../../subworkflows/bcftools/concat.contigs'
-include {GHOSTSCRIPT_MERGE} from '../..//modules/gs/merge'
+//include {GHOSTSCRIPT_MERGE} from '../..//modules/gs/merge'
 
 workflow {
 	if(!file(params.vcf).name.contains(".")) throw new IllegalArgumentException("--vcf missing");
@@ -80,7 +80,7 @@ workflow {
 		reference,
 		step2_ch.map{[ [it[0] /* freq */ ,it[1] /* test */ ,it[2] /* mask */,it[3] /* status */] , it[4] /* regenie file */ ] }.groupTuple()
 		)
-	GHOSTSCRIPT_MERGE(ch5.output.flatten().filter{it.name.endsWith(".pdf")}.map{["REGENIE",it]}.groupTuple())
+	MAKE_PDF_ARCHIVE(ch5.output.flatten().filter{it.name.endsWith(".pdf")}.collect())
 	}
 
 
@@ -1129,5 +1129,57 @@ cat << EOF > version.xml
 	<entry key="description">merge pihat data per contig, create pihat data</entry>
 </properties>
 EOF
+"""
+}
+
+process MAKE_PDF_ARCHIVE {
+label "process_quick"
+input:
+	path("PDFS/*")
+output:
+	path("${params.prefix?:""}archive.zip"),emit:output
+script:
+	def dir="${params.prefix?:""}archive"
+"""
+hostname 1>&2
+mkdir -p "${dir}"
+
+cat << __EOF__ >  "${dir}/index.html" 
+<html>
+<head>
+<meta charset="UTF-8"/>
+<title>${params.prefix?:""}Regenie</title>
+<script>
+var index=0;
+var pdfs=[
+__EOF__
+
+find PDFS -name "*.pdf" -printf "\\"%f\\"\\n" | LC_ALL=C sort -T . -V | paste -sd ',' >> "${dir}/index.html"
+cp -v PDFS/*.pdf ${dir}/
+
+cat << __EOF__ >> "${dir}/index.html"
+];
+
+function change(dx) {
+	index+=dx;
+	index = index%pdfs.length;
+	var E = document.getElementById("theimg");
+	E.setAttribute("src",pdfs[index]);
+	document.getElementById("x").textContent = ""+(index+1)+"/"+pdfs.length;
+	}
+</script>
+</head>
+<body>
+<button onclick="change(-1)">Prev</button>
+<button onclick="change( 1)">Next</button>
+<span id="x">1/x</span>
+<br/>
+<embed id="theimg" src="" width="1000" height="700" />
+</body>
+</html>
+__EOF__
+
+zip -r0  "${params.prefix?:""}archive.zip" "${dir}"
+rm -rf '${dir}'
 """
 }
