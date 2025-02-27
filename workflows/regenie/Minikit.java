@@ -130,7 +130,7 @@ public class Minikit extends Launcher {
 
 		if (ctx.hasAttribute(CADD_PHRED)) {
 			String s = ctx.getAttributeAsString(CADD_PHRED, ".");
-			if (s.equals(".") || StringUtils.isBlank(s)) {
+			if (!(s.equals(".") || StringUtils.isBlank(s))) {
 				cadd_phred = Double.valueOf(s);
 			}
 		}

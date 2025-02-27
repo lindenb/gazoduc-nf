@@ -22,30 +22,31 @@ SOFTWARE.
 
 */
 
-include {getVersionCmd;isHg19;isHg38;moduleLoad} from '../utils/functions.nf'
+include {k1_signature} from '../../utils/k1.nf'
 
 
 process DOWNLOAD_CYTOBAND {
-tag "${fasta.name}"
+label "process_quick"
+conda "${moduleDir}/../../../conda/bioinfo.01.nf"
 afterScript "rm -rf TMP"
 input:
-	path(fasta)
-	path(fai)
-	path(dict)
+	path(genome)
 output:
-	path("${fasta.baseName}.cytoBandIdeo.txt"),emit:output
-	path("version.xml"),emit:version
+	path("*.cytoBandIdeo.txt"),emit:output
 script:
+	def k1 = k1_signature()
+	def fai= genome.find{it.name.endsWith(".fai")}
+	def dict= genome.find{it.name.endsWith(".dict")}
+	def fasta= genome.find{it.name.endsWith("a")}
 """
 hostname 1>&2
-${moduleLoad("jvarkit")}
 mkdir -p TMP
 set -o pipefail
 
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:248956422	https://hgdownload.cse.ucsc.edu/goldenPath/hg38/database/cytoBandIdeo.txt.gz
-1:249250621	https://hgdownload.cse.ucsc.edu/goldenPath/hg19/database/cytoBandIdeo.txt.gz
-1:123556469	https://hgdownload.cse.ucsc.edu/goldenPath/canFam4/database/cytoBandIdeo.txt.gz
+1:${k1.hg38}	https://hgdownload.cse.ucsc.edu/goldenPath/hg38/database/cytoBandIdeo.txt.gz
+1:${k1.hg19}	https://hgdownload.cse.ucsc.edu/goldenPath/hg19/database/cytoBandIdeo.txt.gz
+1:${k1.canFam4}	https://hgdownload.cse.ucsc.edu/goldenPath/canFam4/database/cytoBandIdeo.txt.gz
 EOF
 
 awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
@@ -57,17 +58,8 @@ test -s TMP/jeter.url
 
 wget -O TMP/cytoBandIdeo.txt.gz `cat TMP/jeter.url`
 
-gunzip -c TMP/cytoBandIdeo.txt.gz |\
-		java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${fasta}" --column 1 --convert SKIP > "${fasta.baseName}.cytoBandIdeo.txt" 
-
-###############################################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="description">Download UCSC cytobands</entry>
-	<entry key="versions">${getVersionCmd("jvarkit/bedrenamechr wget")}</entry>
-</properties>
-EOF
+gunzip -c TMP/cytoBandIdeo.txt.gz |\\
+		jvarkit bedrenamechr -f "${fasta}" --column 1 --convert SKIP > "${fasta.baseName}.cytoBandIdeo.txt" 
 """
 }
 

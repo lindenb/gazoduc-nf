@@ -41,7 +41,9 @@ if( params.help ) {
 
 
 workflow {
-	ch1 = IGVREPORTS(params.fasta, params.fai, params.dict,file(params.bams),file(params.vcf))
+	genome = Channel.of(file(params.fasta), file(params.fai), file(params.dict)).collect()
+	
+	ch1 = IGVREPORTS(genome, file(params.bams),file(params.vcf))
 	//html = VERSION_TO_HTML(ch1.version)
 	}
 
@@ -49,35 +51,31 @@ runOnComplete(workflow)
 
 workflow IGVREPORTS {
 	take:
-		fasta
-		fai
-		dict
 		bams
 		vcf
 	main:
 		version_ch = Channel.empty()
 
-                snbam_ch = SAMTOOLS_SAMPLES(fasta,fai,bams)
+
+                snbam_ch = SAMTOOLS_SAMPLES(genome)
 		
 
 		compile_ch = COMPILE()
 		version_ch = version_ch.mix(compile_ch.version)
 
-		cyto_ch = DOWNLOAD_CYTOBAND(fasta,fai,dict)
-                version_ch = version_ch.mix(cyto_ch.version)
+		cyto_ch = DOWNLOAD_CYTOBAND(genome)
 
-		refgene_ch = DOWNLOAD_REFGENE(fasta,fai,dict)
-                version_ch = version_ch.mix(refgene_ch.version)
+		refgene_ch = DOWNLOAD_REFGENE(genome)
 
 		prepare_ch = PREPARE_IGVREPORTS(
-			fasta,fai, dict,
+			genome,
 			compile_ch.output,
 			snbam_ch.output, 
 			vcf
 			)
                 version_ch = version_ch.mix(prepare_ch.version)
 
-		report_ch = IGVREPORT(fasta,fai,dict, vcf, cyto_ch.output, refgene_ch.output, prepare_ch.output.splitCsv(header:true,sep:'\t') )
+		report_ch = IGVREPORT(genome, vcf, cyto_ch.output, refgene_ch.output, prepare_ch.output.splitCsv(header:true,sep:'\t') )
                 version_ch = version_ch.mix(report_ch.version)
 		
 		ZIPIT(report_ch.output.collect())
@@ -87,12 +85,11 @@ workflow IGVREPORTS {
 process SAMTOOLS_SAMPLES {
 afterScript "rm -rf TMP"
 input:
-	path(fasta)
-	path(fai)
-	path(bams)
+	path(genome)
 output:
 	path("sample_bam.tsv"),emit:output
 script:
+	def fasta = genome.find{it.name.endsWith("a")}
 """
 set -o pipefail
 samtools samples -f '${fasta}' < "${bams}" | awk -F '\t' '\$3!="."' | cut -f1,2 > sample_bam.tsv
@@ -414,9 +411,7 @@ EOF
 
 process PREPARE_IGVREPORTS {
 input:
-	path(fasta)
-	path(fai)
-	path(dict)
+	path(genome)
 	path(jar)
 	path(sn2bam)
 	path(vcf)
@@ -424,6 +419,7 @@ output:
 	path("output.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
+	def fasta = genome.find{it.name.endsWith("a")}
 """        
 hostname 1>&2     
 ${moduleLoad("jvarkit bcftools")}
@@ -453,9 +449,7 @@ tag "${row.title}"
 afterScript "rm -rf TMP"
 conda "${params.conda}/IGVREPORTS"
 input:
-	path(fasta)
-	path(fai)
-	path(dict)
+	path(genome)
 	path(vcf)
 	path(cytoband)
 	path(refgene)
@@ -464,6 +458,7 @@ output:
 	path("${row.title}.html"),emit:output
 	path("version.xml"),emit:version
 script:
+	def fasta = genome.find{it.name.endsWith("a")}
 	def refgene2 = refgene.find{it.name.endsWith(".txt.gz")}.join(" ")
 """
 hostname 1>&2

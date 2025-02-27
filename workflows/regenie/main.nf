@@ -3,6 +3,7 @@
 include {SNPEFF_DOWNLOAD} from '../../modules/snpeff/download'
 include {JVARKIT_VCF_TO_INTERVALS_01} from '../../subworkflows/vcf2intervals'
 include {BCFTOOLS_CONCAT_CONTIGS} from '../../subworkflows/bcftools/concat.contigs'
+include {k1_signature} from '../../modules/utils/k1.nf'
 //include {GHOSTSCRIPT_MERGE} from '../..//modules/gs/merge'
 
 workflow {
@@ -38,39 +39,56 @@ workflow {
 		wch1_ch ,
 		user_bed
 		)
-	pgen_ch = PLINK2_VCF2PGEN(snsheet_ch.output, wch2_ch.output)
-	bgen_ch = PLINK2_MERGE_PGEN(snsheet_ch.output, pgen_ch.output.collect())
+	pgen_ch = PLINK2_VCF2PGEN(reference, snsheet_ch.output, wch2_ch.output)
+	bgen_ch = PLINK2_MERGE_PGEN(snsheet_ch.output, pgen_ch.output.take(0).collect())
 
-	pca_ch = RUN_PCA(wch2_ch.output)
-	covar_ch = MAKE_COVARIATES(pca_ch.output)
+	if(!params.covariate.contains(".")) {
+		pca_ch = RUN_PCA(wch2_ch.output)
+		make_covar_ch = MAKE_COVARIATES(pca_ch.output)
+		covar_ch = make_covar_ch.output
+		}
+	else
+		{
+		covar_ch = Channel.of(file(params.covariate))
+		}
 
-	step1 = STEP1( 
-		bgen_ch.output /* bgen file */,
-		covar_ch.output /* covariates */, 
-		snsheet_ch.output /* samples, sex, phenotype */, 
-		pca_ch.output /* contains list of SNP to retain for step 1 */
-		)
+	/* read header of covariates */
+	pca_cols_ch = covar_ch.splitCsv(sep:'\t',header:false).
+		take(1).
+		flatMap{T->T[2 ..< T.size()]}
+	
+	/** plot pca for each pair of columns */
+	PLOT_PCA(covar_ch,pca_cols_ch.combine(pca_cols_ch).filter{it[0].compareTo(it[1])<0})
+
+	if(!params.step1_loco.contains(".")) {
+		step1 = STEP1( 
+			bgen_ch.output /* bgen file */,
+			covar_ch /* covariates */, 
+			snsheet_ch.output /* samples, sex, phenotype */, 
+			pca_ch.output /* contains list of SNP to retain for step 1 */
+			)
+		loco_ch = step1.output
+		}
+	else {
+		loco_ch = file(params.step1_loco)
+		}
 	
 	
-	annot2_ch = MAKE_ANNOT_PER_CTG(wch2_ch.output.combine(Channel.of("5000","")))
+	annot2_ch = MAKE_ANNOT_PER_CTG(wch2_ch.output.take(0).combine(Channel.of("5000","")))
 	
 	
-	af_ch = Channel.of(0.1, 0.05, 0.01, 0.001)
-	tests_ch = Channel.of("skato","acato-full","skat","skato-acat","acatv","acato")
-	status_ch = Channel.of("status")
 
 	ch4 = annot2_ch.output.
 		map{[it[2]].plus(it)}.
 		splitCsv(sep:'\t',header:false).
-		map{T->{T[0]=T[0][0];return T;}}.
-		combine(af_ch).combine(tests_ch).combine(status_ch)
+		map{T->{T[0]=T[0][0];return T;}}
 	
 
 	step2_ch = STEP2(
 		bgen_ch.output,
-		covar_ch.output,
+		covar_ch,
 		snsheet_ch.output, 
-		step1.output,
+		loco_ch ,
 		ch4
 		)
 
@@ -144,7 +162,7 @@ T1\$status <- ifelse(T1\$status == "case" , "1", ifelse(T1\$status == "control" 
 T1\$FID <- T1\$sample
 T1\$IID <- T1\$sample
 
-T1 <- T1[, c("FID", "IID", "sex", "status")]
+T1 <- T1[, c("FID", "IID", "sex", "${params.status}")]
 write.table(T1,file="TMP/plink.ped", quote=FALSE, row.names=FALSE, col.names=TRUE, sep="\t")
 EOF
 
@@ -278,6 +296,11 @@ export LC_ALL=C
                 mv TMP/jeter2.bcf TMP/jeter1.bcf
         fi
 
+
+	# a last norm to remove any dup ? ########################################################################
+	bcftools norm --threads ${task.cpus}  -f ${fasta} --rm-dup all -O b -o TMP/jeter2.bcf TMP/jeter1.bcf
+	mv TMP/jeter2.bcf TMP/jeter1.bcf
+
 	# rename chromosomes  ####################################################################################
 	awk -F '\t' '{printf("%s\t%s\\n",\$1,\$1);}' '${fai}' | sed 's/\tchr/\t/' > TMP/rename.tsv
 	bcftools annotate --rename-chrs TMP/rename.tsv --threads ${task.cpus} -O u -o TMP/jeter2.bcf TMP/jeter1.bcf
@@ -295,26 +318,37 @@ bcftools index --threads ${task.cpus} "wgselect.${contig}_${start1}_${end}.bcf"
 
 
 
-/** TODO fix split-par argyment */
 process PLINK2_VCF2PGEN {
 label "process_short"
 afterScript "rm -rf TMP"
 tag "chr${contig}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
+	path(genome) //for PAR region
 	path(pedigree_files)
 	tuple val(contig),path(vcf_files)
 output:
 	path("${contig}.*"),emit:output
 script:
+	def k1 = k1_signature()
+	def fai = genome.find{it.name.endsWith(".fai")}
 	def vcf = vcf_files.find{it.name.endsWith(".vcf.gz") || it.name.endsWith(".bcf")}
 	def ped = pedigree_files.find{it.name.endsWith(".plink.ped")}
-	def args = contig.matches("(chr)?[XY]")?" --update-sex ${ped} --split-par hg38":""
+	def args = contig.matches("(chr)?[XY]")?" --update-sex ${ped} --split-par \${HG}":""
 """
 set -o pipefail
 mkdir -p TMP
 
+cat << EOF | sort -t '\t' -k1,1 > TMP/jeter.a
+1:${k1.hg19}\thg19
+1:${k1.hg38}\thg38
+chr1:${k1.hg19}\thg19
+chr1:${k1.hg38}\thg38
+EOF
 
+awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sort -t '\t' -k1,1 > TMP/jeter.b
+
+HG=`join -t '\t' -1 1 -2 1 -o 1.2 TMP/jeter.a TMP/jeter.b | head -n1`
 
 plink2 ${vcf.name.endsWith(".bcf")?"--bcf":"--vcf"} "${vcf}"  \\
 	${args} \\
@@ -378,7 +412,7 @@ head TMP/jeter.b 1>&2
 join -t '\t' -1 2 -2 1 -e 'NA' -a 1 -o '1.1,1.2,2.2,2.3' TMP/jeter.a TMP/jeter.b |\\
 	sort -t '\t' -k1,1n |\\
 	cut -f 2- |\\
-	awk -F '\t' 'BEGIN{printf("#FID\tIID\tSEX\tstatus\\n");} {printf("%s\t%s\t%s\t%s\\n",\$1,\$1,\$2,\$3);}' > TMP/merged.new.psam
+	awk -F '\t' 'BEGIN{printf("#FID\tIID\tSEX\t${params.status}\\n");} {printf("%s\t%s\t%s\t%s\\n",\$1,\$1,\$2,\$3);}' > TMP/merged.new.psam
 
 mv  merged.psam original.merged.psam
 
@@ -605,8 +639,7 @@ JVARKIT_JAR=`find "\${JD2}/../.." -type f -name "jvarkit.jar" | head -n1`
 cp -v "${moduleDir}/Minikit.java" TMP/
 javac -sourcepath TMP -cp "\${JVARKIT_JAR}" -d TMP TMP/Minikit.java
 
-bcftools norm --remove-duplicates -O u '${vcf}' |\\
-	bcftools view -G -O v |\\
+bcftools view -G -O v '${vcf}' |\\
 	java -Xmx${task.memory.giga}g \
 		-Djava.io.tmpdir=TMP  \\
 		-cp TMP:\${JVARKIT_JAR} Minikit \\
@@ -625,7 +658,7 @@ mv -v TMP/jeter.setfile.txt "regenie.${contig}.setfile.txt"
 
 process STEP2 {
 label "process_quick_high"
-tag "chr${contig} AAF=${freq} ${test_name} ${mask_name} ${status_name}"
+tag "chr${contig} ${mask_name}"
 conda "${moduleDir}/../../conda/regenie.yml"
 afterScript "rm -rf TMP"
 input:
@@ -633,9 +666,9 @@ input:
         path(covariates)
         path(pheno_files)
 	path(pred_list)
-	tuple val(mask_name),val(contig),path(annot),path(mask),path(setfile),val(freq),val(test_name),val(status_name)
+	tuple val(mask_name),val(contig),path(annot),path(mask),path(setfile)
 output:
-        tuple val(freq),val(test_name),val(mask_name),val(status_name),path("*.regenie.gz"),emit:output
+        tuple val(mask_name),path("*.regenie.gz"),emit:output
 script:
 	def pgen = bgen_files.find{it.name.endsWith(".pgen")}
 	def ped = pheno_files.find{it.name.endsWith(".plink.ped")}
@@ -653,7 +686,7 @@ regenie \\
   --covarFile "${covariates}" \\
   --pred ${pred_list} \\
   --mask-def TMP/jeter.mask \\
-  --phenoCol ${status_name} \\
+  --phenoCol ${params.status} \\
   --bt \\
   --bsize 1000 \\
   --set-list ${setfile} \\
@@ -662,15 +695,15 @@ regenie \\
   --threads ${task.cpus} \\
   --out "step2.${contig}.${freq}.${test_name}.${mask_name}" \\
   --anno-file ${annot} \\
-  --aaf-bins ${freq} \\
+  --aaf-bins ${params.freq} \\
   --vc-maxAAF ${freq} \\
   --write-mask \\
   --bsize 200 \\
-  --vc-tests "${test_name}" \\
+  --vc-tests "${params.vc_tests}" \\
   --check-burden-files \\
   --weights-col 4
 
-gzip *.regenie
+gzip --best *.regenie
 """
 }
 
@@ -690,18 +723,27 @@ script:
 	def dict = genome.find{it.name.endsWith(".dict")}
 	def fai = genome.find{it.name.endsWith(".fai")}
 	def fasta = genome.find{it.name.endsWith("a")}
-	def freq = key[0]
-	def test_name = key[1]
-	def mask_name = key[2]
-	def status_name = key[3]
 
 """
 mkdir -p TMP
 
+
+JD1=`which jvarkit`
+echo "JD1=\${JD1}" 1>&2
+# directory of jvarkit
+JD2=`dirname "\${JD1}"`
+# find the jar itself
+JVARKIT_JAR=`find "\${JD2}/../.." -type f -name "jvarkit.jar" | head -n1`
+
+cp -v "${moduleDir}/Minikit2.java" TMP/
+javac -sourcepath TMP -cp "\${JVARKIT_JAR}" -d TMP TMP/Minikit.java
+
+
+
 cut -f1,2 '${fai}' | awk -F '\t' '( \$1 ~ /^(chr)?[0-9XY]+\$/ )' > TMP/jeter.fai
 
 
-cat INPUT/*.regenie.gz | gunzip -c | grep -v "^#" | grep '^CHROM' -m1 | tr " " "\t" > TMP/jeter.tsv
+cat INPUT/*.regenie.gz | gunzip -c | grep -v "^#" | grep '^CHROM' -m1  > TMP/jeter.txt
 test -s TMP/jeter.tsv
 
 set -o pipefail
@@ -712,11 +754,15 @@ cat INPUT/*.regenie.gz |\\
 	grep -v "^#" |\\
 	grep -v '^CHROM' |\
 	LC_ALL=C sort -T TMP -t ' ' -k1,1V -k2,2n |\\
-	uniq |\\
-	tr " " "\t" |\\
-	jvarkit bedrenamechr -R "${dict}" --column 1 --convert SKIP >> TMP/jeter.tsv
+	uniq >> TMP/jeter.txt
+
+java -cp "\${JVARKIT_JAR}:TMP" Minikit -R "${fasta}" -o TMP TMP/jeter.txt 
+
 
 cat << '__EOF__' > TMP/jeter.R
+mft <- read.table("TMP/manifest.tsv", header=FALSE, sep="\t", stringsAsFactors=FALSE, colClasses=c("character","character","character"),)
+colnames(mft) <- c("path", "freq","test")
+
 
 fai <- read.table("TMP/jeter.fai", header=FALSE, sep="\t", stringsAsFactors=FALSE, colClasses=c("character","double"))
 colnames(fai) <- c("contig", "size")
@@ -732,8 +778,7 @@ pos2index <- function(CHROM, POS) {
     stop("Chromosome non trouve")
 }
 
-data <- read.table("TMP/jeter.tsv", header=TRUE, sep="\t", stringsAsFactors=FALSE)
-data\$x <- mapply(pos2index, data\$CHROM, data\$GENPOS)
+
 
 chrom_positions <- c(0, cumsum(fai\$size))
 chrom_colors <- rep(c("azure", "azure2"), length.out=nrow(fai))
@@ -744,14 +789,20 @@ last_size <- fai\$size[nrow(fai)]
 max_genome_size <- pos2index(last_chrom, last_size)
 
 
+for(i in seq_len(1:nrow(mft))) {
 
-pdf("TMP/jeter.pdf", width=20, height=6)
+data <- read.table(mf[i,]\$path, header=TRUE, sep=" ", stringsAsFactors=FALSE)
+data\$x <- mapply(pos2index, data\$CHROM, data\$GENPOS)
+
+fileout <- paste("TMP/${mask}_",mf[i,]\$freq,"_",mf[i,]\$test,".regenie.pdf",sep="")
+
+pdf(fileout, width=20, height=6)
 
 x_lim <-  c(0,max_genome_size)
 y_lim <- c(0,1+max(data\$LOG10P))
 
 plot(	NULL,
-	main="Test ${test_name} Mask:${mask_name} Status:${status_name} AF:${freq}",
+	main=paste("Test ",mf[i,]\$test," Mask:${mask_name} AF:",mf[i,]\$freq,sep=""),
 	sub= "${params.prefix}regenie",
 	xlab="${fasta}",
 	ylab="-log10(PVALUE)",
@@ -778,6 +829,7 @@ abline(h=6,col="red",lty=2)
 abline(h=5,col="green",lty=2)
 
 dev.off()
+}
 __EOF__
 
 R --no-save < TMP/jeter.R
@@ -819,6 +871,7 @@ workflow RUN_PCA {
 		ch1 = PCA_PER_CONTIG(rows.filter{it[0].matches("(chr)?[0-9]+")})
 		all_plink_ch = ch1.output.collect().flatten().collect()
 		ch2 = MERGE_PIHAT(all_plink_ch)
+		PLOT_AVERAGE_PIHAT(ch2.output)
 	emit:
 		output = ch2.output
 }
@@ -1019,45 +1072,111 @@ mv -v TMP/plink* ./
 """
 }
 
-process RELICAT_TODO {
+process PLOT_PCA {
+tag "${col1} vs ${col2}"
+label "process_quick"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
+input:
+	path(covar)
+	tuple val(col1),val(col2)
+output:
+	path("*.png"),emit:output
 script:
 """
-## plot it
-awk '(NR>1) {printf("%s_%s\\t%s\\n",\$1,\$3,\$10);}' TMP/plink.genome > TMP/jeter.tsv
+mkdir -p TMP
 
+cat << '__EOF__' > TMP/jeter.R
+T1 <- read.table(file="${covar}",sep="\\t",header=TRUE, stringsAsFactors=FALSE)
 
-
-# create table sample/avg(pihat)/status
-awk '(NR>1) {P[\$1]+=1.0*(\$10);P[\$3]+=1.0*(\$10);C[\$1]++;C[\$3]++;} END{for(S in P) printf("%s\t%f\\n",S,P[S]/C[S]);}' TMP/plink.genome |\\
-	LC_ALL=C sort -T . -t '\t' -k2,2gr > "TMP/sample2avg.pihat.tsv"
-
-# create table with KEEP / DISCARD status
-awk -F '\t' 'function sn(SN) {nuscore=split(SN,a,/_/); nuscore=nuscore/4; sample="";for(i=1;i<=nuscore;i++) sample=sprintf("%s%s%s",sample,(i==1?"":"_"),a[i]); return sample;}  {printf("%s\t%s\t%s\\n",sn(\$1),\$2,(\$2 < ${maxPiHat} ? "KEEP":"DISCARD"));}' TMP/sample2avg.pihat.tsv > TMP/samples.keep.status
-
-# the following test will fail if all samples are above maxPiHat
-cut -f 3 TMP/samples.keep.status | grep -F -w KEEP -m1 1>&2
-
-cat << EOF > TMP/jeter.R
-png("${prefix}plot.pihat.png")
-genome <- read.table(file="TMP/jeter.tsv",sep="\\t",header=FALSE)
-plot(genome\\\$V2,ylim=c(0,1.0),xlab="Individuals Pair", ylab="PI-HAT", main="${prefix}PI-HAT")
-abline(h=${maxPiHat},col="blue");
+png("pihat.${col1}_${col2}.png")
+plot(
+	x=T1\$${col1},
+	y=T1\$${col2},
+	xlab="${col1}",
+	ylab="${col2}",
+	main="PCA: ${col1} x ${col2}",
+	sub = "${covar.name}"
+	)
 dev.off()
-
-T1<-read.table("TMP/sample2avg.pihat.tsv",sep="\\t",header=FALSE,col.names=c("S","X"),colClasses=c("character","numeric"))
-head(T1)
-png("${prefix}plot.sample2avg.pihat.png")
-boxplot(T1\\\$X ,ylim=c(0,max(T1\\\$X)),main="${prefix}AVG(PIHAT)/SAMPLE",sub="${vcf.name}",xlab="Sample",ylab="pihat")
-abline(h=${maxPiHat},col="blue");
-dev.off()
-
-EOF
+__EOF__
 
 R --no-save < TMP/jeter.R
 
 
+"""
+}
 
 
+process PLOT_AVERAGE_PIHAT {
+label "process_quick"
+afterScript "rm -rf TMP"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+input:
+	path(plink_files)
+output:
+	path("*.png"),emit:output
+script:
+	def plink_genome = plink_files.find{it.name.endsWith(".genome")}
+	def maxPiHat = 0.1
+"""
+mkdir -p TMP
+
+cat << '__EOF__' > TMP/jeter.R
+
+data <- read.table("${plink_genome}", header = TRUE, stringsAsFactors=FALSE)
+
+# Calculate the average PI_HAT per IID1
+unique_IID1 <- unique(data\$IID1)
+average_PI_HAT <- sapply(unique_IID1, function(iid1) {
+  mean(data\$PI_HAT[data\$IID1 == iid1], na.rm = TRUE)
+})
+
+# Create a data frame for the results
+T1 <- data.frame(S = unique_IID1, X = average_PI_HAT)
+
+png("sample2avg.pihat.png")
+boxplot(
+	T1\$X ,
+	ylim=c(0,max(T1\$X)),
+	main="AVG(PIHAT)/SAMPLE",
+	xlab="Sample",
+	ylab="pihat"
+	)
+abline(h=${maxPiHat},col="blue");
+dev.off()
+__EOF__
+R --no-save < TMP/jeter.R
+"""
+}
+
+process PIHAT_PER_SAMPLE {
+tag "${plink_genome}"
+label "process_quick"
+afterScript "rm -rf TMP"
+input:
+        path(plink_genome)
+output:
+        path("*.png"),emit:output
+script:
+"""
+mkdir -p TMP
+
+cat << '__EOF__' > TMP/jeter.R
+png("${prefix}plot.pihat.png")
+genome <- read.table(file="TMP/jeter.tsv",sep="\\t",header=FALSE)
+plot(genome\$V2,ylim=c(0,1.0),xlab="Individuals Pair", ylab="PI-HAT", main="PI-HAT")
+abline(h=${maxPiHat},col="blue");
+dev.off()
+__EOF__
+
+R --no-save < TMP/jeter.R
+"""
+}
+
+process ZOB_TODO {
+script:
+"""
 ##
 ## create MULTIQC CONFIG
 ##
@@ -1122,13 +1241,6 @@ mv TMP/plink.genome.gz "${prefix}plink.genome.txt.gz"
 mv TMP/${prefix}multiqc.genome_mqc.html ./
 mv TMP/${prefix}multiqc.removed_samples_mqc.html ./
 
-###########################################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry id="name">${task.process}</entry>
-	<entry key="description">merge pihat data per contig, create pihat data</entry>
-</properties>
-EOF
 """
 }
 
