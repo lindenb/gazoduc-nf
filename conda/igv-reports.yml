@@ -1,0 +1,6 @@
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::igv-reports=1.14.1
+  - conda-forge::libxslt

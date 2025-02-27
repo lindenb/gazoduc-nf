@@ -64,21 +64,42 @@ workflow {
 					return [T[0].substring(0,colon), pos];
 				default: throw new IllegalArgumentException("splitCsv from position");
 				}
-			}}.combine(bams_ch).set{contig_pos_bams_ch}
+			}}.combine(bams_ch).
+			map{[it[0],it[1],it[2 ..< it.size()].sort()]}.
+			set{contig_pos_bams_ch}
 
-	
 
          	covpos_ch = FIND_COVERAGE_AT_LOC(genome,contig_pos_bams_ch)
+		ch1 = covpos_ch.map{[ [it[0],it[1]], it[2]]}.groupTuple()
+		ch2 = MERGE_COVERAGE_AT_LOC(ch1)
+		
+		ch4 = ch2.output.
+			map{[it[1],it[0]]}.
+			splitCsv(sep:'\t',header:false).
+			map{[ [it[1][0] /* contig */ ,it[1][1] /* pos */,it[0][1] /* page */,it[0][2] /*pages*/], it[0][0] /* bam */] }.
+			groupTuple().
+			map{[it[0][0],it[0][1],it[0][2],it[0][3],it[1]]}
+
 		cyto_ch = DOWNLOAD_CYTOBAND(genome)
 
 		refgene_ch = DOWNLOAD_REFGENE(genome)
 
+		report_ch = APPPLY_IGVREPORT(
+			genome,
+			cyto_ch.output,
+			refgene_ch.output,
+			ch4
+			)
+		
+		ch5 = report_ch.output.map{[[it[0],it[1]],it[2]]}.
+			mix(ch2.output.map{[[it[0][0],it[0][1]],it[2]]}).
+			groupTuple().
+			map{[it[0][0],it[0][1],it[1].sort()]}
 
-		
-		report_ch = IGVREPORT(genome, cyto_ch.output, refgene_ch.output, prepare_ch.output.splitCsv(header:true,sep:'\t') )
-                version_ch = version_ch.mix(report_ch.version)
-		
-		ZIPIT(report_ch.output.collect())
+		ch6 = MAKE_DIRECTORY(ch5)
+
+		ZIPIT(ch6.output.collect(),ch6.tsv.collect())
+
 	}
 
 runOnComplete(workflow)
@@ -106,7 +127,7 @@ __EOF__
 MD5=`cat TMP/jeter.list | md5sum | cut -d ' ' -f1`
 
 jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP findallcoverageatposition -p "${contig}:${pos}" -R ${fasta}  < TMP/jeter.list > TMP/jeter.tsv
-mv TMP/jeter.tsv covarage.${MD5}.tsv
+mv TMP/jeter.tsv "coverage.\${MD5}.tsv"
 """
 }
 
@@ -118,7 +139,7 @@ conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
 	tuple val(key),path("COV/*")
 output:
-	tuple val(key),path("pages.tsv"),path(index.html"),emit:pages
+	tuple val(key),path("pages.tsv"),path("index.html"),emit:output
 script:
 	def contig = key[0];
 	def pos = key[1];
@@ -129,44 +150,52 @@ find COV -type l -name "*.tsv" -exec cat '{}' ';' |\\
 	LC_ALL=C sort -T TMP |\\
 	uniq > TMP/merged.tsv
 
+head TMP/merged.tsv 1>&2
+
 NROWS=`tail -n +2 TMP/merged.tsv | wc -l`
 
 # order on the number of base that is NOT the reference
-awk -F '\t' '(NR==1) {printf("#ORDER\t%s\\n",\$0);next;} {A=int(\$16);C=int(\$17);G=int(\$18);T=int(\$19);Z=A+C+G=T; if($4=="A") Z-=A; if(\$4=="C") Z-=C; if(\$4=="G") Z-=G; if(\$4=="T") Z-=T; printf("%s\t%s\\n",Z,$0);}'  TMP/merged.tsv |\\
-	LC_ALL=C sort -T TMP -t '\t' -k1,1nr -k6,6V |\\
-	cut -f2- |\\
-	awk -F '\t' -vT=\${NROWS} '(NR==1) {printf("%s\tPAGE\tNPAGES\\n",\$0);next;} {printf("%s\t%d\t%s\\n",1+((NR-1)/${per_page}),1+(int(T)/${per_page});}' > TMP/merged2.tsv
-mv TMP/merge2d.tsv TMP/merged.tsv
+awk -F '\t' '(NR==1) {print;next;} {Z=0;A=int(\$16);C=int(\$17);G=int(\$18);T=int(\$19);Z=A+C+G+T; if(\$4=="A") Z-=A; if(\$4=="C") Z-=C; if(\$4=="G") Z-=G; if(\$4=="T") Z-=T; printf("%d\t%s\\n",Z,\$0);}'  TMP/merged.tsv > TMP/jeter1.txt
+# save header 
+head -n1 TMP/jeter1.txt  >  TMP/jeter2.txt
+
+# sort on order in the first field
+tail -n +2  TMP/jeter1.txt |\\
+	LC_ALL=C sort -T TMP -t '\t' -k1,1nr -k6,6V | cut -f 2- >> TMP/jeter2.txt
+
+awk -F '\t' -vT=\${NROWS} '(NR==1) {printf("%s\tPAGE\tNPAGES\\n",\$0);next;} {printf("%s\t%d\t%s\\n",\$0,1+((NR-1)/${per_page}),1+(int(T)/${per_page}));}' TMP/jeter2.txt > TMP/merged2.tsv
+
+mv TMP/merged2.tsv TMP/merged.tsv
 
 
-cat << __EOF__ > TMP/jeter.awk
+cat << '__EOF__' > TMP/jeter.awk
 BEGIN {
-	printf("<!DOCTYPE html>\n"<html><head><meta charset=\"UTF-8\"><title>${contig}:${pos}</title></head><body><h1>${contig}:${pos}</h1><table border=\"1\"><thead>");
+	printf("<!DOCTYPE html>\\n<html><head><meta charset=\\"UTF-8\\"><title>${contig}:${pos}</title></head><body><h1>${contig}:${pos}</h1><table border=\\"1\\">");
 	}
 
 NR == 1 {
-    print "<thead><tr>";
-    prinf("<th>Position</th>");
-    prinf("<th>REF</th>");
-    prinf("<th>Sample</th>");
-    prinf("<th>DEPTH</th>");
-    prinf("<th>A</th>");
-    prinf("<th>C</th>");
-    prinf("<th>G</th>");
-    prinf("<th>T</th>");
-    print "</tr></thead><tbody>\\n");
+    printf("<thead><tr>");
+    printf("<th>Position</th>");
+    printf("<th>REF</th>");
+    printf("<th>Sample</th>");
+    printf("<th>DEPTH</th>");
+    printf("<th>A</th>");
+    printf("<th>C</th>");
+    printf("<th>G</th>");
+    printf("<th>T</th>");
+    printf("</tr></thead><tbody>\\n");
 }
 
 NR > 1 {
     printf("<tr>");
-    prinf("<th>%s:%s</th>",\$2,\$3);
-    prinf("<th>%s</th>",\$4);
-    prinf("<th><a href=\"page%s.html\">%s</a></th>",\$23,\$5);
-    prinf("<th>%s</th>",\$6);
-    prinf("<th>%s</th>",\$16);
-    prinf("<th>%s</th>",\$17);
-    prinf("<th>%s</th>",\$18);
-    prinf("<th>%s</th>",\$19);
+    printf("<td>%s:%s</td>",\$2,\$3);
+    printf("<td>%s</td>",\$4);
+    printf("<td><a href=\\"page%s.html\\">%s</a></td>",\$23,\$5);
+    printf("<td>%s</td>",\$6);
+    printf("<td>%s</td>",\$16);
+    printf("<td>%s</td>",\$17);
+    printf("<td>%s</td>",\$18);
+    printf("<td>%s</td>",\$19);
     printf("<tr>\\n");
 }
 
@@ -183,64 +212,119 @@ awk -f TMP/jeter.awk TMP/merged.tsv > index.html
 
 
 process APPPLY_IGVREPORT {
-tag "${row.title}"
-afterScript "rm -rf TMP"
+tag "${contig}:${pos} page ${page}/${page_max} N=${bams.size()}"
+label "process_quick"
+conda "${moduleDir}/../../conda/igv-reports.yml"
+//afterScript "rm -rf TMP"
 input:
 	path(genome)
 	path(cytoband)
 	path(refgene)
-	tuple val(contig),val(start),val(end),val(page),val(page_max),val(tracks)
+	tuple val(contig),val(pos),val(page),val(page_max),val(bams)
 output:
-	tuple val(contig+"_"+start+(start==end?"":"_"+end)),path("*.html"),emit:output
+	tuple val(contig),val(pos),path("page${page}.html"),emit:output
 script:
-	def title = contig+"_"+start+(start==end?"":"_"+end);
+	def title = contig+"_"+pos
 	def fasta = genome.find{it.name.endsWith("a")}
 	def refgene2 = refgene.find{it.name.endsWith(".txt.gz")}.join(" ")
+	def pagei = (page as int)
+	def page_maxi = (page_max as int)
+        def navigation= "<a href=\"page"+(pagei==0?page_maxi:pagei-1)+".html\">[Previous]</a> " +
+		"<a href=\"index.html\">[Index]</a> " +
+		"<a href=\"page"+(pagei+1>page_maxi?1:pagei+1)+".html\">[Next]</a> "
 """
 hostname 1>&2
 mkdir -p TMP
 
-create_report ${row.vcf.isEmpty()?row.bedpe:row.vcf}  ${fasta} \\
+echo "${contig}\t${(pos as int)-1}\t${pos}" > TMP/jeter.bed
+
+create_report TMP/jeter.bed  "${fasta}" \\
 	--ideogram "${cytoband}" \\
-	--tracks ${tracks} ${refgene2} \\
+	--tracks ${bams.join(" ")} ${refgene2} \\
 	--output TMP/jeter.html
 
-cat << EOF > TMP/jeter.xsl
-<xsl:template match="title">
-<title>${title}</title>
-</xsl:template>
+cat << '__EOF__' > TMP/jeter.xsl
+<?xml version="1.0" encoding="UTF-8" ?>
+<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="1.0">
+  <xsl:output method="html" encoding="UTF-8"/>
+  
+  <xsl:template match="/">
+    <xsl:apply-templates/>
+  </xsl:template>
 
-<xsl:template match="body">
-<body>
-<div>
-<a href="">Previous page</a>
-<a href="">Next page</a>
-</div>
-<xsl:apply-templates select="*|text()">
-<div>
-</div>
-<a href="">Previous page</a>
-<a href="">Next page</a>
-</body>
-</xsl:template>
+  <xsl:template match="title[name(..)='head']">
+  <title>${contig}:${pos}</title>
+  </xsl:template>
+   
+  <xsl:template match="body[name(..)='html']">
+  <body>
+  <h1>{contig}:${pos}</h1>
+  <div>${navigation}</div>
+  <xsl:apply-templates/>
+  <div>${navigation}</div>
+  </body>
+  </xsl:template>
 
-<xsl:template match="body">
-</xsl:template>
+  <xsl:template match="@*|node()">
+        <xsl:copy>
+          <xsl:copy-of select="@*"/>
+          <xsl:apply-templates/>
+        </xsl:copy>
+  </xsl:template>
 
-EOF
+</xsl:stylesheet>
+__EOF__
 
+xsltproc --html  TMP/jeter.xsl TMP/jeter.html  > TMP/jeter2.html
 
-mv -v "TMP/${row.title}.html" ./
+mv -v TMP/jeter2.html ./page${page}.html
+"""
+}
+process MAKE_DIRECTORY {
+tag "${contig}_${pos}"
+executor "local"
+input:
+	tuple val(contig),val(pos),path("HTML/*")
+output:
+	path("${contig}_${pos}"),emit:output
+	path("${contig}_${pos}.tsv"),emit:tsv
+script:
+	
+"""
+mkdir -p "${contig}_${pos}"
+cp  HTML/*.html "${contig}_${pos}/"
+echo "${contig}\t${pos}\t<tr><td><a href='${contig}_${pos}/index.html'>${contig}:${pos}</a></td></tr>" > ${contig}_${pos}.tsv
 """
 }
 
+
+
 process ZIPIT {
+executor "local"
 input:
-	path(htmls)
+	path("DIR/*")
+	path("HTML/*")
 output:
 	path("archive.zip"),emit:output
 script:
 """
-zip -9 -j archive.zip ${htmls}
+mkdir -p archive
+
+cat << EOF >> archive/index.html
+<!DOCTYPE html>
+<html><head><meta charset=\\"UTF-8\\"><title>${params.prefix?:""}IGV reports</title></head>
+<body>
+<table>
+ <tbody>
+EOF
+
+cp -vr DIR/* archive/
+
+find HTML -name "*.tsv" -exec cat '{}' ';' |\\
+	sort -t '\t' -k1,1V -k2,2n | cut -f3- >> archive/index.html
+
+echo "</tbody></table></body></html>" >> archive/index.html
+
+zip -9r archive.zip archive
 """
 }

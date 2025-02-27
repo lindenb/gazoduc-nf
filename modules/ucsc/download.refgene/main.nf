@@ -26,7 +26,7 @@ include {k1_signature} from '../../utils/k1.nf'
 
 process DOWNLOAD_REFGENE {
 label "process_quick"
-conda "${moduleDir}/../../../conda/bioinfo.01.nf"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
 	path(genome)
