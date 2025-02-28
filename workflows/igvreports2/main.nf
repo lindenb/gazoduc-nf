@@ -144,6 +144,7 @@ script:
 	def contig = key[0];
 	def pos = key[1];
 	def per_page=20
+	def max_score_0 = params.max_score_0?:-1;
 """
 mkdir -p TMP
 find COV -type l -name "*.tsv" -exec cat '{}' ';' |\\
@@ -155,7 +156,9 @@ head TMP/merged.tsv 1>&2
 NROWS=`tail -n +2 TMP/merged.tsv | wc -l`
 
 # order on the number of base that is NOT the reference
-awk -F '\t' '(NR==1) {print;next;} {Z=0;A=int(\$16);C=int(\$17);G=int(\$18);T=int(\$19);Z=A+C+G+T; if(\$4=="A") Z-=A; if(\$4=="C") Z-=C; if(\$4=="G") Z-=G; if(\$4=="T") Z-=T; printf("%d\t%s\\n",Z,\$0);}'  TMP/merged.tsv > TMP/jeter1.txt
+# Z is the sum of the other bases
+# N0 is the number of samples with Z==0
+awk -F '\t' 'BEGIN {N0=0;} (NR==1) {print;next;} {Z=0;A=int(\$16);C=int(\$17);G=int(\$18);T=int(\$19);Z=A+C+G+T; if(\$4=="A") Z-=A; if(\$4=="C") Z-=C; if(\$4=="G") Z-=G; if(\$4=="T") Z-=T; if(Z==0) {N0++;if(${max_score_0}>=0 ||N0>{max_score_0}) next;} printf("%d\t%s\\n",Z,\$0);}'  TMP/merged.tsv > TMP/jeter1.txt
 # save header 
 head -n1 TMP/jeter1.txt  >  TMP/jeter2.txt
 
@@ -229,7 +232,7 @@ script:
 	def refgene2 = refgene.find{it.name.endsWith(".txt.gz")}.join(" ")
 	def pagei = (page as int)
 	def page_maxi = (page_max as int)
-        def navigation= "<a href=\"page"+(pagei==0?page_maxi:pagei-1)+".html\">[Previous]</a> " +
+        def navigation= "<a href=\"page"+(pagei==1?page_maxi:pagei-1)+".html\">[Previous]</a> " +
 		"<a href=\"index.html\">[Index]</a> " +
 		"<a href=\"page"+(pagei+1>page_maxi?1:pagei+1)+".html\">[Next]</a> "
 """
@@ -258,7 +261,7 @@ cat << '__EOF__' > TMP/jeter.xsl
    
   <xsl:template match="body[name(..)='html']">
   <body>
-  <h1>{contig}:${pos}</h1>
+  <h1>${contig}:${pos}</h1>
   <div>${navigation}</div>
   <xsl:apply-templates/>
   <div>${navigation}</div>

@@ -74,22 +74,15 @@ workflow {
 		}
 	
 	
-	annot2_ch = MAKE_ANNOT_PER_CTG(wch2_ch.output.take(0).combine(Channel.of("5000","")))
-	
-	
+	annot2_ch = MAKE_ANNOT_PER_CTG(wch2_ch.output)
 
-	ch4 = annot2_ch.output.
-		map{[it[2]].plus(it)}.
-		splitCsv(sep:'\t',header:false).
-		map{T->{T[0]=T[0][0];return T;}}
-	
-
+	if("A".equals("B")) {	
 	step2_ch = STEP2(
 		bgen_ch.output,
 		covar_ch,
 		snsheet_ch.output, 
 		loco_ch ,
-		ch4
+		annot2_ch.output
 		)
 
 
@@ -99,6 +92,7 @@ workflow {
 		step2_ch.map{[ [it[0] /* freq */ ,it[1] /* test */ ,it[2] /* mask */,it[3] /* status */] , it[4] /* regenie file */ ] }.groupTuple()
 		)
 	MAKE_PDF_ARCHIVE(ch5.output.flatten().filter{it.name.endsWith(".pdf")}.collect())
+	}
 	}
 
 
@@ -615,14 +609,14 @@ bcftools view "${vcf}" |\\
 }
 
 process MAKE_ANNOT_PER_CTG {
-tag "chr${contig} ${win_size}"
+tag "chr${contig}"
 label "process_quick_high"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
-        tuple val(contig),path(vcf_files),val(win_size)
+        tuple val(contig),path(vcf_files)
 output:
-	tuple val(contig),path("regenie.${contig}${win_size.isEmpty()?"":".w"+win_size}.annot.txt"),path("regenie.${contig}.mask.txt"),path("regenie.${contig}.setfile.txt"),emit:output
+	tuple val(contig),path("*.annot.txt"),path("*.mask.txt"),path("*.setfile.txt"),emit:output
 script:
 	def vcf = vcf_files.find{it.name.endsWith(".bcf") || it.name.endsWith(".vcf.gz")}
 """
@@ -646,10 +640,10 @@ bcftools view -G -O v '${vcf}' |\\
 			-a TMP/jeter.annot.txt \\
 			-s TMP/jeter.setfile.txt \\
 			-m TMP/jeter.mask.txt \\
-			${win_size.isEmpty()?"":"-w "+win_size}
+			-w -1
 
 
-mv -v TMP/jeter.annot.txt "regenie.${contig}${win_size.isEmpty()?"":".w"+win_size}.annot.txt"
+mv -v TMP/jeter.annot.txt "regenie.${contig}.annot.txt"
 mv -v TMP/jeter.mask.txt "regenie.${contig}.mask.txt"
 mv -v TMP/jeter.setfile.txt "regenie.${contig}.setfile.txt"
 """
@@ -658,7 +652,7 @@ mv -v TMP/jeter.setfile.txt "regenie.${contig}.setfile.txt"
 
 process STEP2 {
 label "process_quick_high"
-tag "chr${contig} ${mask_name}"
+tag "chr${contig}"
 conda "${moduleDir}/../../conda/regenie.yml"
 afterScript "rm -rf TMP"
 input:
@@ -666,9 +660,9 @@ input:
         path(covariates)
         path(pheno_files)
 	path(pred_list)
-	tuple val(mask_name),val(contig),path(annot),path(mask),path(setfile)
+	tuple val(contig),path(annot),path(mask),path(setfile)
 output:
-        tuple val(mask_name),path("*.regenie.gz"),emit:output
+        path("*.regenie.gz"),emit:output
 script:
 	def pgen = bgen_files.find{it.name.endsWith(".pgen")}
 	def ped = pheno_files.find{it.name.endsWith(".plink.ped")}
@@ -677,15 +671,13 @@ script:
 mkdir -p TMP/OUT
 set -x
 
-awk '(\$1=="${mask_name}")'  '${mask}' > TMP/jeter.mask
-
 regenie \\
   --step 2 \\
   --pgen \$(basename ${pgen} .pgen) \\
   --phenoFile ${ped} \\
   --covarFile "${covariates}" \\
   --pred ${pred_list} \\
-  --mask-def TMP/jeter.mask \\
+  --mask-def ${mask} \\
   --phenoCol ${params.status} \\
   --bt \\
   --bsize 1000 \\
@@ -693,15 +685,14 @@ regenie \\
   --lowmem \\
   --lowmem-prefix TMP/regenie_tmp_preds \\
   --threads ${task.cpus} \\
-  --out "step2.${contig}.${freq}.${test_name}.${mask_name}" \\
+  --out "step2.${contig}" \\
   --anno-file ${annot} \\
   --aaf-bins ${params.freq} \\
   --vc-maxAAF ${freq} \\
-  --write-mask \\
   --bsize 200 \\
   --vc-tests "${params.vc_tests}" \\
   --check-burden-files \\
-  --weights-col 4
+  --weights-col ${params.weight_column?:4}
 
 gzip --best *.regenie
 """

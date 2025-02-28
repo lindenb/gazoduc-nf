@@ -5,8 +5,6 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -17,22 +15,25 @@ import java.util.stream.Collectors;
 import com.beust.jcommander.Parameter;
 import com.beust.jcommander.ParametersDelegate;
 import com.github.lindenb.jvarkit.io.IOUtils;
-import com.github.lindenb.jvarkit.lang.CharSplitter;
 import com.github.lindenb.jvarkit.lang.StringUtils;
 import com.github.lindenb.jvarkit.util.iterator.EqualRangeIterator;
 import com.github.lindenb.jvarkit.util.jcommander.Launcher;
 import com.github.lindenb.jvarkit.util.picard.AbstractDataCodec;
+import com.github.lindenb.jvarkit.util.vcf.predictions.AnnPredictionParser;
+import com.github.lindenb.jvarkit.util.vcf.predictions.AnnPredictionParserFactory;
 
 import htsjdk.samtools.util.CloseableIterator;
 import htsjdk.samtools.util.SortingCollection;
 import htsjdk.variant.variantcontext.VariantContext;
+import htsjdk.variant.vcf.VCFConstants;
+import htsjdk.variant.vcf.VCFHeader;
 import htsjdk.variant.vcf.VCFIterator;
 import htsjdk.variant.vcf.VCFIteratorBuilder;
 
 public class Minikit extends Launcher {
-	private static final String ANN = "ANN";
 	private static final String CADD_PHRED = "CADD_PHRED";
 	private static final String SLIDING_WINDOW = "sliding_window";
+	private static final String GNOMAD_AF = "gnomad_genome_AF_NFE";
 
 	@Parameter(names = "-w", description = "window size")
 	private int window_size = -1;
@@ -45,6 +46,18 @@ public class Minikit extends Launcher {
 	@ParametersDelegate
 	private WritingSortingCollection writingSortingCollection = new WritingSortingCollection();
 
+	
+	private static class Variation {
+		String contig;
+		int pos;
+		String id;
+		String gene;
+		String prediction;
+		double score;
+		double cadd;
+	}
+
+	
 	private static class Prediction {
 		final String name;
 		final double score;
@@ -72,20 +85,34 @@ public class Minikit extends Launcher {
 	private Prediction sliding_prediction = null;
 	private final Map<String, Prediction> scores = new HashMap<>(50);
 
-	private static class RowCodec extends AbstractDataCodec<String> {
+	private static class RowCodec extends AbstractDataCodec<Variation> {
 		@Override
-		public void encode(DataOutputStream dos, String line) throws IOException {
-			dos.writeUTF(line);
+		public void encode(DataOutputStream dos, Variation variant) throws IOException {
+			dos.writeUTF(variant.contig);
+			dos.writeInt(variant.pos);
+			dos.writeUTF(variant.id);
+			dos.writeUTF(variant.gene);
+			dos.writeUTF(variant.prediction);
+			dos.writeDouble(variant.score);
+			dos.writeDouble(variant.cadd);
 		}
 
 		@Override
-		public String decode(DataInputStream dis) throws IOException {
+		public Variation decode(DataInputStream dis) throws IOException {
+			final Variation v = new Variation();
 			try {
-				return dis.readUTF();
+				v.contig = dis.readUTF();
 			} catch (EOFException err) {
 				return null;
 			}
-		}
+			v.pos = dis.readInt();
+			v.id = dis.readUTF();
+			v.gene = dis.readUTF();
+			v.prediction = dis.readUTF();
+			v.score = dis.readDouble();
+			v.cadd = dis.readDouble();
+			return v;
+			}
 
 		@Override
 		public RowCodec clone() {
@@ -103,119 +130,95 @@ public class Minikit extends Launcher {
 
 	}
 
-	private void dump(final SortingCollection<String> sorter, final VariantContext ctx) throws Exception {
-		// if(ctx.getAttributeAsDouble("AF",1.0) >= 0.01) return;
-		final List<List<String>> predictions;
-		final int  win_pos;
-		
-		if(this.window_size>0) {
-			win_pos = 1 + (((int)(ctx.getStart()/(double)this.window_size)) * this.window_size);
-			predictions = Collections.emptyList();
-			}
-		else
-			{
-			win_pos = -1;
-			final List<String> anns = ctx.getAttributeAsStringList(ANN, ".");
-			predictions = anns.stream().map(PRED -> Arrays.asList(CharSplitter.PIPE.split(PRED)))
-					.filter(L -> L.size() > 1).filter(L -> !L.get(1).equals("intergenic_region"))
-					.collect(Collectors.toList());
-			}
+	private String fixContig(final String ctg) {
+		if(ctg.equals("X") || ctg.equals("chrX")) return "23";
+		if(ctg.equals("Y") || ctg.equals("chrY")) return "24";
+		if(ctg.startsWith("chr")) return ctg.substring(3);
+		return ctg;
+		}
 
-		final String altstr = ctx.getAlternateAllele(0).getDisplayString();
+	private void dump(final SortingCollection<Variation> sorter, final AnnPredictionParser annParser, final VariantContext ctx) throws Exception {
+		if(ctx.hasAttribute(GNOMAD_AF) && ctx.getAttributeAsDouble(GNOMAD_AF, 0.0) >= 0.1) return;
+		if(ctx.hasAttribute(VCFConstants.ALLELE_FREQUENCY_KEY) && ctx.getAttributeAsDouble(VCFConstants.ALLELE_FREQUENCY_KEY, 0.0) >= 0.1) return;
+		
+		final int  win_pos =  this.window_size<1 ? -1:
+				1 + (((int)(ctx.getStart()/(double)this.window_size)) * this.window_size)
+				;
 		Double cadd_phred = null;
+		if (ctx.hasAttribute(CADD_PHRED)) {
+				String s = ctx.getAttributeAsString(CADD_PHRED, ".");
+				if (!(s.equals(".") || StringUtils.isBlank(s))) {
+					cadd_phred = Double.valueOf(s);
+				}
+			}
+		
 		Double best_score = null;
 		Prediction best_pred = null;
 		String best_gene = null;
-		// un seul gene par position sinon ca plante
-
-		if (ctx.hasAttribute(CADD_PHRED)) {
-			String s = ctx.getAttributeAsString(CADD_PHRED, ".");
-			if (!(s.equals(".") || StringUtils.isBlank(s))) {
-				cadd_phred = Double.valueOf(s);
-			}
-		}
-
-		for (List<String> pred : predictions) {
-			if (!pred.get(0).equalsIgnoreCase(altstr))
-				continue;
-			for (String pred_key : CharSplitter.AMP.split(pred.get(1))) {
-				if (pred_key.equals("intergenic_region"))
-					continue;
+		
+		final String altstr = ctx.getAlternateAllele(0).getDisplayString();
+		final List<AnnPredictionParser.AnnPrediction> predictions = annParser.getPredictions(ctx);
+			
+		for(AnnPredictionParser.AnnPrediction pred:predictions) {
+			String gene_name = pred.getGeneName();
+			if(gene_name.isEmpty()|| gene_name.equals(".")) {
+				gene_name= pred.getGeneId();
+				}
+			if(gene_name.isEmpty() || gene_name.equals(".")) continue;
+			if(!pred.getAllele().equalsIgnoreCase(altstr)) continue;
+			for(String pred_key : pred.getSOTermsStrings()) {
+				if(pred_key.equals("intergenic_region")) continue;
 				final Prediction p = scores.getOrDefault(pred_key, null);
-				if (p == null)
-					throw new IOException(String.join("|", pred));
+				if (p == null) throw new IOException("undefined prediction key "+pred_key);
 				if (best_score == null || best_score.compareTo(p.score) < 0) {
 					best_score = p.score;
 					best_pred = p;
-					best_gene = pred.get(3);
+					best_gene = gene_name;
+					}
 				}
+			}
+					
+
+		if (best_score != null) {
+			best_pred.found=true;
+			
+			final Variation v = new Variation();
+			v.contig = fixContig(ctx.getContig());
+			v.pos = ctx.getStart();
+			v.id = ctx.getID();
+			v.gene = best_gene;
+			v.prediction = best_pred.name;
+			v.score = best_score;
+			v.cadd = (cadd_phred==null?0.0:cadd_phred.doubleValue());
+			sorter.add(v);
+			}
+
+		if(win_pos>0) 
+			{
+			sliding_prediction.found = true;
+			
+			final Variation v = new Variation();
+			v.contig = fixContig(ctx.getContig());
+			v.pos = ctx.getStart();
+			v.id = ctx.getID();
+			v.gene = ctx.getContig()+ "_" + (win_pos) + "_" + (win_pos - 1 + this.window_size) ;
+			v.prediction = sliding_prediction.name;
+			v.score = sliding_prediction.score;
+			v.cadd = (cadd_phred==null?0.0:cadd_phred.doubleValue());
+			sorter.add(v);
 			}
 		}
 
-		if (best_score != null) {
-			best_pred.found = true;
-
-			final StringBuilder sb = new StringBuilder();
-			sb.append(ctx.getContig());
-			sb.append(" ");
-			sb.append(ctx.getStart());
-			sb.append(" ");
-			sb.append(ctx.getID());
-			sb.append(" ");
-			sb.append(best_gene);
-			sb.append(" ");
-			sb.append(best_pred.name);
-			sb.append(" ");
-			sb.append(best_score);
-			sb.append(" ");
-			if (cadd_phred == null) {
-				sb.append(0.0);
-			} else {
-				sb.append(cadd_phred.doubleValue());
-			}
-			sorter.add(sb.toString());
-			}
-
-		if(win_pos>0) // always true anyway...
-			{
-			sliding_prediction.found = true;
-
-			final StringBuilder sb = new StringBuilder();
-			sb.append(ctx.getContig());
-			sb.append(" ");
-			sb.append(win_pos);
-			sb.append(" ");
-			sb.append(ctx.getID());
-			sb.append(" ");
-			sb.append(ctx.getContig()+ "_" + (win_pos) + "_" + (win_pos - 1 + this.window_size) );
-			sb.append(" ");
-			sb.append(sliding_prediction.name);
-			sb.append(" ");
-			sb.append(sliding_prediction.score);
-			sb.append(" ");
-			if (cadd_phred == null) {
-				sb.append(0.0);
-			} else {
-				sb.append(cadd_phred.doubleValue());
-				}
-			sorter.add(sb.toString());
-			}
-
-
-	}
-
-	private static int compareX(String a, String b, int level) {
-		String[] t1 = CharSplitter.SPACE.split(a);
-		String[] t2 = CharSplitter.SPACE.split(b);
-		int i = t1[0].compareTo(t2[0]);// CHROMOSOME
+	private static int compareX(Variation t1, Variation t2, int level) {
+		int i = t1.contig.compareTo(t2.contig);// CHROMOSOME
 		if (i != 0)
 			return i;
-		i = t1[3].compareTo(t2[3]);// GENE
+		i = t1.gene.compareTo(t2.gene);// GENE
 		if (i != 0)
 			return i;
 		if (level == 1)
 			return 0;
-		return Integer.compare(Integer.parseInt(t1[1]), Integer.parseInt(t2[1]));
+		return Integer.compare(t1.pos, t2.pos);
 	}
 
 	@Override
@@ -260,48 +263,55 @@ public class Minikit extends Launcher {
 				makeScore("synonymous_variant", 0.1).andMask("synonymous");
 				makeScore("upstream_gene_variant", 0.1).andMask("upstream", "updownstream");
 				}
-			final SortingCollection<String> sorter = SortingCollection.newInstance(String.class, new RowCodec(),
+			final SortingCollection<Variation> sorter = SortingCollection.newInstance(Variation.class, new RowCodec(),
 					(A, B) -> compareX(A, B, 2), writingSortingCollection.getMaxRecordsInRam(),
 					writingSortingCollection.getTmpPaths());
 			sorter.setDestructiveIteration(true);
 
+
 			try (VCFIterator iter = new VCFIteratorBuilder().open(System.in)) {
+				final VCFHeader vcfHeader = iter.getHeader();
+				final AnnPredictionParser annParser = new AnnPredictionParserFactory(vcfHeader).get();
+				if(!annParser.isValid()) throw new IOException("cannot create ANN parser");
+
 				while (iter.hasNext()) {
 					final VariantContext vc = iter.next();
 					if (vc.getNAlleles() != 2)
 						throw new IOException(vc.getContig() + ":" + vc.getStart() + ":" + vc.getAlleles());
-					dump(sorter, vc);
+					dump(sorter, annParser, vc);
 				} // end while
 			}
 			sorter.doneAdding();
 
-			try (CloseableIterator<String> iter0 = sorter.iterator()) {
-				try (EqualRangeIterator<String> iter = new EqualRangeIterator<>(iter0, (A, B) -> compareX(A, B, 1))) {
+			try (CloseableIterator<Variation> iter0 = sorter.iterator()) {
+				try (EqualRangeIterator<Variation> iter = new EqualRangeIterator<>(iter0, (A, B) -> compareX(A, B, 1))) {
 
 					try (PrintWriter annotOut = IOUtils.openPathForPrintWriter(this.annotationFileOut)) {
 						try (PrintWriter setFileOut = IOUtils.openPathForPrintWriter(this.setListFileOut)) {
 
 							while (iter.hasNext()) {
-								final List<String> gene_variants = iter.next();
+								final List<Variation> gene_variants = iter.next();
+								final Variation first = gene_variants.get(0);
 
-								for (String s : gene_variants) {
-									annotOut.println(Arrays.stream(CharSplitter.SPACE.split(s))
-											.skip(2L /* chrom pos */)
-											.collect(Collectors.joining(" "))
-											);
+								for (Variation v : gene_variants) {
+									annotOut.print(v.id);
+									annotOut.print(" ");
+									annotOut.print(v.gene);
+									annotOut.print(" ");
+									annotOut.print(v.prediction);
+									annotOut.print(" ");
+									annotOut.print(v.score);
+									annotOut.print(" ");
+									annotOut.print(v.cadd);
+									annotOut.println();
 									}
-								final String first = gene_variants.get(0);
-								final String[] tokens = CharSplitter.SPACE.split(first);
-								setFileOut.print(tokens[3]);// gene
+								setFileOut.print(first.gene);// gene
 								setFileOut.print("\t");
-								setFileOut.print(tokens[0]);// contig
+								setFileOut.print(first.contig);// contig
 								setFileOut.print("\t");
-								setFileOut.print((int) gene_variants.stream()
-										.mapToInt(it -> Integer.parseInt(CharSplitter.SPACE.split(it)[1])).average()
-										.getAsDouble());
+								setFileOut.print((int) gene_variants.stream().mapToInt(it -> it.pos).average().getAsDouble());
 								setFileOut.print("\t");
-								setFileOut.print(gene_variants.stream().map(it -> CharSplitter.SPACE.split(it)[2])
-										.collect(Collectors.joining(",")));
+								setFileOut.print(gene_variants.stream().map(it -> it.id).collect(Collectors.joining(",")));
 								setFileOut.println();
 
 							}
@@ -321,8 +331,8 @@ public class Minikit extends Launcher {
 				for (final String mask_name : seen) {
 					maskOut.print(mask_name);
 					maskOut.print("\t");
-					maskOut.print(scores.values().stream().filter(P -> P.masks.contains(mask_name)).map(P -> P.name)
-							.collect(Collectors.joining(",")));
+					maskOut.print(scores.values().stream().filter(P -> P.masks.contains(mask_name)).
+							map(P -> P.name).collect(Collectors.joining(",")));
 					maskOut.println();
 				}
 			}
