@@ -40,7 +40,7 @@ workflow {
 		user_bed
 		)
 	pgen_ch = PLINK2_VCF2PGEN(reference, snsheet_ch.output, wch2_ch.output)
-	bgen_ch = PLINK2_MERGE_PGEN(snsheet_ch.output, pgen_ch.output.take(0).collect())
+	bgen_ch = PLINK2_MERGE_PGEN(snsheet_ch.output, pgen_ch.output.collect())
 
 	if(!params.covariate.contains(".")) {
 		pca_ch = RUN_PCA(wch2_ch.output)
@@ -76,7 +76,6 @@ workflow {
 	
 	annot2_ch = MAKE_ANNOT_PER_CTG(wch2_ch.output)
 
-	if("A".equals("B")) {	
 	step2_ch = STEP2(
 		bgen_ch.output,
 		covar_ch,
@@ -86,13 +85,12 @@ workflow {
 		)
 
 
-
 	ch5 = MERGE_AND_PLOT(
 		reference,
-		step2_ch.map{[ [it[0] /* freq */ ,it[1] /* test */ ,it[2] /* mask */,it[3] /* status */] , it[4] /* regenie file */ ] }.groupTuple()
+		step2_ch.output.collect()
 		)
+	QQPLOT(ch5.output.flatten().filter{it.name.endsWith(".regenie.gz")})
 	MAKE_PDF_ARCHIVE(ch5.output.flatten().filter{it.name.endsWith(".pdf")}.collect())
-	}
 	}
 
 
@@ -666,6 +664,7 @@ output:
 script:
 	def pgen = bgen_files.find{it.name.endsWith(".pgen")}
 	def ped = pheno_files.find{it.name.endsWith(".plink.ped")}
+	def vc_maxAAF=0.01
 """
 
 mkdir -p TMP/OUT
@@ -688,7 +687,7 @@ regenie \\
   --out "step2.${contig}" \\
   --anno-file ${annot} \\
   --aaf-bins ${params.freq} \\
-  --vc-maxAAF ${freq} \\
+  --vc-maxAAF ${vc_maxAAF} \\
   --bsize 200 \\
   --vc-tests "${params.vc_tests}" \\
   --check-burden-files \\
@@ -700,15 +699,14 @@ gzip --best *.regenie
 
 
 process MERGE_AND_PLOT {
-tag "${key[0]} ${key[1]} ${key[2]} ${key[3]}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
-afterScript "rm -rf TMP"
+//afterScript "rm -rf TMP"
 label "process_quick"
 input:
 	path(genome)
-	tuple val(key),path("INPUT/*")
+	path("INPUT/*")
 output:
-	path("regenie.*"),emit:output
+	path("*.regenie.*"),emit:output
 script:
 
 	def dict = genome.find{it.name.endsWith(".dict")}
@@ -726,16 +724,17 @@ JD2=`dirname "\${JD1}"`
 # find the jar itself
 JVARKIT_JAR=`find "\${JD2}/../.." -type f -name "jvarkit.jar" | head -n1`
 
-cp -v "${moduleDir}/Minikit2.java" TMP/
+cp -v "${moduleDir}/Minikit2.java" TMP/Minikit.java
 javac -sourcepath TMP -cp "\${JVARKIT_JAR}" -d TMP TMP/Minikit.java
-
-
 
 cut -f1,2 '${fai}' | awk -F '\t' '( \$1 ~ /^(chr)?[0-9XY]+\$/ )' > TMP/jeter.fai
 
+# find one header
+cat INPUT/*.regenie.gz |\\
+	gunzip -c |\\
+	grep  '^CHROM' -m1 > TMP/jeter.txt
 
-cat INPUT/*.regenie.gz | gunzip -c | grep -v "^#" | grep '^CHROM' -m1  > TMP/jeter.txt
-test -s TMP/jeter.tsv
+test -s TMP/jeter.txt
 
 set -o pipefail
 
@@ -743,17 +742,16 @@ set -o pipefail
 cat INPUT/*.regenie.gz |\\
 	gunzip -c |\\
 	grep -v "^#" |\\
-	grep -v '^CHROM' |\
+	grep -v '^CHROM' |\\
 	LC_ALL=C sort -T TMP -t ' ' -k1,1V -k2,2n |\\
 	uniq >> TMP/jeter.txt
 
-java -cp "\${JVARKIT_JAR}:TMP" Minikit -R "${fasta}" -o TMP TMP/jeter.txt 
-
+java -cp "\${JVARKIT_JAR}:TMP" Minikit -R "${fasta}" -o TMP < TMP/jeter.txt
+rm TMP/jeter.txt
 
 cat << '__EOF__' > TMP/jeter.R
-mft <- read.table("TMP/manifest.tsv", header=FALSE, sep="\t", stringsAsFactors=FALSE, colClasses=c("character","character","character"),)
-colnames(mft) <- c("path", "freq","test")
-
+mft <- read.table("TMP/manifest.tsv", header=TRUE, sep="\t", stringsAsFactors=FALSE, colClasses=c("character","character","character"),)
+head(mft)
 
 fai <- read.table("TMP/jeter.fai", header=FALSE, sep="\t", stringsAsFactors=FALSE, colClasses=c("character","double"))
 colnames(fai) <- c("contig", "size")
@@ -782,10 +780,10 @@ max_genome_size <- pos2index(last_chrom, last_size)
 
 for(i in seq_len(1:nrow(mft))) {
 
-data <- read.table(mf[i,]\$path, header=TRUE, sep=" ", stringsAsFactors=FALSE)
+data <- read.table(mft[i,]\$filename, header=TRUE, sep=" ", stringsAsFactors=FALSE)
 data\$x <- mapply(pos2index, data\$CHROM, data\$GENPOS)
 
-fileout <- paste("TMP/${mask}_",mf[i,]\$freq,"_",mf[i,]\$test,".regenie.pdf",sep="")
+fileout <- paste("TMP/freq_",mft[i,]\$freq,"_",mft[i,]\$test_name,".regenie.pdf",sep="")
 
 pdf(fileout, width=20, height=6)
 
@@ -793,7 +791,7 @@ x_lim <-  c(0,max_genome_size)
 y_lim <- c(0,1+max(data\$LOG10P))
 
 plot(	NULL,
-	main=paste("Test ",mf[i,]\$test," Mask:${mask_name} AF:",mf[i,]\$freq,sep=""),
+	main=paste("Test:",mft[i,]\$test_name," AF:",mft[i,]\$freq,sep=""),
 	sub= "${params.prefix}regenie",
 	xlab="${fasta}",
 	ylab="-log10(PVALUE)",
@@ -824,35 +822,61 @@ dev.off()
 __EOF__
 
 R --no-save < TMP/jeter.R
+find TMP -type f
 
+find TMP -type f -name "*.regenie" | while read F
+do
+	bgzip "\${F}"
+	tabix -S 1 -s 1 -b 1 -e 1 "\${F}.gz"
+done
 
-bgzip TMP/jeter.tsv
-tabix -S 1 -s 1 -b 1 -e 1 TMP/jeter.tsv.gz
-mv TMP/jeter.tsv.gz     regenie.${test_name}.${mask_name}.${status_name}.${freq}.tsv.gz
-mv TMP/jeter.pdf     regenie.${test_name}.${mask_name}.${status_name}.${freq}.pdf
-mv TMP/jeter.tsv.gz.tbi regenie.${test_name}.${mask_name}.${status_name}.${freq}.tsv.gz.tbi
-
+mv TMP/*.pdf ./
+mv TMP/*.gz ./
+mv TMP/*.tbi ./
 """
 }
 
-process ZORG {
+/*
+#bgzip TMP/jeter.tsv
+#tabix -S 1 -s 1 -b 1 -e 1 TMP/jeter.tsv.gz
+#mv TMP/jeter.tsv.gz     regenie.${test_name}.${mask_name}.${status_name}.${freq}.tsv.gz
+#mv TMP/jeter.pdf     regenie.${test_name}.${mask_name}.${status_name}.${freq}.pdf
+#mv TMP/jeter.tsv.gz.tbi regenie.${test_name}.${mask_name}.${status_name}.${freq}.tsv.gz.tbi
+*/
+
+
+process QQPLOT {
+label "process_quick"
+tag "${regenie.name}"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
+input:
+	path(regenie)
+output:
+	path("*.png"),emit:output
 script:
 """
+mkdir -p TMP
+cat << '__EOF__' > TMP/jeter.R
+T1 <- read.table(file="${regenie}",sep=" ",header=TRUE, stringsAsFactors=FALSE)
 
+png("${regenie.name}.png")
+pvector <- T1\$LOG10P
+pvector <- pvector[!is.na(pvector) & !is.nan(pvector) & !is.null(pvector) & is.finite(pvector) & pvector<1 & pvector>0]
+o = -log10(sort(pvector,decreasing=FALSE))
+e = -log10( ppoints(length(pvector) ))
+plot(e, o, pch=20, 
+	main="${regenie.getSimpleName()}",
+	xlab=expression(Expected~~-log[10](italic(p))), 
+	ylab=expression(Observed~~-log[10](italic(p))),
+	)
+ abline(0,1,col="red")
+dev.off()
+__EOF__
 
-
-
-
-
-# add column 'x'
-
-
-
-
-
+R --no-save < TMP/jeter.R
 """
 }
-
 
 
 workflow RUN_PCA {

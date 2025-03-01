@@ -43,6 +43,7 @@ public class Minikit extends Launcher {
 			try(BufferedReader br = super.openBufferedReader(input)) {
 				String line = br.readLine();
 				if(line==null) throw new IOException("cannot read first line");
+				final String header_line = line;
 				final FileHeader header = new FileHeader(line, CharSplitter.SPACE);
 				final int col_test = header.getColumnIndex("TEST");
 				final int col_id = header.getColumnIndex("ID");
@@ -70,6 +71,7 @@ public class Minikit extends Launcher {
 						cond.test_name = test_name;
 						cond.freq_name = freq_name;
 						cond.w= IOUtils.openPathForPrintWriter(cond.path);
+						cond.w.println(header_line);
 						conditions.add(cond);
 						}
 					if(kX!=null && tokens.get(col_chrom).equals("23")) {
@@ -92,6 +94,7 @@ public class Minikit extends Launcher {
 					}
 				
 				try(PrintWriter manifest = super.openPathOrStdoutAsPrintWriter(this.outputDir.resolve("manifest.tsv"))) {
+					manifest.println("filename\tfreq\ttest_name");
 					for(Condition cond : conditions) {
 						if(cond.count>0) {
 							manifest.print(cond.path);

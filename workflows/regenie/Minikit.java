@@ -131,8 +131,8 @@ public class Minikit extends Launcher {
 	}
 
 	private String fixContig(final String ctg) {
-		if(ctg.equals("X") || ctg.equals("chrX")) return "23";
-		if(ctg.equals("Y") || ctg.equals("chrY")) return "24";
+		//if(ctg.equals("X") || ctg.equals("chrX")) return "23";
+		//if(ctg.equals("Y") || ctg.equals("chrY")) return "24";
 		if(ctg.startsWith("chr")) return ctg.substring(3);
 		return ctg;
 		}
