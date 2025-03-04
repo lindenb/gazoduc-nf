@@ -25,6 +25,7 @@ public class Minikit extends Launcher {
 	private static class Condition {
 		Path path;
 		PrintWriter w;
+		String annot="";
 		String freq_name;
 		String test_name;
 		int count=0;
@@ -53,23 +54,33 @@ public class Minikit extends Launcher {
 					final String test_name = tokens.get(col_test);
 					final String id =  tokens.get(col_id);
 					final String freq_name;
+					String s3;
 					if(id.endsWith(".singleton")) {
 						freq_name = "singleton";
+						s3 = id.substring(0,id.length()-10);
 						}
 					else
 						{
 						int x = id.lastIndexOf("0.");
 						if(x==-1) throw new IllegalArgumentException("no 0. in "+id);
+						if(id.charAt(x-1)!='.') throw new IllegalArgumentException("no . in "+id);
+						s3 =  id.substring(0,x-1);//-1 for dot before the number
 						freq_name = id.substring(x);
 						//check double
 						Double.parseDouble(freq_name);
 						}
-					Condition cond = conditions.stream().filter(C->C.test_name.equals(test_name) && C.freq_name.equals(freq_name)).findFirst().orElse(null);
+					int dot2 = s3.lastIndexOf('.');
+					if(dot2==-1) throw new IllegalArgumentException("no '.' in "+s3);
+					final String annot= s3.substring(dot2+1);
+					if(annot.isEmpty())  throw new IllegalArgumentException("empty for /"+s3+"/"+annot+"/"+id);
+
+					Condition cond = conditions.stream().filter(C->C.annot.equals(annot) && C.test_name.equals(test_name) && C.freq_name.equals(freq_name)).findFirst().orElse(null);
 					if(cond==null) {
 						cond = new Condition();
-						cond.path =outputDir.resolve(String.join("_",freq_name,test_name)+".regenie");
+						cond.path =outputDir.resolve(String.join("_",freq_name,test_name,annot)+".regenie");
 						cond.test_name = test_name;
 						cond.freq_name = freq_name;
+						cond.annot = annot;
 						cond.w= IOUtils.openPathForPrintWriter(cond.path);
 						cond.w.println(header_line);
 						conditions.add(cond);
@@ -94,7 +105,7 @@ public class Minikit extends Launcher {
 					}
 				
 				try(PrintWriter manifest = super.openPathOrStdoutAsPrintWriter(this.outputDir.resolve("manifest.tsv"))) {
-					manifest.println("filename\tfreq\ttest_name");
+					manifest.println("filename\tfreq\ttest_name\tannot");
 					for(Condition cond : conditions) {
 						if(cond.count>0) {
 							manifest.print(cond.path);
@@ -102,6 +113,8 @@ public class Minikit extends Launcher {
 							manifest.print(cond.freq_name);
 							manifest.print("\t");
 							manifest.print(cond.test_name);
+							manifest.print("\t");
+							manifest.print(cond.annot);
 							manifest.println();
 							}
 						cond.w.flush();

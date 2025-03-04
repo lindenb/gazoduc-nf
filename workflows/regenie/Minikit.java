@@ -5,6 +5,7 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -35,6 +36,8 @@ public class Minikit extends Launcher {
 	private static final String SLIDING_WINDOW = "sliding_window";
 	private static final String GNOMAD_AF = "gnomad_genome_AF_NFE";
 
+	@Parameter(names = "-f", description = "comma separated frequences , will use the hight")
+	private String freqStr="0.01";
 	@Parameter(names = "-w", description = "window size")
 	private int window_size = -1;
 	@Parameter(names = "-a", description = "output annotation file", required = true)
@@ -137,9 +140,9 @@ public class Minikit extends Launcher {
 		return ctg;
 		}
 
-	private void dump(final SortingCollection<Variation> sorter, final AnnPredictionParser annParser, final VariantContext ctx) throws Exception {
-		if(ctx.hasAttribute(GNOMAD_AF) && ctx.getAttributeAsDouble(GNOMAD_AF, 0.0) >= 0.1) return;
-		if(ctx.hasAttribute(VCFConstants.ALLELE_FREQUENCY_KEY) && ctx.getAttributeAsDouble(VCFConstants.ALLELE_FREQUENCY_KEY, 0.0) >= 0.1) return;
+	private void dump(final SortingCollection<Variation> sorter, final double max_freq, final AnnPredictionParser annParser, final VariantContext ctx) throws Exception {
+		if(ctx.hasAttribute(GNOMAD_AF) && ctx.getAttributeAsDouble(GNOMAD_AF, 0.0) > max_freq) return;
+		if(ctx.hasAttribute(VCFConstants.ALLELE_FREQUENCY_KEY) && ctx.getAttributeAsDouble(VCFConstants.ALLELE_FREQUENCY_KEY, 0.0) > max_freq) return;
 		
 		final int  win_pos =  this.window_size<1 ? -1:
 				1 + (((int)(ctx.getStart()/(double)this.window_size)) * this.window_size)
@@ -224,6 +227,8 @@ public class Minikit extends Launcher {
 	@Override
 	public int doWork(List<String> args) {
 		try {
+			final double freq = Arrays.stream(this.freqStr.trim().split("[,]")).mapToDouble(S->Double.parseDouble(S)).max().orElse(0.01);
+
 			if(this.window_size>0) {
 				this.sliding_prediction = makeScore(SLIDING_WINDOW+"_"+this.window_size , 0.1);
 				}
@@ -278,7 +283,7 @@ public class Minikit extends Launcher {
 					final VariantContext vc = iter.next();
 					if (vc.getNAlleles() != 2)
 						throw new IOException(vc.getContig() + ":" + vc.getStart() + ":" + vc.getAlleles());
-					dump(sorter, annParser, vc);
+					dump(sorter, freq, annParser, vc);
 				} // end while
 			}
 			sorter.doneAdding();

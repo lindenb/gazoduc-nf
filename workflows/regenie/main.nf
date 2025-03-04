@@ -43,7 +43,7 @@ workflow {
 	bgen_ch = PLINK2_MERGE_PGEN(snsheet_ch.output, pgen_ch.output.collect())
 
 	if(!params.covariate.contains(".")) {
-		pca_ch = RUN_PCA(wch2_ch.output)
+		pca_ch = RUN_PCA(snsheet_ch.output, wch2_ch.output)
 		make_covar_ch = MAKE_COVARIATES(pca_ch.output)
 		covar_ch = make_covar_ch.output
 		}
@@ -58,7 +58,7 @@ workflow {
 		flatMap{T->T[2 ..< T.size()]}
 	
 	/** plot pca for each pair of columns */
-	PLOT_PCA(covar_ch,pca_cols_ch.combine(pca_cols_ch).filter{it[0].compareTo(it[1])<0})
+	PLOT_PCA(covar_ch, snsheet_ch.output, pca_cols_ch.combine(pca_cols_ch).filter{it[0].compareTo(it[1])<0})
 
 	if(!params.step1_loco.contains(".")) {
 		step1 = STEP1( 
@@ -133,6 +133,15 @@ if (length(missing_columns) > 0) {
 }
 
 
+if(!"population" %in% colnames(T1)) {
+  # Copy the content of 'status' column into the new 'population' column
+  T1\$population <- T1\$status
+}
+
+T1\$population[T1\$population == ""] <- "NA"
+T1\$population[T1\$population == "."] <- "NA"
+
+
 
 T1 <- T1[T1\$sample %in% SN\$sample,]
 
@@ -154,6 +163,10 @@ T1\$status <- ifelse(T1\$status == "case" , "1", ifelse(T1\$status == "control" 
 T1\$FID <- T1\$sample
 T1\$IID <- T1\$sample
 
+
+T2<-T1[,c("sample","population")]
+write.table(T2,file="TMP/sample2pop.txt", quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
+
 T1 <- T1[, c("FID", "IID", "sex", "${params.status}")]
 write.table(T1,file="TMP/plink.ped", quote=FALSE, row.names=FALSE, col.names=TRUE, sep="\t")
 EOF
@@ -165,6 +178,7 @@ sort TMP/cases.txt > pedigree.cases.txt
 sort TMP/controls.txt > pedigree.controls.txt
 cat TMP/cases.txt TMP/controls.txt > pedigree.all.samples.txt
 mv TMP/plink.ped pedigree.plink.ped
+mv TMP/sample2pop.txt pedigree.sample2population.tsv
 """
 }
 
@@ -267,7 +281,7 @@ export LC_ALL=C
         mv TMP/jeter2.bcf TMP/jeter1.bcf
 
 	# CADD #####################################################################################
-        if ${params.containsKey("cadd") && !params.cadd.isEmpty()} && test -f '${params.cadd}'
+        if ${params.cadd!=null && !params.cadd.contains(".")} && test -f '${params.cadd}'
         then
                 bcftools view TMP/jeter1.bcf |\\
                         jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfcadd --tabix '${params.cadd}' | \\
@@ -276,7 +290,7 @@ export LC_ALL=C
         fi
 
 	# GNOMAD ####################################################################################
-        if ${params.containsKey("gnomad")} && test -f "${params.gnomad}"
+        if ${params.gnomad!=null && !params.gnomad.contains(".")} && test -f "${params.gnomad}"
         then
                 bcftools view TMP/jeter1.bcf |\\
                         jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfgnomad \\
@@ -664,7 +678,6 @@ output:
 script:
 	def pgen = bgen_files.find{it.name.endsWith(".pgen")}
 	def ped = pheno_files.find{it.name.endsWith(".plink.ped")}
-	def vc_maxAAF=0.01
 """
 
 mkdir -p TMP/OUT
@@ -687,7 +700,7 @@ regenie \\
   --out "step2.${contig}" \\
   --anno-file ${annot} \\
   --aaf-bins ${params.freq} \\
-  --vc-maxAAF ${vc_maxAAF} \\
+  --vc-maxAAF ${params.vc_maxAAF} \\
   --bsize 200 \\
   --vc-tests "${params.vc_tests}" \\
   --check-burden-files \\
@@ -778,12 +791,12 @@ last_size <- fai\$size[nrow(fai)]
 max_genome_size <- pos2index(last_chrom, last_size)
 
 
-for(i in seq_len(1:nrow(mft))) {
+for(i in seq_len(nrow(mft))) {
 
 data <- read.table(mft[i,]\$filename, header=TRUE, sep=" ", stringsAsFactors=FALSE)
 data\$x <- mapply(pos2index, data\$CHROM, data\$GENPOS)
 
-fileout <- paste("TMP/freq_",mft[i,]\$freq,"_",mft[i,]\$test_name,".regenie.pdf",sep="")
+fileout <- paste("TMP/freq_",mft[i,]\$freq,"_",mft[i,]\$test_name,"_",mft[i,]\$annot,".regenie.pdf",sep="")
 
 pdf(fileout, width=20, height=6)
 
@@ -791,7 +804,7 @@ x_lim <-  c(0,max_genome_size)
 y_lim <- c(0,1+max(data\$LOG10P))
 
 plot(	NULL,
-	main=paste("Test:",mft[i,]\$test_name," AF:",mft[i,]\$freq,sep=""),
+	main=paste("Test:",mft[i,]\$test_name," AF:",mft[i,]\$freq," Annot:",mft[i,]\$annot,sep=""),
 	sub= "${params.prefix}regenie",
 	xlab="${fasta}",
 	ylab="-log10(PVALUE)",
@@ -826,8 +839,8 @@ find TMP -type f
 
 find TMP -type f -name "*.regenie" | while read F
 do
-	bgzip "\${F}"
-	tabix -S 1 -s 1 -b 1 -e 1 "\${F}.gz"
+	tr " " "\t" <  "\${F}" | bgzip > "\${F}.gz"
+	tabix -S 1 -s 1 -b 2 -e 2 "\${F}.gz"
 done
 
 mv TMP/*.pdf ./
@@ -858,7 +871,7 @@ script:
 """
 mkdir -p TMP
 cat << '__EOF__' > TMP/jeter.R
-T1 <- read.table(file="${regenie}",sep=" ",header=TRUE, stringsAsFactors=FALSE)
+T1 <- read.table(file="${regenie}",sep="\t",header=TRUE, stringsAsFactors=FALSE)
 
 png("${regenie.name}.png")
 pvector <- T1\$LOG10P
@@ -881,12 +894,13 @@ R --no-save < TMP/jeter.R
 
 workflow RUN_PCA {
 	take:
+		pedigree_files
 		rows //[contig,(vcf+vcf_idx)]
 	main:
 		ch1 = PCA_PER_CONTIG(rows.filter{it[0].matches("(chr)?[0-9]+")})
 		all_plink_ch = ch1.output.collect().flatten().collect()
 		ch2 = MERGE_PIHAT(all_plink_ch)
-		PLOT_AVERAGE_PIHAT(ch2.output)
+		PLOT_AVERAGE_PIHAT(pedigree_files, ch2.output)
 	emit:
 		output = ch2.output
 }
@@ -1094,25 +1108,37 @@ conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
 	path(covar)
+	path(plink_files)
 	tuple val(col1),val(col2)
 output:
 	path("*.png"),emit:output
 script:
+	def sample2pop = plink_files.find{it.name.endsWith(".sample2population.tsv")}
 """
 mkdir -p TMP
 
 cat << '__EOF__' > TMP/jeter.R
 T1 <- read.table(file="${covar}",sep="\\t",header=TRUE, stringsAsFactors=FALSE)
 
+T2 <- read.table(file="${sample2pop}",sep="\\t",header=FALSE, stringsAsFactors=FALSE)
+colnames(T2) <- c("IID", "collection")
+T1 <- merge(T1, T2, by="IID", all.x=TRUE)
+collection_colors <- rainbow(length(unique(T1\$collection)))
+names(collection_colors) <- unique(T1\$collection)
+T1\$color <- collection_colors[T1\$collection]
+
 png("pihat.${col1}_${col2}.png")
 plot(
 	x=T1\$${col1},
 	y=T1\$${col2},
+	col=T1\$color,
 	xlab="${col1}",
 	ylab="${col2}",
+	pch = 19,
 	main="PCA: ${col1} x ${col2}",
 	sub = "${covar.name}"
 	)
+legend("topright", legend=names(collection_colors), col=collection_colors, pch=19, title="Collections")
 dev.off()
 __EOF__
 
@@ -1128,6 +1154,7 @@ label "process_quick"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
+	path(pedigree_files)
 	path(plink_files)
 output:
 	path("*.png"),emit:output
@@ -1170,6 +1197,7 @@ tag "${plink_genome}"
 label "process_quick"
 afterScript "rm -rf TMP"
 input:
+	path(pedigree_files)
         path(plink_genome)
 output:
         path("*.png"),emit:output
