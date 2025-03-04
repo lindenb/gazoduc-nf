@@ -879,7 +879,7 @@ pvector <- pvector[!is.na(pvector) & !is.nan(pvector) & !is.null(pvector) & is.f
 o = -log10(sort(pvector,decreasing=FALSE))
 e = -log10( ppoints(length(pvector) ))
 plot(e, o, pch=20, 
-	main="${regenie.getSimpleName()}",
+	main="${regenie.name}",
 	xlab=expression(Expected~~-log[10](italic(p))), 
 	ylab=expression(Observed~~-log[10](italic(p))),
 	)
