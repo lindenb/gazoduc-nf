@@ -73,8 +73,19 @@ workflow {
 		loco_ch = file(params.step1_loco)
 		}
 	
+	annot_type = Channel.of("functional")
+	if((params.window_size as int)>0) {
+		annot_type  = annot_type.mix(Channel.of("sliding"))
+		}
+
+	if(file(params.user_bed).name.contains(".")) {
+		annot_type  = annot_type.mix(Channel.of("userbed"))
+		}
 	
-	annot2_ch = MAKE_ANNOT_PER_CTG(wch2_ch.output)
+	annot2_ch = MAKE_ANNOT_PER_CTG(
+		file(params.user_bed) /* optional user bed file */, 
+		annot_type.combine(wch2_ch.output)
+		)
 
 	step2_ch = STEP2(
 		bgen_ch.output,
@@ -84,13 +95,14 @@ workflow {
 		annot2_ch.output
 		)
 
-
+	/*
 	ch5 = MERGE_AND_PLOT(
 		reference,
 		step2_ch.output.collect()
 		)
 	QQPLOT(ch5.output.flatten().filter{it.name.endsWith(".regenie.gz")})
 	MAKE_PDF_ARCHIVE(ch5.output.flatten().filter{it.name.endsWith(".pdf")}.collect())
+	*/
 	}
 
 
@@ -621,15 +633,17 @@ bcftools view "${vcf}" |\\
 }
 
 process MAKE_ANNOT_PER_CTG {
-tag "chr${contig}"
+tag "chr${contig} ${title}"
 label "process_quick_high"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
-        tuple val(contig),path(vcf_files)
+	path(user_bed)//optional 
+        tuple val(title),val(contig),path(vcf_files)
 output:
-	tuple val(contig),path("*.annot.txt"),path("*.mask.txt"),path("*.setfile.txt"),emit:output
+	tuple val(title),val(contig),path("*.annot.txt"),path("*.mask.txt"),path("*.setfile.txt"),emit:output
 script:
+	def args = title.equals("userbed")? " -b '${user_bed}' -w -1 " : (title.equals("sliding")?" -w ${params.window_size} ":" -w -1 ")
 	def vcf = vcf_files.find{it.name.endsWith(".bcf") || it.name.endsWith(".vcf.gz")}
 """
 set -o pipefail
@@ -652,8 +666,8 @@ bcftools view -G -O v '${vcf}' |\\
 			-a TMP/jeter.annot.txt \\
 			-s TMP/jeter.setfile.txt \\
 			-m TMP/jeter.mask.txt \\
-			-w -1
-
+			-f ${params.freq} \\
+			${args}
 
 mv -v TMP/jeter.annot.txt "regenie.${contig}.annot.txt"
 mv -v TMP/jeter.mask.txt "regenie.${contig}.mask.txt"
@@ -664,7 +678,7 @@ mv -v TMP/jeter.setfile.txt "regenie.${contig}.setfile.txt"
 
 process STEP2 {
 label "process_quick_high"
-tag "chr${contig}"
+tag "chr${contig} ${title}"
 conda "${moduleDir}/../../conda/regenie.yml"
 afterScript "rm -rf TMP"
 input:
@@ -672,9 +686,9 @@ input:
         path(covariates)
         path(pheno_files)
 	path(pred_list)
-	tuple val(contig),path(annot),path(mask),path(setfile)
+	tuple val(title),val(contig),path(annot),path(mask),path(setfile)
 output:
-        path("*.regenie.gz"),emit:output
+        tuple val(title),val(contig),path("*.regenie.gz"),emit:output
 script:
 	def pgen = bgen_files.find{it.name.endsWith(".pgen")}
 	def ped = pheno_files.find{it.name.endsWith(".plink.ped")}

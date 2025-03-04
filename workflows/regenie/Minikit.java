@@ -1,4 +1,5 @@
 //package com.github.lindenb.jvarkit.tools.test;
+import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
@@ -17,6 +18,8 @@ import com.beust.jcommander.Parameter;
 import com.beust.jcommander.ParametersDelegate;
 import com.github.lindenb.jvarkit.io.IOUtils;
 import com.github.lindenb.jvarkit.lang.StringUtils;
+import com.github.lindenb.jvarkit.util.bio.bed.BedLine;
+import com.github.lindenb.jvarkit.util.bio.bed.BedLineCodec;
 import com.github.lindenb.jvarkit.util.iterator.EqualRangeIterator;
 import com.github.lindenb.jvarkit.util.jcommander.Launcher;
 import com.github.lindenb.jvarkit.util.picard.AbstractDataCodec;
@@ -24,6 +27,8 @@ import com.github.lindenb.jvarkit.util.vcf.predictions.AnnPredictionParser;
 import com.github.lindenb.jvarkit.util.vcf.predictions.AnnPredictionParserFactory;
 
 import htsjdk.samtools.util.CloseableIterator;
+import htsjdk.samtools.util.Interval;
+import htsjdk.samtools.util.IntervalTreeMap;
 import htsjdk.samtools.util.SortingCollection;
 import htsjdk.variant.variantcontext.VariantContext;
 import htsjdk.variant.vcf.VCFConstants;
@@ -35,10 +40,13 @@ public class Minikit extends Launcher {
 	private static final String CADD_PHRED = "CADD_PHRED";
 	private static final String SLIDING_WINDOW = "sliding_window";
 	private static final String GNOMAD_AF = "gnomad_genome_AF_NFE";
-
-	@Parameter(names = "-f", description = "comma separated frequences , will use the hight")
+	private static final String USER_BED = "userbed";
+	
+	@Parameter(names = "-b", description = "custom bed file chrom/start/end/name[/score]")
+	private Path userBedPath = null;
+	@Parameter(names = "-f", description = "comma separated frequences , will use the hightest")
 	private String freqStr="0.01";
-	@Parameter(names = "-w", description = "window size")
+	@Parameter(names = "-w", description = "window size. -1 don't use.")
 	private int window_size = -1;
 	@Parameter(names = "-a", description = "output annotation file", required = true)
 	private Path annotationFileOut = null;
@@ -49,6 +57,13 @@ public class Minikit extends Launcher {
 	@ParametersDelegate
 	private WritingSortingCollection writingSortingCollection = new WritingSortingCollection();
 
+	
+	private final IntervalTreeMap<UserBed> interval2userbed = new IntervalTreeMap<>();
+	
+	private static class UserBed {
+		String name;
+		double score;
+	}
 	
 	private static class Variation {
 		String contig;
@@ -70,7 +85,10 @@ public class Minikit extends Launcher {
 		Prediction(String name,double score) {
 			this.name  = name;
 			this.score  = score;
-			if(name.startsWith(SLIDING_WINDOW)) {
+			if(name.startsWith(USER_BED)) {
+				masks.add(this.name);
+				}
+			else if(name.startsWith(SLIDING_WINDOW)) {
 				masks.add(this.name);
 				}
 			else
@@ -86,6 +104,7 @@ public class Minikit extends Launcher {
 		}
 
 	private Prediction sliding_prediction = null;
+	private Prediction userbed_prediction = null;
 	private final Map<String, Prediction> scores = new HashMap<>(50);
 
 	private static class RowCodec extends AbstractDataCodec<Variation> {
@@ -140,20 +159,24 @@ public class Minikit extends Launcher {
 		return ctg;
 		}
 
-	private void dump(final SortingCollection<Variation> sorter, final double max_freq, final AnnPredictionParser annParser, final VariantContext ctx) throws Exception {
-		if(ctx.hasAttribute(GNOMAD_AF) && ctx.getAttributeAsDouble(GNOMAD_AF, 0.0) > max_freq) return;
-		if(ctx.hasAttribute(VCFConstants.ALLELE_FREQUENCY_KEY) && ctx.getAttributeAsDouble(VCFConstants.ALLELE_FREQUENCY_KEY, 0.0) > max_freq) return;
-		
-		final int  win_pos =  this.window_size<1 ? -1:
-				1 + (((int)(ctx.getStart()/(double)this.window_size)) * this.window_size)
-				;
+	private boolean keepVariant(final double max_freq,final VariantContext ctx) {
+		if(ctx.hasAttribute(GNOMAD_AF) && ctx.getAttributeAsDouble(GNOMAD_AF, 0.0) > max_freq) return false;
+		if(ctx.hasAttribute(VCFConstants.ALLELE_FREQUENCY_KEY) && ctx.getAttributeAsDouble(VCFConstants.ALLELE_FREQUENCY_KEY, 0.0) > max_freq) return false;
+		return true;
+		}
+
+	private double getCaddScore(final VariantContext ctx) {
 		Double cadd_phred = null;
 		if (ctx.hasAttribute(CADD_PHRED)) {
-				String s = ctx.getAttributeAsString(CADD_PHRED, ".");
+				final String s = ctx.getAttributeAsString(CADD_PHRED, ".");
 				if (!(s.equals(".") || StringUtils.isBlank(s))) {
 					cadd_phred = Double.valueOf(s);
 				}
 			}
+		return cadd_phred==null?0.0:cadd_phred.doubleValue();
+		}
+
+	private void dumpFunctional(final SortingCollection<Variation> sorter, final AnnPredictionParser annParser, final VariantContext ctx) throws Exception {
 		
 		Double best_score = null;
 		Prediction best_pred = null;
@@ -184,7 +207,6 @@ public class Minikit extends Launcher {
 
 		if (best_score != null) {
 			best_pred.found=true;
-			
 			final Variation v = new Variation();
 			v.contig = fixContig(ctx.getContig());
 			v.pos = ctx.getStart();
@@ -192,12 +214,15 @@ public class Minikit extends Launcher {
 			v.gene = best_gene;
 			v.prediction = best_pred.name;
 			v.score = best_score;
-			v.cadd = (cadd_phred==null?0.0:cadd_phred.doubleValue());
+			v.cadd = getCaddScore(ctx);
 			sorter.add(v);
 			}
+		}
 
-		if(win_pos>0) 
-			{
+
+	private void dumpSliding(final SortingCollection<Variation> sorter, final VariantContext ctx) throws Exception {
+		final int  win_pos = 1 + (((int)(ctx.getStart()/(double)this.window_size)) * this.window_size);
+
 			sliding_prediction.found = true;
 			
 			final Variation v = new Variation();
@@ -207,10 +232,46 @@ public class Minikit extends Launcher {
 			v.gene = ctx.getContig()+ "_" + (win_pos) + "_" + (win_pos - 1 + this.window_size) ;
 			v.prediction = sliding_prediction.name;
 			v.score = sliding_prediction.score;
-			v.cadd = (cadd_phred==null?0.0:cadd_phred.doubleValue());
+			v.cadd = getCaddScore(ctx);
 			sorter.add(v);
+		}
+	
+	private void dumpUserBed(final SortingCollection<Variation> sorter, final VariantContext ctx) throws Exception {
+			
+		final UserBed ub = this.interval2userbed.getOverlapping(ctx).
+				stream().
+				sorted((A,B)->Double.compare(B.score, A.score)). //inverse sort
+				findFirst().
+				orElse(null);
+		
+		if(ub==null) return;
+	
+		userbed_prediction.found = true;
+		final Variation v = new Variation();
+		v.contig = fixContig(ctx.getContig());
+		v.pos = ctx.getStart();
+		v.id = ctx.getID();
+		v.gene = ub.name;
+		v.prediction = userbed_prediction.name;
+		v.score = ub.score;
+		v.cadd = getCaddScore(ctx);
+		sorter.add(v);
+		}
+
+	private void dump(final SortingCollection<Variation> sorter, final double max_freq, final AnnPredictionParser annParser, final VariantContext ctx) throws Exception {
+		if(!keepVariant(max_freq,ctx)) return;
+		if(this.userBedPath!=null) {
+			dumpUserBed(sorter, ctx);
+			}
+		else if(this.window_size>0) {
+			dumpSliding(sorter, ctx);
+			}
+		else
+			{
+			dumpFunctional(sorter, annParser, ctx);
 			}
 		}
+
 
 	private static int compareX(Variation t1, Variation t2, int level) {
 		int i = t1.contig.compareTo(t2.contig);// CHROMOSOME
@@ -229,7 +290,29 @@ public class Minikit extends Launcher {
 		try {
 			final double freq = Arrays.stream(this.freqStr.trim().split("[,]")).mapToDouble(S->Double.parseDouble(S)).max().orElse(0.01);
 
-			if(this.window_size>0) {
+			if(this.userBedPath!=null) {
+				try(BufferedReader br=IOUtils.openPathForBufferedReading(this.userBedPath)) {
+					final BedLineCodec bc = new  BedLineCodec();
+					String line;
+					while((line=br.readLine())!=null) {
+						if(BedLine.isBedHeader(line)) continue;
+						final BedLine rec = bc.decode(line);
+						if(rec==null) continue;
+						final String ctg = fixContig(rec.getContig());
+						if(StringUtils.isBlank(rec.get(3))) throw new IOException("empty title in bed line "+line);
+						final Interval r= new Interval(ctg, rec.getStart(), rec.getEnd(), false, rec.get(3));
+						/* if(this.interval2userbed.containsOverlapping(r)) {
+							throw new IOException("in line "+line+" from "+this.userBedPath+". bed records should not overlap");
+							}*/
+						final UserBed ub=new UserBed();
+						ub.name = r.getName();
+						ub.score = Double.parseDouble(rec.getOrDefault(4,"1.0"));
+						this.interval2userbed.put(r, ub);
+						}
+					}
+				this.userbed_prediction = makeScore(USER_BED, 1.0);
+				}
+			else if(this.window_size>0) {
 				this.sliding_prediction = makeScore(SLIDING_WINDOW+"_"+this.window_size , 0.1);
 				}
 			else
