@@ -4,6 +4,7 @@ include {SNPEFF_DOWNLOAD} from '../../modules/snpeff/download'
 include {JVARKIT_VCF_TO_INTERVALS_01} from '../../subworkflows/vcf2intervals'
 include {BCFTOOLS_CONCAT_CONTIGS} from '../../subworkflows/bcftools/concat.contigs'
 include {k1_signature} from '../../modules/utils/k1.nf'
+include {runOnComplete} from '../../modules/utils/functions.nf'
 //include {GHOSTSCRIPT_MERGE} from '../..//modules/gs/merge'
 
 workflow {
@@ -95,17 +96,19 @@ workflow {
 		annot2_ch.output
 		)
 
-	/*
+	 step2_ch.output.groupTuple().view()
+	
 	ch5 = MERGE_AND_PLOT(
 		reference,
-		step2_ch.output.collect()
+		step2_ch.output.groupTuple()
 		)
+	
 	QQPLOT(ch5.output.flatten().filter{it.name.endsWith(".regenie.gz")})
+	ANNOT_HITS(ch5.output.flatten().filter{it.name.endsWith(".regenie.gz")}.collect())
 	MAKE_PDF_ARCHIVE(ch5.output.flatten().filter{it.name.endsWith(".pdf")}.collect())
-	*/
 	}
 
-
+runOnComplete(workflow)
 
 process DIGEST_SAMPLESHEET {
 label "process_single"
@@ -688,7 +691,7 @@ input:
 	path(pred_list)
 	tuple val(title),val(contig),path(annot),path(mask),path(setfile)
 output:
-        tuple val(title),val(contig),path("*.regenie.gz"),emit:output
+        tuple val(title),path("*.regenie.gz"),emit:output
 script:
 	def pgen = bgen_files.find{it.name.endsWith(".pgen")}
 	def ped = pheno_files.find{it.name.endsWith(".plink.ped")}
@@ -726,12 +729,13 @@ gzip --best *.regenie
 
 
 process MERGE_AND_PLOT {
+tag "${title}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
-//afterScript "rm -rf TMP"
+afterScript "rm -rf TMP"
 label "process_quick"
 input:
 	path(genome)
-	path("INPUT/*")
+	tuple val(title),path("INPUT/*")
 output:
 	path("*.regenie.*"),emit:output
 script:
@@ -754,7 +758,8 @@ JVARKIT_JAR=`find "\${JD2}/../.." -type f -name "jvarkit.jar" | head -n1`
 cp -v "${moduleDir}/Minikit2.java" TMP/Minikit.java
 javac -sourcepath TMP -cp "\${JVARKIT_JAR}" -d TMP TMP/Minikit.java
 
-cut -f1,2 '${fai}' | awk -F '\t' '( \$1 ~ /^(chr)?[0-9XY]+\$/ )' > TMP/jeter.fai
+# do not use chrY because regenie merge it with chrX (see doc)
+cut -f1,2 '${fai}' | awk -F '\t' '( \$1 ~ /^(chr)?[0-9X]+\$/ )' > TMP/jeter.fai
 
 # find one header
 cat INPUT/*.regenie.gz |\\
@@ -810,7 +815,7 @@ for(i in seq_len(nrow(mft))) {
 data <- read.table(mft[i,]\$filename, header=TRUE, sep=" ", stringsAsFactors=FALSE)
 data\$x <- mapply(pos2index, data\$CHROM, data\$GENPOS)
 
-fileout <- paste("TMP/freq_",mft[i,]\$freq,"_",mft[i,]\$test_name,"_",mft[i,]\$annot,".regenie.pdf",sep="")
+fileout <- paste("TMP/${title}.freq_",mft[i,]\$freq,"_",mft[i,]\$test_name,"_",mft[i,]\$annot,".regenie.pdf",sep="")
 
 pdf(fileout, width=20, height=6)
 
@@ -853,8 +858,8 @@ find TMP -type f
 
 find TMP -type f -name "*.regenie" | while read F
 do
-	tr " " "\t" <  "\${F}" | bgzip > "\${F}.gz"
-	tabix -S 1 -s 1 -b 2 -e 2 "\${F}.gz"
+	tr " " "\t" <  "\${F}" | bgzip > "TMP/${title}.\${F##*/}.gz"
+	tabix -S 1 -s 1 -b 2 -e 2 "TMP/${title}.\${F##*/}.gz"
 done
 
 mv TMP/*.pdf ./
@@ -1319,7 +1324,7 @@ cat << __EOF__ >  "${dir}/index.html"
 <meta charset="UTF-8"/>
 <title>${params.prefix?:""}Regenie</title>
 <script>
-var index=0;
+var index=-1;
 var pdfs=[
 __EOF__
 
@@ -1329,18 +1334,35 @@ cp -v PDFS/*.pdf ${dir}/
 cat << __EOF__ >> "${dir}/index.html"
 ];
 
-function change(dx) {
-	index+=dx;
-	index = index%pdfs.length;
-	var E = document.getElementById("theimg");
-	E.setAttribute("src",pdfs[index]);
-	document.getElementById("x").textContent = ""+(index+1)+"/"+pdfs.length;
-	}
+function goTo(idx) {
+	if(index==idx) return;
+        if(idx<0) idx=pdfs.length-1;
+        if(idx>=pdfs.length) idx=0;
+        index=idx;
+        var E = document.getElementById("theimg");
+        E.setAttribute("src",pdfs[index]);
+        document.getElementById("x").textContent = ""+(index+1)+"/"+pdfs.length;
+	E=document.getElementById("select");
+	if(E.selectedIndex!=index) E.selectedIndex=index;
+        }
+
+addEventListener("load", (event) => {
+        goTo(0);
+        var E=  document.getElementById("select");
+        E.addEventListener("change",()=>{goTo(parseInt(E.value));});
+        for(var i in pdfs) {
+                var C = document.createElement("option");
+                C.setAttribute("value",i);
+                C.appendChild(document.createTextNode(pdfs[i]));
+                E.appendChild(C);
+                }
+        });
 </script>
 </head>
 <body>
-<button onclick="change(-1)">Prev</button>
-<button onclick="change( 1)">Next</button>
+<button onclick="goTo(index-1)">Prev</button>
+<select id="select"></select>
+<button onclick="goTo(index+1)">Next</button>
 <span id="x">1/x</span>
 <br/>
 <embed id="theimg" src="" width="1000" height="700" />
@@ -1350,5 +1372,48 @@ __EOF__
 
 zip -r0  "${params.prefix?:""}archive.zip" "${dir}"
 rm -rf '${dir}'
+"""
+}
+
+process ANNOT_HITS {
+afterScript "rm -rf TMP"
+label "process_quick"
+input:
+	path("INPUT/*")
+output:
+	path("digest.tsv")
+script:
+	def treshold=7.0
+"""
+export LC_ALL=C
+set -o pipefail
+mkdir -p TMP
+find INPUT -name "*.gz" |\
+while read F
+do
+	gunzip -c "\${F}" |\\
+		awk -vF="\${F##*/}" '(\$1=="CHROM") {printf("#%s\\tSymbol\tFile\\n",\$0);next;} (\$12>${treshold}) {G=\$3; gsub(/[0-9\\.]*\$/,"",G); gsub(/\\.singleton\$/,"",G);gsub(/\\.[a-zA-z0-9]+\$/,"",G);printf("%s\\t%s\\t%s\\n",\$0,G,F);}' >> TMP/jeter.a
+done
+
+sort -t '\t' -T TMP -k14,14 TMP/jeter.a | uniq > TMP/jeter.c
+mv TMP/jeter.c TMP/jeter.a
+
+# col 3 gene name 'Symbol'
+# col 9 description
+wget -O - "https://ftp.ncbi.nih.gov/gene/DATA/gene_info.gz" |\\
+	gunzip -c |\\
+	awk -F '\t' '(\$1=="#tax_id" || \$1=="9606")' |\\
+	cut -f3,9 |\\
+	sort -t '\t' -T TMP -k1,1 > TMP/jeter.b
+
+
+join -t '\t' -1 14 -2 1 -a 1 -o '1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,1.10,1.11,1.12,1.13,1.14,1.15,2.2' -e '.'  TMP/jeter.a TMP/jeter.b > TMP/jeter.c
+
+grep "^#CHROM" -m1 TMP/jeter.c > TMP/jeter.a
+grep -v "^#CHROM" TMP/jeter.c |\\
+	sort -t '\t' -T TMP -k12,12gr >> TMP/jeter.a
+
+
+mv TMP/jeter.a digest.tsv
 """
 }

@@ -24,107 +24,46 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-
-
-gazoduc.build("bams", "NO_FILE").
-	desc("File containing the paths to the indexed BAM/CRAM files.").
-	existingFile().
-	required().
-	put()
-
-gazoduc.make("max_cases",2).
-	description("max number of cases per plot").
-	setInt().
-	put()
-
-gazoduc.make("max_controls",2).
-	description("max number of controls per plot").
-	setInt().
-	put()
-
-gazoduc.make("vcf","NO_FILE").
-	description("input vcf").
-	existingFile().
-	required().
-	put()
-
-gazoduc.make("extraCmdWallyRegion", "--clip").
-	description("extra arguments to wally regions").
-	put()
-
-gazoduc.make("mapq", 1).
-	description("min mapping quality").
-	put()
-
-
-include {WALLY_DOWNLOAD_01} from '../../modules/wally/wally.download.01.nf'
+// use conda include {WALLY_DOWNLOAD_01} from '../../modules/wally/wally.download.01.nf'
 include {runOnComplete} from '../../modules/utils/functions.nf'
-include {SAMTOOLS_SAMPLES} from '../../modules/samtools/samtools.samples.03.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
-include {moduleLoad;isBlank;isHg38;isHg19} from '../../modules/utils/functions.nf'
 include {DOWNLOAD_GNOMAD_SV_01} from '../../subworkflows/gnomad/download_gnomad_sv.01.nf'
 include {DOWNLOAD_DGV_01} from '../../modules/dgv/download.dgv.01.nf'
-include {SIMPLE_ZIP_01} from '../../modules/utils/zip.simple.01.nf'
-include {SIMPLE_PUBLISH_01} from '../../modules/utils/publish.simple.01.nf'
-include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 
 if( params.help ) {
-    gazoduc.usage().
-	name("Wally").
-	desc("Plot coverage for a set of bams using wally").
-	print();
     exit 0
-} else {
-   gazoduc.validate();
 }
 
 
 
+
 workflow {
-	ch = WALLY_REGION_01([:], params.genomeId, file(params.vcf), params.bams, file("NO_FILE"), file("NO_FILE") )
-	html = VERSION_TO_HTML(params,ch.version)
-	SIMPLE_PUBLISH_01(params, Channel.empty().mix(html.html).mix(ch.version).mix(ch.zip).collect())
+	genome = Channel.of(file(params.fasta),file(params.fai),file(params.dict)).collect()
+	ch = WALLY_REGION_01(genome, file(params.vcf), file(params.samplesheet) )
 	}
 
 runOnComplete(workflow);
 
 workflow WALLY_REGION_01 {
     take:
-	    meta
-	    genomeId
+	    genome
 	    vcf
-	    bams
-	    bed
-	    excludeids
+	    samplesheet
     main:
-		version_ch = Channel.empty()
 
-
-		ch1_ch = SAMTOOLS_SAMPLES0([:],bams)
-		version_ch = version_ch.mix(ch1_ch.version)
-
-	        wally_ch = WALLY_DOWNLOAD_01([:])
-                version_ch = version_ch.mix(wally_ch.version)
-
-		compile_ch = COMPILE_VCF_PARSER([:],genomeId)
-		version_ch = version_ch.mix(compile_ch.version)
-
+		ch1_ch = Channel.fromPath(samplesheet).splitCsv(header:true,sep:'\t')
 
 		merge_ch = Channel.empty()
-		gnomad_ch = DOWNLOAD_GNOMAD_SV_01([:], genomeId)
-		version_ch = version_ch.mix(gnomad_ch.version)
+
+		compile_ch = COMPILE_VCF_PARSER(genome)
+		gnomad_ch = DOWNLOAD_GNOMAD_SV_01(genome)
 		merge_ch = merge_ch.mix(gnomad_ch.bed)
 
-		dgv_ch = DOWNLOAD_DGV_01([:], genomeId)
-		version_ch = version_ch.mix(dgv_ch.version)
+		dgv_ch = DOWNLOAD_DGV_01(genome)
 		merge_ch = merge_ch.mix(dgv_ch.bed)
 
-		known_ch = MERGE_KNOWN([:],merge_ch.collect())
-		version_ch = version_ch.mix(known_ch.version)
+		known_ch = MERGE_KNOWN(merge_ch.collect())
 
-
-	        splitctx_ch = SPLIT_VARIANTS([:],vcf,excludeids, compile_ch.jar)		
-		version_ch = version_ch.mix(splitctx_ch.version)
+	        splitctx_ch = SPLIT_VARIANTS(vcf,excludeids, compile_ch.jar)		
 
 		ch2_ch = splitctx_ch.output.splitCsv(header:true,sep:'\t').
 			combine(ch1_ch.rows.filter{T->T.genomeId.equals(genomeId)}).
@@ -134,17 +73,10 @@ workflow WALLY_REGION_01 {
 				"max_controls":(params.max_controls?:10)
 				])}
 
-	        plot_ch = PLOT_WALLY([:], genomeId, wally_ch.executable, known_ch.bed, ch2_ch)
-		version_ch = version_ch.mix(plot_ch.version)
+	        plot_ch = PLOT_WALLY(genome, wally_ch.executable, known_ch.bed, ch2_ch)
 
-		zip_ch = SIMPLE_ZIP_01([:],plot_ch.output.collect())
-		version_ch = version_ch.mix(zip_ch.version)
-
-
-		version_ch = MERGE_VERSION("Wally", version_ch.collect())
     emit:
-	    zip = zip_ch.zip
-	    version = version_ch
+	   	output = plot_ch.output
     }
 
 
@@ -152,8 +84,7 @@ process COMPILE_VCF_PARSER {
 executor "local"
 afterScript "rm -rf TMP"
 input:
-	val(meta)
-	val(genomeId)
+	val(genome)
 output:
 	path("minikit.jar"),emit:jar
 	path("version.xml"),emit:version
@@ -327,15 +258,6 @@ EOF
 
 javac -cp \${JVARKIT_DIST}/coverageplotter.jar -d TMP -sourcepath TMP TMP/Minikit.java
 jar cfm minikit.jar TMP/tmp.mf -C TMP .
-
-###############################################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="description">compile minikit</entry>
-	<entry key="javac.version">\$(javac -version 2>&1)</entry>
-</properties>
-EOF
 """
 }
 
@@ -350,7 +272,6 @@ input:
 	val(minikit)
 output:
        	path("${params.prefix?:""}variants.tsv"),emit:output
-        path("version.xml"),emit:version
 script:
 	def extra_filter = params.extra_vcf_filter?:""
 """
@@ -363,34 +284,21 @@ bcftools view "${vcf}" |\
 	java -cp  \${JVARKIT_DIST}/coverageplotter.jar:${minikit} Minikit --vcf "${vcf}" \
 		${excludeids.name.equals("NO_FILE")?"":"--excludeids \"${excludeids}\""} > "${params.prefix?:""}variants.tsv"
 
-
-
-###############################################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="description">extract variants</entry>
-	<entry key="vcf">${vcf}</entry>
-</properties>
-EOF
 """
 }
 
 process MERGE_KNOWN {
 input:
-	val(meta)
-	val(L)
+	path("INPUT/*")
 output:
 	path("merged.bed.gz"),emit:bed
 	path("merged.bed.gz.tbi")
-	path("version.xml"),emit:version
 script:
 """
 hostname 1>&2
-${moduleLoad("htslib")}
 set -o pipefail
 
-gunzip -c ${L.join(" ")} |\
+gunzip -c INPUT/*.gz |\
 	grep -v "^#" |\
 	cut -f 1-4 |\
 	awk -F '\t' '(\$2 != \$3)' |\
@@ -399,15 +307,6 @@ gunzip -c ${L.join(" ")} |\
 
 bgzip merged.bed
 tabix -p bed merged.bed.gz
-
-###############################################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">merge known files</entry>
-        <entry key="number.of.files">${L.size()}</entry>
-</properties>
-EOF
 """
 }
 
@@ -417,14 +316,12 @@ tag "${row.interval}"
 afterScript "rm -rf TMP"
 memory "10g"
 input:
-	val(meta)
-	val(genomeId)
+	val(genome)
         path(wally)
 	val(known)
 	val(row)
 output:
 	path("${row.title}.png"),emit:output
-	path("version.xml"),emit:version
 script:
 	def genome = params.genomes[genomeId]
 	def reference = genome.fasta
@@ -465,16 +362,6 @@ ${wally.toRealPath()} region ${params.extraCmdWallyRegion} \
 	`cat TMP/all.bams.list`
 
 mv -v *.png "${row.title}.png"
-
-###############################################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="description">plot CNV</entry>
-	<entry key="interval">${row.interval}</entry>
-	<entry key="mapq">${mapq}</entry>
-</properties>
-EOF
 """
 }
 
