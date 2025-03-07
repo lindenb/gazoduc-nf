@@ -32,8 +32,8 @@ workflow ANNOTATE_SV_VCF_01 {
 		reference //bag fasta,fai/dict
 		vcf_ch // channel containing [vcf,vcfidx]
 	main:
-		gtf1_ch = PROCESS_GTF1()
-		gtf2_ch = PROCESS_GTF2()
+		gtf1_ch = PROCESS_GTF1(file(params.gtf),file(params.gtf+".tbi"))
+		gtf2_ch = PROCESS_GTF2(file(params.gtf),file(params.gtf+".tbi"))
 		gnomad_ch = DOWNLOAD_GNOMAD_SV(reference)
 		dgv_ch = DOWNLOAD_DGV(reference) 
 		ensemblreg_ch = DOWNLOAD_ENSEMBL_REG(reference)
@@ -57,6 +57,9 @@ workflow ANNOTATE_SV_VCF_01 {
 process PROCESS_GTF1 {
 label "process_quick"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
+input:
+	path(gtf)
+	path(gtf_tbi)
 output:
 	path("gtf.features.*"),emit:output
 script:
@@ -82,6 +85,9 @@ echo '##INFO=<ID=GTF_FEATURE,Number=.,Type=String,Description="features from ${p
 process PROCESS_GTF2 {
 label "process_quick"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
+input:
+	path(gtf)
+	path(gtf_tbi)
 output:
 	path("gtf.genes.*"),emit:output
 script:
@@ -90,7 +96,7 @@ set -xe
 set -o pipefail
 
 
-java -jar \${JVARKIT_DIST}/jvarkit.jar gtf2bed --columns "gtf.feature,gene_name" "${params.gtf}" |\\
+jvarkit gtf2bed --columns "gtf.feature,gene_name" "${gtf}" |\\
 	awk -F '\t' '(\$4=="gene" && \$5!=".")' |\\
 	cut -f1,2,3,5 |\\
 	LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n |\\
@@ -98,7 +104,7 @@ java -jar \${JVARKIT_DIST}/jvarkit.jar gtf2bed --columns "gtf.feature,gene_name"
 
 tabix -p bed -f gtf.genes.bed.gz
 
-echo '##INFO=<ID=GENE,Number=.,Type=String,Description="gene from ${params.gtf}">' > gtf.genes.hdr
+echo '##INFO=<ID=GENE,Number=.,Type=String,Description="gene from ${gtf}">' > gtf.genes.hdr
 
 """
 }
@@ -132,7 +138,7 @@ test -s TMP/jeter.url
 wget -O - `cat TMP/jeter.url` |\\
 	gunzip -c |\\
 	awk -F '\t' '(NR==1){col=-1;for(i=1;i<=NF;i++) {if(col<0 && (\$i=="GRPMAX_AF" ||\$i=="POPMAX_AF")) col=i;} next;} {if(col>1) printf("%s\\t%s\\t%s\\t%s\\t%s\\n",\$1,\$2,\$3,\$4,(\$col ~ /^[0-9Ee\\-\\.]+\$/? \$col:"."));}'  |\
-	java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${dict}" --column 1 --convert SKIP  |\\
+	jvarkit bedrenamechr -f "${dict}" --column 1 --convert SKIP  |\\
 	LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n |\\
         uniq | bgzip > gnomad.sv.bed.gz
 	
@@ -172,7 +178,7 @@ if -s TMP/jeter.url
 then
 	wget -O - `cat TMP/jeter.url` |\\
 		bcftools query -f '%CHROM\t%POS0\t%END\t%ID\\_%SVTYPE\\n'  |\
-		java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${dict}" --column 1 --convert SKIP  |\\
+		jvarkit bedrenamechr -f "${dict}" --column 1 --convert SKIP  |\\
 		LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n | uniq |\\
 		bgzip >  decode.bed.gz
 
@@ -219,7 +225,7 @@ test -s TMP/jeter.url
 wget -O - `cat TMP/jeter.url` |\\
 	gunzip -c |\
 	awk '/^#/ {next;} {printf("%s\t%d\t%s\t%s\\n",\$1,int(\$4)-1,\$5,\$3);}' |\\
-	java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${dict}" --column 1 --convert SKIP  |\\
+	jvarkit bedrenamechr -f "${dict}" --column 1 --convert SKIP  |\\
 	LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n | uniq |\\
 	bgzip > ensembl.reg.bed.gz
 
@@ -259,7 +265,7 @@ test -s TMP/jeter.url
 
 wget  -O - `cat TMP/jeter.url` |\
 	awk -F '\t' '(NR==1){col=-1;for(i=1;i<=NF;i++) {if(col<0 && \$i=="frequency") col=i;} next;} {if(col>1) printf("%s\\t%s\\t%s\\t%s\\t%s\\n",\$2,\$3,\$4,\$1,(\$col ~ /^[0-9Ee\\-\\.]+\$/? \$col:"."));}'  |\
-	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${dict}" --column 1 --convert SKIP |\
+	java bedrenamechr -f "${dict}" --column 1 --convert SKIP |\
 	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\\
 	bgzip > dgv.bed.gz
 
