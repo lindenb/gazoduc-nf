@@ -440,8 +440,10 @@ process FILTER_DELLY {
     output:
 	path("sv.bcf*"),emit:output
     script:
-	def tag = params.delly2.version.equals("1.1.6")?"":"-t"
-	def vcfin = merged.find{it.name.endsWith("f")}.first()
+	                
+	def version = params.delly2_version?:""
+	def tag = version.equals("1.1.6")?"":"-t"
+	def vcfin = merged.find{it.name.endsWith("f")}
     """
     export LC_ALL=C
     module load bcftools/0.0.0
