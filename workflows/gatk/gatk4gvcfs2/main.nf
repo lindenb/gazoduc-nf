@@ -188,24 +188,10 @@ test -s "sample.\${MD5}.map"
 """
 }
 
-process MERGE_SAMPLE_MAP {
-executor "local"
-afterScript "rm -rf TMP"
-input:
-	path(sms)
-output:
-	path("sample.map"),emit:output
-script:
-"""
-mkdir -p TMP
-cat ${sms} | LC_ALL=C sort -t '\t' -k1,1 -T TMP > sample.map
-test -s sample.map
-"""
-}
-
 
 process HC_BAM_BED {
 tag "${bed.name} ${bam.name}"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 label "process_quick"
 afterScript "rm -rf TMP"
 errorStrategy "retry"
@@ -220,7 +206,6 @@ output:
 script:
 """
 hostname 1>&2
-module load gatk/0.0.0
 mkdir -p TMP
 
    gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" HaplotypeCaller \\
@@ -241,6 +226,7 @@ mv TMP/jeter.g.vcf.gz.tbi "${bam.getBaseName()}.g.vcf.gz.tbi"
 
 process VCF_CONCAT1 {
 label "process_high"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 cpus 20
 time "24h"
 afterScript "rm -rf TMP"
@@ -252,7 +238,6 @@ script:
 	
 """
 hostname 1>&2
-module load bcftools
 set -o pipefail
 mkdir -p TMP
 set -x
@@ -270,6 +255,7 @@ mv -v TMP/output.\${MD5}.bcf.csi ./
 
 
 process VCF_CONCAT2 {
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 label "process_high"
 cpus 20
 time "24h"
@@ -281,7 +267,6 @@ output:
 script:
 """
 hostname 1>&2
-module load bcftools
 set -o pipefail
 mkdir -p TMP
 set -x
@@ -305,6 +290,7 @@ mv -v TMP/output.bcf.csi ./
 
 process BCFTOOLS_STATS {
 label "process_medium"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 cpus 10
 input:
         tuple path(fasta),path(fai),path(dict)
@@ -315,7 +301,6 @@ script:
 	
 """
 hostname 1>&2
-module load  bcftools
 mkdir -p TMP
 
 bcftools stats --threads ${task.cpus} --samples - --fasta-ref "${fasta}" "${vcf}" > "stats.txt"
@@ -324,6 +309,7 @@ bcftools stats --threads ${task.cpus} --samples - --fasta-ref "${fasta}" "${vcf}
 }
 
 process MULTIQC {
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 label "process_medium"
 input:
 	path(sample2pop)
@@ -334,7 +320,6 @@ script:
 	def prefix = params.prefix
 """
 hostname 1>&2
-module load jvarkit multiqc
 mkdir -p TMP
 echo "${stats}" > TMP/jeter.list
 

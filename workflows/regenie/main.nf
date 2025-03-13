@@ -88,12 +88,60 @@ workflow {
 		annot_type.combine(wch2_ch.output)
 		)
 
+	annot3_ch = SPLIT_OVERLAPING_ANNOT(
+		annot2_ch.output
+		)
+
+	/* group non overlaping annotations files by prefix */
+	annot_ch4 = annot3_ch.output.flatMap{T->{
+		def title = T[0];
+		def contig = T[1];
+		def files = T[2];
+		if(files.size()%3!=0) throw new IllegalStateException("expected multiple of 3 files but got "+files.size()+" " + files );
+		def L=[];
+		java.util.Set<String> prefixes = new java.util.HashSet<>();
+		for(int i=0;i< files.size();i++) {
+			def file = files[i];
+			String s = file.name;
+			int dot = s.indexOf(".");
+			prefixes.add(s.substr(0,dot));
+			}
+		for(String prefix:prefixes) {
+			def L2=[title,contig,null,null,null];
+			for(int i=0;i< files.size();i++) {
+				def file = files[i];
+				String s = file.name;
+	                        int dot = s.indexOf(".");
+				String pfx = s.substr(0,dot);
+				if(!prefix.equals(pfx)) continue;
+				if(s.endsWith("annot.txt")) {
+					T2[2]=file;
+					}
+				else if(s.endsWith("mask.txt")) {
+					T2[3]=file;
+					}
+				else if(s.endsWith("setfile.txt")) {
+					T2[4]=file;
+					}
+				else
+					{
+					throw new IllegalStateException("boum "+file);
+					}
+				}
+			if(T2[2]==null) IllegalStateException("boum T2[2]");
+			if(T2[3]==null) IllegalStateException("boum T2[3]");
+			if(T2[4]==null) IllegalStateException("boum T2[4]");
+			L.add(L2);
+			}
+		return L;
+		}}
+
 	step2_ch = STEP2(
 		bgen_ch.output,
 		covar_ch,
 		snsheet_ch.output, 
 		loco_ch ,
-		annot2_ch.output
+		annot3_ch.output
 		)
 
 	 step2_ch.output.groupTuple().view()
@@ -644,7 +692,7 @@ input:
 	path(user_bed)//optional 
         tuple val(title),val(contig),path(vcf_files)
 output:
-	tuple val(title),val(contig),path("*.annot.txt"),path("*.mask.txt"),path("*.setfile.txt"),emit:output
+	tuple val(title),val(contig),path("*.annot.txt.gz"),path("*.mask.txt.gz"),path("*.setfile.txt.gz"),emit:output
 script:
 	def args = title.equals("userbed")? " -b '${user_bed}' -w -1 " : (title.equals("sliding")?" -w ${params.window_size} ":" -w -1 ")
 	def vcf = vcf_files.find{it.name.endsWith(".bcf") || it.name.endsWith(".vcf.gz")}
@@ -664,7 +712,7 @@ javac -sourcepath TMP -cp "\${JVARKIT_JAR}" -d TMP TMP/Minikit.java
 
 bcftools view -G -O v '${vcf}' |\\
 	java -Xmx${task.memory.giga}g \
-		-Djava.io.tmpdir=TMP  \\
+		-Djava.io.tmpdir=TMP \\
 		-cp TMP:\${JVARKIT_JAR} Minikit \\
 			-a TMP/jeter.annot.txt \\
 			-s TMP/jeter.setfile.txt \\
@@ -672,9 +720,46 @@ bcftools view -G -O v '${vcf}' |\\
 			-f ${params.freq} \\
 			${args}
 
-mv -v TMP/jeter.annot.txt "regenie.${contig}.annot.txt"
-mv -v TMP/jeter.mask.txt "regenie.${contig}.mask.txt"
-mv -v TMP/jeter.setfile.txt "regenie.${contig}.setfile.txt"
+gzip --best TMP/jeter.*.txt
+mv -v TMP/jeter.annot.txt.gz "regenie.${contig}.annot.txt.gz"
+mv -v TMP/jeter.mask.txt.gz "regenie.${contig}.mask.txt.gz"
+mv -v TMP/jeter.setfile.txt.gz "regenie.${contig}.setfile.txt.gz"
+"""
+}
+
+
+
+process SPLIT_OVERLAPING_ANNOT {
+tag "chr${contig} ${title}"
+label "process_quick_high"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
+input:
+        tuple val(title),val(contig),path(annot),path(mask),path(setfile)
+output:
+	tuple val(title),val(contig),path("OUTPUT/*"),emit:output
+script:
+"""
+set -o pipefail
+mkdir -p TMP/OUTPUT
+
+JD1=`which jvarkit`
+echo "JD1=\${JD1}" 1>&2
+# directory of jvarkit
+JD2=`dirname "\${JD1}"`
+# find the jar itself
+JVARKIT_JAR=`find "\${JD2}/../.." -type f -name "jvarkit.jar" | head -n1`
+
+cp -v "${moduleDir}/Minikit3.java" TMP/Minikit.java
+javac -sourcepath TMP -cp "\${JVARKIT_JAR}" -d TMP TMP/Minikit.java
+
+java -Xmx${task.memory.giga}g \
+	-Djava.io.tmpdir=TMP  \\
+	-cp TMP:\${JVARKIT_JAR} Minikit \\
+	-o TMP/OUTPUT \\
+	"${annot}" "${setfile}" "${mask}"
+	
+mv TMP/OUTPUT ./OUTPUT
 """
 }
 

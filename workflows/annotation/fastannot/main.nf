@@ -28,7 +28,7 @@ include {moduleLoad;runOnComplete} from '../../../modules/utils/functions.nf'
 //include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 //include {BCFTOOLS_CONCAT_01} from '../bcftools/bcftools.concat.01.nf'
 //include {JVARKIT_VCF_TO_BED_01} from '../jvarkit/jvarkit.vcf2bed.01.nf'
-
+include {SNPEFF_DOWNLOAD} from '../../../modules/snpeff/download'
 
 workflow  {
 
@@ -49,7 +49,7 @@ workflow  {
 		vcf2inter_ch = VCF_TO_INTERVALS(vcf2bed_ch.output.splitCsv(header:false,sep:'\t').map{it.flatten()}, file(params.bed))
 
 		//vcf2inter_ch.splitCsv(header:false,sep:'\t').view()
-		snpeff_ch = DOWNLOAD_SNPEFF_DB()
+		snpeff_ch =SNPEFF_DOWNLOAD(params.snpeff_db)
 
 
 		annot_ch = ANNOT(
@@ -67,13 +67,13 @@ workflow  {
 
 process VCF_TO_BED {
 label "process_quick"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	tuple path(vcf),path(vcfidx)
 output:
 	tuple path("vcf.bed"),path(vcf),path(vcfidx),emit:output
 script:
 """
-module load bcftools bedtools
 set -o pipefail
 
 bcftools index -s "${vcf}" |\
@@ -86,6 +86,7 @@ bcftools index -s "${vcf}" |\
 process VCF_TO_INTERVALS {
 tag "${contig} ${start0} ${end} ${vcf} ${vcfidx} ${bed}"
 label "process_quick"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
 	tuple val(contig),val(start0),val(end),path(vcf),path(vcfidx)
@@ -95,7 +96,6 @@ output:
 script:
 """
 mkdir -p TMP
-module load bedtools bcftools jvarkit
 
 echo -e "${contig}\t${start0}\t${end}" > TMP/jeter1.bed
 
@@ -110,7 +110,7 @@ if test  -s TMP/jeter1.bed
 then
 
 	bcftools view -G --regions-file TMP/jeter1.bed  "${vcf}" |\\
-		java -jar -Xmx${task.memory.giga}G  -Djava.io.tmpdir=TMP \${JVARKIT_DIST}/jvarkit.jar vcf2intervals --distance ${params.vcf2interval_distance} --bed |\\
+		jvarkit -Xmx${task.memory.giga}G  -Djava.io.tmpdir=TMP vcf2intervals --distance ${params.vcf2interval_distance} --bed |\\
 		cut -f1,2,3 > TMP/intervals.bed
 
 	mv TMP/intervals.bed ./
@@ -123,27 +123,11 @@ fi
 
 
 
-process  DOWNLOAD_SNPEFF_DB {
-tag "${params.snpeff_db}"
-label "process_short"
-output:
-        path("SNPEFF"),emit:output
-script:
-"""
-module load snpEff/5.2.c
-mkdir -p SNPEFFX TMP
-java -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP -jar \${SNPEFF_JAR} \\
-	download \\
-	-dataDir "\${PWD}/SNPEFFX"  \\
-	'${params.snpeff_db}'
-test -s SNPEFFX/*/snpEffectPredictor.bin
-mv SNPEFFX SNPEFF
-"""
-}
 
 
 process ANNOT {
 tag "${contig}:${start0}-${end}"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 label "process_quick"
 afterScript "rm -rf TMP"
 memory "5g"
@@ -159,11 +143,10 @@ script:
 	def gnomadPop = params.gnomadPop
 	def soacn = params.soacn
 	def soft_filters = params.soft_filters.toLowerCase().split("[, ]");
-	def soft_filter_gnomad = soft_filters.contains("gnomad")
-	def soft_filter_so = soft_filters.contains("so")
+	def soft_filter_gnomad = soft_filters.contains("gnomad") || params.soft_filters.equals("*")
+	def soft_filter_so = soft_filters.contains("so") || params.soft_filters.equals("*")
 """
 hostname 1>&2
-module load bedtools bcftools jvarkit snpEff/5.2.c
 mkdir -p TMP
 
 
@@ -181,19 +164,19 @@ bcftools view --regions-file TMP/jeter.bed -O u  -o TMP/jeter1.bcf "${vcf}"
 
 
 bcftools view TMP/jeter1.bcf |\\
-java -jar -Xmx${task.memory.giga}G  -Djava.io.tmpdir=TMP \${SNPEFF_JAR} eff \\
+snpEff -Xmx${task.memory.giga}G  -Djava.io.tmpdir=TMP eff \\
 	-dataDir "\${PWD}/${snpeffdir}" \\
 	-nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf "${params.snpeff_db}" > TMP/jeter1.vcf
 
 
 if ${!soacn.isEmpty()} ; then
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcffilterso \\
+	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  vcffilterso \\
 		${soft_filter_so?"--filterout BAD_SO":""} \\
 		--acn "${soacn}" TMP/jeter1.vcf > TMP/jeter2.vcf
 	mv TMP/jeter2.vcf TMP/jeter1.vcf
 fi
 
-java -Xmx${task.memory.giga}G  -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar vcfgnomad  --bufferSize 10000 \
+jvarkit -Xmx${task.memory.giga}G  -Djava.io.tmpdir=TMP vcfgnomad  --bufferSize 10000 \
 		--gnomad "${params.gnomad}" \
 		--fields "${gnomadPop}" \
 		--max-af "${gnomadAF}" TMP/jeter1.vcf > TMP/jeter2.vcf
@@ -208,13 +191,21 @@ then
 fi
 
 
-if ${params.containsKey("cadd") && !params.cadd.isEmpty()}
+if ${params.cadd!=null && !params.cadd.contains(".")}
 then
 
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfcadd \
+	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  vcfcadd \
                         --tabix "${params.cadd}" TMP/jeter1.vcf > TMP/jeter2.vcf
         mv TMP/jeter2.vcf TMP/jeter1.vcf
 fi
+
+
+if ${params.set_id!=null && !params.set_id.isEmpty()}
+then
+	bcftools annotate --set-id ${params.set_id}  TMP/jeter1.vcf > TMP/jeter2.vcf
+        mv TMP/jeter2.vcf TMP/jeter1.vcf
+fi
+
 
 bcftools view TMP/jeter1.vcf -O b9 -o "${contig}_${start0}_${end}.annot.bcf"
 
@@ -226,13 +217,13 @@ bcftools index -f "${contig}_${start0}_${end}.annot.bcf"
 
 process CONCAT {
 label "process_short"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	path("VCF/*")
 output:
 	path("annot.*"),emit:output
 script:
 """
-module load bcftools
 find VCF  \\( -name "*.vcf.gz" -o -name "*.bcf" \\) > jeter.list
 test -s jeter.list
 bcftools concat -a -d all --file-list jeter.list -O b9 -o annot.bcf

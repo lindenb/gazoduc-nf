@@ -12,6 +12,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import com.beust.jcommander.Parameter;
@@ -27,6 +28,7 @@ import com.github.lindenb.jvarkit.util.vcf.predictions.AnnPredictionParser;
 import com.github.lindenb.jvarkit.util.vcf.predictions.AnnPredictionParserFactory;
 
 import htsjdk.samtools.util.CloseableIterator;
+import htsjdk.samtools.util.CoordMath;
 import htsjdk.samtools.util.Interval;
 import htsjdk.samtools.util.IntervalTreeMap;
 import htsjdk.samtools.util.SortingCollection;
@@ -178,63 +180,79 @@ public class Minikit extends Launcher {
 
 	private void dumpFunctional(final SortingCollection<Variation> sorter, final AnnPredictionParser annParser, final VariantContext ctx) throws Exception {
 		
-		Double best_score = null;
-		Prediction best_pred = null;
-		String best_gene = null;
 		
 		final String altstr = ctx.getAlternateAllele(0).getDisplayString();
 		final List<AnnPredictionParser.AnnPrediction> predictions = annParser.getPredictions(ctx);
 			
-		for(AnnPredictionParser.AnnPrediction pred:predictions) {
-			String gene_name = pred.getGeneName();
-			if(gene_name.isEmpty()|| gene_name.equals(".")) {
-				gene_name= pred.getGeneId();
-				}
-			if(gene_name.isEmpty() || gene_name.equals(".")) continue;
-			if(!pred.getAllele().equalsIgnoreCase(altstr)) continue;
-			for(String pred_key : pred.getSOTermsStrings()) {
-				if(pred_key.equals("intergenic_region")) continue;
-				final Prediction p = scores.getOrDefault(pred_key, null);
-				if (p == null) throw new IOException("undefined prediction key "+pred_key);
-				if (best_score == null || best_score.compareTo(p.score) < 0) {
-					best_score = p.score;
-					best_pred = p;
-					best_gene = gene_name;
+		
+		
+		for(int side=0;side< 2;++side) {
+			final Function<AnnPredictionParser.AnnPrediction, String> extract_gene = side==0?
+					PRED->PRED.getGeneName():
+					PRED->PRED.getFeatureId()
+					;
+			
+			final Set<String> gene_names=predictions.stream().
+					map(extract_gene).
+					filter(S->!(S.isEmpty()|| S.equals("."))).
+					collect(Collectors.toSet());
+					
+			
+			for(String gene_name:gene_names) {
+				Double best_score = null;
+				Prediction best_pred = null;
+				for(AnnPredictionParser.AnnPrediction pred:predictions) {
+					if(!gene_name.equals(extract_gene.apply(pred))) continue;
+					if(!pred.getAllele().equalsIgnoreCase(altstr)) continue;
+					for(String pred_key : pred.getSOTermsStrings()) {
+						if(pred_key.equals("intergenic_region")) continue;
+						final Prediction p = scores.getOrDefault(pred_key, null);
+						if (p == null) throw new IOException("undefined prediction key "+pred_key);
+						if (best_score == null || best_score.compareTo(p.score) < 0) {
+							best_score = p.score;
+							best_pred = p;
+							}
+						}
+					}
+				
+				if (best_score != null) {
+					best_pred.found=true;
+					final Variation v = new Variation();
+					v.contig = fixContig(ctx.getContig());
+					v.pos = ctx.getStart();
+					v.id = ctx.getID();
+					v.gene = gene_name;
+					v.prediction = best_pred.name;
+					v.score = best_score;
+					v.cadd = getCaddScore(ctx);
+					sorter.add(v);
 					}
 				}
 			}
 					
 
-		if (best_score != null) {
-			best_pred.found=true;
-			final Variation v = new Variation();
-			v.contig = fixContig(ctx.getContig());
-			v.pos = ctx.getStart();
-			v.id = ctx.getID();
-			v.gene = best_gene;
-			v.prediction = best_pred.name;
-			v.score = best_score;
-			v.cadd = getCaddScore(ctx);
-			sorter.add(v);
-			}
+		
 		}
 
 
 	private void dumpSliding(final SortingCollection<Variation> sorter, final VariantContext ctx) throws Exception {
-		final int  win_pos = 1 + (((int)(ctx.getStart()/(double)this.window_size)) * this.window_size);
-
+			int  win_pos = 1 + (((int)(ctx.getStart()/(double)this.window_size)) * this.window_size);
+			int shift = Math.max(this.window_size/3, 1);
 			sliding_prediction.found = true;
-			
-			final Variation v = new Variation();
-			v.contig = fixContig(ctx.getContig());
-			v.pos = ctx.getStart();
-			v.id = ctx.getID();
-			v.gene = ctx.getContig()+ "_" + (win_pos) + "_" + (win_pos - 1 + this.window_size) ;
-			v.prediction = sliding_prediction.name;
-			v.score = sliding_prediction.score;
-			v.cadd = getCaddScore(ctx);
-			sorter.add(v);
-		}
+			do {
+				final Variation v = new Variation();
+				v.contig = fixContig(ctx.getContig());
+				v.pos = ctx.getStart();
+				v.id = ctx.getID();
+				v.gene = ctx.getContig()+ "_" + (win_pos) + "_" + (win_pos - 1 + this.window_size) ;
+				v.prediction = sliding_prediction.name;
+				v.score = sliding_prediction.score;
+				v.cadd = getCaddScore(ctx);
+				sorter.add(v);
+				
+				win_pos+=shift;
+				} while(CoordMath.overlaps(win_pos, win_pos+this.window_size-1, ctx.getStart(), ctx.getEnd()));
+			}
 	
 	private void dumpUserBed(final SortingCollection<Variation> sorter, final VariantContext ctx) throws Exception {
 			
