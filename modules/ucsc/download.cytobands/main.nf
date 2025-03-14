@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -44,8 +44,9 @@ mkdir -p TMP
 set -o pipefail
 
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:${k1.hg38}	https://hgdownload.cse.ucsc.edu/goldenPath/hg38/database/cytoBandIdeo.txt.gz
 1:${k1.hg19}	https://hgdownload.cse.ucsc.edu/goldenPath/hg19/database/cytoBandIdeo.txt.gz
+1:${k1.hg38}	https://hgdownload.cse.ucsc.edu/goldenPath/hg38/database/cytoBandIdeo.txt.gz
+1:${k1.canFam3}	https://hgdownload.cse.ucsc.edu/goldenPath/canFam3/database/cytoBandIdeo.txt.gz
 1:${k1.canFam4}	https://hgdownload.cse.ucsc.edu/goldenPath/canFam4/database/cytoBandIdeo.txt.gz
 EOF
 

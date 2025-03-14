@@ -96,12 +96,22 @@ workflow DIVIDE_AND_CONQUER {
 		failed= failed_ch
 	}
 
+boolean isClusterError(task) {
+	if(task==null) return false;
+	if(task.previousException == null) return false;
+	String s = task.previousException.message;
+	if(s.startsWith("Error submitting process ") && s.endsWith("for execution")) {
+		return true;
+		}
+	return false;
+	}
+
 process GRAPHTYPER {
 label "process_quick"
 tag "(level ${level}) ${contig}:${start}-${end}"
 conda "${moduleDir}/../../../conda/graphtyper.yml"
 afterScript "rm -rf TMP TMP2"
-errorStrategy  = "ignore"
+errorStrategy  = {isClusterError(task)?"terminate":"ignore"}
 input:
 	val(level)
 	path(samplesheet)

@@ -96,8 +96,15 @@ workflow {
         level6 = DIVIDE_AND_CONQUER6(6, samplesheet_ch.output , level5.failed)
         merge_ch = merge_ch.mix(level6.ok)
 
+	SAVE_FAILED(level6.failed.map{it.join("\t")}.collect())
 
-        MERGE(merge_ch.groupTuple())
+        MERGE(merge_ch.map{T->{
+			String c = T[0];
+			if(!c.matches("(chr)?[0-9XY]+")) {
+				c="others";
+				}
+			return [c,T[1]];
+			}}.groupTuple())
 
         level6.failed.view{"${it} cannot be called"}
 
@@ -284,5 +291,19 @@ bcftools concat --write-index --threads ${task.cpus} -a -O b9 --file-list TMP/je
 
 mv TMP/jeter.bcf ${contig}.merged.bcf
 mv TMP/jeter.bcf.csi ${contig}.merged.bcf.csi
+"""
+}
+
+process SAVE_FAILED {
+executor "local"
+input:
+	val(L)
+output:
+	path("failed.txt"),emit:output
+script:
+"""
+cat << EOF | sort > failed.txt
+${L.join("\n")}
+EOF
 """
 }

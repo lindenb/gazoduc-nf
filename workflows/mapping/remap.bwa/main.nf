@@ -31,8 +31,7 @@ Takes a mapped set of BAM or CRAM files and remap them on a new reference
 */
 
 
-include {REMAP_BWA_01} from '../../../subworkflows/mapping/remap.bwa.01.nf'
-include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
+include {REMAP_BWA_01} from '../../../subworkflows/mapping/remap.bwa'
 include {dumpParams;runOnComplete} from '../../../modules/utils/functions.nf'
 
 
@@ -46,8 +45,8 @@ if( params.help ) {
 
 
 workflow {
-	remap_ch = REMAP_BWA_01(params, params.genomeId, params.bams, file(params.bed_in))
-	//html = VERSION_TO_HTML(params,remap_ch.version)	
+	genome = Channel.of(file(params.fasta), file(params.fai) , file(params.dict)).collect()
+	remap_ch = REMAP_BWA_01(genome, Channel.fromPath(params.samplesheet), file(params.bed))
 	}
 
 runOnComplete(workflow);

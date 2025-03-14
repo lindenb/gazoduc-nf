@@ -1,0 +1,9 @@
+name: bwa
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - bioconda::bwa=0.7.18
+  - bioconda::samtools=1.21
+  - bioconda::seqkit=2.10.0
