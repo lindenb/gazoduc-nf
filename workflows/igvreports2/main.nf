@@ -158,7 +158,7 @@ NROWS=`tail -n +2 TMP/merged.tsv | wc -l`
 # order on the number of base that is NOT the reference
 # Z is the sum of the other bases
 # N0 is the number of samples with Z==0
-awk -F '\t' 'BEGIN {N0=0;} (NR==1) {print;next;} {Z=0;A=int(\$16);C=int(\$17);G=int(\$18);T=int(\$19);Z=A+C+G+T; if(\$4=="A") Z-=A; if(\$4=="C") Z-=C; if(\$4=="G") Z-=G; if(\$4=="T") Z-=T; if(Z==0) {N0++;if(${max_score_0}>=0 ||N0>{max_score_0}) next;} printf("%d\t%s\\n",Z,\$0);}'  TMP/merged.tsv > TMP/jeter1.txt
+awk -F '\t' 'BEGIN {N0=0;} (NR==1) {print;next;} {Z=0;A=int(\$16);C=int(\$17);G=int(\$18);T=int(\$19);Z=A+C+G+T; if(\$4=="A") Z-=A; if(\$4=="C") Z-=C; if(\$4=="G") Z-=G; if(\$4=="T") Z-=T; if(Z==0) {N0++;if(${max_score_0}<=0 ||N0> ${max_score_0}) next;} printf("%d\t%s\\n",Z,\$0);}'  TMP/merged.tsv > TMP/jeter1.txt
 # save header 
 head -n1 TMP/jeter1.txt  >  TMP/jeter2.txt
 
@@ -166,7 +166,7 @@ head -n1 TMP/jeter1.txt  >  TMP/jeter2.txt
 tail -n +2  TMP/jeter1.txt |\\
 	LC_ALL=C sort -T TMP -t '\t' -k1,1nr -k6,6V | cut -f 2- >> TMP/jeter2.txt
 
-awk -F '\t' -vT=\${NROWS} '(NR==1) {printf("%s\tPAGE\tNPAGES\\n",\$0);next;} {printf("%s\t%d\t%s\\n",\$0,1+((NR-1)/${per_page}),1+(int(T)/${per_page}));}' TMP/jeter2.txt > TMP/merged2.tsv
+awk -F '\t' -vT=\${NROWS} '(NR==1) {printf("%s\tPAGE\tNPAGES\\n",\$0);next;} {printf("%s\t%d\t%d\\n",\$0,1+((NR-1)/${per_page}),1+(int(T)/${per_page}));}' TMP/jeter2.txt > TMP/merged2.tsv
 
 mv TMP/merged2.tsv TMP/merged.tsv
 
@@ -231,7 +231,7 @@ script:
 	def fasta = genome.find{it.name.endsWith("a")}
 	def refgene2 = refgene.find{it.name.endsWith(".txt.gz")}.join(" ")
 	def pagei = (page as int)
-	def page_maxi = (page_max as int)
+	def page_maxi = (int)(page_max as double)
         def navigation= "<a href=\"page"+(pagei==1?page_maxi:pagei-1)+".html\">[Previous]</a> " +
 		"<a href=\"index.html\">[Index]</a> " +
 		"<a href=\"page"+(pagei+1>page_maxi?1:pagei+1)+".html\">[Next]</a> "

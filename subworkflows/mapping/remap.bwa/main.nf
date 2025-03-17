@@ -240,15 +240,23 @@ samtools merge \\
 	-O  BAM \\
 	-o TMP/jeter.bam
 
-
-samtools markdup \\
-	-O CRAM \\
+# flags with ms
+samtools view -u -O BAM  -e '[ms]' TMP/jeter.bam |\\
+	samtools markdup \\
 	-s --json -f TMP/stats.json \\
 	-T TMP/tmp \\
-	--reference "${fasta}" \\
 	--threads ${task.cpus} \\
+	'-' "TMP/tmp1.bam"
+
+# without ms
+samtools view  -O BAM -e '![ms]' -o TMP/tmp2.bam TMP/jeter.bam
+
+samtools merge \\
+	--threads ${task.cpus} \\
+	--reference "${fasta}" \\
+	-O CRAM \\
 	--write-index \\
-	TMP/jeter.bam "TMP/${sample}.cram"
+	-o "TMP/${sample}.cram" TMP/tmp1.bam TMP/tmp2.bam
 
 mv TMP/stats.json markdup.${sample}.json
 mv -v TMP/${sample}.* ./
@@ -294,7 +302,7 @@ BWA_INDEX=`find ${bwa_index}/ -name "*.amb" | sed 's/\\.amb\$//'`
 	        -O -u --no-PG \\
         	--reference "${fasta}" \\
 	        - TMP/tmp.collate |\\
-        samtools fastq -n  -0 /dev/null -s /dev/null - |\\
+        samtools fastq -n  -0 TMP/R0.fq.gz -s TMP/Rs.fq.gz - |\\
 	bwa mem -t ${cpus2} \\
 		-p \\
 		-R '@RG\\tID:${ID}\\tSM:${sample}\\tLB:${LB}\\tCN:${CN}\\tPL:${PL}' \\
@@ -303,16 +311,32 @@ BWA_INDEX=`find ${bwa_index}/ -name "*.amb" | sed 's/\\.amb\$//'`
 
 
 	# collate
-	samtools collate -l 5 --threads ${task.cpus}  --output-fmt BAM --no-PG --reference "${reference}" -T TMP/tmp.collate -o TMP/jeter2.bam TMP/jeter.bam
+	samtools collate -l 5 --threads ${task.cpus}  --output-fmt BAM --no-PG --reference "${reference}" -T TMP/tmp2.collate -o TMP/jeter2.bam TMP/jeter.bam
 	mv TMP/jeter2.bam TMP/jeter.bam
 
 	# fixmate
 	samtools fixmate --threads  ${task.cpus} -mc --output-fmt BAM TMP/jeter.bam TMP/jeter2.bam
 	mv TMP/jeter2.bam TMP/jeter.bam
 
+	# sort
+	samtools sort --threads ${task.cpus} -o TMP/jeter2.bam -O BAM -T TMP/tmp TMP/jeter.bam
+	mv TMP/jeter2.bam TMP/jeter.bam
 
-samtools sort --threads ${task.cpus} -o TMP/jeter2.bam -O BAM -T TMP/tmp TMP/jeter.bam
-mv TMP/jeter2.bam TMP/jeter.bam
+
+	# map single reads
+	gunzip -c TMP/R0.fq.gz TMP/Rs.fq.gz |\\
+		bwa mem -t ${cpus2} \\
+			-R '@RG\\tID:${ID}\\tSM:${sample}\\tLB:${LB}\\tCN:${CN}\\tPL:${PL}' \\
+			"\${BWA_INDEX}" - |\\
+		samtools view -u -O BAM ${bed1.name.contains(".")?"-L \"${bed1}\"":""} |\\
+		samtools fixmate -umc  - - |\\
+		samtools sort -o TMP/jeter0.bam -O BAM  -T TMP/tmp3 -
+
+
+	# merge paired and single end
+	samtools merge --threads  ${task.cpus} -o TMP/merged.bam TMP/jeter.bam TMP/jeter0.bam
+	mv TMP/merged.bam TMP/jeter.bam
+
 
 samtools index  -@ ${task.cpus} TMP/jeter.bam
 

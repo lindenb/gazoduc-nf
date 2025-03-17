@@ -269,6 +269,7 @@ output:
         path("${contig}.merged.bcf")
         path("${contig}.merged.bcf.csi")
 script:
+	def args = "--remove-duplicates"
 """
 module load bcftools
 mkdir -p TMP
@@ -283,11 +284,11 @@ split -a 9 --additional-suffix=.list --lines=\${SQRT} TMP/jeter.list TMP/chunck.
 
 find TMP/ -type f -name "chunck*.list" | while read F
 do
-                bcftools concat --write-index --threads ${task.cpus} -a -O b --file-list "\${F}" -o "\${F}.bcf" 
+                bcftools concat --write-index --threads ${task.cpus} ${args} -a -O b --file-list "\${F}" -o "\${F}.bcf" 
                 echo "\${F}.bcf" >> TMP/jeter2.list
 done
 
-bcftools concat --write-index --threads ${task.cpus} -a -O b9 --file-list TMP/jeter2.list -o "TMP/jeter.bcf" 
+bcftools concat --write-index ${args} --threads ${task.cpus} -a -O b9 --file-list TMP/jeter2.list -o "TMP/jeter.bcf" 
 
 mv TMP/jeter.bcf ${contig}.merged.bcf
 mv TMP/jeter.bcf.csi ${contig}.merged.bcf.csi
