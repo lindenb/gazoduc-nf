@@ -26,14 +26,14 @@ def splitIntervals(chrom,start1,end1) {
 	int length = end-start ;
 	int l2 = Math.max(1,(int)(length/10));
 	def L = [];
-	if(l2>=length) {System.err.println("Skipping ${interval}") ; return L;}
+	if(l2>=length) {System.err.println("Skipping ${chrom}:${start1}-${end1}") ; return L;}
 	while(start<end) {
 		L.add([chrom , String.valueOf(start+1) , String.valueOf(Math.min(start+l2,end))]);
 		start+=l2;
 		}
 	return L;
 	} catch(Throwable err) {
-		System.err.println("BOUM");
+		System.err.println("BOUM in splitIntervals '${chrom}:${start1}-${end1}'");
 		err.printStackTrace();
 		throw err;
 		}
@@ -88,7 +88,6 @@ workflow DIVIDE_AND_CONQUER {
 
 		failed_ch= failed1_ch.
 			mix(branch1.known_to_fail).
-			view{"TODO SPLIT: ${it}"}.
 			flatMap{splitIntervals(it[0],it[1],it[2])}
 
 	emit:

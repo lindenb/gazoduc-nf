@@ -74,6 +74,23 @@ workflow {
 		loco_ch = file(params.step1_loco)
 		}
 	
+	scores_ch = FUNCTIONAL_ANNOTATION_SCORES()
+	func_annot_ch = MAKE_FUNCTIONAL_ANNOT_PER_CTG(scores_ch.output, wch2_ch.output)
+	for_step2_ch = func_annot_ch.output.splitCsv(header:false,sep:'\t',elem:2).
+			map{[it[0],it[1],it[2][0],it[2][1],it[2][2]]}
+	
+
+	step2_ch = STEP2(
+		bgen_ch.output,
+		covar_ch,
+		snsheet_ch.output, 
+		loco_ch ,
+		for_step2_ch
+		)
+
+
+
+	if("A".equals("B")) {
 	annot_type = Channel.of("functional")
 	if((params.window_size as int)>0) {
 		annot_type  = annot_type.mix(Channel.of("sliding"))
@@ -91,6 +108,16 @@ workflow {
 	annot3_ch = SPLIT_OVERLAPING_ANNOT(
 		annot2_ch.output
 		)
+
+
+	step2_ch = STEP2(
+		bgen_ch.output,
+		covar_ch,
+		snsheet_ch.output, 
+		loco_ch ,
+		annot3_ch.output
+		)
+	
 
 	/* group non overlaping annotations files by prefix */
 	annot_ch4 = annot3_ch.output.flatMap{T->{
@@ -145,7 +172,9 @@ workflow {
 		)
 
 	 step2_ch.output.groupTuple().view()
-	
+	}// end A==B
+
+
 	ch5 = MERGE_AND_PLOT(
 		reference,
 		step2_ch.output.groupTuple()
@@ -154,6 +183,8 @@ workflow {
 	QQPLOT(ch5.output.flatten().filter{it.name.endsWith(".regenie.gz")})
 	ANNOT_HITS(ch5.output.flatten().filter{it.name.endsWith(".regenie.gz")}.collect())
 	MAKE_PDF_ARCHIVE(ch5.output.flatten().filter{it.name.endsWith(".pdf")}.collect())
+
+	
 	}
 
 runOnComplete(workflow)
@@ -683,6 +714,82 @@ bcftools view "${vcf}" |\\
 """
 }
 
+
+process FUNCTIONAL_ANNOTATION_SCORES {
+executor "local"
+output:
+	path("scores.tsv"),emit:output
+script:
+"""
+cat << EOF | tr -s " " | tr " " "\t" > scores.tsv
+3_prime_UTR_variant     0.1     UTR,UTR3
+5_prime_UTR_premature_start_codon_gain_variant  0.2     UTR,UTR5
+5_prime_UTR_truncation  0.5     UTR,UTR5
+3_prime_UTR_truncation  0.5     UTR,UTR3
+5_prime_UTR_variant     0.2     UTR,UTR5
+bidirectional_gene_fusion       1.0	.
+conservative_inframe_deletion   0.1     protein_altering
+conservative_inframe_insertion  0.3     protein_altering
+disruptive_inframe_deletion     0.2     protein_altering
+disruptive_inframe_insertion    0.2     protein_altering
+downstream_gene_variant 0.1     downstream,updownstream
+exon_loss_variant       1.0     protein_altering
+frameshift_variant      0.4	protein_altering
+gene_fusion     0.9     protein_altering
+intergenic_region       0.001	.
+intragenic_variant      0.01	.
+initiator_codon_variant	0.5     protein_altering
+intron_variant  0.05    intronic
+missense_variant        0.9     protein_altering
+non_coding_transcript_exon_variant      0.1     non_coding
+non_coding_transcript_variant   0.1     non_coding
+splice_acceptor_variant 0.5     protein_altering,splice
+splice_donor_variant    0.5     protein_altering,splice
+splice_region_variant   0.5     protein_altering,splice
+start_retained_variant	0.1      synonymous
+start_lost      0.6     protein_altering
+stop_gained     0.9     protein_altering
+stop_lost       0.6     protein_altering
+stop_retained_variant   0.2     synonymous
+synonymous_variant      0.1     synonymous
+upstream_gene_variant   0.1     upstream,updownstream
+EOF
+"""
+
+}
+
+process MAKE_FUNCTIONAL_ANNOT_PER_CTG {
+tag "chr${contig}"
+label "process_quick"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"   
+afterScript "rm -rf TMP"
+input:
+	path(annotations)
+        tuple val(contig),path(vcf_files)
+output:
+        tuple val("functional"),val(contig),path("OUT/manifest.tsv"),emit:output
+script:
+        def vcf = vcf_files.find{it.name.endsWith(".bcf") || it.name.endsWith(".vcf.gz")}
+
+"""
+set -o pipefail
+mkdir -p TMP
+mkdir -p OUT
+bcftools view -G -O v '${vcf}' |\\
+	java -Djava.io.tmpdir=TMP -jar "\${HOME}/packages/jvarkit/dist/jvarkit.jar" regeniefunctionalannot \\
+		--annotations "${annotations}" \\
+		-f ${params.freq} |\\
+	java -Djava.io.tmpdir=TMP -jar "\${HOME}/packages/jvarkit/dist/jvarkit.jar" regeniemakeannot \\
+		-m "${annotations}" \\
+		-o \${PWD}/OUT \\
+		--gzip \\
+		-N 10000
+	
+"""
+}
+
+
+
 process MAKE_ANNOT_PER_CTG {
 tag "chr${contig} ${title}"
 label "process_quick_high"
@@ -766,7 +873,7 @@ mv TMP/OUTPUT ./OUTPUT
 
 process STEP2 {
 label "process_quick_high"
-tag "chr${contig} ${title}"
+tag "chr${contig} ${title} ${annot.name}"
 conda "${moduleDir}/../../conda/regenie.yml"
 afterScript "rm -rf TMP"
 input:
@@ -774,7 +881,7 @@ input:
         path(covariates)
         path(pheno_files)
 	path(pred_list)
-	tuple val(title),val(contig),path(annot),path(mask),path(setfile)
+	tuple val(title),val(contig),path(annot),path(setfile),path(mask)
 output:
         tuple val(title),path("*.regenie.gz"),emit:output
 script:
@@ -785,22 +892,26 @@ script:
 mkdir -p TMP/OUT
 set -x
 
+gunzip -c "${annot}" > TMP/annot.txt
+gunzip -c "${setfile}" > TMP/setfile.txt
+gunzip -c "${mask}" > TMP/mask.txt
+
 regenie \\
   --step 2 \\
   --pgen \$(basename ${pgen} .pgen) \\
   --phenoFile ${ped} \\
   --covarFile "${covariates}" \\
   --pred ${pred_list} \\
-  --mask-def ${mask} \\
+  --mask-def TMP/mask.txt \\
+  --set-list TMP/setfile.txt \\
+  --anno-file TMP/annot.txt \\
   --phenoCol ${params.status} \\
   --bt \\
   --bsize 1000 \\
-  --set-list ${setfile} \\
   --lowmem \\
   --lowmem-prefix TMP/regenie_tmp_preds \\
   --threads ${task.cpus} \\
   --out "step2.${contig}" \\
-  --anno-file ${annot} \\
   --aaf-bins ${params.freq} \\
   --vc-maxAAF ${params.vc_maxAAF} \\
   --bsize 200 \\
@@ -820,7 +931,7 @@ afterScript "rm -rf TMP"
 label "process_quick"
 input:
 	path(genome)
-	tuple val(title),path("INPUT/*")
+	tuple val(title),val(L) //path("INPUT/*")
 output:
 	path("*.regenie.*"),emit:output
 script:
@@ -847,17 +958,25 @@ javac -sourcepath TMP -cp "\${JVARKIT_JAR}" -d TMP TMP/Minikit.java
 cut -f1,2 '${fai}' | awk -F '\t' '( \$1 ~ /^(chr)?[0-9X]+\$/ )' > TMP/jeter.fai
 
 # find one header
-cat INPUT/*.regenie.gz |\\
-	gunzip -c |\\
-	grep  '^CHROM' -m1 > TMP/jeter.txt
+cat << EOF > TMP/jeter.list
+${L.join("\n")}
+EOF
+
+xargs -a TMP/jeter.list -L 1 gunzip -c |  grep  '^CHROM' -m1 > TMP/jeter.txt
+
+#cat INPUT/*.regenie.gz |\\
+#	gunzip -c |\\
+#	grep  '^CHROM' -m1 > TMP/jeter.txt
 
 test -s TMP/jeter.txt
 
 set -o pipefail
 
 
-cat INPUT/*.regenie.gz |\\
-	gunzip -c |\\
+#cat INPUT/*.regenie.gz |\\
+#	gunzip -c |\\
+
+xargs -a TMP/jeter.list -L 1 gunzip -c |\\
 	grep -v "^#" |\\
 	grep -v '^CHROM' |\\
 	LC_ALL=C sort -T TMP -t ' ' -k1,1V -k2,2n |\\
@@ -1483,13 +1602,29 @@ done
 sort -t '\t' -T TMP -k14,14 TMP/jeter.a | uniq > TMP/jeter.c
 mv TMP/jeter.c TMP/jeter.a
 
-# col 3 gene name 'Symbol'
-# col 9 description
-wget -O - "https://ftp.ncbi.nih.gov/gene/DATA/gene_info.gz" |\\
-	gunzip -c |\\
-	awk -F '\t' '(\$1=="#tax_id" || \$1=="9606")' |\\
-	cut -f3,9 |\\
-	sort -t '\t' -T TMP -k1,1 > TMP/jeter.b
+cat << __EOF__ > TMP/biomart.01.xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Query>
+<Query  virtualSchemaName = "default" formatter = "TSV" header = "0" uniqueRows = "0" count = "" datasetConfigVersion = "0.6" >
+	<Dataset name = "hsapiens_gene_ensembl" interface = "default" >
+	    <Filter name = "transcript_biotype" value = "protein_coding"/>
+		<Attribute name = "ensembl_transcript_id" />
+		<Attribute name = "description" />
+	</Dataset>
+</Query>
+__EOF__
+
+
+sed 's/ensembl_transcript_id/ensembl_gene_id/' TMP/biomart.01.xml > TMP/biomart.02.xml
+sed 's/ensembl_transcript_id/external_gene_name/' TMP/biomart.01.xml > TMP/biomart.03.xml
+
+# grch37 or 38 , we don't care as we don't use the coordinates
+wget -O - --post-file=TMP/biomart.01.xml "http://ensembl.org/biomart/martservice" | awk -F '\t' '(\$2!="")' >> TMP/jeter.b1
+wget -O - --post-file=TMP/biomart.02.xml "http://ensembl.org/biomart/martservice" | awk -F '\t' '(\$2!="")' >> TMP/jeter.b1
+wget -O - --post-file=TMP/biomart.03.xml "http://ensembl.org/biomart/martservice" | awk -F '\t' '(\$2!="")' >> TMP/jeter.b1
+
+sort -t '\t' -T TMP -k1,1 --unique TMP/jeter.b1 > TMP/jeter.b
+
 
 
 join -t '\t' -1 14 -2 1 -a 1 -o '1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,1.10,1.11,1.12,1.13,1.14,1.15,2.2' -e '.'  TMP/jeter.a TMP/jeter.b > TMP/jeter.c

@@ -70,7 +70,7 @@ workflow {
 
 
          	covpos_ch = FIND_COVERAGE_AT_LOC(genome,contig_pos_bams_ch)
-		ch1 = covpos_ch.map{[ [it[0],it[1]], it[2]]}.groupTuple()
+		ch1 = covpos_ch.output.map{[ [it[0],it[1]], it[2]]}.groupTuple()
 		ch2 = MERGE_COVERAGE_AT_LOC(ch1)
 		
 		ch4 = ch2.output.
@@ -80,11 +80,12 @@ workflow {
 			groupTuple().
 			map{[it[0][0],it[0][1],it[0][2],it[0][3],it[1]]}
 
+		ch4.view()
 		cyto_ch = DOWNLOAD_CYTOBAND(genome)
 
 		refgene_ch = DOWNLOAD_REFGENE(genome)
 
-		report_ch = APPPLY_IGVREPORT(
+		report_ch = APPLY_IGVREPORT(
 			genome,
 			cyto_ch.output,
 			refgene_ch.output,
@@ -214,7 +215,7 @@ awk -f TMP/jeter.awk TMP/merged.tsv > index.html
 }
 
 
-process APPPLY_IGVREPORT {
+process APPLY_IGVREPORT {
 tag "${contig}:${pos} page ${page}/${page_max} N=${bams.size()}"
 label "process_quick"
 conda "${moduleDir}/../../conda/igv-reports.yml"

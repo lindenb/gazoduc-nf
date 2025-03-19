@@ -97,7 +97,7 @@ workflow {
         merge_ch = merge_ch.mix(level6.ok)
 
 	SAVE_FAILED(level6.failed.map{it.join("\t")}.collect())
-
+	
         MERGE(merge_ch.map{T->{
 			String c = T[0];
 			if(!c.matches("(chr)?[0-9XY]+")) {
@@ -107,7 +107,7 @@ workflow {
 			}}.groupTuple())
 
         level6.failed.view{"${it} cannot be called"}
-
+	
 	}
 
 
