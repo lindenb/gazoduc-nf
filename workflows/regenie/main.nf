@@ -75,10 +75,36 @@ workflow {
 		}
 	
 	scores_ch = FUNCTIONAL_ANNOTATION_SCORES()
-	func_annot_ch = MAKE_FUNCTIONAL_ANNOT_PER_CTG(scores_ch.output, wch2_ch.output)
-	for_step2_ch = func_annot_ch.output.splitCsv(header:false,sep:'\t',elem:2).
-			map{[it[0],it[1],it[2][0],it[2][1],it[2][2]]}
+	the_annot_ch = MAKE_FUNCTIONAL_ANNOT_PER_CTG(scores_ch.output, wch2_ch.output).output
 	
+
+	if(!params.sliding_windows.isEmpty()) {
+		windows_ch = Channel.of("${params.sliding_windows}").
+			flatMap{T->{
+			def L=[];
+			def a = T.split("[,]");
+			if(a.size()%2!=0) throw new IllegalArgumentException("not a pair ${params.sliding}");
+			for(int i=0;i<a.size();i+=2) {
+				L.add([ (a[i+0] as int) , (a[i+1] as int) ]);
+				}
+			return L;
+			}}
+
+		slide_ch = MAKE_SLIDING( wch2_ch.output.combine(windows_ch) )
+		the_annot_ch = the_annot_ch.mix(slide_ch.output)
+		}
+
+
+	if(file(params.select_bed).name.contains(".")) {
+		make_bed_ch = MAKE_BED(file(params.select_bed),wch2_ch.output)
+		the_annot_ch = the_annot_ch.mix(make_bed_ch.output)
+		}
+
+
+	for_step2_ch = the_annot_ch.splitCsv(header:false,sep:'\t',elem:2).
+			map{[it[0],it[1],it[2][0],it[2][1],it[2][2],it[2][3]]}
+
+
 
 	step2_ch = STEP2(
 		bgen_ch.output,
@@ -89,90 +115,6 @@ workflow {
 		)
 
 
-
-	if("A".equals("B")) {
-	annot_type = Channel.of("functional")
-	if((params.window_size as int)>0) {
-		annot_type  = annot_type.mix(Channel.of("sliding"))
-		}
-
-	if(file(params.user_bed).name.contains(".")) {
-		annot_type  = annot_type.mix(Channel.of("userbed"))
-		}
-	
-	annot2_ch = MAKE_ANNOT_PER_CTG(
-		file(params.user_bed) /* optional user bed file */, 
-		annot_type.combine(wch2_ch.output)
-		)
-
-	annot3_ch = SPLIT_OVERLAPING_ANNOT(
-		annot2_ch.output
-		)
-
-
-	step2_ch = STEP2(
-		bgen_ch.output,
-		covar_ch,
-		snsheet_ch.output, 
-		loco_ch ,
-		annot3_ch.output
-		)
-	
-
-	/* group non overlaping annotations files by prefix */
-	annot_ch4 = annot3_ch.output.flatMap{T->{
-		def title = T[0];
-		def contig = T[1];
-		def files = T[2];
-		if(files.size()%3!=0) throw new IllegalStateException("expected multiple of 3 files but got "+files.size()+" " + files );
-		def L=[];
-		java.util.Set<String> prefixes = new java.util.HashSet<>();
-		for(int i=0;i< files.size();i++) {
-			def file = files[i];
-			String s = file.name;
-			int dot = s.indexOf(".");
-			prefixes.add(s.substr(0,dot));
-			}
-		for(String prefix:prefixes) {
-			def L2=[title,contig,null,null,null];
-			for(int i=0;i< files.size();i++) {
-				def file = files[i];
-				String s = file.name;
-	                        int dot = s.indexOf(".");
-				String pfx = s.substr(0,dot);
-				if(!prefix.equals(pfx)) continue;
-				if(s.endsWith("annot.txt")) {
-					T2[2]=file;
-					}
-				else if(s.endsWith("mask.txt")) {
-					T2[3]=file;
-					}
-				else if(s.endsWith("setfile.txt")) {
-					T2[4]=file;
-					}
-				else
-					{
-					throw new IllegalStateException("boum "+file);
-					}
-				}
-			if(T2[2]==null) IllegalStateException("boum T2[2]");
-			if(T2[3]==null) IllegalStateException("boum T2[3]");
-			if(T2[4]==null) IllegalStateException("boum T2[4]");
-			L.add(L2);
-			}
-		return L;
-		}}
-
-	step2_ch = STEP2(
-		bgen_ch.output,
-		covar_ch,
-		snsheet_ch.output, 
-		loco_ch ,
-		annot3_ch.output
-		)
-
-	 step2_ch.output.groupTuple().view()
-	}// end A==B
 
 
 	ch5 = MERGE_AND_PLOT(
@@ -758,6 +700,9 @@ EOF
 
 }
 
+
+
+
 process MAKE_FUNCTIONAL_ANNOT_PER_CTG {
 tag "chr${contig}"
 label "process_quick"
@@ -775,15 +720,83 @@ script:
 set -o pipefail
 mkdir -p TMP
 mkdir -p OUT
-bcftools view -G -O v '${vcf}' |\\
+
+bcftools view -O v '${vcf}' |\\
 	java -Djava.io.tmpdir=TMP -jar "\${HOME}/packages/jvarkit/dist/jvarkit.jar" regeniefunctionalannot \\
 		--annotations "${annotations}" \\
 		-f ${params.freq} |\\
 	java -Djava.io.tmpdir=TMP -jar "\${HOME}/packages/jvarkit/dist/jvarkit.jar" regeniemakeannot \\
 		-m "${annotations}" \\
+		--prefix "chr${contig}chunk" \\
+		--reserve 20 \\
 		-o \${PWD}/OUT \\
 		--gzip \\
-		-N 10000
+		-N 5000
+	
+"""
+}
+
+
+process MAKE_BED {
+tag "chr${contig} ${select_bed.name}"
+label "process_quick"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
+input:
+	path(select_bed)
+        tuple val(contig),path(vcf_files)
+output:
+        tuple val("user_bed"),val(contig),path("OUT/manifest.tsv"),emit:output
+script:
+        def vcf = vcf_files.find{it.name.endsWith(".bcf") || it.name.endsWith(".vcf.gz")}
+	def min_length=300
+"""
+set -o pipefail
+mkdir -p TMP
+mkdir -p OUT
+
+bcftools view --regions-file '${select_bed}' -O v '${vcf}' |\\
+	java -Djava.io.tmpdir=TMP -jar "\${HOME}/packages/jvarkit/dist/jvarkit.jar" regeniebedannot \\
+		--bed "${select_bed}" \\
+		--min-length ${min_length} \\
+		-f ${params.freq} |\\
+	java -Djava.io.tmpdir=TMP -jar "\${HOME}/packages/jvarkit/dist/jvarkit.jar" regeniemakeannot \\
+		--prefix "chr${contig}_bed_chunk" \\
+		-o \${PWD}/OUT \\
+		--reserve 20 \\
+		--gzip \\
+		-N 5000
+"""
+}
+
+process MAKE_SLIDING {
+tag "chr${contig} ${win_size}/${win_shift}"
+label "process_quick"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"   
+afterScript "rm -rf TMP"
+input:
+        tuple val(contig),path(vcf_files),val(win_size),val(win_shift)
+output:
+        tuple val("sliding_${win_size}_${win_shift}"),val(contig),path("OUT/manifest.tsv"),emit:output
+script:
+        def vcf = vcf_files.find{it.name.endsWith(".bcf") || it.name.endsWith(".vcf.gz")}
+
+"""
+set -o pipefail
+mkdir -p TMP
+mkdir -p OUT
+
+bcftools view -O v '${vcf}' |\\
+	java -Djava.io.tmpdir=TMP -jar "\${HOME}/packages/jvarkit/dist/jvarkit.jar" regenieslidingannot \\
+		--window-size "${win_size}" \\
+		--window-shift "${win_shift}" \\
+		-f ${params.freq} |\\
+	java -Djava.io.tmpdir=TMP -jar "\${HOME}/packages/jvarkit/dist/jvarkit.jar" regeniemakeannot \\
+		--prefix "chr${contig}_${win_size}_${win_shift}_chunk" \\
+		-o \${PWD}/OUT \\
+		--reserve 20 \\
+		--gzip \\
+		-N 5000
 	
 """
 }
@@ -881,7 +894,7 @@ input:
         path(covariates)
         path(pheno_files)
 	path(pred_list)
-	tuple val(title),val(contig),path(annot),path(setfile),path(mask)
+	tuple val(title),val(contig),path(annot),path(setfile),path(mask),path(aff)
 output:
         tuple val(title),path("*.regenie.gz"),emit:output
 script:
@@ -895,6 +908,7 @@ set -x
 gunzip -c "${annot}" > TMP/annot.txt
 gunzip -c "${setfile}" > TMP/setfile.txt
 gunzip -c "${mask}" > TMP/mask.txt
+gunzip -c "${aff}" > TMP/aaf.txt
 
 regenie \\
   --step 2 \\
@@ -905,6 +919,7 @@ regenie \\
   --mask-def TMP/mask.txt \\
   --set-list TMP/setfile.txt \\
   --anno-file TMP/annot.txt \\
+  --aaf-file TMP/aaf.txt \\
   --phenoCol ${params.status} \\
   --bt \\
   --bsize 1000 \\
@@ -957,24 +972,23 @@ javac -sourcepath TMP -cp "\${JVARKIT_JAR}" -d TMP TMP/Minikit.java
 # do not use chrY because regenie merge it with chrX (see doc)
 cut -f1,2 '${fai}' | awk -F '\t' '( \$1 ~ /^(chr)?[0-9X]+\$/ )' > TMP/jeter.fai
 
-# find one header
+
 cat << EOF > TMP/jeter.list
 ${L.join("\n")}
 EOF
 
-xargs -a TMP/jeter.list -L 1 gunzip -c |  grep  '^CHROM' -m1 > TMP/jeter.txt
+##cat INPUT/*.regenie.gz 
 
-#cat INPUT/*.regenie.gz |\\
-#	gunzip -c |\\
-#	grep  '^CHROM' -m1 > TMP/jeter.txt
+xargs -a TMP/jeter.list -L 1 gunzip -c |\\
+	grep  '^CHROM' -m1 > TMP/jeter.txt
 
 test -s TMP/jeter.txt
 
 set -o pipefail
 
-
 #cat INPUT/*.regenie.gz |\\
-#	gunzip -c |\\
+#	gunzip -c
+
 
 xargs -a TMP/jeter.list -L 1 gunzip -c |\\
 	grep -v "^#" |\\
@@ -1619,12 +1633,14 @@ sed 's/ensembl_transcript_id/ensembl_gene_id/' TMP/biomart.01.xml > TMP/biomart.
 sed 's/ensembl_transcript_id/external_gene_name/' TMP/biomart.01.xml > TMP/biomart.03.xml
 
 # grch37 or 38 , we don't care as we don't use the coordinates
-wget -O - --post-file=TMP/biomart.01.xml "http://ensembl.org/biomart/martservice" | awk -F '\t' '(\$2!="")' >> TMP/jeter.b1
-wget -O - --post-file=TMP/biomart.02.xml "http://ensembl.org/biomart/martservice" | awk -F '\t' '(\$2!="")' >> TMP/jeter.b1
-wget -O - --post-file=TMP/biomart.03.xml "http://ensembl.org/biomart/martservice" | awk -F '\t' '(\$2!="")' >> TMP/jeter.b1
+rm -f TMP/jeter.b1
+wget -O - "http://ensembl.org/biomart/martservice?query=\$(cat TMP/biomart.01.xml)" >> TMP/jeter.b1
+wget -O - "http://ensembl.org/biomart/martservice?query=\$(cat TMP/biomart.02.xml)" >> TMP/jeter.b1
+wget -O - "http://ensembl.org/biomart/martservice?query=\$(cat TMP/biomart.03.xml)" >> TMP/jeter.b1
 
-sort -t '\t' -T TMP -k1,1 --unique TMP/jeter.b1 > TMP/jeter.b
-
+sed 's/\\[Source.*\\]//' TMP/jeter.b1 |\\
+	awk -F '\t' '(\$2!="")' |\\
+	sort -t '\t' -T TMP -k1,1 --unique > TMP/jeter.b
 
 
 join -t '\t' -1 14 -2 1 -a 1 -o '1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,1.10,1.11,1.12,1.13,1.14,1.15,2.2' -e '.'  TMP/jeter.a TMP/jeter.b > TMP/jeter.c
