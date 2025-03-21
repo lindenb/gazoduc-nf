@@ -1,9 +1,11 @@
 
 process SNPEFF_DOWNLOAD {
+label "queue_quick"
+memory "5G"
+time "3h"
 tag "${snpeff_db}"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
-label "process_short"
 input:
 	val(snpeff_db)
 output:

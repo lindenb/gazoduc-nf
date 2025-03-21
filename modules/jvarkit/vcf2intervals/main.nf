@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -23,11 +23,12 @@ SOFTWARE.
 
 */
 
-
-
 process JVARKIT_VCF_TO_INTERVALS_01 {
-	label "process_short"
-	conda "${moduleDir}/../../conda/bioinfo.01.yml"
+	label "queue_quick"
+	cpus 1
+	memory "5G"
+	time "3h"
+	conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 	afterScript "rm -rf TMP"
 	tag "${interval} ${vcf.name}"
 	input:
@@ -39,13 +40,14 @@ process JVARKIT_VCF_TO_INTERVALS_01 {
 		if(!task.ext.containsKey("min_distance")) throw new IllegalStateException("task.ext.min_distance missing for ${task.process}");
 		def distance = task.ext.distance?:"10mb"
 		def min_distance = task.ext.min_distance?:"1kb"
+		def cpu2 = java.lang.Math.max(1,task.cpus-2)
 	"""
 	hostname 1>&2
 	set -o pipefail
 
 	mkdir -p TMP
 
-	bcftools view -G "${vcf}" ${bed.name.endsWith(".bed")?"\"${bed}\"":"\"${interval}\""} |\\
+	bcftools view --threads ${cpu2} -G "${vcf}" ${bed.name.endsWith(".bed")?"\"${bed}\"":"\"${interval}\""} |\\
 	jvarkit  -Djava.io.tmpdir=TMP -Xmx${task.memory.giga}G vcf2intervals  \\
 		--bed \\
 		--distance "${distance}" \\

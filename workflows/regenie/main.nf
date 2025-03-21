@@ -23,7 +23,7 @@ workflow {
 			first() ,
 		file(params.samplesheet)
 		)
-	
+
 	wch1_ch = WGSELECT(
 			reference,
 			snpeff_ch.output,
@@ -132,7 +132,9 @@ workflow {
 runOnComplete(workflow)
 
 process DIGEST_SAMPLESHEET {
-label "process_single"
+label "queue_quick"
+memory "1G"
+time "3h"
 tag "${vcf.name}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
@@ -220,6 +222,7 @@ mv TMP/sample2pop.txt pedigree.sample2population.tsv
 
 process WGSELECT {
 label "process_quick"
+array 100
 tag "${contig}:${start1}-${end} ${vcf.name}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
@@ -471,7 +474,7 @@ output:
 script:
 	mds = plink_files.find{it.name.endsWith(".mds")}
 """
-awk 'BEGIN{printf("FID\tIID\tY1\tY2\tY3\\n");} (NR>1) {printf("%s\t%s\t%s\t%s\t%s\\n",\$1,\$2,\$4,\$5,\$6);}' "${mds}" > covariates.tsv
+awk 'BEGIN{printf("FID\tIID\tY1\tY2\tY3\\n");} (NR>1) {printf("%s\t%s\t%s\t%s\t%s\\n",\$2,\$2,\$4,\$5,\$6);}' "${mds}" > covariates.tsv
 """
 }
 
@@ -510,6 +513,7 @@ set -x
 
 plink2 --bgen ${bgen} ref-first \\
 	--sample ${sample} \\
+	--const-fid 1 \\
 	--allow-no-sex \\
 	--rm-dup force-first \\
         --indep-pairwise 50 1 0.2 \\
@@ -521,10 +525,12 @@ find TMP 1>&2
 plink2 --bgen ${bgen} ref-first \\
 	--sample TMP/jeter.sample \\
 	--extract TMP/plink.prune.in \\
+	--const-fid 1 \\
 	--make-bed \\
 	--out TMP/pruned_data
 
 plink --bfile TMP/pruned_data \\
+	--const-fid 1 \\
 	--allow-extra-chr \\
 	--r2 --ld-window 50 \\
 	--ld-window-kb 5000 \\
@@ -536,6 +542,7 @@ awk '{print \$3;}'  TMP/ld.ld  | uniq  | sort -T . | uniq > TMP/snpInLD.txt
 
 
 plink --bfile TMP/pruned_data \\
+	--const-fid 1 \\
 	--exclude TMP/snpInLD.txt \\
 	--make-bed \\
 	--out TMP/indepSNP_data
@@ -577,6 +584,7 @@ cut -d ' ' -f1,2,3 "${sample}" > TMP/jeter.sample
 # TODO : go faster and output only sites, no genotype ?
 #
 plink2 --bgen ${bgen} ref-first \\
+	--const-fid 1 \\
         --sample TMP/jeter.sample \\
 	--recode vcf bgz \\
         --out TMP/export
@@ -763,7 +771,7 @@ bcftools view --regions-file '${select_bed}' -O v '${vcf}' |\\
 	java -Djava.io.tmpdir=TMP -jar "\${HOME}/packages/jvarkit/dist/jvarkit.jar" regeniemakeannot \\
 		--prefix "chr${contig}_bed_chunk" \\
 		-o \${PWD}/OUT \\
-		--reserve 20 \\
+		--reserve 10 \\
 		--gzip \\
 		-N 5000
 """
@@ -886,6 +894,7 @@ mv TMP/OUTPUT ./OUTPUT
 
 process STEP2 {
 label "process_quick_high"
+array 100
 tag "chr${contig} ${title} ${annot.name}"
 conda "${moduleDir}/../../conda/regenie.yml"
 afterScript "rm -rf TMP"
@@ -1179,6 +1188,7 @@ bcftools query -f "\\n" TMP/jeter1.vcf.gz | wc -l 1>&2
 # convert VCF to plink (BCF marche pas ?)
 plink \\
 	--vcf TMP/jeter1.vcf.gz \\
+	--const-fid 1 \\
 	--allow-extra-chr \\
 	--allow-no-sex \\
 	--threads ${task.cpus} \\
@@ -1194,6 +1204,7 @@ find TMP -type f 1>&2
 
 plink \\
 	--bfile TMP/jeter1 \\
+	--const-fid 1 \\
 	--allow-extra-chr \\
 	--allow-no-sex \\
 	--hardy gz \\
@@ -1213,6 +1224,7 @@ wc -l TMP/xclude_ids.txt 1>&2
 plink \\
 	--bfile TMP/jeter1 \\
 	--allow-extra-chr \\
+	--const-fid 1 \\
 	--allow-no-sex \\
 	--threads ${task.cpus} \\
 	--make-bed \\
@@ -1228,6 +1240,7 @@ find TMP -type f 1>&2
 plink \\
 	--bfile  TMP/jeter2 \\
 	--allow-extra-chr \\
+	--const-fid 1 \\
 	--allow-no-sex \\
 	--indep-pairwise 50 10 0.2 \\
 	--out TMP/jeter3 1>&2
@@ -1240,6 +1253,7 @@ head TMP/jeter3.prune.in 1>&2
 plink \\
 	--bfile  TMP/jeter2 \\
 	--allow-extra-chr \\
+	--const-fid 1 \\
 	--allow-no-sex \\
 	--extract TMP/jeter3.prune.in \\
 	--make-bed \\
@@ -1250,6 +1264,7 @@ find TMP -type f 1>&2
 
 plink \\
 	--bfile  TMP/jeter4 \\
+	--const-fid 1 \\
 	--allow-extra-chr \\
 	--allow-no-sex \\
 	--r2 --ld-window 50 --ld-window-kb 5000 --ld-window-r2 0.2 \\
@@ -1262,6 +1277,7 @@ awk '{print \$3;}'  TMP/jeter5.ld  | uniq  | sort -T TMP | uniq > TMP/snpInLD.tx
 
 plink \\
 	--bfile TMP/jeter4 \\
+	--const-fid 1 \\
 	--allow-extra-chr \\
 	--allow-no-sex \\
 	--exclude TMP/snpInLD.txt \\
@@ -1301,6 +1317,7 @@ test -s TMP/jeter.list
 
 plink \\
 	--merge-list TMP/jeter.list \\
+	--const-fid 1 \\
         --allow-extra-chr \\
         --allow-no-sex \\
         --make-bed \\

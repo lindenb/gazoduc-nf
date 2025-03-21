@@ -24,7 +24,7 @@ SOFTWARE.
 */
 
 include {VCF_TO_BED} from '../vcf2bed'
-include {JVARKIT_VCF_TO_INTERVALS_01 as VCF_TO_INTERVALS} from '../../modules/jvarkit/jvarkit.vcf2intervals.01.nf'
+include {JVARKIT_VCF_TO_INTERVALS_01 as VCF_TO_INTERVALS} from '../../modules/jvarkit/vcf2intervals'
 include {CONCAT_FILES_01} from '../../modules/utils/concat.files.nf'
 
 
