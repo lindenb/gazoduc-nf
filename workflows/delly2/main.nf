@@ -26,7 +26,7 @@ nextflow.enable.dsl=2
 include {ANNOTATE_SV_VCF_01} from "../../subworkflows/annotation/annotation.sv.01.nf"
 
 workflow {
-		def reference = Channel.fromPath([params.fasta,params.fai,params.dict]).collect().first()
+		def reference = Channel.fromPath([params.fasta,params.fai,params.dict]).collect()
 		delly2_ch = DOWNLOAD_DELLY2()
 		gaps_ch = SCATTER_TO_BED(reference)
 
@@ -123,7 +123,7 @@ workflow XX {
 }
 
 process DOWNLOAD_DELLY2 {
-	label "process_short"
+	label "process_quick"
 	output:
 		path("delly"),emit:output
 	script:
@@ -140,8 +140,9 @@ process DOWNLOAD_DELLY2 {
 
 
 process SCATTER_TO_BED {
-label "process_short"
+label "process_quick"
 afterScript "rm -rf TMP"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
 	path(reference)
 output:
@@ -149,7 +150,6 @@ output:
 script:
 	def fasta = reference.find{it.name.endsWith("a")}.first()
 """
-module load bedtools gatk
 mkdir -p TMP
 
 gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" ScatterIntervalsByNs \\
@@ -172,7 +172,8 @@ test -s ./exclude.bed
 
 
 process GET_MAPPABILITY {
-label "process_short"
+label "process_quick"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
 	path(reference)
 output:
@@ -199,6 +200,10 @@ then
 	wget -O TMP/blacklist.gz.fai "\${URL}.fai"
 	wget -O TMP/blacklist.gz.gzi "\${URL}.gzi"
 	mv TMP/blacklist.* ./
+else
+	touch blacklist.NO_FILE.gz
+	touch blacklist.NO_FILE.gz.fai
+	touch blacklist.NO_FILE.gz.gzi
 fi
 """
 }
@@ -206,18 +211,18 @@ fi
 
 
 process GET_EXCLUDE {
-label "process_short"
+label "process_quick"
 afterScript "rm -f jeter.bed jeter2.bed jeter.interval_list"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
 	path(reference)
 output:
 	path("exclude2.bed"),optional:true,emit:output /* exclude2.bed otherwise collision with bed from scatter_bed */
 script:
-	def fasta = reference.find{it.name.endsWith("a")}.first()
-	def fai = reference.find{it.name.endsWith(".fai")}.first()
+	def fasta = reference.find{it.name.endsWith("a")}
+	def fai = reference.find{it.name.endsWith(".fai")}
 """
 hostname 1>&2
-module load jvarkit
 set -o pipefail
 
 mkdir -p TMP
@@ -238,7 +243,7 @@ url1=`cat  TMP/jeter.url`
 if [ ! -z "\${url1}" ] ; then
 	wget -O - "\${url1}" |\\
 		cut -f 1,2,3|\\
-		java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -R "${fasta}" --column 1 --convert SKIP > exclude2.bed 
+		jvarkit bedrenamechr -R "${fasta}" --column 1 --convert SKIP > exclude2.bed 
 fi
 
 """
@@ -246,16 +251,16 @@ fi
 
 process MERGE_EXCLUDE {
 label "process_short"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
 	path(reference)
 	path(xcludes)
 output:
 	path("exclude_merged.bed"),emit:output
 script:
-	def fai = reference.find{it.name.endsWith(".fai")}.first()
+	def fai = reference.find{it.name.endsWith(".fai")}
 """
 hostname 1>&2
-module load bedtools
 
 awk -F '\t' '(!(\$1 ~ /${params.exclude_contig_regex}/)) {printf("%s\t0\t%s\\n",\$1,\$2);}'  "${fai}" > jeter2.bed
 
@@ -281,7 +286,7 @@ process CALL_DELLY {
     output:
     	tuple val(name),path(bam),path(bai),val(status),path("${name}.bcf"),path("${name}.bcf.csi"),emit:output
     script:
-	def fasta = reference.find{it.name.endsWith("a")}.first()
+	def fasta = reference.find{it.name.endsWith("a")}
 	def args1 = exclude.name.equals("NO_FILE")?"":"--exclude ${exclude}"
 	"""
 	hostname 1>&2
@@ -300,8 +305,9 @@ process CALL_DELLY {
 
 //  merge many files: https://github.com/dellytools/delly/issues/158
 process MERGE_DELLY {
-    label "process_medium"
+    label "process_short"
     afterScript "rm -rf TMP"
+    conda "${moduleDir}/../../conda/bioinfo.01.yml"
     input:
 	path(reference)
 	path(delly)
@@ -309,11 +315,10 @@ process MERGE_DELLY {
     output:
 	path("merged.*"),emit:output
     script:
-        def fasta = reference.find{it.name.endsWith("a")}.first()
+        def fasta = reference.find{it.name.endsWith("a")}
 	def bnd = params.bnd
     """
     hostname 1>&2
-    module load bcftools
     export LC_ALL=C
     mkdir -p TMP
     export TMPDIR=\${PWD}/TMP
@@ -352,8 +357,8 @@ process GENOTYPE_DELLY {
     output:
         path("genotyped.${name}.bcf*"),emit:output
     script:
-	def arg1 = merged.find{it.name.endsWith("f")}.first()
-	def fasta = reference.find{it.name.endsWith("a")}.first()
+	def arg1 = merged.find{it.name.endsWith("f")}
+	def fasta = reference.find{it.name.endsWith("a")}
     """
     hostname 1>&2
     mkdir -p TMP
@@ -373,6 +378,7 @@ process GENOTYPE_DELLY {
 
 
 process MERGE_GENOTYPES {
+    conda "${moduleDir}/../../conda/bioinfo.01.yml"
     afterScript "rm -rf TMP"
     label "process_high"
     cache 'lenient'
@@ -386,7 +392,6 @@ process MERGE_GENOTYPES {
    if((bcfs instanceof List) &&  bcfs.size() < 1000 )
     """
     hostname 1>&2
-    module load bcftools
     ulimit -s unlimited
 
 cat << EOF > jeter.list
@@ -401,7 +406,6 @@ EOF
 else
     """
     hostname 1>&2
-    module load bcftools
     ulimit -s unlimited
     mkdir -p TMP
 
@@ -431,6 +435,7 @@ else
     }
 
 process FILTER_DELLY {
+    conda "${moduleDir}/../../conda/bioinfo.01.yml"
     label "process_medium"
     input:
 	path(reference)
@@ -446,7 +451,6 @@ process FILTER_DELLY {
 	def vcfin = merged.find{it.name.endsWith("f")}
     """
     export LC_ALL=C
-    module load bcftools/0.0.0
     export PATH=\${PWD}:\${PATH}
     mkdir -p TMP
 
