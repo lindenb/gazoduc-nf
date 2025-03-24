@@ -958,6 +958,7 @@ input:
 	tuple val(title),val(L) //path("INPUT/*")
 output:
 	path("*.regenie.*"),emit:output
+	path("${title}.results.tsv.gz"),emit:results
 script:
 
 	def dict = genome.find{it.name.endsWith(".dict")}
@@ -1004,6 +1005,8 @@ xargs -a TMP/jeter.list -L 1 gunzip -c |\\
 	grep -v '^CHROM' |\\
 	LC_ALL=C sort -T TMP -t ' ' -k1,1V -k2,2n |\\
 	uniq >> TMP/jeter.txt
+
+cat TMP/jeter.txt | tr " " "\t" | gzip --best > TMP/${title}.results.tsv.gz
 
 java -cp "\${JVARKIT_JAR}:TMP" Minikit -R "${fasta}" -o TMP < TMP/jeter.txt
 rm TMP/jeter.txt
@@ -1616,9 +1619,9 @@ label "process_quick"
 input:
 	path("INPUT/*")
 output:
-	path("digest.tsv")
+	path("digest.tsv"),emit:output
 script:
-	def treshold=7.0
+	def treshold=(params.digest_treshold as double)
 """
 export LC_ALL=C
 set -o pipefail
