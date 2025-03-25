@@ -26,7 +26,6 @@ nextflow.enable.dsl=2
 
 
 include {dumpParams;runOnComplete} from '../../modules/utils/functions.nf'
-//include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {DOWNLOAD_CYTOBAND} from '../../modules/ucsc/download.cytobands'
 include {DOWNLOAD_REFGENE} from '../../modules/ucsc/download.refgene'
 
@@ -71,7 +70,7 @@ workflow {
 
          	covpos_ch = FIND_COVERAGE_AT_LOC(genome,contig_pos_bams_ch)
 		ch1 = covpos_ch.output.map{[ [it[0],it[1]], it[2]]}.groupTuple()
-		ch2 = MERGE_COVERAGE_AT_LOC(ch1)
+		ch2 = MERGE_COVERAGE_AT_LOC(file(params.sample2collection), ch1)
 		
 		ch4 = ch2.output.
 			map{[it[1],it[0]]}.
@@ -138,6 +137,7 @@ tag "${key[0]}:${key[1]}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
+	path(sample2collection)
 	tuple val(key),path("COV/*")
 output:
 	tuple val(key),path("pages.tsv"),path("index.html"),emit:output
@@ -148,11 +148,34 @@ script:
 	def max_score_0 = params.max_score_0?:-1;
 """
 mkdir -p TMP
+export LC_ALL=C
+
+find COV -type l -name "*.tsv" -exec cat '{}' ';' 2> /dev/null |\\
+	grep "#" -m1 > TMP/merged.tsv
+
 find COV -type l -name "*.tsv" -exec cat '{}' ';' |\\
-	LC_ALL=C sort -T TMP |\\
-	uniq > TMP/merged.tsv
+	grep -v "#" |\\
+	sort -T TMP |\\
+	uniq |\\
+	sort -t \$'\\t' -k5,5  -T TMP >> TMP/merged.tsv
 
 head TMP/merged.tsv 1>&2
+
+echo -e "SAMPLE\tCollection" > TMP/groups.txt
+
+if ${sample2collection.name.contains(".")}
+then
+	sort -T TMP -t \$'\\t' -k1,1 '${sample2collection}' --unique >> TMP/groups.txt
+fi
+
+
+join --header \\
+	-o '1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,1.10,1.11,1.12,1.13,1.14,1.15,1.16,1.17,1.18,1.19,1.20,1.21,1.22,2.2' \\
+	-t \$'\\t' \\
+	-a 1 -1 5 -2 1 \\
+	-e undefined  TMP/merged.tsv TMP/groups.txt > TMP/joined.tsv
+
+mv TMP/joined.tsv TMP/merged.tsv
 
 NROWS=`tail -n +2 TMP/merged.tsv | wc -l`
 
@@ -182,6 +205,7 @@ NR == 1 {
     printf("<th>Position</th>");
     printf("<th>REF</th>");
     printf("<th>Sample</th>");
+    printf("<th>Collection</th>");
     printf("<th>DEPTH</th>");
     printf("<th>A</th>");
     printf("<th>C</th>");
@@ -194,7 +218,8 @@ NR > 1 {
     printf("<tr>");
     printf("<td>%s:%s</td>",\$2,\$3);
     printf("<td>%s</td>",\$4);
-    printf("<td><a href=\\"page%s.html\\">%s</a></td>",\$23,\$5);
+    printf("<td><a href=\\"page%s.html\\">%s</a></td>",\$24,\$5);
+    printf("<td>%s</td>",\$23);
     printf("<td>%s</td>",\$6);
     printf("<td>%s</td>",\$16);
     printf("<td>%s</td>",\$17);
@@ -208,7 +233,7 @@ END {
 	}
 __EOF__
 
-tail -n +2 TMP/merged.tsv | cut -f1,23,24 > pages.tsv
+tail -n +2 TMP/merged.tsv | cut -f1,24,25 > pages.tsv
 
 awk -f TMP/jeter.awk TMP/merged.tsv > index.html
 """

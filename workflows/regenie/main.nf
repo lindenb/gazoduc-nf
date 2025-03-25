@@ -122,9 +122,9 @@ workflow {
 		step2_ch.output.groupTuple()
 		)
 	
-	QQPLOT(ch5.output.flatten().filter{it.name.endsWith(".regenie.gz")})
-	ANNOT_HITS(ch5.output.flatten().filter{it.name.endsWith(".regenie.gz")}.collect())
-	MAKE_PDF_ARCHIVE(ch5.output.flatten().filter{it.name.endsWith(".pdf")}.collect())
+	//QQPLOT(ch5.output.flatten().filter{it.name.endsWith(".regenie.gz")})
+	ANNOT_HITS(ch5.output.filter{it.name.endsWith(".regenie.gz")}.collect())
+	//MAKE_PDF_ARCHIVE(ch5.output.flatten().filter{it.name.endsWith(".pdf")}.collect())
 
 	
 	}
@@ -811,87 +811,6 @@ bcftools view -O v '${vcf}' |\\
 
 
 
-process MAKE_ANNOT_PER_CTG {
-tag "chr${contig} ${title}"
-label "process_quick_high"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-afterScript "rm -rf TMP"
-input:
-	path(user_bed)//optional 
-        tuple val(title),val(contig),path(vcf_files)
-output:
-	tuple val(title),val(contig),path("*.annot.txt.gz"),path("*.mask.txt.gz"),path("*.setfile.txt.gz"),emit:output
-script:
-	def args = title.equals("userbed")? " -b '${user_bed}' -w -1 " : (title.equals("sliding")?" -w ${params.window_size} ":" -w -1 ")
-	def vcf = vcf_files.find{it.name.endsWith(".bcf") || it.name.endsWith(".vcf.gz")}
-"""
-set -o pipefail
-mkdir -p TMP
-
-JD1=`which jvarkit`
-echo "JD1=\${JD1}" 1>&2
-# directory of jvarkit
-JD2=`dirname "\${JD1}"`
-# find the jar itself
-JVARKIT_JAR=`find "\${JD2}/../.." -type f -name "jvarkit.jar" | head -n1`
-
-cp -v "${moduleDir}/Minikit.java" TMP/
-javac -sourcepath TMP -cp "\${JVARKIT_JAR}" -d TMP TMP/Minikit.java
-
-bcftools view -G -O v '${vcf}' |\\
-	java -Xmx${task.memory.giga}g \
-		-Djava.io.tmpdir=TMP \\
-		-cp TMP:\${JVARKIT_JAR} Minikit \\
-			-a TMP/jeter.annot.txt \\
-			-s TMP/jeter.setfile.txt \\
-			-m TMP/jeter.mask.txt \\
-			-f ${params.freq} \\
-			${args}
-
-gzip --best TMP/jeter.*.txt
-mv -v TMP/jeter.annot.txt.gz "regenie.${contig}.annot.txt.gz"
-mv -v TMP/jeter.mask.txt.gz "regenie.${contig}.mask.txt.gz"
-mv -v TMP/jeter.setfile.txt.gz "regenie.${contig}.setfile.txt.gz"
-"""
-}
-
-
-
-process SPLIT_OVERLAPING_ANNOT {
-tag "chr${contig} ${title}"
-label "process_quick_high"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-afterScript "rm -rf TMP"
-input:
-        tuple val(title),val(contig),path(annot),path(mask),path(setfile)
-output:
-	tuple val(title),val(contig),path("OUTPUT/*"),emit:output
-script:
-"""
-set -o pipefail
-mkdir -p TMP/OUTPUT
-
-JD1=`which jvarkit`
-echo "JD1=\${JD1}" 1>&2
-# directory of jvarkit
-JD2=`dirname "\${JD1}"`
-# find the jar itself
-JVARKIT_JAR=`find "\${JD2}/../.." -type f -name "jvarkit.jar" | head -n1`
-
-cp -v "${moduleDir}/Minikit3.java" TMP/Minikit.java
-javac -sourcepath TMP -cp "\${JVARKIT_JAR}" -d TMP TMP/Minikit.java
-
-java -Xmx${task.memory.giga}g \
-	-Djava.io.tmpdir=TMP  \\
-	-cp TMP:\${JVARKIT_JAR} Minikit \\
-	-o TMP/OUTPUT \\
-	"${annot}" "${setfile}" "${mask}"
-	
-mv TMP/OUTPUT ./OUTPUT
-"""
-}
-
-
 process STEP2 {
 label "process_quick_high"
 array 100
@@ -941,7 +860,10 @@ regenie \\
   --bsize 200 \\
   --vc-tests "${params.vc_tests}" \\
   --check-burden-files \\
-  --weights-col ${params.weight_column?:4}
+  --weights-col ${params.weight_column?:4} \\
+  --write-mask-snplist \\
+  --firth --approx \\
+  --pThresh 0.01
 
 gzip --best *.regenie
 """
@@ -957,8 +879,7 @@ input:
 	path(genome)
 	tuple val(title),val(L) //path("INPUT/*")
 output:
-	path("*.regenie.*"),emit:output
-	path("${title}.results.tsv.gz"),emit:results
+	path("${title}.results.tsv.gz"),emit:output
 script:
 
 	def dict = genome.find{it.name.endsWith(".dict")}
@@ -1084,17 +1005,19 @@ dev.off()
 __EOF__
 
 R --no-save < TMP/jeter.R
-find TMP -type f
 
-find TMP -type f -name "*.regenie" | while read F
-do
-	tr " " "\t" <  "\${F}" | bgzip > "TMP/${title}.\${F##*/}.gz"
-	tabix -S 1 -s 1 -b 2 -e 2 "TMP/${title}.\${F##*/}.gz"
-done
+#
+# NO NEED to saved the regenie.gz, and regenie.gz.tbi as I wrote jvarkit+swing+regenie
+#
+find TMP -type f
+#find TMP -type f -name "*.regenie" | while read F
+#do
+#	tr " " "\t" <  "\${F}" | bgzip > "TMP/${title}.\${F##*/}.gz"
+#	tabix -S 1 -s 1 -b 2 -e 2 "TMP/${title}.\${F##*/}.gz"
+#done
 
 mv TMP/*.pdf ./
 mv TMP/*.gz ./
-mv TMP/*.tbi ./
 """
 }
 
@@ -1415,6 +1338,7 @@ input:
 	path(plink_files)
 output:
 	path("*.png"),emit:output
+	path("average_pihat.tsv")
 script:
 	def plink_genome = plink_files.find{it.name.endsWith(".genome")}
 	def maxPiHat = 0.1
@@ -1433,6 +1357,8 @@ average_PI_HAT <- sapply(unique_IID1, function(iid1) {
 
 # Create a data frame for the results
 T1 <- data.frame(S = unique_IID1, X = average_PI_HAT)
+# save in a file
+write.table(T1,"average_pihat.tsv",sep="\t", row.names=FALSE, quote=FALSE, col.names = FALSE)
 
 png("sample2avg.pihat.png")
 boxplot(
@@ -1622,11 +1548,12 @@ output:
 	path("digest.tsv"),emit:output
 script:
 	def treshold=(params.digest_treshold as double)
+	def n_try = "--tries 10 --waitretry=120"
 """
 export LC_ALL=C
 set -o pipefail
 mkdir -p TMP
-find INPUT -name "*.gz" |\
+find INPUT/ -name "*.gz" |\
 while read F
 do
 	gunzip -c "\${F}" |\\
@@ -1654,9 +1581,12 @@ sed 's/ensembl_transcript_id/external_gene_name/' TMP/biomart.01.xml > TMP/bioma
 
 # grch37 or 38 , we don't care as we don't use the coordinates
 rm -f TMP/jeter.b1
-wget -O - "http://ensembl.org/biomart/martservice?query=\$(cat TMP/biomart.01.xml)" >> TMP/jeter.b1
-wget -O - "http://ensembl.org/biomart/martservice?query=\$(cat TMP/biomart.02.xml)" >> TMP/jeter.b1
-wget -O - "http://ensembl.org/biomart/martservice?query=\$(cat TMP/biomart.03.xml)" >> TMP/jeter.b1
+wget ${n_try} -O TMP/jeter.b2 "http://ensembl.org/biomart/martservice?query=\$(cat TMP/biomart.01.xml)"
+cat TMP/jeter.b2 >> TMP/jeter.b1
+wget ${n_try} -O TMP/jeter.b2 "http://ensembl.org/biomart/martservice?query=\$(cat TMP/biomart.02.xml)"
+cat TMP/jeter.b2 >> TMP/jeter.b1
+wget ${n_try} -O TMP/jeter.b2 "http://ensembl.org/biomart/martservice?query=\$(cat TMP/biomart.03.xml)" 
+cat TMP/jeter.b2 >> TMP/jeter.b1
 
 sed 's/\\[Source.*\\]//' TMP/jeter.b1 |\\
 	awk -F '\t' '(\$2!="")' |\\
