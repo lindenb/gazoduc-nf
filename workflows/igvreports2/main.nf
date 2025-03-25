@@ -182,7 +182,7 @@ NROWS=`tail -n +2 TMP/merged.tsv | wc -l`
 # order on the number of base that is NOT the reference
 # Z is the sum of the other bases
 # N0 is the number of samples with Z==0
-awk -F '\t' 'BEGIN {N0=0;} (NR==1) {print;next;} {Z=0;A=int(\$16);C=int(\$17);G=int(\$18);T=int(\$19);Z=A+C+G+T; if(\$4=="A") Z-=A; if(\$4=="C") Z-=C; if(\$4=="G") Z-=G; if(\$4=="T") Z-=T; if(Z==0) {N0++;if(${max_score_0}<=0 ||N0> ${max_score_0}) next;} printf("%d\t%s\\n",Z,\$0);}'  TMP/merged.tsv > TMP/jeter1.txt
+awk -F '\t' 'BEGIN {N0=0;} (NR==1) {print;next;} {Z=0;A=int(\$16);C=int(\$17);G=int(\$18);T=int(\$19);Z=A+C+G+T; if(\$4=="A") Z-=A; if(\$4=="C") Z-=C; if(\$4=="G") Z-=G; if(\$4=="T") Z-=T; if(Z==0) {N0++;if(${max_score_0}>-1 && N0 > ${max_score_0}) next;} printf("%d\t%s\\n",Z,\$0);}'  TMP/merged.tsv > TMP/jeter1.txt
 # save header 
 head -n1 TMP/jeter1.txt  >  TMP/jeter2.txt
 
