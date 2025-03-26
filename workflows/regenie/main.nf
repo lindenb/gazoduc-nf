@@ -5,7 +5,6 @@ include {JVARKIT_VCF_TO_INTERVALS_01} from '../../subworkflows/vcf2intervals'
 include {BCFTOOLS_CONCAT_CONTIGS} from '../../subworkflows/bcftools/concat.contigs'
 include {k1_signature} from '../../modules/utils/k1.nf'
 include {runOnComplete} from '../../modules/utils/functions.nf'
-//include {GHOSTSCRIPT_MERGE} from '../..//modules/gs/merge'
 
 workflow {
 	if(!file(params.vcf).name.contains(".")) throw new IllegalArgumentException("--vcf missing");
@@ -122,11 +121,8 @@ workflow {
 		step2_ch.output.groupTuple()
 		)
 	
-	//QQPLOT(ch5.output.flatten().filter{it.name.endsWith(".regenie.gz")})
-	ANNOT_HITS(ch5.output.filter{it.name.endsWith(".regenie.gz")}.collect())
-	//MAKE_PDF_ARCHIVE(ch5.output.flatten().filter{it.name.endsWith(".pdf")}.collect())
-
-	
+	ANNOT_HITS(reference,ch5.output.collect())
+	MAKE_PNG_ARCHIVE(ch5.images.flatten().collect())
 	}
 
 runOnComplete(workflow)
@@ -260,6 +256,7 @@ export LC_ALL=C
 		--trim-unseen-allele \\
 		--trim-alt-alleles \\
 		--no-update \\
+		--apply-filters '.,PASS' \\
 		-O u -o TMP/jeter2.bcf "${vcf}"
 	mv TMP/jeter2.bcf TMP/jeter1.bcf
 
@@ -880,6 +877,7 @@ input:
 	tuple val(title),val(L) //path("INPUT/*")
 output:
 	path("${title}.results.tsv.gz"),emit:output
+	path("*.png"),emit:images
 script:
 
 	def dict = genome.find{it.name.endsWith(".dict")}
@@ -965,10 +963,11 @@ for(i in seq_len(nrow(mft))) {
 
 data <- read.table(mft[i,]\$filename, header=TRUE, sep=" ", stringsAsFactors=FALSE)
 data\$x <- mapply(pos2index, data\$CHROM, data\$GENPOS)
+data\$LOG10P <-  as.double(data\$LOG10P)
 
-fileout <- paste("TMP/${title}.freq_",mft[i,]\$freq,"_",mft[i,]\$test_name,"_",mft[i,]\$annot,".regenie.pdf",sep="")
+fileout <- paste("TMP/${title}.freq_",mft[i,]\$freq,"_",mft[i,]\$test_name,"_",mft[i,]\$annot,".regenie.manhattan.png",sep="")
 
-pdf(fileout, width=20, height=6)
+png(fileout, width=1500, height=500,units="px")
 
 x_lim <-  c(0,max_genome_size)
 y_lim <- c(0,1+max(data\$LOG10P))
@@ -982,8 +981,8 @@ plot(	NULL,
 	ylim = y_lim
 	)
 
-for (i in seq_along(fai\$contig)) {
-  rect(chrom_positions[i], par("usr")[3], chrom_positions[i+1], par("usr")[4], col=chrom_colors[i], border=NA)
+for (k in seq_along(fai\$contig)) {
+  rect(chrom_positions[k], par("usr")[3], chrom_positions[k+1], par("usr")[4], col=chrom_colors[k], border=NA)
 }
 
 # real plot
@@ -1001,6 +1000,34 @@ abline(h=6,col="red",lty=2)
 abline(h=5,col="green",lty=2)
 
 dev.off()
+
+pvector <- data\$LOG10P
+# I don't understand why running pow(10,x) and then log10(y) gives a good chart. I hate R.
+pvector <- 10^(-pvector)
+pvector <- pvector[!is.na(pvector) & !is.nan(pvector) & !is.null(pvector) & is.finite(pvector) & pvector>0]
+if(length(pvector) > 0) {
+fileout <- paste("TMP/${title}.freq_",mft[i,]\$freq,"_",mft[i,]\$test_name,"_",mft[i,]\$annot,".regenie.qqplot.png",sep="")
+png(fileout, width=500, height=500,units="px")
+
+
+# Observed and expected
+o = -log10(sort(pvector,decreasing=FALSE))
+e = -log10( ppoints(length(pvector) ))
+
+plot(x=e,
+	y=o,
+	pch=20, 
+	xlim=c(0, max(e)),
+	ylim=c(0, max(o)), 
+        xlab=expression(Expected~~-log[10](italic(p))), 
+        ylab=expression(Observed~~-log[10](italic(p))),
+	main=paste("Test:",mft[i,]\$test_name," AF:",mft[i,]\$freq," Annot:",mft[i,]\$annot,sep=""),
+	sub= "${params.prefix}regenie"
+	)
+
+abline(0,1,col="red")
+dev.off()
+}
 }
 __EOF__
 
@@ -1016,7 +1043,7 @@ find TMP -type f
 #	tabix -S 1 -s 1 -b 2 -e 2 "TMP/${title}.\${F##*/}.gz"
 #done
 
-mv TMP/*.pdf ./
+mv TMP/*.png ./
 mv TMP/*.gz ./
 """
 }
@@ -1028,40 +1055,6 @@ mv TMP/*.gz ./
 #mv TMP/jeter.pdf     regenie.${test_name}.${mask_name}.${status_name}.${freq}.pdf
 #mv TMP/jeter.tsv.gz.tbi regenie.${test_name}.${mask_name}.${status_name}.${freq}.tsv.gz.tbi
 */
-
-
-process QQPLOT {
-label "process_quick"
-tag "${regenie.name}"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-afterScript "rm -rf TMP"
-input:
-	path(regenie)
-output:
-	path("*.png"),emit:output
-script:
-"""
-mkdir -p TMP
-cat << '__EOF__' > TMP/jeter.R
-T1 <- read.table(file="${regenie}",sep="\t",header=TRUE, stringsAsFactors=FALSE)
-
-png("${regenie.name}.png")
-pvector <- T1\$LOG10P
-pvector <- pvector[!is.na(pvector) & !is.nan(pvector) & !is.null(pvector) & is.finite(pvector) & pvector<1 & pvector>0]
-o = -log10(sort(pvector,decreasing=FALSE))
-e = -log10( ppoints(length(pvector) ))
-plot(e, o, pch=20, 
-	main="${regenie.name}",
-	xlab=expression(Expected~~-log[10](italic(p))), 
-	ylab=expression(Observed~~-log[10](italic(p))),
-	)
- abline(0,1,col="red")
-dev.off()
-__EOF__
-
-R --no-save < TMP/jeter.R
-"""
-}
 
 
 workflow RUN_PCA {
@@ -1470,10 +1463,10 @@ mv TMP/${prefix}multiqc.removed_samples_mqc.html ./
 """
 }
 
-process MAKE_PDF_ARCHIVE {
+process MAKE_PNG_ARCHIVE {
 label "process_quick"
 input:
-	path("PDFS/*")
+	path("PNGS/*")
 output:
 	path("${params.prefix?:""}archive.zip"),emit:output
 script:
@@ -1489,23 +1482,28 @@ cat << __EOF__ >  "${dir}/index.html"
 <title>${params.prefix?:""}Regenie</title>
 <script>
 var index=-1;
-var pdfs=[
+var images=[
 __EOF__
 
-find PDFS -name "*.pdf" -printf "\\"%f\\"\\n" | LC_ALL=C sort -T . -V | paste -sd ',' >> "${dir}/index.html"
-cp -v PDFS/*.pdf ${dir}/
+find PNGS/ -name "*.manhattan.png" -printf "\\"%f\\"\\n" |\\
+	sed 's/.manhattan.png"/"/' |\\
+	LC_ALL=C sort -T . -V |\\
+	paste -sd ',' >> "${dir}/index.html"
+cp -v PNGS/*.png ${dir}/
 
 cat << __EOF__ >> "${dir}/index.html"
 ];
 
 function goTo(idx) {
-	if(index==idx) return;
-        if(idx<0) idx=pdfs.length-1;
-        if(idx>=pdfs.length) idx=0;
+	if(index==idx || images.length==0) return;
+        if(idx<0) idx=images.length-1;
+        if(idx>=images.length) idx=0;
         index=idx;
         var E = document.getElementById("theimg");
-        E.setAttribute("src",pdfs[index]);
-        document.getElementById("x").textContent = ""+(index+1)+"/"+pdfs.length;
+        E.setAttribute("src",images[index]+".manhattan.png");
+        E = document.getElementById("qq");
+        E.setAttribute("src",images[index]+".qqplot.png");
+        document.getElementById("x").textContent = ""+(index+1)+"/"+images.length;
 	E=document.getElementById("select");
 	if(E.selectedIndex!=index) E.selectedIndex=index;
         }
@@ -1514,10 +1512,10 @@ addEventListener("load", (event) => {
         goTo(0);
         var E=  document.getElementById("select");
         E.addEventListener("change",()=>{goTo(parseInt(E.value));});
-        for(var i in pdfs) {
+        for(var i in images) {
                 var C = document.createElement("option");
                 C.setAttribute("value",i);
-                C.appendChild(document.createTextNode(pdfs[i]));
+                C.appendChild(document.createTextNode(images[i]));
                 E.appendChild(C);
                 }
         });
@@ -1529,7 +1527,7 @@ addEventListener("load", (event) => {
 <button onclick="goTo(index+1)">Next</button>
 <span id="x">1/x</span>
 <br/>
-<embed id="theimg" src="" width="1000" height="700" />
+<img id="theimg" alt="manhattan" src=""/><img id="qq" alt="qqplot" src=""/><br/>
 </body>
 </html>
 __EOF__
@@ -1541,65 +1539,97 @@ rm -rf '${dir}'
 
 process ANNOT_HITS {
 afterScript "rm -rf TMP"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 label "process_quick"
 input:
+	path(genome)
 	path("INPUT/*")
 output:
 	path("digest.tsv"),emit:output
 script:
+	def fai = genome.find{it.name.endsWith(".fai")}
+	def dict = genome.find{it.name.endsWith(".dict")}
 	def treshold=(params.digest_treshold as double)
+        def k1 = k1_signature()
 	def n_try = "--tries 10 --waitretry=120"
 """
 export LC_ALL=C
 set -o pipefail
+set -x
 mkdir -p TMP
-find INPUT/ -name "*.gz" |\
-while read F
-do
-	gunzip -c "\${F}" |\\
-		awk -vF="\${F##*/}" '(\$1=="CHROM") {printf("#%s\\tSymbol\tFile\\n",\$0);next;} (\$12>${treshold}) {G=\$3; gsub(/[0-9\\.]*\$/,"",G); gsub(/\\.singleton\$/,"",G);gsub(/\\.[a-zA-z0-9]+\$/,"",G);printf("%s\\t%s\\t%s\\n",\$0,G,F);}' >> TMP/jeter.a
-done
 
-sort -t '\t' -T TMP -k14,14 TMP/jeter.a | uniq > TMP/jeter.c
-mv TMP/jeter.c TMP/jeter.a
+cat << EOF | sort -t '\t' -k1,1 > TMP/jeter.a
+1:${k1.hg19}\thttp://grch37.ensembl.org/biomart/martservice
+1:${k1.hg38}\thttp://ensembl.org/biomart/martservice
+EOF
+
+
+awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -t '\t' -k1,1 > TMP/jeter.b
+
+BIOMART=`join -t '\t' -1 1 -2 1 -o 1.2 TMP/jeter.a TMP/jeter.b | head -n1`
+
+
+gunzip -c INPUT/*.gz |\\
+	awk -F '\t' '(\$1=="CHROM" || (\$12!="NA" && \$12>${treshold}))' > TMP/jeter.a
+
+awk  -F '\t' '(\$1=="CHROM")' TMP/jeter.a | head -n 1 > TMP/save.header
+
+awk -F '\t' '(\$1!="CHROM") {printf("%s\t%d\t%s\t%s\\n",\$1,int(\$2)-1,\$2,\$0);}' TMP/jeter.a |\\
+	jvarkit bedrenamechr -R "${dict}" --column 1 --convert RETURN_ORIGINAL |\\
+	sort -t '\t' -T TMP -k1,1 -k2,2n |\\
+		uniq > TMP/results.bed
+		
 
 cat << __EOF__ > TMP/biomart.01.xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE Query>
 <Query  virtualSchemaName = "default" formatter = "TSV" header = "0" uniqueRows = "0" count = "" datasetConfigVersion = "0.6" >
 	<Dataset name = "hsapiens_gene_ensembl" interface = "default" >
-	    <Filter name = "transcript_biotype" value = "protein_coding"/>
-		<Attribute name = "ensembl_transcript_id" />
+		<Filter name = "chromosome_name" value = "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,X,Y"/>
+		<Attribute name = "chromosome_name" />
+		<Attribute name = "start_position" />
+		<Attribute name = "end_position" />
+		<Attribute name = "ensembl_gene_id" />
+		<Attribute name = "external_gene_name" />
 		<Attribute name = "description" />
+		<Attribute name = "definition_1006" />
 	</Dataset>
 </Query>
 __EOF__
 
-
-sed 's/ensembl_transcript_id/ensembl_gene_id/' TMP/biomart.01.xml > TMP/biomart.02.xml
-sed 's/ensembl_transcript_id/external_gene_name/' TMP/biomart.01.xml > TMP/biomart.03.xml
-
-# grch37 or 38 , we don't care as we don't use the coordinates
-rm -f TMP/jeter.b1
-wget ${n_try} -O TMP/jeter.b2 "http://ensembl.org/biomart/martservice?query=\$(cat TMP/biomart.01.xml)"
-cat TMP/jeter.b2 >> TMP/jeter.b1
-wget ${n_try} -O TMP/jeter.b2 "http://ensembl.org/biomart/martservice?query=\$(cat TMP/biomart.02.xml)"
-cat TMP/jeter.b2 >> TMP/jeter.b1
-wget ${n_try} -O TMP/jeter.b2 "http://ensembl.org/biomart/martservice?query=\$(cat TMP/biomart.03.xml)" 
-cat TMP/jeter.b2 >> TMP/jeter.b1
-
-sed 's/\\[Source.*\\]//' TMP/jeter.b1 |\\
-	awk -F '\t' '(\$2!="")' |\\
-	sort -t '\t' -T TMP -k1,1 --unique > TMP/jeter.b
+wget ${n_try} -O TMP/jeter.biomart.tsv "\${BIOMART}?query=\$(cat TMP/biomart.01.xml)"
 
 
-join -t '\t' -1 14 -2 1 -a 1 -o '1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,1.10,1.11,1.12,1.13,1.14,1.15,2.2' -e '.'  TMP/jeter.a TMP/jeter.b > TMP/jeter.c
+awk -F '\t' '{OFS="\t";\$2=int(\$2)-1;print;}' TMP/jeter.biomart.tsv |\\
+	sed \\
+		-e 's/\\[Source:[A-Za-z_0-9 ;:]*\\]//' \\
+		-e 's/A location, relative to cellular compartments and structures, occupied by a macromolecular machine. There are three types of cellular components .*//' \
+		-e 's/A biological process is the execution of a genetically-encoded biological .*//' |\\
+	uniq |\\
+	jvarkit bedrenamechr -R "${dict}" --column 1 --convert SKIP |\\
+	sort -t '\t' -T TMP -k1,1 -k2,2n -k3,3n -k4,4 > TMP/jeter.biomart.bed
 
-grep "^#CHROM" -m1 TMP/jeter.c > TMP/jeter.a
-grep -v "^#CHROM" TMP/jeter.c |\\
-	sort -t '\t' -T TMP -k12,12gr >> TMP/jeter.a
+
+awk -F '\t' '{printf("%s",\$0);for(i=0;i< 7-NF;i++) printf("\t.");printf("\\n");}' < TMP/jeter.biomart.bed |\\
+	datamash  --filler=NA --no-strict  -g 1,2,3,4 -c ','  -t '\t' unique 5 unique 6 unique 7 |\\
+	sort -t '\t' -T TMP -k1,1 -k2,2n |\\
+	uniq > TMP/annot.bed
+
+head TMP/annot.bed 1>&2
+
+tr "\\n" "\t" < TMP/save.header > TMP/digest.tsv
+
+echo -e "gene_chrom\tgene_start\tgene_end\tgene_id\tgene_name\tgene_desc\tgene_GO\tdistance_to_gene" >> TMP/digest.tsv
 
 
-mv TMP/jeter.a digest.tsv
+bedtools closest \\
+	-a TMP/results.bed \\
+	-b TMP/annot.bed \\
+	-d  |\\
+	cut -f 4- |\\
+	sort -t '\t' -T TMP -k12,12gr >> TMP/digest.tsv
+
+
+mv TMP/digest.tsv digest.tsv
 """
 }

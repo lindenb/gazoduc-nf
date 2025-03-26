@@ -49,8 +49,12 @@ public class Minikit extends Launcher {
 				final int col_test = header.getColumnIndex("TEST");
 				final int col_id = header.getColumnIndex("ID");
 				final int col_chrom = header.getColumnIndex("CHROM");
+				final int col_extra = header.getColumnIndex("EXTRA");
+				final int col_log10P = header.getColumnIndex("LOG10P");
 				while((line=br.readLine())!=null) {
 					final List<String> tokens = header.split(line);
+					if(tokens.get(col_log10P).equals("NA")) continue;
+					if(tokens.get(col_extra).equals("TEST_FAIL")) continue;
 					final String test_name = tokens.get(col_test);
 					final String id =  tokens.get(col_id);
 					final String freq_name;
