@@ -29,7 +29,7 @@ workflow {
 			snsheet_ch.output,
 			tobed_ch.bed.splitCsv(header:false,sep:'\t').
 				map{[it[0],((it[1] as int)+1),(it[2] as int),file(it[3]),file(it[4])]}.
-				filter{it[0].matches("(chr)?[0-9XY]+")}
+				filter{it[0].matches(params.skip_XY?"(chr)?[0-9]+":"(chr)?[0-9XY]+")}
 			)
 
 	wch1_ch = wch1_ch.output.map{[(it[0].startsWith("chr") ? it[0].substring(3) : it[0] ) , it[1], it[2] ]}
@@ -883,7 +883,7 @@ script:
 	def dict = genome.find{it.name.endsWith(".dict")}
 	def fai = genome.find{it.name.endsWith(".fai")}
 	def fasta = genome.find{it.name.endsWith("a")}
-
+	def regex_contig= (params.skip_XY?"0-9":"0-9X")
 """
 mkdir -p TMP
 
@@ -899,7 +899,7 @@ cp -v "${moduleDir}/Minikit2.java" TMP/Minikit.java
 javac -sourcepath TMP -cp "\${JVARKIT_JAR}" -d TMP TMP/Minikit.java
 
 # do not use chrY because regenie merge it with chrX (see doc)
-cut -f1,2 '${fai}' | awk -F '\t' '( \$1 ~ /^(chr)?[0-9X]+\$/ )' > TMP/jeter.fai
+cut -f1,2 '${fai}' | awk -F '\t' '( \$1 ~ /^(chr)?[${regex_contig}]+\$/ )' > TMP/jeter.fai
 
 
 cat << EOF > TMP/jeter.list
@@ -1585,7 +1585,7 @@ cat << __EOF__ > TMP/biomart.01.xml
 <!DOCTYPE Query>
 <Query  virtualSchemaName = "default" formatter = "TSV" header = "0" uniqueRows = "0" count = "" datasetConfigVersion = "0.6" >
 	<Dataset name = "hsapiens_gene_ensembl" interface = "default" >
-		<Filter name = "chromosome_name" value = "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,X,Y"/>
+		<Filter name = "chromosome_name" value = "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22${params.skip_XY?"":",X,Y"}"/>
 		<Attribute name = "chromosome_name" />
 		<Attribute name = "start_position" />
 		<Attribute name = "end_position" />
