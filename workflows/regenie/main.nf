@@ -114,15 +114,20 @@ workflow {
 		)
 
 
-
-
 	ch5 = MERGE_AND_PLOT(
 		reference,
 		step2_ch.output.groupTuple()
 		)
 	
 	ANNOT_HITS(reference,ch5.output.collect())
-	MAKE_PNG_ARCHIVE(ch5.images.flatten().collect())
+	MAKE_PNG_ARCHIVE(ch5.images.mix(ch5.ascii).flatten().collect())
+
+	MAKE_SNPLIST(
+		step2_ch.output.map{it[1]}.collect(),
+		step2_ch.masks_snplist.map{it[1]}.collect()
+		)
+
+	README()
 	}
 
 runOnComplete(workflow)
@@ -807,7 +812,6 @@ bcftools view -O v '${vcf}' |\\
 }
 
 
-
 process STEP2 {
 label "process_quick_high"
 array 100
@@ -822,6 +826,7 @@ input:
 	tuple val(title),val(contig),path(annot),path(setfile),path(mask),path(aff)
 output:
         tuple val(title),path("*.regenie.gz"),emit:output
+	tuple val(title),path("*masks.snplist.gz"),emit:masks_snplist
 script:
 	def pgen = bgen_files.find{it.name.endsWith(".pgen")}
 	def ped = pheno_files.find{it.name.endsWith(".plink.ped")}
@@ -862,9 +867,11 @@ regenie \\
   --firth --approx \\
   --pThresh 0.01
 
+gzip --best *masks.snplist
 gzip --best *.regenie
 """
 }
+
 
 
 process MERGE_AND_PLOT {
@@ -878,15 +885,17 @@ input:
 output:
 	path("${title}.results.tsv.gz"),emit:output
 	path("*.png"),emit:images
+	path("*.report.txt"),emit:ascii
 script:
-
 	def dict = genome.find{it.name.endsWith(".dict")}
 	def fai = genome.find{it.name.endsWith(".fai")}
 	def fasta = genome.find{it.name.endsWith("a")}
 	def regex_contig= (params.skip_XY?"0-9":"0-9X")
+	def hline1 = 5
+	def hline2 = hline1 + 1
 """
 mkdir -p TMP
-
+set -x
 
 JD1=`which jvarkit`
 echo "JD1=\${JD1}" 1>&2
@@ -922,13 +931,16 @@ set -o pipefail
 xargs -a TMP/jeter.list -L 1 gunzip -c |\\
 	grep -v "^#" |\\
 	grep -v '^CHROM' |\\
-	LC_ALL=C sort -T TMP -t ' ' -k1,1V -k2,2n |\\
+	LC_ALL=C sort -T TMP  --buffer-size=${task.memory.mega}M  -t ' ' -k1,1V -k2,2n |\\
 	uniq >> TMP/jeter.txt
 
 cat TMP/jeter.txt | tr " " "\t" | gzip --best > TMP/${title}.results.tsv.gz
 
+
 java -cp "\${JVARKIT_JAR}:TMP" Minikit -R "${fasta}" -o TMP < TMP/jeter.txt
 rm TMP/jeter.txt
+
+find ./TMP -type f 1>&2
 
 cat << '__EOF__' > TMP/jeter.R
 mft <- read.table("TMP/manifest.tsv", header=TRUE, sep="\t", stringsAsFactors=FALSE, colClasses=c("character","character","character"),)
@@ -962,8 +974,16 @@ max_genome_size <- pos2index(last_chrom, last_size)
 for(i in seq_len(nrow(mft))) {
 
 data <- read.table(mft[i,]\$filename, header=TRUE, sep=" ", stringsAsFactors=FALSE)
-data\$x <- mapply(pos2index, data\$CHROM, data\$GENPOS)
 data\$LOG10P <-  as.double(data\$LOG10P)
+
+# save for html report
+data2 <- data[is.finite(data\$LOG10P) & as.double(data\$LOG10P) >= ${hline2} , ]
+fileout <- paste("TMP/${title}.freq_",mft[i,]\$freq,"_",mft[i,]\$test_name,"_",mft[i,]\$annot,".regenie.report.txt",sep="")
+write.table(data2,fileout,sep="\t", row.names=FALSE, quote=FALSE, col.names = TRUE)
+
+
+
+data\$x <- mapply(pos2index, data\$CHROM, data\$GENPOS)
 
 fileout <- paste("TMP/${title}.freq_",mft[i,]\$freq,"_",mft[i,]\$test_name,"_",mft[i,]\$annot,".regenie.manhattan.png",sep="")
 
@@ -996,8 +1016,8 @@ points(data\$x,
 
 # vertical bars
 abline(v=chrom_positions, col="black", lty=2)
-abline(h=6,col="red",lty=2)
-abline(h=5,col="green",lty=2)
+abline(h=${hline2},col="red",lty=2)
+abline(h=${hline1},col="green",lty=2)
 
 dev.off()
 
@@ -1033,28 +1053,14 @@ __EOF__
 
 R --no-save < TMP/jeter.R
 
-#
-# NO NEED to saved the regenie.gz, and regenie.gz.tbi as I wrote jvarkit+swing+regenie
-#
-find TMP -type f
-#find TMP -type f -name "*.regenie" | while read F
-#do
-#	tr " " "\t" <  "\${F}" | bgzip > "TMP/${title}.\${F##*/}.gz"
-#	tabix -S 1 -s 1 -b 2 -e 2 "TMP/${title}.\${F##*/}.gz"
-#done
 
+find TMP/ -type f 1>&2
+mv TMP/${title}.results.tsv.gz ./
 mv TMP/*.png ./
-mv TMP/*.gz ./
+mv TMP/*.regenie.report.txt ./
 """
 }
 
-/*
-#bgzip TMP/jeter.tsv
-#tabix -S 1 -s 1 -b 1 -e 1 TMP/jeter.tsv.gz
-#mv TMP/jeter.tsv.gz     regenie.${test_name}.${mask_name}.${status_name}.${freq}.tsv.gz
-#mv TMP/jeter.pdf     regenie.${test_name}.${mask_name}.${status_name}.${freq}.pdf
-#mv TMP/jeter.tsv.gz.tbi regenie.${test_name}.${mask_name}.${status_name}.${freq}.tsv.gz.tbi
-*/
 
 
 workflow RUN_PCA {
@@ -1393,75 +1399,6 @@ R --no-save < TMP/jeter.R
 """
 }
 
-process ZOB_TODO {
-script:
-"""
-##
-## create MULTIQC CONFIG
-##
-cat << EOF > "${prefix}multiqc.config.yaml"
-custom_data:
-  pihat_plot1_${params.step_id}:
-    parent_id: pihat_section_${params.step_id}
-    parent_name: "PIHAT ${params.step_name}"
-    parent_description: "${whatispihat}"
-    section_name: "Pihat  ${params.step_name}"
-    description: "plot of pihat"
-  pihat_plot2_${params.step_id}:
-    parent_id: pihat_section_${params.step_id}
-    parent_name: "PIHAT  ${params.step_name}"
-    parent_description: "${whatispihat}"
-    section_name: "Sample to Average pihat"
-    description: "Sample to Average pihat"
-sp:
-  pihat_plot1_${params.step_id}:
-    fn: "${prefix}plot.pihat.png"
-  pihat_plot2_${params.step_id}:
-    fn: "${prefix}plot.sample2avg.pihat.png"
-ignore_images: false
-EOF
-
-
-
-cat << EOF > TMP/${prefix}multiqc.genome_mqc.html
-<!--
-id: 'highpihat_${params.step_id}'
-parent_id: pihat_section_${params.step_id}
-parent_name: "PIHAT ${params.step_name}"
-parent_description: "${whatispihat}"
-section_name: 'High Pihat ${params.step_name}'
-description: ' 10 higher pihat pairs.'
--->
-EOF
-
-awk '(NR>1) {printf("%s\t%s\t%s\\n",\$1,\$3,\$10);}' TMP/plink.genome |\
-	LC_ALL=C sort -t '\t' -T TMP -k3,3gr |\
-	head -n 10 |\
-	awk -F '\t' 'function sn(SN) {nuscore=split(SN,a,/_/); nuscore = nuscore/4; sample="";for(i=1;i<=nuscore;i++) sample=sprintf("%s%s%s",sample,(i==1?"":"_"),a[i]); return sample;} BEGIN {printf("<table class=\\"table\\"><tr><th>SN1</th><th>SN2</th><th>PIHAT</th></tr>\\n");} {printf("<tr><td>%s</td><td>%s</td><td>%s</td></tr>\\n",sn(\$1),sn(\$2),\$3);} END {printf("</table>\\n");}' >> TMP/${prefix}multiqc.genome_mqc.html
-
-
-cat << EOF > TMP/${prefix}multiqc.removed_samples_mqc.html
-<!--
-id: 'rmsamples_${params.step_id}'
-parent_id: pihat_section_${params.step_id}
-parent_name: "PIHAT ${params.step_name}"
-parent_description: "${whatispihat}"
-section_name: 'Removed Samples ${params.step_name}'
-description: 'Samples that would be removed with max.pihat=${params.pihat.pihat_max}.'
--->
-EOF
-
-awk -F '\t' 'BEGIN {printf("<table class=\\"table\\"><tr><th>Sample</th><th>Pihat</th></tr>\\n");} (\$3=="DISCARD") {printf("<tr><td>%s</td><td>%s</td></tr>\\n",\$1,\$2);} END {printf("</table>\\n");}' TMP/samples.keep.status  >> TMP/${prefix}multiqc.removed_samples_mqc.html
-
-
-gzip --best TMP/plink.genome
-mv TMP/plink.genome.gz "${prefix}plink.genome.txt.gz"
-
-mv TMP/${prefix}multiqc.genome_mqc.html ./
-mv TMP/${prefix}multiqc.removed_samples_mqc.html ./
-
-"""
-}
 
 process MAKE_PNG_ARCHIVE {
 label "process_quick"
@@ -1489,7 +1426,9 @@ find PNGS/ -name "*.manhattan.png" -printf "\\"%f\\"\\n" |\\
 	sed 's/.manhattan.png"/"/' |\\
 	LC_ALL=C sort -T . -V |\\
 	paste -sd ',' >> "${dir}/index.html"
+
 cp -v PNGS/*.png ${dir}/
+cp -v PNGS/*.txt ${dir}/
 
 cat << __EOF__ >> "${dir}/index.html"
 ];
@@ -1503,6 +1442,8 @@ function goTo(idx) {
         E.setAttribute("src",images[index]+".manhattan.png");
         E = document.getElementById("qq");
         E.setAttribute("src",images[index]+".qqplot.png");
+        E = document.getElementById("ascii");
+        E.setAttribute("src",images[index]+".report.txt");
         document.getElementById("x").textContent = ""+(index+1)+"/"+images.length;
 	E=document.getElementById("select");
 	if(E.selectedIndex!=index) E.selectedIndex=index;
@@ -1527,7 +1468,7 @@ addEventListener("load", (event) => {
 <button onclick="goTo(index+1)">Next</button>
 <span id="x">1/x</span>
 <br/>
-<img id="theimg" alt="manhattan" src=""/><img id="qq" alt="qqplot" src=""/><br/>
+<img id="theimg" alt="manhattan" src=""/><img id="qq" alt="qqplot" src=""/><iframe id="ascii" scrolling="yes"  src="" width="1500" height="500"  frameborder="0"><br/>
 </body>
 </html>
 __EOF__
@@ -1631,5 +1572,126 @@ bedtools closest \\
 
 
 mv TMP/digest.tsv digest.tsv
+"""
+}
+
+
+process MAKE_SNPLIST {
+afterScript "rm -rf TMP"
+label "process_quick"
+input:
+	val(regenie_files)
+	val(snp_files)
+output:
+	path("snplist.tsv.gz"),emit:output
+script:
+	def treshold=(params.digest_treshold as double)
+"""
+mkdir -p TMP
+export LC_ALL=C
+
+cat << EOF > TMP/regenie.list
+${regenie_files.join("\n")}
+EOF
+
+cat << EOF > TMP/snp_files.list
+${snp_files.join("\n")}
+EOF
+
+xargs -a TMP/regenie.list -L1 gunzip -c |\\
+	awk -F ' ' '(\$1!="CHROM" && \$12!="NA" && \$12 > ${treshold} )' |\\
+	tr " " "\t" |\\
+	sort -T TMP  --buffer-size=${task.memory.mega}M  -t \$'\\t' -k3,3 > TMP/sorted1.txt
+
+cut -f3 TMP/sorted1.txt | uniq > TMP/key1.txt
+
+
+xargs -a TMP/snp_files.list -L1 gunzip -c |\\
+	grep -F -f TMP/key1.txt |\\
+	sort -T TMP  --buffer-size=${task.memory.mega}M  -t \$'\\t' -k1,1 > TMP/sorted2.txt
+
+join -t \$'\\t' -1 3 -2 1 TMP/sorted1.txt TMP/sorted2.txt > TMP/join.tsv
+gzip --best TMP/join.tsv
+
+mv TMP/join.tsv.gz snplist.tsv.gz
+"""
+}
+
+process README {
+executor "local"
+output:
+	path("README.md"),emit:output
+script:
+"""
+
+cat << __EOF__ > README.md
+
+# REGENIE
+
+## Parameters
+
+Reference
+${params.fasta}
+
+TSV file with samples definition
+${params.samplesheet}
+
+VCF file(s)
+${params.vcf}
+
+BED to limit analysis (if any)
+${params.bed}
+
+Gnomad population
+${params.gnomad_population}
+
+optional STEP1 loco file if saved from a previous study
+${params.step1_loco}
+
+optional COVARIATE file if provided by user , otherwise use PCA
+${params.covariate}
+
+named tests
+${params.vc_tests}
+
+frequencies
+${params.frequencies}
+
+vc_maxAAF
+${params.vc_maxAAF}
+
+status name
+${params.status}
+       
+weight column for step 2
+${params.weight_column}
+
+sliding window sizes
+${params.sliding_windows}
+
+custom user bed chrom/start/end/gene_name[/score]
+${params.select_bed}
+
+treshold for digest file , hide pvalue lower than this value
+${params.digest_treshold}
+
+skip chromosomes X and Y
+${params.skip_XY}
+
+## Content
+
+
+PCA/${params.prefix}sample2avg.pihat.png (average pihat per sample)
+PCA/${params.prefix}plink.genome (output of plink containing PIHAT data)
+PCA/${params.prefix}covariates.tsv (covariates, used as input for regenie ) 
+PCA/${params.prefix}plink.mds   ( output of plink containing covariates )
+PCA/${params.prefix}pihat.*.png ( pihat axis X vs axis Y) 
+REGENIE/${params.prefix}digest.tsv (annotation of the best hits)
+REGENIE/${params.prefix}*.results.tsv.gz (regenie raw results)
+REGENIE/${params.prefix}archive.zip ( archive containing HTML  files to visualize each condition)
+REGENIE/${params.prefix}snplist.tsv.gz (for the best hit, the list of the SNP that were used)
+
+__EOF__
+
 """
 }
