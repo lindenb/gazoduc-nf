@@ -46,7 +46,7 @@ emit:
 process LEVEL1 {
 tag "${ctg} ${bed.name}"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-label "process_short"
+label "process_quick"
 afterScript "rm -rf TMP"
 input:
         tuple val(ctg),path("VCF/*")

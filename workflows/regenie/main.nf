@@ -3,6 +3,7 @@
 include {SNPEFF_DOWNLOAD} from '../../modules/snpeff/download'
 include {JVARKIT_VCF_TO_INTERVALS_01} from '../../subworkflows/vcf2intervals'
 include {BCFTOOLS_CONCAT_CONTIGS} from '../../subworkflows/bcftools/concat.contigs'
+include {DOWNLOAD_GENCODE} from '../../modules/ucsc/download.gencode'
 include {k1_signature} from '../../modules/utils/k1.nf'
 include {runOnComplete} from '../../modules/utils/functions.nf'
 
@@ -72,9 +73,12 @@ workflow {
 	else {
 		loco_ch = file(params.step1_loco)
 		}
-	
-	scores_ch = FUNCTIONAL_ANNOTATION_SCORES()
-	the_annot_ch = MAKE_FUNCTIONAL_ANNOT_PER_CTG(scores_ch.output, wch2_ch.output).output
+
+	if(!params.PCA_only) {
+		gencode_ch = DOWNLOAD_GENCODE(reference)
+
+		scores_ch = FUNCTIONAL_ANNOTATION_SCORES()
+		the_annot_ch = MAKE_FUNCTIONAL_ANNOT_PER_CTG(scores_ch.output, gencode_ch.output, wch2_ch.output).output
 	
 
 	if(!params.sliding_windows.isEmpty()) {
@@ -95,7 +99,13 @@ workflow {
 
 
 	if(file(params.select_bed).name.contains(".")) {
-		make_bed_ch = MAKE_BED(file(params.select_bed),wch2_ch.output)
+		if(file(params.select_bed).name.endsWith(".list")) {
+			make_bed_ch = MAKE_BED(Channel.fromPath(params.select_bed).splitText().map{file(it.trim())},wch2_ch.output)
+			}
+		else
+			{
+			make_bed_ch = MAKE_BED(file(params.select_bed),wch2_ch.output)
+			}
 		the_annot_ch = the_annot_ch.mix(make_bed_ch.output)
 		}
 
@@ -126,6 +136,7 @@ workflow {
 		step2_ch.output.map{it[1]}.collect(),
 		step2_ch.masks_snplist.map{it[1]}.collect()
 		)
+	} // end of PCA-only
 
 	README()
 	}
@@ -366,7 +377,7 @@ bcftools index --threads ${task.cpus} "wgselect.${contig}_${start1}_${end}.bcf"
 
 
 process PLINK2_VCF2PGEN {
-label "process_short"
+label "process_quick_high"
 afterScript "rm -rf TMP"
 tag "chr${contig}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
@@ -408,7 +419,7 @@ plink2 ${vcf.name.endsWith(".bcf")?"--bcf":"--vcf"} "${vcf}"  \\
 
 
 process PLINK2_MERGE_PGEN {
-label "process_short"
+label "process_quick_high"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
@@ -674,37 +685,41 @@ output:
 script:
 """
 cat << EOF | tr -s " " | tr " " "\t" > scores.tsv
-3_prime_UTR_variant     0.1     UTR,UTR3
-5_prime_UTR_premature_start_codon_gain_variant  0.2     UTR,UTR5
-5_prime_UTR_truncation  0.5     UTR,UTR5
-3_prime_UTR_truncation  0.5     UTR,UTR3
-5_prime_UTR_variant     0.2     UTR,UTR5
-bidirectional_gene_fusion       1.0	.
-conservative_inframe_deletion   0.1     protein_altering
-conservative_inframe_insertion  0.3     protein_altering
-disruptive_inframe_deletion     0.2     protein_altering
-disruptive_inframe_insertion    0.2     protein_altering
-downstream_gene_variant 0.1     downstream,updownstream
-exon_loss_variant       1.0     protein_altering
-frameshift_variant      0.4	protein_altering
-gene_fusion     0.9     protein_altering
-intergenic_region       0.001	.
-intragenic_variant      0.01	.
-initiator_codon_variant	0.5     protein_altering
-intron_variant  0.05    intronic
-missense_variant        0.9     protein_altering
-non_coding_transcript_exon_variant      0.1     non_coding
-non_coding_transcript_variant   0.1     non_coding
-splice_acceptor_variant 0.5     protein_altering,splice
-splice_donor_variant    0.5     protein_altering,splice
-splice_region_variant   0.5     protein_altering,splice
-start_retained_variant	0.1      synonymous
-start_lost      0.6     protein_altering
-stop_gained     0.9     protein_altering
-stop_lost       0.6     protein_altering
-stop_retained_variant   0.2     synonymous
-synonymous_variant      0.1     synonymous
-upstream_gene_variant   0.1     upstream,updownstream
+3_prime_UTR_variant     0.1     UTR,UTR3,ALL,mrna
+5_prime_UTR_premature_start_codon_gain_variant  0.2     UTR,UTR5,ALL,mrna
+5_prime_UTR_truncation  0.5     UTR,UTR5,ALL,mrna
+3_prime_UTR_truncation  0.5     UTR,UTR3,ALL,mrna
+5_prime_UTR_variant     0.2     UTR,UTR5,ALL,mrna
+bidirectional_gene_fusion       1.0	ALL,mrna
+conservative_inframe_deletion   0.1     protein_altering,ALL,mrna
+conservative_inframe_insertion  0.3     protein_altering,ALL,mrna
+disruptive_inframe_deletion     0.2     protein_altering,ALL,mrna
+disruptive_inframe_insertion    0.2     protein_altering,ALL,mrna
+downstream_gene_variant 0.1     downstream,updownstream,ALL,mrna
+exon_loss_variant       1.0     protein_altering,ALL,mrna
+frameshift_variant      0.4	protein_altering,ALL,mrna
+gene_fusion     0.9     protein_altering,ALL,mrna
+intergenic_region       0.001	ALL
+intragenic_variant      0.01	ALL
+initiator_codon_variant	0.5     protein_altering,ALL,mrna
+intron_variant  0.05    intronic,ALL
+missense_variant        0.9     protein_altering,ALL,mrna
+non_coding_transcript_exon_variant      0.1     non_coding,ALL,mrna
+non_coding_transcript_variant   0.1     non_coding,ALL,mrna
+splice_acceptor_variant 0.5     protein_altering,splice,ALL,mrna
+splice_donor_variant    0.5     protein_altering,splice,ALL,mrna
+splice_region_variant   0.5     protein_altering,splice,ALL,mrna
+start_retained_variant	0.1      synonymous,ALL,mrna
+start_lost      0.6     protein_altering,ALL,mrna
+stop_gained     0.9     protein_altering,ALL,mrna
+stop_lost       0.6     protein_altering,ALL,mrna
+stop_retained_variant   0.2     synonymous,ALL,mrna
+synonymous_variant      0.1     synonymous,ALL,mrna
+upstream_gene_variant   0.1     upstream,updownstream,ALL
+#
+# first_intron is used by jvarkit, do not mix with other masks
+#
+first_intron	0.1	first_intron
 EOF
 """
 
@@ -720,11 +735,13 @@ conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
 	path(annotations)
+	path(gencode_files)
         tuple val(contig),path(vcf_files)
 output:
         tuple val("functional"),val(contig),path("OUT/manifest.tsv"),emit:output
 script:
         def vcf = vcf_files.find{it.name.endsWith(".bcf") || it.name.endsWith(".vcf.gz")}
+	def kg = gencode_files.find{it.name.endsWith(".gz")}
 
 """
 set -o pipefail
@@ -734,6 +751,7 @@ mkdir -p OUT
 bcftools view -O v '${vcf}' |\\
 	java -Djava.io.tmpdir=TMP -jar "\${HOME}/packages/jvarkit/dist/jvarkit.jar" regeniefunctionalannot \\
 		--annotations "${annotations}" \\
+		--kg '${kg}' \\
 		-f ${params.freq} |\\
 	java -Djava.io.tmpdir=TMP -jar "\${HOME}/packages/jvarkit/dist/jvarkit.jar" regeniemakeannot \\
 		-m "${annotations}" \\
@@ -759,7 +777,7 @@ output:
         tuple val("user_bed"),val(contig),path("OUT/manifest.tsv"),emit:output
 script:
         def vcf = vcf_files.find{it.name.endsWith(".bcf") || it.name.endsWith(".vcf.gz")}
-	def min_length=300
+	def min_length=(params.min_bed_length?:300)
 """
 set -o pipefail
 mkdir -p TMP
@@ -769,6 +787,7 @@ bcftools view --regions-file '${select_bed}' -O v '${vcf}' |\\
 	java -Djava.io.tmpdir=TMP -jar "\${HOME}/packages/jvarkit/dist/jvarkit.jar" regeniebedannot \\
 		--bed "${select_bed}" \\
 		--min-length ${min_length} \\
+		${params.skip_XY?"--noXY":""} \\
 		-f ${params.freq} |\\
 	java -Djava.io.tmpdir=TMP -jar "\${HOME}/packages/jvarkit/dist/jvarkit.jar" regeniemakeannot \\
 		--prefix "chr${contig}_bed_chunk" \\
@@ -849,7 +868,7 @@ regenie \\
   --mask-def TMP/mask.txt \\
   --set-list TMP/setfile.txt \\
   --anno-file TMP/annot.txt \\
-  --aaf-file TMP/aaf.txt \\
+  ${params.use_aaf_file?"--aaf-file TMP/aaf.txt":""} \\
   --phenoCol ${params.status} \\
   --bt \\
   --bsize 1000 \\
@@ -1053,6 +1072,12 @@ __EOF__
 
 R --no-save < TMP/jeter.R
 
+# normalize columns
+find TMP -type f -name "*.regenie.report.txt" | while read F
+do
+	column -t --separator \$'\\t' "\${F}" > TMP/jeter.column
+	mv TMP/jeter.column "\${F}"
+done
 
 find TMP/ -type f 1>&2
 mv TMP/${title}.results.tsv.gz ./
@@ -1078,7 +1103,7 @@ workflow RUN_PCA {
 
 
 process PCA_PER_CONTIG {
-label "process_short"
+label "process_quick_high"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 tag "${contig}"
 afterScript "rm -rf TMP"
@@ -1222,7 +1247,7 @@ mv -v TMP/plink.${contig}.* ./
 
 
 process MERGE_PIHAT {
-label "process_short"
+label "process_quick_high"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
@@ -1337,7 +1362,7 @@ input:
 	path(plink_files)
 output:
 	path("*.png"),emit:output
-	path("average_pihat.tsv")
+	path("average_pihat.tsv"),emit:table
 script:
 	def plink_genome = plink_files.find{it.name.endsWith(".genome")}
 	def maxPiHat = 0.1
@@ -1628,68 +1653,83 @@ cat << __EOF__ > README.md
 
 # REGENIE
 
+> regenie is a C++ program for whole genome regression modelling of large genome-wide association studies.
+
+https://rgcgithub.github.io/regenie/options/
+
 ## Parameters
 
 Reference
-${params.fasta}
+  ${params.fasta}
 
 TSV file with samples definition
-${params.samplesheet}
+  ${params.samplesheet}
 
 VCF file(s)
-${params.vcf}
+  ${params.vcf}
 
 BED to limit analysis (if any)
-${params.bed}
+  ${params.bed}
 
 Gnomad population
-${params.gnomad_population}
+  ${params.gnomad_population}
 
 optional STEP1 loco file if saved from a previous study
-${params.step1_loco}
+  ${params.step1_loco}
 
 optional COVARIATE file if provided by user , otherwise use PCA
-${params.covariate}
+  ${params.covariate}
 
 named tests
-${params.vc_tests}
+  ${params.vc_tests}
 
 frequencies
-${params.frequencies}
+  ${params.frequencies}
 
 vc_maxAAF
-${params.vc_maxAAF}
+  ${params.vc_maxAAF}
 
 status name
-${params.status}
+  ${params.status}
        
 weight column for step 2
-${params.weight_column}
+  ${params.weight_column}
 
 sliding window sizes
-${params.sliding_windows}
+  ${params.sliding_windows}
 
 custom user bed chrom/start/end/gene_name[/score]
-${params.select_bed}
+  ${params.select_bed}
 
 treshold for digest file , hide pvalue lower than this value
-${params.digest_treshold}
+  ${params.digest_treshold}
 
 skip chromosomes X and Y
-${params.skip_XY}
+  ${params.skip_XY}
+
+run PCA only ?
+  ${params.PCA_only}
+
+when input is bed , and if bed record is just too small, extend to that length:
+  ${params.min_bed_length}
+
+use user's AAF file instead of regenie internal AAF for step2
+  ${params.use_aaf_file}
 
 ## Content
 
 
-PCA/${params.prefix}sample2avg.pihat.png (average pihat per sample)
-PCA/${params.prefix}plink.genome (output of plink containing PIHAT data)
-PCA/${params.prefix}covariates.tsv (covariates, used as input for regenie ) 
-PCA/${params.prefix}plink.mds   ( output of plink containing covariates )
-PCA/${params.prefix}pihat.*.png ( pihat axis X vs axis Y) 
-REGENIE/${params.prefix}digest.tsv (annotation of the best hits)
-REGENIE/${params.prefix}*.results.tsv.gz (regenie raw results)
-REGENIE/${params.prefix}archive.zip ( archive containing HTML  files to visualize each condition)
-REGENIE/${params.prefix}snplist.tsv.gz (for the best hit, the list of the SNP that were used)
+  PCA/${params.prefix}sample2avg.pihat.png (average pihat per sample)
+  PCA/${params.prefix}average_pihat.tsv (average pihat per sample)
+  PCA/${params.prefix}plink.genome (output of plink containing PIHAT data)
+  PCA/${params.prefix}covariates.tsv (covariates, used as input for regenie ) 
+  PCA/${params.prefix}plink.mds   ( output of plink containing covariates )
+  PCA/${params.prefix}pihat.*.png ( pihat axis X vs axis Y) 
+  REGENIE/${params.prefix}digest.tsv (annotation of the best hits)
+  REGENIE/${params.prefix}*.results.tsv.gz (regenie raw results)
+  REGENIE/${params.prefix}archive.zip ( archive containing HTML  files to visualize each condition)
+  REGENIE/${params.prefix}snplist.tsv.gz (for the best hit, the list of the SNP that were used)
+  REGENIE/${params.prefix}score.tsv prediction/score/mask that were used for the analysis
 
 __EOF__
 
