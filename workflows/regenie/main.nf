@@ -739,6 +739,8 @@ input:
         tuple val(contig),path(vcf_files)
 output:
         tuple val("functional"),val(contig),path("OUT/manifest.tsv"),emit:output
+when:
+	!(params.skip_XY && contig.matches("(chr)?[XY]"))
 script:
         def vcf = vcf_files.find{it.name.endsWith(".bcf") || it.name.endsWith(".vcf.gz")}
 	def kg = gencode_files.find{it.name.endsWith(".gz")}
@@ -775,6 +777,8 @@ input:
         tuple val(contig),path(vcf_files)
 output:
         tuple val("user_bed"),val(contig),path("OUT/manifest.tsv"),emit:output
+when:
+	!(params.skip_XY && contig.matches("(chr)?[XY]"))
 script:
         def vcf = vcf_files.find{it.name.endsWith(".bcf") || it.name.endsWith(".vcf.gz")}
 	def min_length=(params.min_bed_length?:300)
@@ -807,6 +811,8 @@ input:
         tuple val(contig),path(vcf_files),val(win_size),val(win_shift)
 output:
         tuple val("sliding_${win_size}_${win_shift}"),val(contig),path("OUT/manifest.tsv"),emit:output
+when:
+	!(params.skip_XY && contig.matches("(chr)?[XY]"))
 script:
         def vcf = vcf_files.find{it.name.endsWith(".bcf") || it.name.endsWith(".vcf.gz")}
 
