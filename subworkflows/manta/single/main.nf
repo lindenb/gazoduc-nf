@@ -40,7 +40,7 @@ workflow MANTA_SINGLE_SV01 {
 				if(!T.containsKey("bam")) throw new IllegalArgumentException("bam missing in "+T);
 				if(!T.containsKey("bai")) throw new IllegalArgumentException("bai missing in "+T);
 				if(!T.containsKey("fasta") || T.fasta.equals(".") || T.fasta.isEmpty()) {
-					T = T.plus(fasta:params.fasta, fai:params.fai)
+					T = T.plus(fasta: params.fasta, fai: params.fai)
 					}
 				return T;
 				}}.map{[it.sample,it.bam,it.bai,it.fasta,it.fai]}
@@ -77,7 +77,7 @@ workflow MANTA_SINGLE_SV01 {
 
 process APPLY_MANTA_SINGLE {
     tag "${sample} ${bam.name}"
-    label "process_quick"
+//    label "process_quick_high"
     conda "${moduleDir}/../../../conda/manta.yml"
     afterScript "rm -rf TMP"
     input:
@@ -95,7 +95,7 @@ process APPLY_MANTA_SINGLE {
 	then
 		${bed.name.endsWith("gz")?"gunzip -c":"cat"} "${bed}" |\\
 			cut -f1,2,3 |\\
-			jvarkit bedrenamechr -R "${fasta}" --column 1 --convert SKIP |\\
+			python ${moduleDir}/../../../src/python/rename_bed.py "${params.fai}" |\\
 			awk -F '\t' '(\$1 ~ /^${params.regex_contig}\$/ )' |\\
 			LC_ALL=C sort -t '\t' -T TMP -k1,1 -k2,2n |\\
 			bedtools merge > TMP/intervals.bed
@@ -109,7 +109,9 @@ process APPLY_MANTA_SINGLE {
 	bgzip TMP/intervals.bed
 	tabix -f -p bed TMP/intervals.bed.gz
 	
-	configManta.py  --bam "${bam}" --referenceFasta "${fasta}" \\
+	configManta.py  \\
+		--bam "${bam}" \\
+		--referenceFasta "${fasta}" \\
 		--callRegions TMP/intervals.bed.gz \\
 		--runDir "TMP"
 
@@ -120,21 +122,13 @@ process APPLY_MANTA_SINGLE {
 	
 	# convert BND TO INVERSIONS (added 20230115 but not tested)
 	DIPLOID=`find ./TMP -type f -name "diploidSV.vcf.gz"` 1>&2
-	which configManta.py 1>&2
 	test ! -z "\${DIPLOID}"
-	\$(ls \$( dirname \$(which configManta.py) )/../share/manta*/libexec/convertInversion.py)  `which samtools` "${fasta}" "\${DIPLOID}" | bcftools sort -T TMP -O z -o TMP/jeter.vcf.gz
+	convertInversion.py  `which samtools` "${fasta}" "\${DIPLOID}" | bcftools sort -T TMP -O z -o TMP/jeter.vcf.gz
 
 	bcftools index -t TMP/jeter.vcf.gz
 
 	mv -v TMP/jeter.vcf.gz "\${DIPLOID}"
 	mv -v TMP/jeter.vcf.gz.tbi "\${DIPLOID}.tbi"
-
-	# not the same dictionary ? rename the vcf
-	cmp "${fai}" "${params.fai}" ||  find ./TMP -type f -name "*.vcf.gz" | while read F
-	do	
-		TODO change dictionary
-	done
-	
 
 	# change name to sample
 	find ./TMP -type f -name "*.vcf.gz" \
