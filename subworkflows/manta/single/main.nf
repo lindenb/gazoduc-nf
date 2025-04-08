@@ -26,7 +26,7 @@ SOFTWARE.
 
 include {TRUVARI_01} from '../../truvari'
 
-workflow MANTA_SINGLE_SV01 {
+workflow MANTA_GERMLINE_SINGLE_SV01 {
 	take:
 		samplesheet
 		bed
@@ -45,7 +45,7 @@ workflow MANTA_SINGLE_SV01 {
 				return T;
 				}}.map{[it.sample,it.bam,it.bai,it.fasta,it.fai]}
 
-		manta_ch = APPLY_MANTA_SINGLE(sn_bam_bai_ch,bed)	
+		manta_ch = APPLY_MANTA_GERMLINE_SINGLE(sn_bam_bai_ch ,bed)	
 		
 	
 		
@@ -74,10 +74,9 @@ workflow MANTA_SINGLE_SV01 {
 		//manta_files = file_list_ch.output
 	}
 
-
-process APPLY_MANTA_SINGLE {
+process APPLY_MANTA_GERMLINE_SINGLE {
     tag "${sample} ${bam.name}"
-//    label "process_quick_high"
+    label "process_quick_high"
     conda "${moduleDir}/../../../conda/manta.yml"
     afterScript "rm -rf TMP"
     input:
@@ -108,14 +107,14 @@ process APPLY_MANTA_SINGLE {
 	test -s TMP/intervals.bed
 	bgzip TMP/intervals.bed
 	tabix -f -p bed TMP/intervals.bed.gz
-	
+
 	configManta.py  \\
 		--bam "${bam}" \\
 		--referenceFasta "${fasta}" \\
 		--callRegions TMP/intervals.bed.gz \\
 		--runDir "TMP"
 
-	./TMP/runWorkflow.py --quiet -m local -j '${task.cpus}'
+	./TMP/runWorkflow.py ${params.runWorkflow_args} -m local -j '${task.cpus}'
 	
 	rm -rf ./TMP/workspace
 

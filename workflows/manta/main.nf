@@ -25,7 +25,7 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 include {runOnComplete;dumpParams} from '../../modules/utils/functions.nf'
-include {MANTA_SINGLE_SV01} from '../../subworkflows/manta/single' 
+include {MANTA_GERMLINE_SINGLE_SV01} from '../../subworkflows/manta/single' 
 
 if( params.help ) {
     dumpParams(params);
@@ -37,7 +37,7 @@ if( params.help ) {
 
 
 workflow {
-	manta_ch = MANTA_SINGLE_SV01(Channel.fromPath(params.samplesheet), file(params.bed))
+	manta_ch = MANTA_GERMLINE_SINGLE_SV01(Channel.fromPath(params.samplesheet), file(params.bed))
 	}
 runOnComplete(workflow)
 

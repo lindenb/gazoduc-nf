@@ -7,4 +7,4 @@ dependencies:
   - bioconda::samtools
   - bioconda::bedtools
   - bioconda::manta=1.6.0  
-  - conda-forge::python=2.7
+  - conda-forge::python=2.7.15
