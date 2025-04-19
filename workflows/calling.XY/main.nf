@@ -92,17 +92,8 @@ workflow {
 		)
 	
 	CONCAT_VCFS(ch4.flatten().collect())
-
-	/*
-	ch5 = remap_ch.output.branch{v->
-		male: v[3].equals("XY")
-		female: v[3].equals("XX")
-		}
-
-	ch5.male.map{[it[0],it[1],it[2]]}
-	ch5.female.map{[it[0],it[1],it[2]]}
-	*/
 	}
+	
 
 runOnComplete(workflow)
 
