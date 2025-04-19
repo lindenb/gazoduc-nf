@@ -26,7 +26,7 @@ nextflow.enable.dsl=2
 
 include {k1_signature} from '../../modules/utils/k1.nf'
 include {runOnComplete;dumpParams} from '../../modules/utils/functions.nf'
-
+include {MAKE_STATS as MAKE_STATS_MALE;MAKE_STATS as MAKE_STATS_FEMALE; MAKE_STATS as MAKE_STATS_BOTH} from  './sub.nf'
 if( params.help ) {
     dumpParams(params);
     exit 0
@@ -91,7 +91,32 @@ workflow {
 		intervals_ch
 		)
 	
-	CONCAT_VCFS(ch4.flatten().collect())
+	ch5 = CONCAT_VCFS(ch4.flatten().collect())
+	
+	MAKE_STATS_MALE(
+		file(params.fasta),
+		file(params.fai),
+		file(params.gtf),
+		file(params.samplesheet),
+		ch5.output,
+		"M"
+		)
+	MAKE_STATS_FEMALE(
+		file(params.fasta),
+		file(params.fai),
+		file(params.gtf),
+		file(params.samplesheet),
+		ch5.output,
+		"F"
+		)
+	MAKE_STATS_BOTH(
+		file(params.fasta),
+		file(params.fai),
+		file(params.gtf),
+		file(params.samplesheet),
+		ch5.output,
+		"MF"
+		)
 	}
 	
 
