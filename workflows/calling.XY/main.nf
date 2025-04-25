@@ -301,7 +301,7 @@ mv TMP/stats.json ${sample}.stats.json
 
 
 process GATK_GVCF {
-tag "${sample} ${par_bed.name} ${contig} ${par} ${fasta.name}"
+tag "${sample} ${par_bed.name} ${contig} ${par} ${fasta.name} ${sex}"
 label "process_quick"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 array 100
@@ -311,7 +311,7 @@ input:
 output:
 	tuple val(contig),val(par),path("${sample}.${contig}.*"),emit:output
 script:
-	def ploidy = par.equals("par")?2:1
+	def ploidy = ((sex.equals("XX") && contig.matches("(chr)?X")) || par.equals("par")?2:1)
 """
 mkdir -p TMP
 
