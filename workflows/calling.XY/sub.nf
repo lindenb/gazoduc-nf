@@ -5,13 +5,25 @@ workflow MAKE_STATS {
 		gtf
 		samplesheet
 		bcf_files
-		sex
+		bed_and_sex_ctg_ch
 	main:
-		ch1 = EXTRACT_SAMPLES(samplesheet,sex)
-		ch2 = BCFTOOLS_STATS(fasta, fai, gtf, bcf_files, sex, ch1.samples)
-		if(sex.contains("M") && sex.contains("F")) {
-			MULTIQC_MALE_VS_FEMALE(ch1.sample2sex,ch2.directory);
-			}
+		sex_ch = bed_and_sex_ctg_ch.map{it[1]}.unique()
+
+		ch1 = EXTRACT_SAMPLES( samplesheet, sex_ch )
+
+		
+
+	
+		ch2 = BCFTOOLS_STATS(fasta, fai, gtf, bcf_files,
+			bed_and_sex_ctg_ch.
+				combine(ch1.output).
+				filter{it[1].equals(it[3])}.
+				map{[it[1],it[0],it[2],it[4],it[5]]}
+			)
+		
+		ch3 = MULTIQC_MALE_VS_FEMALE(ch2.directory.filter{it[0].contains("M") && it[0].contains("F")});
+		ZIP_OF_ZIPS(ch2.output.mix(ch3.output).collect())
+		
 	}
 
 
@@ -24,8 +36,7 @@ input:
 	path(samplesheet)
 	val(sex)
 output:
-	path("sample2sex.tsv"),emit:sample2sex
-	path("samples.txt"),optional:true,emit:samples
+	tuple val(sex),path("samples.${sex}.txt"),path("sample2sex.${sex}.tsv"),emit:output
 script:
 	def sexm = sex.contains("M")?"male":"_ignore"
 	def sexf = sex.contains("F")?"female":"_ignore"
@@ -36,22 +47,17 @@ cat << '__EOF__' > TMP/jeter.R
 data <- read.table("${samplesheet}", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
 filtered_data <- data[data\$sex == "${sexm}" | data\$sex == "${sexf}", ]
 filtered_data <- filtered_data[, c("sample", "sex")]
-write.table(filtered_data, file = "sample2sex.tsv", sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
+write.table(filtered_data, file = "sample2sex.${sex}.tsv", sep = "\t", quote = FALSE, row.names = FALSE, col.names = FALSE)
 __EOF__
 
 R --vanilla --no-save < TMP/jeter.R
-cut -f1 sample2sex.tsv | sort | uniq > samples.txt
-
-if test ! -s samples.txt
-then
-	rm samples.txt
-fi
+cut -f1 sample2sex.${sex}.tsv | sort | uniq > samples.${sex}.txt
 """
 }
 
 process BCFTOOLS_STATS {
 label "process_quick"
-tag "${sex}"
+tag "sex:${sex} bed:${bed.name} samples:${samples.name} ctg:${contig}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
@@ -59,11 +65,10 @@ input:
 	path(fai)
 	path(gtf)
 	path(bcf_files)
-	val(sex)
-	path(samples)
+	tuple val(sex),path(bed),val(contig),path(samples),path(sample2sex)
 output:
-	path("multiqc.${sex}.zip"),emit:output
-	path("multiqc.${sex}"),emit:directory
+	path("multiqc.${sex}.${bed.name}.${contig}.zip"),emit:output
+	tuple val(sex),val("${bed.name}"),val(contig),path("multiqc.${sex}.${bed.name}.${contig}"),path(sample2sex),emit:directory
 script:
 	def vcf= bcf_files.find{it.name.endsWith("f")}
 """
@@ -72,30 +77,42 @@ set -o pipefail
 export LC_ALL=en_US.utf8
 
 gunzip -c "${gtf}" |\\
-	awk -F '\t' '(\$3=="exon" && \$1 ~ /^(chr)?[XY]\$/)' |\\
+	awk -F '\t' '(\$3=="exon" && \$1 ~ /^(chr)?[${contig}]\$/)' |\\
 	cut -f 1,4,5 |\\
 	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\\
 	bgzip > TMP/exons.txt.gz
 
 
-bcftools stats --exons TMP/exons.txt.gz \\
-	--fasta-ref '${fasta}' \\
-	--regions `cut -f 1 "${fai}" | awk '(\$1~ /^(chr)?[XY]\$/)' | paste -sd,` \\
-	--samples-file ${samples} \\
-	${vcf} > TMP/stats.txt
+
+
+if ${bed.name.contains(".")}
+then
+	awk -F '\t' '(\$1~ /^(chr)?[${contig}]\$/)'  ${bed} > TMP/jeter.bed
+else
+	awk -F '\t' '(\$1~ /^(chr)?[${contig}]\$/) {printf("%s\t0\t%s\\n",\$1,\$2);}' '${fai}' > TMP/jeter.bed
+fi
+
+test -s TMP/jeter.bed
+
+bcftools view  -O u --regions-file TMP/jeter.bed --samples-file ${samples}  --trim-unseen-allele --trim-alt-alleles "${vcf}" |\\
+	bcftools view -O u -i 'AC>0' |\\
+	bcftools annotate -O u -x 'INFO/DP' |\\
+	bcftools stats --exons TMP/exons.txt.gz \\
+		--fasta-ref '${fasta}' \\
+		--samples-file ${samples} > TMP/stats.txt
 
         
 mkdir -p "multiqc.${sex}"
         multiqc  --no-ansi \
-                 --title "QC per for ${sex}"  \
+                 --title "QC per for ${sex} BED: ${bed.name} contig:${contig}"  \
                  --comment "${vcf.name}"  \
                  --force \
-                 --outdir "multiqc.${sex}" \\
+                 --outdir "multiqc.${sex}.${bed.name}.${contig}" \\
 		 TMP/stats.txt
 
 
 
-zip -9 -r "multiqc.${sex}.zip" "multiqc.${sex}" 
+zip -9 -r "multiqc.${sex}.${bed.name}.${contig}.zip" "multiqc.${sex}.${bed.name}.${contig}" 
 """
 }
 
@@ -103,14 +120,13 @@ zip -9 -r "multiqc.${sex}.zip" "multiqc.${sex}"
 
 process MULTIQC_MALE_VS_FEMALE {
 label "process_quick"
-tag "${directory}"
+tag "${directory} ${sample2sex.name} ${contig}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
-        path(sample2pop)
-        path(directory)
+        tuple val(sex),val(bed_name),val(contig),path(directory),path(sample2sex)
 output:
-        path("multiqc.M_vs_F.zip"),emit:output
+        path("multiqc.${bed_name}.${contig}.M_vs_F.zip"),optional:true,emit:output
 script:
 """
 hostname 1>&2
@@ -119,19 +135,34 @@ mkdir -p TMP/DATA TMP/OUT2
 export LC_ALL=en_US.utf8
 
 
-java -jar \${HOME}/packages/jvarkit/dist/jvarkit.jar multiqcpostproc --sample2collection "${sample2pop}" -o TMP/OUT2 ${directory}/*_data/
+java -jar \${HOME}/packages/jvarkit/dist/jvarkit.jar multiqcpostproc --sample2collection "${sample2sex}" -o TMP/OUT2 ${directory}/*_data/
 
 find TMP/OUT2 -type f -name "*.json" > TMP/jeter.list
 
+if test -s TMP/jeter.list
+then
 
         mkdir -p "multiqc.M_vs_F"
         multiqc  --filename  "multiqc_report.html" --no-ansi \
                         --title "Males vs females"  \
                         --comment "Males vs Females"  \
                         --force \
-                        --outdir "multiqc.M_vs_F" \
+                        --outdir "multiqc.${bed_name}.${contig}.M_vs_F" \
                         --file-list TMP/jeter.list
 
-        zip -9 -r multiqc.M_vs_F.zip multiqc.M_vs_F
+        zip -9 -r multiqc.${bed_name}.${contig}.M_vs_F.zip multiqc.${bed_name}.${contig}.M_vs_F
+fi
+"""
+}
+
+process ZIP_OF_ZIPS {
+label "process_quick"
+input:
+	path("ZIP/*")
+output:
+	path("multiqc.all_zips.zip"),emit:output
+script:
+"""
+zip -j0 multiqc.all_zips.zip ZIP/*.zip
 """
 }

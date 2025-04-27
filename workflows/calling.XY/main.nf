@@ -26,7 +26,7 @@ nextflow.enable.dsl=2
 
 include {k1_signature} from '../../modules/utils/k1.nf'
 include {runOnComplete;dumpParams} from '../../modules/utils/functions.nf'
-include {MAKE_STATS as MAKE_STATS_MALE;MAKE_STATS as MAKE_STATS_FEMALE; MAKE_STATS as MAKE_STATS_BOTH} from  './sub.nf'
+include {MAKE_STATS} from  './sub.nf'
 if( params.help ) {
     dumpParams(params);
     exit 0
@@ -92,30 +92,20 @@ workflow {
 		)
 	
 	ch5 = CONCAT_VCFS(ch4.flatten().collect())
+
+
+	sexs_ch = Channel.of("F","M","MF")
+	ctg_ch = Channel.of("X","Y","XY")
+	beds_ch =  par_ch.par.mix(par_ch.non_par).mix(Channel.of(file("ALL")))
+
 	
-	MAKE_STATS_MALE(
+	MAKE_STATS(
 		file(params.fasta),
 		file(params.fai),
 		file(params.gtf),
 		file(params.samplesheet),
 		ch5.output,
-		"M"
-		)
-	MAKE_STATS_FEMALE(
-		file(params.fasta),
-		file(params.fai),
-		file(params.gtf),
-		file(params.samplesheet),
-		ch5.output,
-		"F"
-		)
-	MAKE_STATS_BOTH(
-		file(params.fasta),
-		file(params.fai),
-		file(params.gtf),
-		file(params.samplesheet),
-		ch5.output,
-		"MF"
+		beds_ch.combine(sexs_ch).combine(ctg_ch)
 		)
 	}
 	
