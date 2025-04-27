@@ -22,8 +22,10 @@ workflow MAKE_STATS {
 			)
 		
 		ch3 = MULTIQC_MALE_VS_FEMALE(ch2.directory.filter{it[0].contains("M") && it[0].contains("F")});
-		ZIP_OF_ZIPS(ch2.output.mix(ch3.output).collect())
+		ch4 = ch2.output.mix(ch3.output)
 		
+	emit:
+		output = ch4		
 	}
 
 
@@ -152,17 +154,5 @@ then
 
         zip -9 -r multiqc.${bed_name}.${contig}.M_vs_F.zip multiqc.${bed_name}.${contig}.M_vs_F
 fi
-"""
-}
-
-process ZIP_OF_ZIPS {
-label "process_quick"
-input:
-	path("ZIP/*")
-output:
-	path("multiqc.all_zips.zip"),emit:output
-script:
-"""
-zip -j0 multiqc.all_zips.zip ZIP/*.zip
 """
 }

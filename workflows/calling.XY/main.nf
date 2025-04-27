@@ -99,7 +99,7 @@ workflow {
 	beds_ch =  par_ch.par.mix(par_ch.non_par).mix(Channel.of(file("ALL")))
 
 	
-	MAKE_STATS(
+	ch6 = MAKE_STATS(
 		file(params.fasta),
 		file(params.fai),
 		file(params.gtf),
@@ -107,6 +107,10 @@ workflow {
 		ch5.output,
 		beds_ch.combine(sexs_ch).combine(ctg_ch)
 		)
+	st_ch = SAMTOOLS_STATS(remap_ch.output.combine(beds_ch).combine(ctg_ch))
+	ch7 = SAMTOOLS_MQC(st_ch.output.groupTuple())
+
+	ZIP_OF_ZIPS(ch7.output.mix(ch6.output).collect())
 	}
 	
 
@@ -420,5 +424,86 @@ bcftools concat -a --remove-duplicates --file-list TMP/jeter.list -O b9 --thread
 bcftools index -f TMP/gatk4.xy.bcf
 
 mv TMP/gatk4.xy.* ./
+"""
+}
+
+
+
+process SAMTOOLS_STATS {
+tag "${sample} ${sex} ${bed.name} ${contigs}"
+label "process_quick"
+afterScript "rm -rf TMP"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+array 100
+input:
+	tuple val(sample),path(bam), path(bai),val(sex),path(fasta),path(fai),path(dict),path(bed),val(contigs)
+output:
+	tuple val("${contigs}.${bed.name}.${sex}"),path("*.stats.txt"),emit:output
+when:
+	!(sex.equals("XX") && !contigs.matches("X"))
+script:
+"""
+mkdir -p TMP
+set -o pipefail
+
+if ${bed.name.contains(".")}
+then
+        awk -F '\t' '(\$1~ /^(chr)?[${contigs}]\$/)'  ${bed} > TMP/jeter.bed
+else
+        awk -F '\t' '(\$1~ /^(chr)?[${contigs}]\$/) {printf("%s\t0\t%s\\n",\$1,\$2);}' '${fai}' > TMP/jeter.bed
+fi
+
+test -s TMP/jeter.bed
+
+samtools view -M -L TMP/jeter.bed -T "${fasta}" --uncompressed "${bam}" |\\
+	samtools stats --reference ${fasta} --remove-dups > TMP/jeter.stats
+
+mv TMP/jeter.stats "${sample}.${contigs}.${bed.name}.${sex}.stats.txt"
+"""
+}
+
+
+process SAMTOOLS_MQC {
+label "process_quick"
+tag "id:${id}"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
+input:
+        tuple val(id),path("STATS/*")
+output:
+        path("multiqc.samtools.${id}.zip"),emit:output
+script:
+"""
+mkdir -p TMP
+set -o pipefail
+export LC_ALL=en_US.utf8
+
+find STATS/ -name "*.txt" > TMP/jeter.list
+
+mkdir -p "multiqc.samtools.${id}"
+
+multiqc  --no-ansi \
+                 --title "${id}"  \
+                 --comment "${id}"  \
+                 --force \
+                 --outdir "multiqc.samtools.${id}" \\
+                 STATS/*.txt
+
+
+
+zip -9 -r "multiqc.samtools.${id}.zip" "multiqc.samtools.${id}"
+"""
+}
+
+
+process ZIP_OF_ZIPS {
+label "process_quick"
+input:
+        path("ZIP/*")
+output:
+        path("multiqc.all_zips.zip"),emit:output
+script:
+"""
+zip -j0 multiqc.all_zips.zip ZIP/*.zip
 """
 }
