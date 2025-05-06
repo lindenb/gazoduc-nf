@@ -22,10 +22,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include { SAMTOOLS_SAMPLES} from '../samtools/samtools.samples.03.nf'
-include { COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
-include { getKeyValue;moduleLoad; assertFileExists;getVersionCmd} from '../../modules/utils/functions.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
+include { SAMTOOLS_SAMPLES} from '../../samtools/samtools.samples.03.nf'
+include { COLLECT_TO_FILE_01} from '../../../modules/utils/collect2file.01.nf'
+include { getKeyValue;moduleLoad; assertFileExists;getVersionCmd} from '../../../modules/utils/functions.nf'
+include {MERGE_VERSION} from '../../../modules/version/version.merge.02.nf'
 
 
 
@@ -138,9 +138,8 @@ script:
  **/
 process REBUILD_BAI {
     tag "${sample} ${bam.name} mapq=${params.mapq}"
+    label "process_quick"
     afterScript "rm -rf TMP"
-    memory "5g"
-    cpus 3
     input:
         path(fasta)
         path(fai)

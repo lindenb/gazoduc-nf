@@ -25,7 +25,7 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 
-include {INDEXCOV} from '../../subworkflows/indexcov/indexcov.nf'
+include {INDEXCOV} from '../../subworkflows/indexcov/simple/main.nf'
 include {runOnComplete;dumpParams} from '../../modules/utils/functions.nf'
 include {SIMPLE_ZIP_01} from '../../modules/utils/zip.simple.01.nf'
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
