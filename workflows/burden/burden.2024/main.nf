@@ -363,7 +363,8 @@ tabix --regions "TMP/tmp1.bed" "${gtf}" |\\
 	bedtools slop -i -  -g "${fai}" -b ${slop} |\\
 	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
 	bedtools intersect -u -wa -a - -b TMP/tmp1.bed |\\
-	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n > TMP/tmp3.bed
+	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
+	bedtools merge > TMP/tmp3.bed
 
 
 
