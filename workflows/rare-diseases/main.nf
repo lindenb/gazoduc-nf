@@ -1,3 +1,10 @@
+/**
+
+
+workflow downloading rare disease resources , but in the end it's just too much work
+do not use for now
+
+*/
 
 
 workflow  {
@@ -15,10 +22,18 @@ workflow  {
 
 	ch5 = DOWNLOAD_VARIANT_CATALOG()
 	ch6 = PAR_BED()
+	ch7 = GENMOD()
+	ch8 = SVDB()
+	ch9 = HGNC()
+	ch10 = TARGET_WGS()
 
 	MERGE_CONFIGS(ch3.output.
 		mix(ch5.output).
 		mix(ch6.output).
+		mix(ch7.output).
+		mix(ch8.output).
+		mix(ch9.output).
+		mix(ch10.output).
 		mix(ch1bis.output).
 		collect())
 	}
@@ -167,6 +182,76 @@ touch par.flag
 """
 }
 
+process GENMOD {
+executor "local"
+output:
+	path("genmod.flag"),emit:output
+script:
+"""
+mkdir -p "${params.outdir}/GENMOD"
+wget -O "${params.outdir}/GENMOD/rank_model_snv.ini" "https://raw.githubusercontent.com/nf-core/test-datasets/refs/heads/raredisease/reference/rank_model_snv.ini"
+
+touch genmod.flag
+"""
+}
+
+
+process HGNC {
+label "process_quick"
+output:
+	path("hgnc.flag"),emit:output
+script:
+"""
+set -o pipefail
+mkdir -p "${params.outdir}/HGNC"
+
+
+wget -qO - "https://storage.googleapis.com/public-download-files/hgnc/archive/archive/monthly/tsv/hgnc_complete_set_2025-05-06.txt" |\
+	cut -f 1 | cut -f 2 -d ':' | tail -n +2 | sort | uniq > ${params.outdir}/HGNC/hgnc.txt
+
+touch hgnc.flag
+"""
+}
+
+
+process SVDB {
+executor "local"
+output:
+	path("svdb.flag"),emit:output
+script:
+"""
+mkdir -p "${params.outdir}/SVDB"
+
+cat << EOF > "${params.outdir}/SVDB/svdb.cfg"
+filename,in_freq_info_key,in_allele_count_info_key,out_freq_info_key,out_allele_count_info_key,use_in_freq_filter
+${params.outdir}/SVDB/gnomad.v4.1.sv.sites.vcf.gz,AF,AC,gnomad_svAF,gnomad_svAC,1
+EOF
+
+wget -O ${params.outdir}/SVDB/gnomad.v4.1.sv.sites.vcf.gz "https://storage.googleapis.com/gcp-public-data--gnomad/release/4.1/genome_sv/gnomad.v4.1.sv.sites.vcf.gz"
+touch svdb.flag
+"""
+}
+
+process TARGET_WGS {
+executor "local"
+output:
+	path("target.wgs.flag"),emit:output
+script:
+	def base="/LAB-DATA/GLiCID/projects/BiRD_resources/species/human/GRCh38/Homo_sapiens_assembly38"
+"""
+mkdir -p "${params.outdir}/TARGETS"
+cat "${base}.dict" > ${params.outdir}/TARGETS/target_wgs.intervals_list
+awk -F '\t' '(\$1 ~ /^(chr)?[0-9XY]\$/) {printf("%s\t1\t%s\t+\t.\\n",\$1,\$2);}' "${base}.fasta.fai" > ${params.outdir}/TARGETS/target_wgs.intervals_list
+
+
+cat "${base}.dict" > ${params.outdir}/TARGETS/target_y.intervals_list
+awk -F '\t' '(\$1 ~ /^(chr)?[Y]\$/) {printf("%s\t1\t%s\t+\t.\\n",\$1,\$2);}' "${base}.fasta.fai" > ${params.outdir}/TARGETS/target_y.intervals_list
+
+
+touch target.wgs.flag
+"""
+}
+
 process MERGE_CONFIGS {
 executor "local"
 input:
@@ -184,6 +269,11 @@ params {
 	variant_catalog = "${params.outdir}/XHUNTER/variant_catalog_grch38.json"
 	par_bed = "${params.outdir}/PAR/par.bed"
 	vep_cache = "/LAB-DATA/GLiCID/projects/BiRD_resources/apps/vep"
+	score_config_snv = "${params.outdir}/GENMOD/rank_model_snv.ini"
+	svdb_query_dbs = "${params.outdir}/SVDB/svdb.cfg" 
+	vep_filters = "${params.outdir}/HGNC/hgnc.txt"
+	intervals_wgs = "${params.outdir}/TARGETS/target_wgs.intervals_list"
+	intervals_y = "${params.outdir}/TARGETS/target_y.intervals_list"
 }
 EOF
 """
