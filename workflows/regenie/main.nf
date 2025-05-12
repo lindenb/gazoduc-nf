@@ -75,11 +75,15 @@ workflow {
 		}
 
 	if(!params.PCA_only) {
-		gencode_ch = DOWNLOAD_GENCODE(reference)
 
-		scores_ch = FUNCTIONAL_ANNOTATION_SCORES()
-		the_annot_ch = MAKE_FUNCTIONAL_ANNOT_PER_CTG(scores_ch.output, gencode_ch.output, wch2_ch.output).output
+		the_annot_ch = Channel.empty()
 	
+	if(params.disable_functional_annotations==false) {
+		scores_ch = FUNCTIONAL_ANNOTATION_SCORES(file(params.custom_annotation2mask))
+		gencode_ch = DOWNLOAD_GENCODE(reference)
+		func_annot_ch = MAKE_FUNCTIONAL_ANNOT_PER_CTG(scores_ch.output, gencode_ch.output, wch2_ch.output).output
+		the_annot_ch = the_annot_ch.mix(func_annot_ch.output)
+		}
 
 	if(!params.sliding_windows.isEmpty()) {
 		windows_ch = Channel.of("${params.sliding_windows}").
@@ -325,12 +329,16 @@ export LC_ALL=C
  		bcftools view -e 'INFO/PASSOC < ${p_assoc}' -O b -o TMP/jeter2.bcf
 	mv -v TMP/jeter2.bcf TMP/jeter1.bcf
 
+
 	# SNPEFF ###################################################################################
-        bcftools view TMP/jeter1.bcf |\\
-	        snpEff -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  eff -dataDir "\${PWD}/${snpeffDir}" \\
-                 -nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf '${params.snpeff_db}' |\\
-        	bcftools view -O u -o TMP/jeter2.bcf
-        mv TMP/jeter2.bcf TMP/jeter1.bcf
+	if ${params.disable_functional_annotations==false}
+	then
+	        bcftools view TMP/jeter1.bcf |\\
+		        snpEff -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  eff -dataDir "\${PWD}/${snpeffDir}" \\
+                	 -nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf '${params.snpeff_db}' |\\
+	        	bcftools view -O u -o TMP/jeter2.bcf
+        	mv TMP/jeter2.bcf TMP/jeter1.bcf
+	fi
 
 	# CADD #####################################################################################
         if ${params.cadd!=null && !params.cadd.contains(".")} && test -f '${params.cadd}'
@@ -629,7 +637,7 @@ output:
 script:
 	def pgen = bgen_files.find{it.name.endsWith(".pgen")}
 	def keep_rs = plink_files.find{it.name.endsWith("keep.id.txt")}
-	def args = "--bsize 1000 --bt --phenoCol Y1 "
+	def args = "--bsize 1000 --bt --phenoCol Y1 --ref-first"
 	def ped = pheno_files.find{it.name.endsWith(".plink.ped")}
 """
 
@@ -680,9 +688,24 @@ bcftools view "${vcf}" |\\
 
 process FUNCTIONAL_ANNOTATION_SCORES {
 executor "local"
+input:
+	path(user_custom_scores)
 output:
 	path("scores.tsv"),emit:output
 script:
+if(user_custom_scores.name.contains("."))
+"""
+test -s ${user_custom_scores}
+tr -s " " < "${user_custom_scores}" | tr " " "\t" > jeter.tsv
+
+awk -F '\t' '(NF!=3 || \$1=="" || \$2=="" || \$3=="")'  jeter.tsv > valid.txt
+# error if any column 1-3 is empty
+test ! -s valid.txt
+rm valid.txt
+
+mv jeter.tsv scores.tsv
+"""
+else
 """
 cat << EOF | tr -s " " | tr " " "\t" > scores.tsv
 3_prime_UTR_variant     0.1     UTR,UTR3,ALL,mrna
@@ -877,6 +900,7 @@ regenie \\
   ${params.use_aaf_file?"--aaf-file TMP/aaf.txt":""} \\
   --phenoCol ${params.status} \\
   --bt \\
+  --ref-first \\
   --bsize 1000 \\
   --lowmem \\
   --lowmem-prefix TMP/regenie_tmp_preds \\
