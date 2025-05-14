@@ -81,7 +81,7 @@ workflow {
 	if(params.disable_functional_annotations==false) {
 		scores_ch = FUNCTIONAL_ANNOTATION_SCORES(file(params.custom_annotation2mask))
 		gencode_ch = DOWNLOAD_GENCODE(reference)
-		func_annot_ch = MAKE_FUNCTIONAL_ANNOT_PER_CTG(scores_ch.output, gencode_ch.output, wch2_ch.output).output
+		func_annot_ch = MAKE_FUNCTIONAL_ANNOT_PER_CTG(scores_ch.output, gencode_ch.output, wch2_ch.output)
 		the_annot_ch = the_annot_ch.mix(func_annot_ch.output)
 		}
 
@@ -637,7 +637,7 @@ output:
 script:
 	def pgen = bgen_files.find{it.name.endsWith(".pgen")}
 	def keep_rs = plink_files.find{it.name.endsWith("keep.id.txt")}
-	def args = "--bsize 1000 --bt --phenoCol Y1 --ref-first"
+	def args = "--bsize 1000 --bt --phenoCol Y1"
 	def ped = pheno_files.find{it.name.endsWith(".plink.ped")}
 """
 
@@ -900,7 +900,6 @@ regenie \\
   ${params.use_aaf_file?"--aaf-file TMP/aaf.txt":""} \\
   --phenoCol ${params.status} \\
   --bt \\
-  --ref-first \\
   --bsize 1000 \\
   --lowmem \\
   --lowmem-prefix TMP/regenie_tmp_preds \\
