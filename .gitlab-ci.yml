@@ -1,0 +1,18 @@
+image: eclipse-temurin:17-jdk
+
+before_script:
+  - env | grep -i PROXY
+  - apt-get update -y
+  - apt-get install -y make wget curl
+  - (mkdir -p bin && cd bin && curl -s https://get.nextflow.io | bash && chmod +x nextflow)
+  - export PATH="${PWD}/bin:${PATH}"
+  - nextflow info
+
+stages:          # List of stages for jobs, and their order of execution
+  - build
+
+build-job:
+  stage: build
+  script:
+    - nextflow lint .
+
