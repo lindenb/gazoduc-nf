@@ -103,6 +103,7 @@ workflow {
 
 
 	if(file(params.select_bed).name.contains(".")) {
+		log.info("making bed from ${params.select_bed}");
 		if(file(params.select_bed).name.endsWith(".list")) {
 			make_bed_ch = MAKE_BED(Channel.fromPath(params.select_bed).splitText().map{file(it.trim())},wch2_ch.output)
 			}
@@ -110,7 +111,12 @@ workflow {
 			{
 			make_bed_ch = MAKE_BED(file(params.select_bed),wch2_ch.output)
 			}
+		make_bed_ch.output.ifEmpty("[Warning] There is NO output after MAKE_BED.").view()
 		the_annot_ch = the_annot_ch.mix(make_bed_ch.output)
+		}
+	else
+		{
+		log.info("NO custom contig/start/end/annot/gene/file.");
 		}
 
 
@@ -804,13 +810,26 @@ when:
 	!(params.skip_XY && contig.matches("(chr)?[XY]"))
 script:
         def vcf = vcf_files.find{it.name.endsWith(".bcf") || it.name.endsWith(".vcf.gz")}
-	def min_length=(params.min_bed_length?:300)
+	def min_length=(params.min_bed_length?:0)
 """
 set -o pipefail
 mkdir -p TMP
 mkdir -p OUT
 
-bcftools view --regions-file '${select_bed}' -O v '${vcf}' |\\
+# extract DICT only
+bcftools view --header-only  -O z -o TMP/dict.vcf.gz '${vcf}'
+
+# rename contig in user bed
+${select_bed.name.endsWith(".gz")?"gunzip -c ":"cat"} "${select_bed}" |\\
+	jvarkit -Djava.io.tmpdir=TMP bedrenamechr -R TMP/dict.vcf.gz --column 1 > TMP/jeter.bed
+
+# prevent empty file
+if test ! -s TMP/jeter.bed
+then
+	echo -e "XXXXX\t0\t1" > TMP/jeter.bed
+fi
+
+bcftools view --regions-file TMP/jeter.bed -O v '${vcf}' |\\
 	java -Djava.io.tmpdir=TMP -jar "\${HOME}/packages/jvarkit/dist/jvarkit.jar" regeniebedannot \\
 		--bed "${select_bed}" \\
 		--min-length ${min_length} \\
