@@ -1,0 +1,29 @@
+
+
+process VEP_INSTALL_PLUGINS {
+tag "${plugins}"
+label "process_quick"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+input:
+	val(plugins)
+output:
+	path("vep.plugins.dir"),emit:output
+script:
+"""
+set -x
+set -o pipefail
+VEPPATH=`which vep`
+VEPDIR=`dirname \${VEPPATH}`
+ls "\${VEPDIR}/../lib/perl5/5.32/core_perl/Config_heavy.pl"
+sed -ri 's/([^\\@])@univ-nantes/\\1\\\\@univ-nantes/g' "\${VEPDIR}/../lib/perl5/5.32/core_perl/Config_heavy.pl"
+
+# test user
+echo "\${USER}" 1>&2
+test ! -z "\${USER}"
+
+mkdir -p vep.plugins.dir
+
+# Install VEP plugins
+vep_install --AUTO p --NO_UPDATE --PLUGINSDIR vep.plugins.dir --NO_HTSLIB -g '${plugins}' 1>&2
+"""
+}
