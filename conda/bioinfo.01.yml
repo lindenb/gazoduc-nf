@@ -12,4 +12,9 @@ dependencies:
   - conda-forge::datamash
   - bioconda::plink=1.90b6.12
   - bioconda::plink2=2.00a5.10
-  
+  - ucsc-bedgraphtobigwig
+  - ucsc-bigbedtobed
+  - ucsc-bigwigtobedgraph
+  - ucsc-bedtobigbed
+  - ucsc-liftover
+  - ucsc-bigwigtowig

@@ -22,77 +22,65 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete;hgName} from './annot.functions.nf'
-def TAG="ALPHAMISSENSE"
-
-String getURL(genomeId) {
-	String hg=hgName(genomeId);
-	if(hg.equals("hg19") || hg.equals("hg38")) return "https://storage.googleapis.com/dm_alphamissense/AlphaMissense_${hg}.tsv.gz";
-	return "";
-	}
+include {k1_signature} from '../../modules/utils/k1.nf'
 
 
 workflow ANNOTATE_ALPHAMISSENSE {
 	take:
-		genomeId
-		bed
-		vcfs /** json: vcf,vcf_index */
+		fasta
+		fai
+		dict
+		vcfs /* meta, vcf,vcf_index */
 	main:
-
-	
-		if(hasFeature("alphamissense") && !getURL(genomeId).isEmpty()) {
-			source_ch = DOWNLOAD(genomeId)
-			annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
-			out1 = annotate_ch.output
-			out2 = annotate_ch.count
-			out3 = MAKE_DOC(genomeId).output
-			}
-		else
-			{
-			out1 = vcfs
-			out2 = Channel.empty()
-			out3 = Channel.empty()
-			}
+		source_ch = DOWNLOAD(fasta,fai,dict)
+		doc_ch = MAKE_DOC(source_ch.bed)
+		annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
 	emit:
-		output = out1
-		count = out2
-		doc = out3
+		output = annotate_ch.output
+		doc = doc_ch.output
 	}
 
 
 process DOWNLOAD {
-tag "${getURL(genomeId)}"
+tag "${fasta.name}"
 afterScript "rm -rf TMP"
-memory "3g"
+label "process_quick"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
-        val(genomeId)
+        path(fasta)
+        path(fai)
+        path(dict)
 output:
-	path("${TAG}.tsv.gz"),emit:bed
-	path("${TAG}.tsv.gz.tbi"),emit:tbi
-	path("${TAG}.header"),emit:header
+	path("*.tsv.gz"),emit:bed
+	path("*.tsv.gz.tbi"),emit:tbi
+	path("*.header"),emit:header
 script:
-	def genome = params.genomes[genomeId]
-   	def url = getURL(genomeId)
+    def k1 = k1_signature()
+   	def TAG = "ALPHAMISSENSE"
     def whatis="Data from AlphaMissense https://www.science.org/doi/10.1126/science.adg7492"
-
+    def base="https://storage.googleapis.com/dm_alphamissense/AlphaMissense_"
 """
 hostname 1>&2
-${moduleLoad("bcftools jvarkit htslib")}
 set -o pipefail
 mkdir -p TMP
 
-set -o pipefail
-mkdir -p TMP
-set -x
+cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
+1:${k1.hg38}    ${base}hg38.tsv.gz
+1:${k1.hg19}    ${base}hg19.tsv.gz
+EOF
 
-wget -O TMP/jeter.tsv.gz "${url}"
+awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
+join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv | sort | uniq > TMP/jeter.url
 
-gunzip -c TMP/jeter.tsv.gz |\\
+test -s TMP/jeter.url
+
+wget -O TMP/jeter.tsv.gz `cat TMP/jeter.url`
+
+gunzip -c TMP/jeter.tsv.gz  |\\
 	grep -v '^#' |\\
 	cut -f 1 | uniq | LC_ALL=C sort -T TMP | uniq |\\
 	awk '{printf("%s\t%s\\n",\$1,\$1);}' |\\
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${genome.fasta}" --column 2 --convert SKIP |\\
+	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedrenamechr -f "${fasta}" --column 2 --convert SKIP |\\
 	awk -F '\t' '{printf("s|^%s\t|%s\t|\\n",\$1,\$2);}' > TMP/jeter.sed
 
 
@@ -109,65 +97,59 @@ tabix -s 1 -b 2 -e 2  TMP/${TAG}.tsv.gz
 mv TMP/${TAG}.tsv.gz ./
 mv TMP/${TAG}.tsv.gz.tbi ./
 
-echo '##INFO=<ID=${TAG}_PATHOGENOCITY,Number=1,Type=Float,Description="${whatis}. ${url}.">' >  ${TAG}.header
-echo '##INFO=<ID=${TAG}_CLASS,Number=.,Type=String,Description="${whatis}. ${url}.">' >> ${TAG}.header
-
+echo '##INFO=<ID=${TAG}_PATHOGENOCITY,Number=1,Type=Float,Description="${whatis}.">' >  ${TAG}.header
+echo '##INFO=<ID=${TAG}_CLASS,Number=.,Type=String,Description="${whatis}.">' >> ${TAG}.header
 """
 }
 
 
 process MAKE_DOC {
 executor "local"
-input:
-        val(genomeId)
+input;
+    path(bed)
 output:
-	path("${TAG}.html"),emit:output
+	path("alphamissense.md"),emit:output
 script:
-	def genome = params.genomes[genomeId]
+    def TAG=bed.name;
 """
-cat << __EOF__ > ${TAG}.html
-<dl>
-<dt>${TAG}</dt>
-<dd>Data from AlphaMissense https://www.science.org/doi/10.1126/science.adg7492 </dd>
-</dl>
-__EOF__
+cat << EOF > alphamissense.md
+Data from AlphaMissense https://www.science.org/doi/10.1126/science.adg7492
+EOF
 """
 }
 
 process ANNOTATE {
-tag "${json.name}"
+tag "${vcf.name}"
 afterScript "rm -rf TMP"
+label "process_quick"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+
 input:
 	path(tabix)
 	path(tbi)
 	path(header)
-	path(json)
+	tuple val(meta),path(vcf),path(vcf_idx)
 output:
-	path("OUTPUT/${TAG}.json"),emit:output
-	path("OUTPUT/${TAG}.count"),emit:count
+    tuple val(meta),path("*.bcf"),path("*.csi"),emit:output
 script:
-	
-	def row = slurpJsonFile(json)
+   	def TAG = "ALPHAMISSENSE";
 """
 hostname 1>&2
-${moduleLoad("bcftools")}
 mkdir -p TMP OUTPUT
 
-bcftools annotate -a "${tabix}" -h "${header}" -c "CHROM,POS,REF,ALT,${TAG}_PATHOGENOCITY,${TAG}_CLASS" --merge-logic "${TAG}_PATHOGENOCITY:max,${TAG}_CLASS:unique" -O b -o TMP/${TAG}.bcf '${row.vcf}'
-bcftools index TMP/${TAG}.bcf
+bcftools annotate \\
+    --threads ${task.cpus} \\
+    -a "${tabix}" \\
+    -h "${header}" \\
+    -c "CHROM,POS,REF,ALT,${TAG}_PATHOGENOCITY,${TAG}_CLASS" \\
+    --merge-logic "${TAG}_PATHOGENOCITY:max,${TAG}_CLASS:unique" \\
+    -O b -o TMP/${TAG}.${vcf.getSimpleName()}.bcf '${vcf}'
+ 
+bcftools \\
+    --threads ${task.cpus} \\
+    -f index TMP/${TAG}.${vcf.getSimpleName()}.bcf
 
-
-cat << EOF > TMP/${TAG}.json
-{
-"vcf"   : "\${PWD}/OUTPUT/${TAG}.bcf",
-"index" : "\${PWD}/OUTPUT/${TAG}.bcf.csi",
-"bed"   : "${row.bed}"
-}
-EOF
-
-###
-bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
-mv -v TMP/${TAG}.* OUTPUT/
-${backDelete(row)}
+mv TMP/*.bcf ./
+mv TMP/*.bcf.csi ./
 """
 }

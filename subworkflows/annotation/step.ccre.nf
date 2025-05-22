@@ -22,92 +22,76 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete;isHg38} from './annot.functions.nf'
 
-
-
-def TAG="CCRE"
-def WHATIZ = "ENCODE Registry of candidate cis-Regulatory Elements (cCREs) in the human genome, a total of 926,535 elements identified and classified by the ENCODE Data Analysis Center according to biochemical signatures."
-
-String getURL(genomeId) {
-	if(isHg38(genomeId)) return "http://hgdownload.soe.ucsc.edu/gbdb/hg38/encode3/ccre/encodeCcreCombined.bb";
-	return "";
-	}
 
 workflow ANNOTATE_CCRE {
 	take:
-		genomeId
-		bed
-		vcfs /** json vcf,vcf_index */
+		fasta
+		fai
+		dict
+		vcfs /* meta, vcf,vcf_index */
 	main:
-		if(hasFeature("encode_ccre") && !getURL(genomeId).isEmpty()) {
-			source_ch =  DOWNLOAD(genomeId)
-			annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
-
-			out1 = annotate_ch.output
-			out2 = annotate_ch.count
-			out3 = MAKE_DOC(genomeId).output
-			}
-		else
-			{
-			out1 = vcfs
-			out2 = Channel.empty()
-			out3 = Channel.empty()
-			}
+		source_ch = DOWNLOAD(fasta,fai,dict)
+		doc_ch = MAKE_DOC(source_ch.bed)
+		annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
 	emit:
-		output = out1
-		count = out2
-		doc = out3
+		output = annotate_ch.output
+		doc = doc_ch.output
 }
 
 process MAKE_DOC {
 executor "local"
-input:
-        val(genomeId)
+input;
+    path(bed)
 output:
-	path("${TAG}.html"),emit:output
+	path("CCRE.md"),emit:output
 script:
 """
-cat << __EOF__ > ${TAG}.html
-<dl>
-<dt>${TAG}</dt>
-<dd>${WHATIZ}</dd>
-</dl>
+cat << __EOF__ > CCRE.md
+ENCODE Registry of candidate cis-Regulatory Elements (cCREs) in the human genome, a total of 926,535 elements identified and classified by the ENCODE Data Analysis Center according to biochemical signatures.
 __EOF__
 """
 }
 
 process DOWNLOAD{
+tag "${fasta.name}"
 afterScript "rm -rf TMP"
-memory "2g"
+label "process_quick"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
-	val(genomeId)
+        path(fasta)
+        path(fai)
+        path(dict)
 output:
-	path("${TAG}.bed.gz"),emit:bed
-	path("${TAG}.bed.gz.tbi"),emit:tbi
-	path("${TAG}.header"),emit:header
+	path("*.tsv.gz"),emit:bed
+	path("*.tsv.gz.tbi"),emit:tbi
+	path("*.header"),emit:header
 script:
-	def genome = params.genomes[genomeId]
-	def url = getURL(genomeId)
-    def reference = genome.fasta
+    def k1 = k1_signature()
+   	def TAG = "CCRE"
+   	def WHATIZ = "ENCODE Registry of candidate cis-Regulatory Elements (cCREs) in the human genome, a total of 926,535 elements identified and classified by the ENCODE Data Analysis Center according to biochemical signatures."
 """
 hostname 1>&2
 mkdir -p TMP
-${moduleLoad("htslib jvarkit bedtools")}
-
-
-hostname 1>&2
-${moduleLoad("htslib jvarkit bedtools ucsc")}
 set -o pipefail
 mkdir -p TMP/CACHE
 
 
-wget -O TMP/jeter.bb "${url}"
+cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
+1:${k1.hg38}    http://hgdownload.soe.ucsc.edu/gbdb/hg38/encode3/ccre/encodeCcreCombined.bb
+EOF
+
+awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
+join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv | sort | uniq > TMP/jeter.url
+
+test -s TMP/jeter.url
+
+
+wget -O TMP/jeter.bb `cat TMP/jeter.url`
 
 bigBedToBed -udcDir=TMP/CACHE TMP/jeter.bb stdout |\\
         awk -F '\t' '{printf("%s\t%s\t%s\t%s|%s|%s\\n",\$1,\$2,\$3,\$4,\$5,\$11)}' |\\
-        java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 1 --convert SKIP  |\\
+        jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedrenamechr -f"${fasta}" --column 1 --convert SKIP  |\\
         LC_ALL=C sort --buffer-size=${task.memory.mega}M -t '\t' -k1,1 -k2,2n -T TMP |\
         bgzip > TMP/${TAG}.bed.gz
 
@@ -123,40 +107,35 @@ echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="format=NAME|SCORE|LABE
 }
 
 process ANNOTATE {
-tag "${json.name}"
+tag "${vcf.name}"
 afterScript "rm -rf TMP"
+label "process_quick"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
 	path(tabix)
 	path(tbi)
 	path(header)
-	path(json)
-	//tuple path(vcf),path(vcf_idx),path(bed)
+	tuple val(meta),path(vcf),path(vcf_idx)
 output:
-	//tuple path("OUTPUT/${TAG}.bcf"),path("OUTPUT/${TAG}.bcf.csi"),path(bed),emit:output
-	path("OUTPUT/${TAG}.json"),emit:output
-	path("OUTPUT/${TAG}.count"),emit:count
+    tuple val(meta),path("*.bcf"),path("*.csi"),emit:output
 script:
-	def row = slurpJsonFile(json)
+    def TAG = "CCRE"
 """
 hostname 1>&2
-${moduleLoad("bcftools")}
 mkdir -p TMP OUTPUT
 
-bcftools annotate -a "${tabix}" -h "${header}" -c "CHROM,FROM,TO,${TAG}"  --merge-logic '${TAG}:unique' -O b -o TMP/${TAG}.bcf '${row.vcf}'
-bcftools index --force TMP/${TAG}.bcf
+bcftools annotate \\
+    --threads ${task.cpus} \\
+    -a "${tabix}" \\
+    -h "${header}" \\
+    -c "CHROM,FROM,TO,${TAG}" \\
+    --merge-logic '${TAG}:unique' -O b -o TMP/${TAG}.bcf '${vcf}'
+    
+bcftools index \\
+    --threads ${task.cpus} \\
+    --force TMP/${TAG}.bcf
 
-bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
-
-
-cat << EOF > TMP/${TAG}.json
-{
-"vcf"   : "\${PWD}/OUTPUT/${TAG}.bcf",
-"index" : "\${PWD}/OUTPUT/${TAG}.bcf.csi",
-"bed"   : "${row.bed}"
-}
-EOF
-
-mv -v TMP/${TAG}.* OUTPUT
-${backDelete(row)}
+mv TMP/*.bcf ./
+mv TMP/*.bcf.csi ./
 """
 }
