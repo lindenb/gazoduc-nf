@@ -22,20 +22,21 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {LINUX_SPLIT as LINUX_SPLIT1; LINUX_SPLIT as LINUX_SPLIT2} from '../../modules/utils/split.nf'
-include {BCFTOOLS_CONCAT_01} from '../bcftools/bcftools.concat.01.nf'
-include {GATK4_HAPCALLER_DIRECT} from '../../modules/gatk/gatk4.hapcaller.direct.01.nf'
-include {SCATTER_TO_BED } from '../../subworkflows/picard/picard.scatter2bed.nf'
-include {BCFTOOLS_MERGE_BED_01} from '../../modules/bcftools/bcftools.merge.bed.01.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
-include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
-//include {ANNOTATE_VCF_01} from '../annotation/annotation.vcf.01.nf'
+include {LINUX_SPLIT as LINUX_SPLIT1; LINUX_SPLIT as LINUX_SPLIT2} from '../../../modules/utils/split.nf'
+include {BCFTOOLS_CONCAT_01} from '../../bcftools/bcftools.concat.01.nf'
+include {GATK4_HAPCALLER_DIRECT} from '../../../modules/gatk/gatk4.hapcaller.direct.01.nf'
+include {SCATTER_TO_BED } from '../../../subworkflows/picard/picard.scatter2bed.nf'
+include {BCFTOOLS_MERGE_BED_01} from '../../../modules/bcftools/bcftools.merge.bed.01.nf'
+include {MERGE_VERSION} from '../../../modules/version/version.merge.02.nf'
+include {COLLECT_TO_FILE_01} from '../../../modules/utils/collect2file.01.nf'
+//include {ANNOTATE_VCF_01} from '../../annotation/annotation.vcf.01.nf'
 
 workflow GATK4_HAPCALLER_DIRECT_01 {
 	take:
-		meta
-		genomeId
-		bams
+		fasta
+		fai
+		dict
+		samplesheet
 		beds
 	main:
 
@@ -61,8 +62,8 @@ workflow GATK4_HAPCALLER_DIRECT_01 {
 		split_bams_ch = LINUX_SPLIT2(["method":"--lines=${params.nbams?:"10"}","suffix":".list"],bams)
 		version_ch = version_ch.mix(split_bams_ch.version)
 		
-		each_bam_list = split_bams_ch.output.splitText().map{it.trim()}
 
+	
 		row_ch = capture_bed_ch.combine(each_bam_list).map{T->[
 					"bed":T[0],
 					"bams":T[1],

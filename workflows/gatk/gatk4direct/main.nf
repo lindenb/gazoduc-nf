@@ -25,7 +25,7 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 
-include {GATK4_HAPCALLER_DIRECT_01} from '../../../subworkflows/gatk/gatk4.hapcaller.direct.01.nf'
+include {GATK4_HAPCALLER_DIRECT_01} from '../../../subworkflows/gatk/gatk4.hapcaller.direct'
 include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
 include {runOnComplete} from '../../../modules/utils/functions.nf'
 
@@ -39,9 +39,10 @@ workflow {
 	publish_ch = Channel.empty()
 
 	gatk_ch= GATK4_HAPCALLER_DIRECT_01(
-			[:],
-			params.genomeId,
-			file(params.bams),
+			file(params.fasta),
+			file(params.fai),
+			file(params.dict),
+			Channel.fromPath(params.samplesheet).splitCsv(sep:'\t',header:true)
 			file(params.beds)
 			)
 	VERSION_TO_HTML(gatk_ch.version)
