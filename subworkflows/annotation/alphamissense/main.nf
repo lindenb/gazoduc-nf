@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {k1_signature} from '../../modules/utils/k1.nf'
+include {k1_signature} from '../../../modules/utils/k1.nf'
 
 
 workflow ANNOTATE_ALPHAMISSENSE {
@@ -33,11 +33,10 @@ workflow ANNOTATE_ALPHAMISSENSE {
 		vcfs /* meta, vcf,vcf_index */
 	main:
 		source_ch = DOWNLOAD(fasta,fai,dict)
-		doc_ch = MAKE_DOC(source_ch.bed)
 		annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
 	emit:
 		output = annotate_ch.output
-		doc = doc_ch.output
+		doc = source_ch.doc
 	}
 
 
@@ -45,7 +44,7 @@ process DOWNLOAD {
 tag "${fasta.name}"
 afterScript "rm -rf TMP"
 label "process_quick"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
         path(fasta)
         path(fai)
@@ -54,10 +53,11 @@ output:
 	path("*.tsv.gz"),emit:bed
 	path("*.tsv.gz.tbi"),emit:tbi
 	path("*.header"),emit:header
+	path("*.md"),emit:doc
 script:
     def k1 = k1_signature()
-   	def TAG = "ALPHAMISSENSE"
-    def whatis="Data from AlphaMissense https://www.science.org/doi/10.1126/science.adg7492"
+    def TAG = "ALPHAMISSENSE"
+    def whatis="Data from AlphaMissense https://www.science.org/doi/10.1126/science.adg7492 Accurate proteome-wide missense variant effect prediction with AlphaMissense"
     def base="https://storage.googleapis.com/dm_alphamissense/AlphaMissense_"
 """
 hostname 1>&2
@@ -65,8 +65,8 @@ set -o pipefail
 mkdir -p TMP
 
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:${k1.hg38}    ${base}hg38.tsv.gz
-1:${k1.hg19}    ${base}hg19.tsv.gz
+1:${k1.hg38}\t${base}hg38.tsv.gz
+1:${k1.hg19}\t${base}hg19.tsv.gz
 EOF
 
 awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
@@ -99,30 +99,21 @@ mv TMP/${TAG}.tsv.gz.tbi ./
 
 echo '##INFO=<ID=${TAG}_PATHOGENOCITY,Number=1,Type=Float,Description="${whatis}.">' >  ${TAG}.header
 echo '##INFO=<ID=${TAG}_CLASS,Number=.,Type=String,Description="${whatis}.">' >> ${TAG}.header
-"""
-}
 
 
-process MAKE_DOC {
-executor "local"
-input;
-    path(bed)
-output:
-	path("alphamissense.md"),emit:output
-script:
-    def TAG=bed.name;
-"""
-cat << EOF > alphamissense.md
-Data from AlphaMissense https://www.science.org/doi/10.1126/science.adg7492
+cat << EOF > ${TAG}.md
+${whatis}
 EOF
+
 """
 }
+
 
 process ANNOTATE {
 tag "${vcf.name}"
 afterScript "rm -rf TMP"
 label "process_quick"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 
 input:
 	path(tabix)
@@ -143,11 +134,11 @@ bcftools annotate \\
     -h "${header}" \\
     -c "CHROM,POS,REF,ALT,${TAG}_PATHOGENOCITY,${TAG}_CLASS" \\
     --merge-logic "${TAG}_PATHOGENOCITY:max,${TAG}_CLASS:unique" \\
-    -O b -o TMP/${TAG}.${vcf.getSimpleName()}.bcf '${vcf}'
+    -O b -o TMP/${TAG}.${vcf.getBaseName()}.bcf '${vcf}'
  
-bcftools \\
+bcftools index \\
     --threads ${task.cpus} \\
-    -f index TMP/${TAG}.${vcf.getSimpleName()}.bcf
+    -f TMP/${TAG}.${vcf.getBaseName()}.bcf
 
 mv TMP/*.bcf ./
 mv TMP/*.bcf.csi ./

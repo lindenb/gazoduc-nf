@@ -22,71 +22,63 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include {k1_signature} from '../../../modules/utils/k1.nf'
 
-include {slurpJsonFile;parseBoolean;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete;hgName} from './annot.functions.nf'
 
-String getURL(genomeId) {
-	String hg=hgName(genomeId);
-	if(!hg.equals("hg19")) return "";
-	return "https://hgdownload.cse.ucsc.edu/goldenPath/${hg}/database/vistaEnhancers.txt.gz";
-	}
-
-def TAG="VISTA_ENHANCER"
 
 workflow ANNOTATE_VISTA {
 	take:
-		genomeId
-		bed
-		vcfs /** json: vcf,vcf_index */
+		fasta
+		fai
+		dict
+		vcfs /* meta, vcf,vcf_index */
 	main:
-
-             	if(hasFeature("vista") && !getURL(genomeId).isEmpty() ) {
-                        source_ch = DOWNLOAD(genomeId)
-                        annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
-                        out1 = annotate_ch.output
-                        out2 = annotate_ch.count
-			out3 =  MAKE_DOC(genomeId).output
-                        }
-                else
-                    	{
-                        out1 = vcfs
-                        out2 = Channel.empty()
-                        out3 = Channel.empty()
-                        }
-
+		source_ch = DOWNLOAD(fasta,fai,dict)
+		annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
 	emit:
-		output = out1
-		count = out2
-		doc = out3
+		output = annotate_ch.output
+		doc = source_ch.doc
 }
 
 process DOWNLOAD{
-tag "${getURL(genomeId)}"
+tag "${fasta.name}"
 afterScript "rm -rf TMP"
-memory "2g"
+label "process_quick"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-	val(genomeId)
+        path(fasta)
+        path(fai)
+        path(dict)
 output:
-	path("${TAG}.bed.gz"),emit:bed
-	path("${TAG}.bed.gz.tbi"),emit:tbi
-	path("${TAG}.header"),emit:header
+	path("*.bed.gz"),emit:bed
+	path("*.bed.gz.tbi"),emit:tbi
+	path("*.header"),emit:header
+	path("*.md"),emit:doc
 script:
-	def genome = params.genomes[genomeId]
-	def url = getURL(genomeId)
-        def reference = genome.fasta
-        def whatis = "Vista Enhancers from ${url}"
+    	def k1 = k1_signature()
+   	def TAG = "VISTA"
+	def whatis="VISTA enhancers"
 """
 hostname 1>&2
-mkdir -p TMP
-${moduleLoad("htslib jvarkit bedtools")}
+mkdir -p TMP/CACHE
 
-set -o pipefail
-wget --no-check-certificate -O - "${url}" |\
-        gunzip -c |\
-        cut -f2-5 |\
-        java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 1 --convert SKIP  |\
-        LC_ALL=C sort -t '\t' -k1,1 -k2,2n -T TMP |\
+cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
+1:${k1.hg38}\thttps://hgdownload.cse.ucsc.edu/gbdb/hg38/vistaEnhancers/vistaEnhancers.bb
+1:${k1.hg19}\thttps://hgdownload.cse.ucsc.edu/gbdb/hg19/vistaEnhancers/vistaEnhancers.bb
+EOF
+
+awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
+join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv | sort | uniq > TMP/jeter.url
+
+test -s TMP/jeter.url
+
+wget -O TMP/jeter.bb `cat TMP/jeter.url`
+
+bigBedToBed -udcDir=TMP/CACHE TMP/jeter.bb stdout |\\
+        gunzip -c |\\
+        cut -f1,2,3,4 |\\
+        jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedrenamechr -R ${fasta} --column 1 --convert SKIP  |\\
+        LC_ALL=C sort -t '\t' -k1,1 -k2,2n -T TMP |\\
         bgzip > TMP/${TAG}.bed.gz
 
 tabix -p bed -f TMP/${TAG}.bed.gz
@@ -95,64 +87,43 @@ mv TMP/${TAG}.bed.gz ./
 mv TMP/${TAG}.bed.gz.tbi ./
 
 echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${whatis}">' > ${TAG}.header
-"""
-}
 
-process MAKE_DOC {
-executor "local"
-input:
-        val(genomeId)
-output:
-	path("${TAG}.html"),emit:output
-script:
-	def genome = params.genomes[genomeId]
-	def url = getURL(genomeId)
-"""
-cat << __EOF__ > ${TAG}.html
-<dl>
-<dt>${TAG}</dt>
-<dd>VISTA enhancers. <a href="${url}">${url}</a></dd>
-</dl>
-__EOF__
+cat << EOF > ${TAG}.md
+Vista enhancer.
+EOF
 """
 }
 
 process ANNOTATE {
-tag "${json.name}"
+tag "${vcf.name}"
 afterScript "rm -rf TMP"
+label "process_quick"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	path(tabix)
 	path(tbi)
 	path(header)
-	path(json)
-	// tuple path(vcf),path(vcf_idx),path(bed)
+	tuple val(meta),path(vcf),path(vcf_idx)
 output:
-	path("OUTPUT/${TAG}.json"),emit:output
-	//tuple path("OUTPUT/${TAG}.bcf"),path("OUTPUT/${TAG}.bcf.csi"),path(bed),emit:output
-	path("OUTPUT/${TAG}.count"),emit:count
+    tuple val(meta),path("*.bcf"),path("*.csi"),emit:output
 script:
-	def  row = slurpJsonFile(json)
+    def TAG = "VISTA"
 """
 hostname 1>&2
-${moduleLoad("bcftools")}
 mkdir -p TMP OUTPUT
 
-bcftools annotate -a "${tabix}" -h "${header}" -c "CHROM,FROM,TO,${TAG}" --merge-logic '${TAG}:unique' -O b -o TMP/${TAG}.bcf '${row.vcf}'
-bcftools index --force TMP/${TAG}.bcf
+bcftools annotate \\
+    --threads ${task.cpus} \\
+    -a "${tabix}" \\
+    -h "${header}" \\
+    -c "CHROM,FROM,TO,${TAG}" \\
+    --merge-logic '${TAG}:unique' -O b -o TMP/${TAG}.${vcf.getBaseName()}.bcf '${vcf}'
+    
+bcftools index \\
+    --threads ${task.cpus} \\
+    --force TMP/${TAG}.${vcf.getBaseName()}.bcf
 
-
-
-cat << EOF > TMP/${TAG}.json
-{
-"vcf"   : "\${PWD}/OUTPUT/${TAG}.bcf",
-"index" : "\${PWD}/OUTPUT/${TAG}.bcf.csi",
-"bed"   : "${row.bed}"
-}
-EOF
-
-
-bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
-mv TMP/${TAG}.* OUTPUT/
-${backDelete(row)}
+mv TMP/*.bcf ./
+mv TMP/*.bcf.csi ./
 """
 }
