@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -26,7 +26,7 @@ include {k1_signature} from '../../../modules/utils/k1.nf'
 
 
 
-workflow ANNOTATE_VISTA {
+workflow ANNOTATE_TAD_GSE87112 {
 	take:
 		fasta
 		fai
@@ -56,40 +56,58 @@ output:
 	path("*.md"),emit:doc
 script:
     	def k1 = k1_signature()
-   	def TAG = "VISTA"
-	def whatis="VISTA enhancers"
+   	def TAG = "TAD_GSE87112"
+	def url = "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE87nnn/GSE87112/suppl/GSE87112%5Ffile%2Etar%2Egz"
+	def whatis = "Compendium of Chromatin Contact Maps Reveal Spatially Active Regions in the Human Genome ${url}"
 """
-set -o pipefail
 hostname 1>&2
 mkdir -p TMP/CACHE
+set -o pipefail
+set -x
+
+wget -qO - "${url}" |  tar -xOz -f '-'  primary_cohort_TAD_boundaries.tgz  > TMP/jeter.tar.gz
+(cd TMP && tar xvfz jeter.tar.gz)
+
+find ./TMP/ -type f -name "*.IS.All_boundaries.bed" | while read F
+do
+	cut -f 1,2,3 "\${F}" | awk -F '\t' -vF=`basename \${F} .IS.All_boundaries.bed` '{printf("%s\t%s\\n",\$0,F);}' >> TMP/jeter.bed
+done
 
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:${k1.hg38}\thttps://hgdownload.cse.ucsc.edu/gbdb/hg38/vistaEnhancers/vistaEnhancers.bb
-1:${k1.hg19}\thttps://hgdownload.cse.ucsc.edu/gbdb/hg19/vistaEnhancers/vistaEnhancers.bb
+1:${k1.hg38}\thg38
+1:${k1.hg19}\thg39
 EOF
 
 awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
-join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv | sort | uniq > TMP/jeter.url
+join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv | sort | uniq > TMP/jeter.build
 
-test -s TMP/jeter.url
+test -s TMP/jeter.build
 
-wget -O TMP/jeter.bb `cat TMP/jeter.url`
+if grep -F -w hg38 TMP/jeter.build
+then
+	wget -O - "https://hgdownload.soe.ucsc.edu/gbdb/hg19/liftOver/hg19ToHg38.over.chain.gz" |\\
+		gunzip -c |\\
+		jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP convertliftoverchain -R2 ${dict} > TMP/jeter.chain
 
-bigBedToBed -udcDir=TMP/CACHE TMP/jeter.bb stdout |\\
-        cut -f1,2,3,4 |\\
-        jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedrenamechr -R ${fasta} --column 1 --convert SKIP  |\\
-        LC_ALL=C sort -t '\t' -k1,1 -k2,2n -T TMP |\\
-        bgzip > TMP/${TAG}.bed.gz
+	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedliftover --chain TMP/jeter.chain -R ${dict} TMP/jeter.bed |\\
+        	LC_ALL=C sort -t '\t' -k1,1 -k2,2n -T TMP |\\
+	        bgzip > TMP/${TAG}.bed.gz
+
+else
+        	LC_ALL=C sort -t '\t' -k1,1 -k2,2n -T TMP TMP/jeter.bed |\\
+	        bgzip > TMP/${TAG}.bed.gz
+fi
+
 
 tabix -p bed -f TMP/${TAG}.bed.gz
 
 mv TMP/${TAG}.bed.gz ./
 mv TMP/${TAG}.bed.gz.tbi ./
 
-echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${whatis}">' > ${TAG}.header
+echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${whatis}  jvarkit.info.bean=(compartiment)">' > ${TAG}.header
 
 cat << EOF > ${TAG}.md
-Vista enhancer.
+${whatis}
 EOF
 """
 }
@@ -107,7 +125,7 @@ input:
 output:
     tuple val(meta),path("*.bcf"),path("*.csi"),emit:output
 script:
-    def TAG = "VISTA"
+    def TAG = "TAD_GSE87112"
 """
 hostname 1>&2
 mkdir -p TMP OUTPUT
