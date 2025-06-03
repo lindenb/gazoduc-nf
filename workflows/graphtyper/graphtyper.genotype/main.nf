@@ -115,7 +115,7 @@ runOnComplete(workflow);
 
 
 process MAKE_INTERVALS {
-label "process_short"
+label "process_quick"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
@@ -141,6 +141,11 @@ gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" IntervalList
 	    --INPUT "TMP/jeter.interval_list" \\
 	    --OUTPUT "TMP/jeter.bed" \\
 	    --SORT true
+
+cut -f1,2,3 TMP/jeter.bed |\\
+	sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter2.bed
+mv TMP/jeter2.bed TMP/jeter.bed
+
 
 if ${bed.name.contains(".")}
 then
