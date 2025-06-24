@@ -45,7 +45,7 @@ workflow SOMALIER_BAMS_01 {
 
 		if(user_sites.name.equals("NO_FILE")) {
 			sites_ch = SOMALIER_DOWNLOAD_SITES(genome)
-			version_ch = version_ch.mix(sites_ch.version)
+			//version_ch = version_ch.mix(sites_ch.version)
 			sites_vcf= sites_ch.output
 			}
 		else {

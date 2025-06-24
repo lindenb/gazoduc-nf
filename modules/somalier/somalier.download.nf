@@ -25,6 +25,7 @@ SOFTWARE.
 
 
 process DOWNLOAD_SOMALIER {
+label "process_single"
 tag "${params.somalier_version}"
 output:
 	path("somalier"),emit:output
