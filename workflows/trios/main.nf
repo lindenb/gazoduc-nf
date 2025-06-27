@@ -1,7 +1,12 @@
-include {ANNOTATE_CLINVAR       } from '../../subworkflows/annotation/clinvar/main.nf'
-include {ANNOTATE_ALPHAMISSENSE } from '../../subworkflows/annotation/alphamissense/main.nf'
+import java.io.InputStreamReader;
+import java.util.zip.GZIPInputStream;
+
+include {CLINVAR                } from '../../subworkflows/annotation/clinvar/main.nf'
+include {ALPHAMISSENSE          } from '../../subworkflows/annotation/alphamissense/main.nf'
 include {VEP                    } from '../../subworkflows/annotation/vep/main.nf'
 include {TRIOS                  } from '../../subworkflows/trios/main.nf'
+include {TRUVARI                } from '../../subworkflows/truvari/main.nf'
+include {SNPEFF                 } from '../../subworkflows/snpeff/main.nf'
 
 Map assertKeyExists(final Map hash,final String key) {
     if(!hash.containsKey(key)) throw new IllegalArgumentException("no key ${key}'in ${hash}");
@@ -26,8 +31,8 @@ Map assertKeyMatchRegex(final Map hash,final String key,final String regex) {
 boolean isStructuralVariantVCF(vcf) {
     if(vcf.name.endsWith(".sv.vcf.gz")) return true;//DRAGEN
     int found=0;
-    try(InputStream in0=Files.newInputStream(vcf)) {
-        try(GZipInputStream in=new GZipInputStream(in0)) {
+    try(InputStream in0= java.nio.file.Files.newInputStream(vcf)) {
+        try(GZIPInputStream in=new GZIPInputStream(in0)) {
             try(BufferedReader br=new BufferedReader(new InputStreamReader(in))) {
                 String line;
                 while((line=br.readLine())!=null) {
@@ -39,6 +44,10 @@ boolean isStructuralVariantVCF(vcf) {
             }
         }
     }
+    catch(Throwable err) {
+	err.printStackTrace();
+	throw err;
+	}
     return found==2;
 }
 
@@ -46,10 +55,10 @@ workflow {
         def ref_hash = [
             id: file(params.fasta).simpleName
             ]
-        def fasta = [ref_hash, file(params.fasta) ]
-        def fai   = [ref_hash, file(params.fai) ]
-        def dict  = [ref_hash, file(params.dict) ]
-
+        def fasta  = [ref_hash, file(params.fasta) ]
+        def fai    = [ref_hash, file(params.fai) ]
+        def dict   = [ref_hash, file(params.dict) ]
+        def NO_BED = [ref_hash, [] ]
 
 //        MAKE_PED([[id:"pedigree"],file(params.pedigree)])
 
@@ -67,16 +76,6 @@ workflow {
                 }
             .map{assertKeyMatchRegex(it,"idx","^\\S+\\.(tbi|csi)\$")}
             .map{[[id:it.id],file(it.vcf),file(it.idx)]}
-            
-
-        
-
-        vcf2bed = VCF_TO_CONTIGS(vcfs) 
-        vcfs = vcf2bed.output
-            .splitText(elem:1)
-            .map{[it[0],it[1].trim(),it[2],it[3]]}
-            .map{[it[0].plus(contig:it[1]),it[2],it[3]]}.view()
-
 
 
         vcfs = vcfs.branch{
@@ -85,29 +84,38 @@ workflow {
          }
 
         TRUVARI(
+	        [id:"truvari"],
+            fasta,
+            fai,
+            dict,
             vcfs.sv
-            .map{[[id:it[0].contig],[it[1],it[2]]]}
-            .groupTuple()
-            .map{[it[0],it[1].flatten()]}
         )
+
+
+        vcf2bed = VCF_TO_CONTIGS(vcfs.snv) 
+        vcf_snv = vcf2bed.output
+            .splitText(elem:1)
+            .map{[it[0],it[1].trim(),it[2],it[3]]}
+            .map{[it[0].plus(contig:it[1]),it[2],it[3]]}.view()
+
         
-        SUBSET_VCF(vcfs.snv)
-        vcfs = SUBSET_VCF.out.vcf
+        SUBSET_VCF(vcf_snv.view{"SUBSET $it \n"})
+        vcf_snv = SUBSET_VCF.out.vcf
 
+        VEP([id:"vep"],fasta,fai,dict,vcf_snv)
+        vcf_snv = SUBSET_VCF.out.vcf
 
-        
-
-        /*
-        VEP([:],fasta,fai,dict,vcfs)
-        vcfs = SUBSET_VCF.out.vcf
-
-        ANNOTATE_CLINVAR([:],fasta,fai,dict,VEP.out.vcf)
-        vcfs = ANNOTATE_CLINVAR.out.vcf
-
-        ALPHAMISSENSE([:],fasta,fai,dict,CLINVAR.out.vcf)
+        CLINVAR([id:"clinvar"],fasta,fai,dict,NO_BED,VEP.out.vcf)
+        vcfs = CLINVAR.out.vcf
+ 
+        ALPHAMISSENSE([id:"alphamissense"],fasta,fai,dict,NO_BED,CLINVAR.out.vcf)
         vcfs = ALPHAMISSENSE.out.vcf
 
-        TRIO([:],fasta,fai,dict,ALPHAMISSENSE.out.vcf)
+        SNPEFF([id:"snpeff"],fasta,fai,dict,ALPHAMISSENSE.out.vcf)
+        vcfs = SNPEFF.out.vcf
+        
+/*
+        TRIO([id:"trio"],fasta,fai,dict,SNPEFF.out.vcf)
         vcfs = VEP.out.vcf
 	*/
 }
@@ -128,16 +136,17 @@ process VCF_TO_CONTIGS{
 process SUBSET_VCF {
     tag "${meta.id} ${meta.contig?:""}"
     label "process_single"
+    conda "${moduleDir}/../../conda/bioinfo.01.yml"
     input:
         tuple val(meta),path(vcf),path(idx)
     output:
-        tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
-    conda "${moduleDir}/../../conda/bioinfo.01.yml"
+        tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:vcf
     script:
-        def args = meta.contig?:"--regions \"${meta.contig}\"":""
-        def prefix = meta.id+{meta.contig?"."+meta.contig:""}
+        def args = meta.contig?"--regions \"${meta.contig}\"":""
+        def prefix = task.ext.prefix?:meta.id+(meta.contig?"."+meta.contig:"")
         """
-        bcftools view --threads "${task.cpus}" -O z ${args} -o ${prefix}.vcf.gz --write-index "${vcf}" 
+        bcftools view --threads "${task.cpus}" -O z ${args} -o ${prefix}.vcf.gz "${vcf}" 
+        bcftools index --threads "${task.cpus}" -t -f ${prefix}.vcf.gz
         """
 }
 
@@ -152,3 +161,29 @@ process MAKE_PED {
     """
     """
 }
+
+wokflow HET_COMPOSITE {
+    take:
+        meta
+        fasta
+        fai
+        dict
+        vcfs
+    main:
+        FILTER_FOR_HET_COMPOSITE(vcfs)
+}
+
+process FILTER_FOR_HET_COMPOSITE {
+    tag "${meta.id}"
+    label "process_single"
+    conda "${moduleDir}/../../conda/bioinfo.01.yml"
+    input:
+        tuple val(meta),path(vcf),path(idx)
+    script:
+        def args = meta.contig?"--regions \"${meta.contig}\"":""
+        def prefix = task.ext.prefix?:meta.id+(meta.contig?"."+meta.contig:"")
+        """
+        jvarkit vcffilterjdk -e 'getTools(). ().'
+        """
+    }
+

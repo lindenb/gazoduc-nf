@@ -26,23 +26,23 @@ SOFTWARE.
 include {k1_signature} from '../../../modules/utils/k1.nf'
 
 
-workflow ANNOTATE_CLINVAR {
+workflow CLINVAR {
 	take:
+                meta
 		fasta
 		fai
 		dict
+                bed
 		vcfs /* meta, vcf,vcf_index */
 	main:
-        source_ch = DOWNLOAD(fasta,fai,dict)
-		annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
+                DOWNLOAD(fasta,fai,dict,bed)
+		ANNOTATE(DOWNLOAD.out.vcf, vcfs)
 	emit:
-		output = annotate_ch.output
-		doc = source_ch.doc
+		vcf = ANNOTATE.out.vcf
 	}
 
 
 process DOWNLOAD {
-tag "${fasta.name}"
 afterScript "rm -rf TMP"
 label "process_quick"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
@@ -50,21 +50,31 @@ input:
     tuple val(meta1),path(fasta)
     tuple val(meta2),path(fai)
     tuple val(meta3),path(dict)
+    tuple val(meta4),path(bed)
 output:
 	tuple val(meta1),path("*.bcf"),path("*.bcf.csi"),emit:vcf
 script:
+    def k1= k1_signature();
     def prefix = "clinvar"
     def base = "https://ftp.ncbi.nlm.nih.gov/pub/clinvar"
+    def args = bed?"--regions-overlap 1 --targets-file TMP/nochr.bed":""
+
 """
 set -o pipefail
 set -x
 mkdir -p TMP
 
 
+if ${bed?true:false}
+then
+       sed 's/^chr//' '${bed}' >  TMP/nochr.bed
+fi
+
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
 1:${k1.hg38}\t${base}/vcf_GRCh38/clinvar.vcf.gz
 1:${k1.hg19}\t${base}/vcf_GRCh37/clinvar.vcf.gz
 EOF
+
 
 awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
 join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv | sort | uniq > TMP/jeter.url
@@ -72,22 +82,26 @@ join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv | sort | uniq > TM
 test -s TMP/jeter.url
 
 wget -O - `cat TMP/jeter.url` |\\
-        bcftools view --regions-overlap 1 --targets-file TMP/nochr.bed -O v |\\
+        bcftools view -O v ${args}  |\\
         jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  vcfsetdict -R "${fasta}"  -n SKIP |\\
-        bcftools view -O b -o TMP/${prefix}.bcf
+        bcftools view -O b -o TMP/jeter.bcf
 
-bcftools view --header-only TMP/${prefix}.bcf | grep "^##INFO" | cut -d '=' -f 3 | cut -d, -f 1| grep -v "#"  |\\
+bcftools view --header-only TMP/jeter.bcf | grep "^##INFO" | cut -d '=' -f 3 | cut -d, -f 1| grep -v "#"  |\\
         awk '{printf("INFO/%s\tCLINVAR_%s\\n",\$1,\$1);}' > TMP/rename.tsv
 
-bcftools annotate  --threads ${task.cpus} \\
+bcftools annotate \\
+    --threads ${task.cpus} \\
     --rename-annots TMP/rename.tsv \\
     -O b \\
-    -o ${prefix}.bcf \\
-    TMP/${prefix}.bcf
+    -o TMP/${prefix}.bcf \\
+    TMP/jeter.bcf
 
 bcftools index  \\
     --threads ${task.cpus} \\
-     ${prefix}.bcf
+     TMP/${prefix}.bcf
+
+mv TMP/${prefix}.bcf ./
+mv TMP/${prefix}.bcf.csi ./
 """
 }
 
@@ -95,15 +109,12 @@ process ANNOTATE {
 tag "${meta.id}"
 label "process_quick"
 afterScript "rm -rf TMP"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-        tuple val(meta1),path(fasta)
-        tuple val(meta2),path(fai)
-        tuple val(meta3),path(dict)
-        tuple val(meta4),path(clinvar),path(clinvaridx)
-        tuple val(meta),path(vcf),path(tbi)
+        tuple val(meta1),path(clinvar),path(clinvaridx)
+        tuple val(meta ),path(vcf),path(tbi)
 output:
-        tuple val(meta),path("*.vcf.gz"),path("*.gz.tbi"),emit:vcf
+        tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:vcf
 script:
         def prefix = task.ext.prefix?:vcf.baseName+".clinvar"
 """
@@ -116,7 +127,6 @@ bcftools annotate \\
         -O z \\
         -o TMP/jeter.vcf.gz \\
         ${vcf}
-
 
 bcftools index --threads ${task.cpus} -t -f "TMP/jeter.vcf.gz"
 

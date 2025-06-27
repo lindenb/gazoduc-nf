@@ -27,38 +27,50 @@ include {VCF_TO_BED} from '../vcf2bed'
 include {BCFTOOLS_CONCAT_ALL} from '../bcftools/concat.all'
 
 
-workflow TRUVARI_01 {
+Map groupByFunction(hash,meta) {
+	return [id:"truvari"];
+}
+
+workflow TRUVARI {
      take:
-       	genome /* genome id */
-        vcfs /* file containing the path to VCF files . One per line */
+		meta
+		fasta
+		fai
+		dict
+        vcfs /* [meta,vcf,idx] */
      main:
-
-	vcf2bed_ch = VCF_TO_BED(vcfs)
-
-	ch2 = vcfs.flatMap{[it,file(it.toRealPath()+(it.name.endsWith(".bcf")?".csi":".tbi"))]}.collect()	
-
-	perctg_ch = PER_CONTIG(genome, vcf2bed_ch.chromosomes.splitText().map{it.trim()},ch2)
-
-	concat_ch = BCFTOOLS_CONCAT_ALL(perctg_ch.output , file("NO_FILE"))
+		APPLY_TRUVARI(
+			fasta,
+			fai,
+			dict,
+			vcfs
+				.map{[groupByFunction(it,meta), [it[1],it[2]] ]}
+				.groupTuple()
+				.map{[it[0],it[1].flatten()]}
+		)
 
 	emit:
-		output = concat_ch.output
+		vcf = APPLY_TRUVARI.out.vcf
 	}
 
-process PER_CONTIG {
-    tag "${contig}"
+process APPLY_TRUVARI {
+    label "process_short"
+	tag "${meta.id}"
     afterScript "rm -rf TMP"
     conda "${moduleDir}/../../conda/truvari.01.yml"
     input:
-	path(genome)
-	val(contig)
-	path("VCFS/*")
+		tuple val(meta1),path(fasta)
+		tuple val(meta2),path(fai)
+		tuple val(meta3),path(dict)
+		tuple val(meta ),path("VCFS/*")
     output:
-	tuple path("truvari.${contig}.bcf"),path("truvari.${contig}.bcf.csi"),emit: output
+		tuple val(meta),path("*.bcf"),path("*.bcf.csi"),emit: vcf
     script:
-	def reference = genome.find{it.name.endsWith("a")}
-	def extraCmd = task.ext.args1?:""
-	def extraBcftools = task.ext.args2?:""
+		def args1 = task.ext.args1?:""
+		def args2 = task.ext.args2?:""
+		def args3 = task.ext.args3?:""
+
+		def prefix= task.ext.prefix?:meta.id
     """
 	hostname 1>&2
 	mkdir -p TMP
@@ -73,16 +85,28 @@ process PER_CONTIG {
 	sort -T TMP -t '\t' -k1,1 TMP/jeter.txt | cut -f 2 > TMP/jeter.list
 
 	# bug FORMAT pour dragen
-	bcftools merge --force-samples --filter-logic '+' --regions "${contig}" --file-list TMP/jeter.list  -m none -O u |\
-		${extraBcftools.isEmpty()?"":"bcftools view -O u ${extraBcftools} |"} \
-		bcftools annotate --force -x 'FORMAT/SR' -O z -o TMP/merged.vcf.gz
-	bcftools index --tbi TMP/merged.vcf.gz
+	bcftools merge --threads ${task.cpus}  ${args1} --force-samples --filter-logic '+'  --file-list TMP/jeter.list  -m none -O u -o TMP/jeter2.bcf
+	mv TMP/jeter2.bcf TMP/jeter.bcf
+
+	# optional filter ?
+	bcftools view --threads ${task.cpus} ${args2}  -O u -o TMP/jeter2.bcf TMP/jeter.bcf
+	mv TMP/jeter2.bcf TMP/jeter.bcf
+
+	# bug DRAGEN
+	bcftools annotate --threads ${task.cpus} --force -x 'FORMAT/SR' -O z -o TMP/merged.vcf.gz TMP/jeter.bcf
+	bcftools index --threads ${task.cpus}  --tbi TMP/merged.vcf.gz
 
 	# invoke truvari
-	truvari collapse ${extraCmd} --reference "${reference}" -i "TMP/merged.vcf.gz" -c TMP/collapsed.vcf.gz |\
-		bcftools +fill-tags -O u -- -t AN,AC,AF |\
-		bcftools sort -T TMP -O b -o truvari.${contig}.bcf
+	truvari collapse ${args3} --reference "${fasta}" -i "TMP/merged.vcf.gz" -c TMP/collapsed.vcf.gz |\\
+		bcftools view -O u -o TMP/jeter.bcf
+	
+	bcftools +fill-tags --threads ${task.cpus}  -O u -o TMP/jeter2.bcf TMP/jeter.bcf -- -t AN,AC,AF 
+	mv TMP/jeter2.bcf TMP/jeter.bcf
+		
+	bcftools sort -T TMP/sort -O b -o TMP/${prefix}.bcf TMP/jeter.bcf
 
-	bcftools index -f truvari.${contig}.bcf
+	bcftools index --threads ${task.cpus} -f TMP/${prefix}.bcf
+	mv TMP/${prefix}.bcf ./
+	mv TMP/${prefix}.bcf.csi ./
     """
    }

@@ -29,8 +29,11 @@ afterScript "rm -rf TMP"
 errorStrategy "retry"
 maxRetries 2
 input:
-        tuple path(fasta),path(fai),path(dict)
-        tuple path(dbsnp),path(dbsnp_tbi)
+        tuple val(meta1),path(fasta)
+        tuple val(meta2),path(fai)
+        tuple val(meta3),path(dict)
+	tuple val(meta4),path(dbsnp)
+	tuple val(meta5),path(dbsnp_tbi)
         tuple path(bed),path("VCFS/*")
 output:
         tuple path(bed),path("*.g.vcf.gz"),path("*.g.vcf.gz.tbi"),emit:output

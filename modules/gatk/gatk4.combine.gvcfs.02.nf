@@ -26,25 +26,25 @@ process HC_COMBINE2 {
 tag "${bed.name}"
 label "process_quick"
 afterScript "rm -rf TMP"
-memory = {20.GB  * task.attempt}
-errorStrategy "retry"
-maxRetries 2
-time "3h"
 input:
-        tuple path(fasta),path(fai),path(dict)
-        tuple path(dbsnp),path(dbsnp_tbi)
+        tuple val(meta1),path(fasta)
+        tuple val(meta2),path(fai)
+        tuple val(meta3),path(dict)
+	tuple val(meta4),path(dbsnp)
+	tuple val(meta5),path(dbsnp_tbi)
         tuple path(bed),path("VCFS/*")
 output:
-        tuple path(bed),path("combine2.g.vcf.gz"),path("combine2.g.vcf.gz.tbi"),emit:output
+        tuple path(bed),path("*.g.vcf.gz"),path("*.g.vcf.gz.tbi"),emit:output
 script:
 """
 hostname 1>&2
 module load gatk/0.0.0
 mkdir -p TMP
 set -x
+MD5=`cat TMP/jeter.list | sort | sha1sum | cut -d ' ' -f1`
 
 
-find VCFS -name "*.g.vcf.gz" | sort > TMP/jeter.list
+find VCFS/ -name "*.g.vcf.gz" | sort > TMP/jeter.list
 
         gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" \\
                 CombineGVCFs \\
@@ -56,7 +56,7 @@ find VCFS -name "*.g.vcf.gz" | sort > TMP/jeter.list
                 -G AS_StandardAnnotation
 
 
-mv TMP/combine2.g.vcf.gz ./
-mv TMP/combine2.g.vcf.gz.tbi ./
+mv TMP/combine2.g.vcf.gz ./\${MD5}.g.vcf.gz
+mv TMP/combine2.g.vcf.gz.tbi ./\${MD5}.g.vcf.gz.tbi
 """
 }

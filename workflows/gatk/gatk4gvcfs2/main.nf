@@ -27,7 +27,7 @@ nextflow.enable.dsl=2
 //include { validateParameters; paramsHelp; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
 include { HC_COMBINE1 } from '../../../modules/gatk/gatk4.combine.gvcfs.01.nf'
 include { HC_COMBINE2 } from '../../../modules/gatk/gatk4.combine.gvcfs.02.nf'
-include { HC_GENOTYPE } from '../../../modules/gatk/gatk4.genotype.gvcfs.01.nf'
+//include { HC_GENOTYPE } from '../../../modules/gatk/gatk4.genotype.gvcfs.01.nf'
 include { HC_GENOMICDB_IMPORT} from '../../../modules/gatk/gatk4.genomicdb.import.01.nf'
 include { HC_GENOMICDB_GENOTYPE} from '../../../modules/gatk/gatk4.genomicdb.genotype.01.nf'
 include { SPLIT_BED; SPLIT_BED as SPLIT_BED2} from './part.split.bed.nf'
@@ -71,18 +71,29 @@ workflow {
 		splitText().
 		map{file(it.trim())}
 
+	bams_ch = Channel.empty()
+	
 
+         ref_hash = [
+                id:   file(params.fasta).simpleName,
+                name: file(params.fasta).simpleName
+                ]
 
+        fasta = [ref_hash,file(params.fasta)]
+        fai   = [ref_hash,file(params.fai)]
+        dict  = [ref_hash,file(params.dict)]
+	
 
-	genome_ch = [file(params.fasta) , file(params.fasta+".fai"), file(""+file(params.fasta).getParent()+"/"+file(params.fasta).getBaseName()+".dict" ) ]	
-	if(params.dbsnp.equals("NO_FILE"))
-		{
-		dbsnp_ch = [file("NO_DBSNP"), file("NO_DBSNP_TBI")]
-		}
-	else
-		{
-		dbsnp_ch = [file(params.dbsnp), file(params.dbsnp+".tbi")]
-		}
+        if(!params.dbsnp.contains("."))
+                {
+                dbsnp =     [ [:], [] ]
+                dbsnp_tbi = [ [:], [] ]
+                }
+        else
+                {
+                dbsnp =     [ [:], file(params.dbsnp)]
+                dbsnp_tbi = [ [:], file(params.dbsnp+".tbi") ]
+                }
 
 	hc_ch = Channel.empty()
         if(!params.gvcfs.equals("NO_FILE")) {
@@ -94,15 +105,46 @@ workflow {
 		hc_ch = hc_ch.mix(  beds_ch.combine(gvcfs_ch) )
 		}
 
-	if(!params.bams.equals("NO_FILE")) {
-		bams_ch = Channel.fromPath(params.bams).
-			splitText().
-			map{it.trim()}.
-			map{[it, it.endsWith(".cram")?it+".crai":it+".bai"]}.
-			map{[file(it[0],checkIfExists:true),file(it[1],checkIfExists:true)]}
 
-		hc_ch = hc_ch.mix( HC_BAM_BED( genome_ch, dbsnp_ch, beds_ch.combine(bams_ch)).output )
+	if(params.samplesheet.contains(".")) {
+		bams_ch = Channel.fromPath(params.samplesheet)
+			.splitCsv(header:true,sep:',')
+			.map{if(!it.containsKey("bam")) throw new IllegalArgumentException("${it} : bam missing"); return it;}
+			.map{if(!(it.bam.endsWith(".cram") || it.bam.endsWith(".bam"))) throw new IllegalArgumentException("${it}.bam should end with bam or cram"); return it;}
+			.map{it.bai?it: (it.bam.endsWith(".bam") ? it.plus(["bai":it.bam+".bai"]):  it.plus(["bai":it.bam+".crai"]))}
+                        .map{!it.fasta || it.fasta.isEmpty()?it.plus(["fasta":params.fasta]):it}
+                        .map{!it.fai || it.fai.isEmpty()?it.plus(["fai":it.fasta+".fai"]):it}
+                        .map{!it.dict || it.dict.isEmpty()?it.plus(["dict":it.fasta.replaceAll("\\.(fasta|fa)\$","")+".dict"]):it}
+			.map{[
+					[
+					"id":it.id?:file(it.bam).simpleName,
+					"sex":(it.sample?:"undefined"),
+					"father":(it.father?:""),
+					"mother":(it.mother?:"")
+					],
+					file(it.bam,checkIfExists:true),
+					file(it.bai,checkIfExists:true),
+					file(it.fasta,checkIfExists:true),
+					file(it.fai,checkIfExists:true),
+					file(it.dict,checkIfExists:true)
+			]}
 		}
+
+
+
+
+	HC_BAM_BED(
+		fasta,
+		fai,
+		dict,
+		dbsnp,
+		dbsnp_tbi,
+		bams_ch.combine(beds_ch)
+		)
+
+		
+	hc_ch = hc_ch.mix( HC_BAM_BED.out.output)
+		
 
        if(params.genomicsDB==false) {
 		combine1_input_ch = hc_ch.map{[it[0].toRealPath(),[it[1],it[2]]]}.
@@ -110,7 +152,7 @@ workflow {
 			flatMap{makeSQRT(it)}.
 			map{[it[0],it[1].flatten()]}
 
-		hc1 = HC_COMBINE1(genome_ch, dbsnp_ch, combine1_input_ch )
+		hc1 = HC_COMBINE1(fasta,fai,dict, dbsnp, dbsnp_tbi, combine1_input_ch )
 
 		combine2_input_ch = hc1.output.
 			map{ [it[0].toRealPath(), it[1],it[2] ]}. /* duplicate bed file so we can extract distinct contig in first , keep bed content in second */
@@ -123,8 +165,8 @@ workflow {
 			map{T->(T[0] instanceof List?T:[[T[0]],T[1]])}.//only one bed ? convert to array for the flatMap below
 			flatMap{T->T[0].collect{X->[X,T[1]]} }
 
-		hc2 = HC_COMBINE2(genome_ch, dbsnp_ch, combine2_input_ch )
-		hg = HC_GENOTYPE(genome_ch, dbsnp_ch, hc2.output )
+		hc2 = HC_COMBINE2(fasta,fai,dict, dbsnp, dbsnp_tbi, combine2_input_ch )
+		hg = HC_GENOTYPE(fasta,fai,dict, dbsnp, dbsnp_tbi, hc2.output )
         	}
 	else
 		{
@@ -143,14 +185,14 @@ workflow {
 				}
 			return L;
 			}}
-		genomiddb_ch = HC_GENOMICDB_IMPORT(genome_ch,beds2_ch)
-		hg = HC_GENOMICDB_GENOTYPE(genome_ch, dbsnp_ch, genomiddb_ch.output)
+		genomiddb_ch = HC_GENOMICDB_IMPORT(fasta,fai,dict,beds2_ch)
+		hg = HC_GENOMICDB_GENOTYPE(fasta,fai,dict, dbsnp, dbsnp_tbi, genomiddb_ch.output)
 		}
 	concat0_ch = VCF_CONCAT1(hg.output.collate(10).map{it.flatten()})
 	concat_ch  = VCF_CONCAT2(concat0_ch.output.flatten().collect())
 
 	if(params.with_multiqc==true) {
-		stats_ch = BCFTOOLS_STATS(genome_ch,concat_ch.output)
+		stats_ch = BCFTOOLS_STATS(fasta,fai,dict,concat_ch.output)
 		mqc_ch = MULTIQC(file(params.sample2population), stats_ch.output)
 		}
 
@@ -198,25 +240,53 @@ errorStrategy "retry"
 maxRetries 2
 cpus 2
 input:
-	tuple path(fasta),path(fai),path(dict)
-	tuple path(dbsnp),path(dbsnp_tbi)
-	tuple path(bed),path(bam),path(bai)
+	tuple val(meta1), path("_reference.fa")
+	tuple val(meta2), path("_reference.fa.fai")
+	tuple val(meta3), path("_reference.dict")
+	tuple val(meta4), path(dbsnp)
+	tuple val(meta5), path(dbsnp_tbi)
+	tuple val(meta),path(bam),path(bai),path(fasta2),path(fai2),path(dict2),path(bed)
 output:
 	tuple path(bed),path("${bam.getBaseName()}.g.vcf.gz"),path("${bam.getBaseName()}.g.vcf.gz.tbi"),emit:output
 script:
+	def reference="_reference"
 """
 hostname 1>&2
 mkdir -p TMP
+set -x
+
+${bed.name.endsWith(".gz")?"gunzip -c":"cat"} "${bed}" |\\
+	cut -f1-3 |\\
+	sort -t '\t' -T TMP -k1,1 -k2,2n|\\
+	bedtools merge  > TMP/jeter.bed
+
+if ! cmp "${reference}.fa.fai" "${fai2}"
+then
+	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedrenamechr -f "${fasta2}" --column 1 --convert SKIP TMP/jeter.bed > TMP/jeter2.bed
+	mv -v  TMP/jeter2.bed TMP/jeter.bed
+fi
+
+test -s TMP/jeter.bed
 
    gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" HaplotypeCaller \\
-     -L "${bed}" \\
-     -R "${fasta}" \\
+     -L TMP/jeter.bed \\
+     -R "${fasta2}" \\
      -I "${bam}" \\
      -ERC GVCF \\
-     ${dbsnp.name.equals("NO_DBSNP")?"":"--dbsnp ${dbsnp}"} \\
      ${(params.mapq as Integer)<1?"":" --minimum-mapping-quality "+params.mapq} \\
      -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \\
      -O "TMP/jeter.g.vcf.gz"
+
+if ! cmp "${reference}.fa.fai" "${fai2}"
+then
+	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfsetdict \\
+		-n SKIP \\
+		-R "${reference}.fa" \\
+		TMP/jeter.g.vcf.gz > TMP/jeter2.vcf
+	
+	bcftools sort  -T TMP/sort  --max-mem "${task.memory.giga}G" -O z -o TMP/jeter.g.vcf.gz TMP/jeter2.vcf
+	bcftools index --force --tbi TMP/jeter.g.vcf.gz
+fi
 
 mv TMP/jeter.g.vcf.gz "${bam.getBaseName()}.g.vcf.gz"
 mv TMP/jeter.g.vcf.gz.tbi "${bam.getBaseName()}.g.vcf.gz.tbi"
@@ -293,7 +363,9 @@ label "process_medium"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 cpus 10
 input:
-        tuple path(fasta),path(fai),path(dict)
+	tuple val(meta1), path(fasta)
+	tuple val(meta2), path(fai)
+	tuple val(meta3), path(dict)
 	tuple path(vcf),path(vcfidx)
 output:
 	path("stats.txt"),emit:output	
@@ -332,7 +404,7 @@ mkdir -p TMP/OUT2 TMP/multiqc
 
 multiqc --outdir "TMP/multiqc" --force --file-list TMP/jeter.list --no-ansi
 
-java -jar \${JVARKIT_DIST}/jvarkit.jar multiqcpostproc --sample2collection "${sample2pop}" -o TMP/OUT2 TMP/multiqc/multiqc_data
+java -jar jvarkit.jar multiqcpostproc --sample2collection "${sample2pop}" -o TMP/OUT2 TMP/multiqc/multiqc_data
 
 find TMP/OUT2 -type f -name "*.json" >> TMP/jeter.list
 

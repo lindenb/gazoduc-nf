@@ -29,7 +29,8 @@ label "process_quick"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
-	path(genome)
+	tuple val(meta1),path(genome)
+	tuple val(meta2),path(fai)
 output:
 	path("*.gencode.*"),emit:output
 script:

@@ -31,7 +31,9 @@ errorStrategy "retry"
 maxRetries 2
 time "3h"
 input:
-        tuple path(fasta),path(fai),path(dict)
+        tuple val(meta1),path(fasta)
+        tuple val(meta2),path(fai)
+        tuple val(meta3),path(dict)
         tuple path(bed),path("VCFS/*")
 output:
         tuple path(bed),path("database"),emit:output

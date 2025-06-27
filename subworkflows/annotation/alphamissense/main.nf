@@ -25,38 +25,40 @@ SOFTWARE.
 include {k1_signature} from '../../../modules/utils/k1.nf'
 
 
-workflow ANNOTATE_ALPHAMISSENSE {
+workflow ALPHAMISSENSE {
 	take:
+		meta
 		fasta
 		fai
 		dict
+		bed
 		vcfs /* meta, vcf,vcf_index */
 	main:
-		source_ch = DOWNLOAD(fasta,fai,dict)
+		source_ch = DOWNLOAD(fasta,fai,dict,bed)
 		annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
 	emit:
-		output = annotate_ch.output
+		vcf = annotate_ch.vcf
 		doc = source_ch.doc
 	}
 
 
 process DOWNLOAD {
-tag "${fasta.name}"
 afterScript "rm -rf TMP"
 label "process_quick"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-        path(fasta)
-        path(fai)
-        path(dict)
+    tuple val(meta1),path(fasta)
+    tuple val(meta2),path(fai)
+    tuple val(meta3),path(dict)
+	tuple val(meta4),path(bed)
 output:
-	path("*.tsv.gz"),emit:bed
-	path("*.tsv.gz.tbi"),emit:tbi
-	path("*.header"),emit:header
-	path("*.md"),emit:doc
+	tuple val(meta1),path("*.tsv.gz"),emit:bed
+	tuple val(meta1),path("*.tsv.gz.tbi"),emit:tbi
+	tuple val(meta1),path("*.header"),emit:header
+	tuple val(meta1),path("*.md"),emit:doc
 script:
     def k1 = k1_signature()
-    def TAG = "ALPHAMISSENSE"
+    def TAG = task.ext.tag?:"ALPHAMISSENSE"
     def whatis="Data from AlphaMissense https://www.science.org/doi/10.1126/science.adg7492 Accurate proteome-wide missense variant effect prediction with AlphaMissense"
     def base="https://storage.googleapis.com/dm_alphamissense/AlphaMissense_"
 """
@@ -69,8 +71,13 @@ cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
 1:${k1.hg19}\t${base}hg19.tsv.gz
 EOF
 
-awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
-join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv | sort | uniq > TMP/jeter.url
+awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' |\\
+	sed 's/^chr//' |\\
+	sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
+
+join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv |\\
+	sort |\\
+	uniq > TMP/jeter.url
 
 test -s TMP/jeter.url
 
@@ -114,16 +121,16 @@ tag "${vcf.name}"
 afterScript "rm -rf TMP"
 label "process_quick"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-
 input:
-	path(tabix)
-	path(tbi)
-	path(header)
-	tuple val(meta),path(vcf),path(vcf_idx)
+    tuple val(meta1),path(tabix)
+    tuple val(meta2),path(tbi)
+    tuple val(meta3),path(header)
+    tuple val(meta ),path(vcf),path(vcf_idx)
 output:
-    tuple val(meta),path("*.bcf"),path("*.csi"),emit:output
+    tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
 script:
-   	def TAG = "ALPHAMISSENSE";
+   	def TAG = task.ext.tag?:"ALPHAMISSENSE"
+	def prefix = task.ext.prefix?:vcf.simpleName+".alphamissense"
 """
 hostname 1>&2
 mkdir -p TMP OUTPUT
@@ -134,11 +141,11 @@ bcftools annotate \\
     -h "${header}" \\
     -c "CHROM,POS,REF,ALT,${TAG}_PATHOGENOCITY,${TAG}_CLASS" \\
     --merge-logic "${TAG}_PATHOGENOCITY:max,${TAG}_CLASS:unique" \\
-    -O b -o TMP/${TAG}.${vcf.getBaseName()}.bcf '${vcf}'
+    -O b -o TMP/${prefix}.bcf '${vcf}'
  
 bcftools index \\
     --threads ${task.cpus} \\
-    -f TMP/${TAG}.${vcf.getBaseName()}.bcf
+    -f TMP/${prefix}.bcf
 
 mv TMP/*.bcf ./
 mv TMP/*.bcf.csi ./

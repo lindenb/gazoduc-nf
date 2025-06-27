@@ -13,7 +13,7 @@ def buildFromFai(fai) {
 	for(key in k1.keySet()) {
 		hash.put(k1[key].toString(),key);
 		}
-	try(BufferedReader br=Files.newBufferedReader(fai)) {
+	try(BufferedReader br=java.nio.file.Files.newBufferedReader(fai)) {
 		String line;
 		while((line=br.readLine())!=null) {
 			String[] tokens = line.split("[\t]");
@@ -23,4 +23,31 @@ def buildFromFai(fai) {
 		}
 	}
 	return "undefined_build";
+}
+
+
+
+boolean test_fai_chr1(fai,K1_length) {
+	System.err.println("#####"+fai);
+	try(BufferedReader br=  java.nio.file.Files.newBufferedReader(fai)) {
+		for(;;) {
+			final String line = br.readLine();
+			if(line==null) break;
+			final String[] tokens =line.split("[\t]");
+			if(tokens[0].equals("chr1") || tokens[0].equals("1")) {
+				return tokens[1].equals(K1_length);
+			}
+		}
+	}
+	return false;
+}
+
+boolean isGRCH38(fai) {
+	def k1 = k1_signature();
+	return test_fai_chr1(fai,String.valueOf(k1.hg38));
+}
+
+boolean isGRCH37(fai) {
+	def k1 = k1_signature();
+	return test_fai_chr1(fai,String.valueOf(k1.hg19));
 }

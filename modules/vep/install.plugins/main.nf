@@ -1,13 +1,13 @@
 
 
 process VEP_INSTALL_PLUGINS {
-tag "${plugins}"
+tag "${meta.id}"
 label "process_quick"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-	val(plugins)
+	tuple val(meta),val(plugins)
 output:
-	path("vep.plugins.dir"),emit:output
+	tuple val(meta),path("vep.plugins.dir"),emit:directory
 script:
 """
 set -x
@@ -27,3 +27,4 @@ mkdir -p vep.plugins.dir
 vep_install --AUTO p --NO_UPDATE --PLUGINSDIR vep.plugins.dir --NO_HTSLIB -g '${plugins}' 1>&2
 """
 }
+
