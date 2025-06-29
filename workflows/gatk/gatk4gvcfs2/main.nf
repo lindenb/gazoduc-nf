@@ -146,7 +146,7 @@ workflow {
 	hc_ch = hc_ch.mix( HC_BAM_BED.out.output)
 		
 
-       if(params.genomicsDB==false && params.genomicsDBAndGenotype==false) {
+    if(params.combine_method.equalsIgnoreCase("combinegvcf")) {
 		combine1_input_ch = hc_ch.map{[it[0].toRealPath(),[it[1],it[2]]]}.
 			groupTuple().
 			flatMap{makeSQRT(it)}.
@@ -167,9 +167,9 @@ workflow {
 
 		hc2 = HC_COMBINE2(fasta,fai,dict, dbsnp, dbsnp_tbi, combine2_input_ch )
 		hg = HC_GENOTYPE(fasta,fai,dict, dbsnp, dbsnp_tbi, hc2.output )
-        	}
-	else
-		{
+        }
+	else if(params.combine_method.equalsIgnoreCase("genomicsDB") ||
+			params.combine_method.equalsIgnoreCase("genomicsDBAndGenotype")) {
 		bed_gvcfs = hc_ch.
 			map{[it[0].toRealPath(), it[1], it[2] ]}.
 			groupTuple().
@@ -185,12 +185,11 @@ workflow {
 				}
 			return L;
 			}}
-		if( params.genomicsDBAndGenotype==false) {
+		if( params.combine_method.equalsIgnoreCase("genomicsDB")) {
 			genomiddb_ch = HC_GENOMICDB_IMPORT(fasta,fai,dict,beds2_ch)
 			hg = HC_GENOMICDB_GENOTYPE(fasta,fai,dict, dbsnp, dbsnp_tbi, genomiddb_ch.output)
 			}
-		else
-			{
+		else {
 			hg = HC_GENOMICDB_IMPORT_AND_GENOTYPE(
 				fasta,fai,dict, 
 				dbsnp,
@@ -199,6 +198,17 @@ workflow {
 				)
 			}
 		}
+	else  if( params.combine_method.equalsIgnoreCase("glnexus"))  {
+		hg = GLNEXUS(
+				fasta,fai,dict, 
+				beds2_ch
+				)
+		}
+	else {
+		throw new IllegalArgumentException("${params.combine_method}");
+		}
+			
+		
 	concat0_ch = VCF_CONCAT1(hg.output.collate(10).map{it.flatten()})
 	concat_ch  = VCF_CONCAT2(concat0_ch.output.flatten().collect())
 
@@ -504,4 +514,47 @@ mv TMP/jeter.vcf.gz "${prefix}.vcf.gz"
 mv TMP/jeter.vcf.gz.tbi "${prefix}.vcf.gz.tbi"
 rm -rf TMP
 """
+}
+
+process GLNEXUS {
+    tag "${bed.name}"
+     array 100
+    label 'process_single'
+	conda "${moduleDir}/../../../conda/glnexus.yml"
+    afterScript "rm -rf GLnexus.DB TMP"
+    input:
+        tuple val(meta1),path(fasta)
+        tuple val(meta2),path(fai)
+        tuple val(meta3),path(dict)
+        tuple path(bed),path("GVCFS/*")
+    output:
+        tuple  path("*.bcf"),path("*.bcf.csi")   , emit: output
+    when:
+        task.ext.when == null || task.ext.when
+    script:
+        def args = task.ext.args ?: ''
+        def prefix = task.ext.prefix ?: "${bed.simpleName}"
+        def config = task.ext.config?:"gatk"
+    """
+    mkdir -p TMP
+
+    ls -lah  GVCFS/* 1>&2
+
+    find GVCFS/ -name "*.gz" | LC_ALL=C sort -T TMP > GVCFS/jeter.list
+
+    glnexus_cli \\
+        --threads ${task.cpus} \\
+        --mem-gbytes ${task.memory.giga} \\
+        --bed ${bed} \\
+        --config ${config} \\
+        ${args} \\
+        GVCFS/*vcf.gz > TMP/jeter.bcf
+
+    bcftools +fill-tags --threads ${task.cpus} -O b9 -o TMP/jeter2.bcf TMP/jeter.bcf -- -t AN,AC,AF
+    bcftools index --threads ${task.cpus}  --force TMP/jeter2.bcf
+
+    mv TMP/jeter2.bcf ./${prefix}.bcf
+    mv TMP/jeter2.bcf.csi ./${prefix}.bcf.csi
+
+    """
 }
