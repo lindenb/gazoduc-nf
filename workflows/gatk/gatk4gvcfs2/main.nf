@@ -450,7 +450,7 @@ input:
 		tuple val(meta5),path(dbsnp_tbi)
         tuple path(bed),path("VCFS/*")
 output:
-        tuple path(bed),path("database"),emit:output
+	tuple path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:output
 script:
 	def batchSize=-1
 	def maxAlternateAlleles=6
@@ -502,5 +502,6 @@ gatk --java-options "-Xmx${task.memory.giga}g -XX:-UsePerfData -Djava.io.tmpdir=
 
 mv TMP/jeter.vcf.gz "${prefix}.vcf.gz"
 mv TMP/jeter.vcf.gz.tbi "${prefix}.vcf.gz.tbi"
+rm -rf TMP
 """
 }

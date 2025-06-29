@@ -12,6 +12,6 @@ script:
         def size=task.ext.size?:100000;
 """
 mkdir -p BEDS
-awk -F '\t' 'BEGIN{N=1;T=0.0;f=sprintf("BEDS/${f}.%d.bed",N);} {print \$0 >> f; T+=int(\$3)-int(\$2); if(T>=${size}) {close(f);T=0.0;N++;f=sprintf("BEDS/${f}.%d.bed",N);}}' '${bed}'
+awk -F '\t' 'BEGIN{N=1;T=0.0;f=sprintf("BEDS/${f}.%d.N${size}.bed",N);} {print \$0 >> f; T+=int(\$3)-int(\$2); if(T>=${size}) {close(f);T=0.0;N++;f=sprintf("BEDS/${f}.%d.N${size}.bed",N);}}' '${bed}'
 """
 }
