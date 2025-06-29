@@ -146,7 +146,7 @@ workflow {
 	hc_ch = hc_ch.mix( HC_BAM_BED.out.output)
 		
 
-       if(params.genomicsDB==false) {
+       if(params.genomicsDB==false && params.genomicsDBAndGenotype==false) {
 		combine1_input_ch = hc_ch.map{[it[0].toRealPath(),[it[1],it[2]]]}.
 			groupTuple().
 			flatMap{makeSQRT(it)}.
@@ -185,8 +185,19 @@ workflow {
 				}
 			return L;
 			}}
-		genomiddb_ch = HC_GENOMICDB_IMPORT(fasta,fai,dict,beds2_ch)
-		hg = HC_GENOMICDB_GENOTYPE(fasta,fai,dict, dbsnp, dbsnp_tbi, genomiddb_ch.output)
+		if( params.genomicsDBAndGenotype==false) {
+			genomiddb_ch = HC_GENOMICDB_IMPORT(fasta,fai,dict,beds2_ch)
+			hg = HC_GENOMICDB_GENOTYPE(fasta,fai,dict, dbsnp, dbsnp_tbi, genomiddb_ch.output)
+			}
+		else
+			{
+			hg = HC_GENOMICDB_IMPORT_AND_GENOTYPE(
+				fasta,fai,dict, 
+				dbsnp,
+				dbsnp_tbi,
+				beds2_ch
+				)
+			}
 		}
 	concat0_ch = VCF_CONCAT1(hg.output.collate(10).map{it.flatten()})
 	concat_ch  = VCF_CONCAT2(concat0_ch.output.flatten().collect())
@@ -422,5 +433,74 @@ fi
 	rm -f multiqc.zip
 	zip -9 -r "multiqc.zip" "${prefix}multiqc"
 
+"""
+}
+
+
+process HC_GENOMICDB_IMPORT_AND_GENOTYPE {
+tag "${bed.name}"
+label "process_quick"
+afterScript "rm -rf TMP"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+input:
+        tuple val(meta1),path(fasta)
+        tuple val(meta2),path(fai)
+        tuple val(meta3),path(dict)
+		tuple val(meta4),path(dbsnp)
+		tuple val(meta5),path(dbsnp_tbi)
+        tuple path(bed),path("VCFS/*")
+output:
+        tuple path(bed),path("database"),emit:output
+script:
+	def batchSize=-1
+	def maxAlternateAlleles=6
+	def prefix=task.ext.prefix?:bed.getBaseName()
+"""
+hostname 1>&2
+mkdir -p TMP
+set -x
+
+find ./VCFS -name "*.vcf.gz" > TMP/jeter.list
+test -s TMP/jeter.list
+
+cat TMP/jeter.list | while read F
+do
+        bcftools query -l "\${F}" | cut -f 10 | tr "\\n" "\t" >> TMP/sample.map
+        echo "\${F}" >> TMP/sample.map
+done
+
+
+# sort on sample name
+LC_ALL=C sort -t '\t' -k1,1 -T TMP TMP/sample.map > "TMP/jeter.map"
+test -s TMP/jeter.map
+mv TMP/jeter.map TMP/sample.map
+
+
+
+SQRT=`awk 'END{X=NR;if(X<10){print(X);} else {z=sqrt(X); print (z==int(z)?z:int(z)+1);}}' TMP/sample.map`
+
+gatk --java-options "-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP" GenomicsDBImport \\
+    -R ${fasta} \\
+    --batch-size ${(batchSize as Integer) <= 0 ? "\${SQRT}" : ""+batchSize} \\
+    ${(task.cpus as Integer) > 1 ? "  --reader-threads " +task.cpus : "" } \\
+    --sample-name-map TMP/sample.map \
+    -L "${bed}" \
+    --genomicsdb-workspace-path "TMP/database"
+
+
+
+gatk --java-options "-Xmx${task.memory.giga}g -XX:-UsePerfData -Djava.io.tmpdir=TMP" GenotypeGVCFs \\
+        -R "${fasta}"  \\
+        -V "gendb://TMP/database" \\
+        -L "${bed}" \\
+         ${dbsnp?"--dbsnp ${dbsnp}":""} \\
+       --max-alternate-alleles ${maxAlternateAlleles} \\
+       --seconds-between-progress-updates 60 \\
+       -G StandardAnnotation -G StandardHCAnnotation \\
+       --verbosity INFO \\
+       -O "TMP/jeter.vcf.gz"
+
+mv TMP/jeter.vcf.gz "${prefix}.vcf.gz"
+mv TMP/jeter.vcf.gz.tbi "${prefix}.vcf.gz.tbi"
 """
 }
