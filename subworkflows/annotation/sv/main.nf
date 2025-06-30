@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -29,22 +29,27 @@ def k1 = k1_signature()
 
 workflow ANNOTATE_SV_VCF_01 {
 	take:
-		reference //bag fasta,fai/dict
+		meta //bag fasta,fai/dict
+		fasta
+		fai
+		dict
+		gtf
+		gtf_tbi
 		vcf_ch // channel containing [vcf,vcfidx]
 	main:
-		gtf1_ch = PROCESS_GTF1(file(params.gtf),file(params.gtf+".tbi"))
-		gtf2_ch = PROCESS_GTF2(file(params.gtf),file(params.gtf+".tbi"))
-		gnomad_ch = DOWNLOAD_GNOMAD_SV(reference)
-		dgv_ch = DOWNLOAD_DGV(reference) 
-		ensemblreg_ch = DOWNLOAD_ENSEMBL_REG(reference)
-		decode_ch = DOWNLOAD_DECODE_LRS(reference)
+		gtf1_ch = PROCESS_GTF1(gtf,gtf_tbi)
+		gtf2_ch = PROCESS_GTF2(gtf,gtf_tbi)
+		gnomad_ch = DOWNLOAD_GNOMAD_SV(fasta,fai,dict)
+		dgv_ch = DOWNLOAD_DGV(fasta,fai,dict) 
+		ensemblreg_ch = DOWNLOAD_ENSEMBL_REG(fasta,fai,dict)
+		decode_ch = DOWNLOAD_DECODE_LRS(fasta,fai,dict)
 
 		
 		ann_ch= ANNOTATE(
 			vcf_ch,
 			gtf1_ch.output,
 			gtf2_ch.output,
-			gnomad_ch.output,
+			gnomad_ch.tabix, gnomad_ch.tbi,  gnomad_ch.header,
 			dgv_ch.output,
 			ensemblreg_ch.output,
 			decode_ch.output
@@ -55,15 +60,16 @@ workflow ANNOTATE_SV_VCF_01 {
 	}
 
 process PROCESS_GTF1 {
-label "process_quick"
+tag "${meta1.id}"
+label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
-	path(gtf)
-	path(gtf_tbi)
+	tuple val(meta1),path(gtf)
+	tuple val(meta2),path(gtf_tbi)
 output:
-	path("gtf.features.*"),emit:output
+	tuple val(meta1),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.hdr"),emit:output
 script:
-	def xxxstream=1000
+	def xxxstream=task.ext.extend?:1000
 """
 set -xe
 set -o pipefail
@@ -76,20 +82,20 @@ gunzip -c ${params.gtf} |\\
 
 tabix -p bed -f gtf.features.bed.gz
 
-echo '##INFO=<ID=GTF_FEATURE,Number=.,Type=String,Description="features from ${params.gtf}">' > gtf.features.hdr
+echo '##INFO=<ID=GTF_FEATURE,Number=.,Type=String,Description="features from ${gtf}">' > gtf.features.hdr
 """
 }
 
 
 
 process PROCESS_GTF2 {
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
-	path(gtf)
-	path(gtf_tbi)
+	tuple val(meta1),path(gtf)
+	tuple val(meta2),path(gtf_tbi)
 output:
-	path("gtf.genes.*"),emit:output
+	tuple val(meta1),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.hdr"),emit:output
 script:
 """
 set -xe
@@ -110,26 +116,30 @@ echo '##INFO=<ID=GENE,Number=.,Type=String,Description="gene from ${gtf}">' > gt
 }
 
 process DOWNLOAD_GNOMAD_SV {
+tag "${meta1.id)}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 input:
-	path(reference)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta2),path(dict)
 output:
-	path("gnomad.sv.*"),emit:output
+	tuple val(meta1),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.hdr"),emit:output
 script:
-	def fai = reference.find{it.name.endsWith(".fai")}.first()
-	def dict = reference.find{it.name.endsWith(".dict")}.first()
+	def base="https://storage.googleapis.com/gcp-public-data--gnomad"
 """
 set -xe
 
 mkdir -p TMP
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:${k1.hg38}	https://storage.googleapis.com/gcp-public-data--gnomad/release/4.1/genome_sv/gnomad.v4.1.sv.sites.bed.gz
-1:${k1.hg19}	https://storage.googleapis.com/gcp-public-data--gnomad/papers/2019-sv/gnomad_v2.1_sv.sites.bed.gz
+1:${k1.hg38}\t${base}/release/4.1/genome_sv/gnomad.v4.1.sv.sites.bed.gz
+1:${k1.hg19}\t${base}/papers/2019-sv/gnomad_v2.1_sv.sites.bed.gz
 EOF
 
-awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
+awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' |\\
+	sed 's/^chr//' |\\
+	sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
 
 join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv | sort | uniq > TMP/jeter.url
 
@@ -152,21 +162,23 @@ echo '##INFO=<ID=GNOMAD_AF,Number=1,Type=Float,Description="GNOMAD SV MAX AF">' 
 }
 
 process DOWNLOAD_DECODE_LRS {
-label "process_quick"
+tag "${meta.id}"
+label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
-	path(reference)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta2),path(dict)
 output:
-	path("decode.*"),emit:output
+	tuple val(meta1),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.hdr"),emit:output
 script:
-	def fai = reference.find{it.name.endsWith(".fai")}
-	def dict = reference.find{it.name.endsWith(".dict")}
+
 """
 
 mkdir -p TMP
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:${k1.hg38}	https://github.com/DecodeGenetics/LRS_SV_sets/raw/refs/heads/master/ont_sv_high_confidence_SVs.sorted.vcf.gz
+1:${k1.hg38}\thttps://github.com/DecodeGenetics/LRS_SV_sets/raw/refs/heads/master/ont_sv_high_confidence_SVs.sorted.vcf.gz
 EOF
 
 
@@ -196,24 +208,25 @@ echo '##INFO=<ID=DECODE_LRS,Number=.,Type=String,Description="DECODE SV. https:/
 
 
 process DOWNLOAD_ENSEMBL_REG {
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
-	path(reference)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta2),path(dict)
 output:
-	path("ensembl.reg.*"),emit:output
+	tuple val(meta1),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.hdr"),emit:output
 script:
-	def fai = reference.find{it.name.endsWith(".fai")}.first()
-	def dict = reference.find{it.name.endsWith(".dict")}.first()
+	def base="https://ftp.ensembl.org/pub"
 """
 hostname 1>&2
 set -xe
 
 mkdir -p TMP
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:${k1.hg38}	https://ftp.ensembl.org/pub/release-111/regulation/homo_sapiens/homo_sapiens.GRCh38.Regulatory_Build.regulatory_features.20221007.gff.gz
-1:${k1.hg19}	https://ftp.ensembl.org/pub/grch37/current/regulation/homo_sapiens/homo_sapiens.GRCh37.Regulatory_Build.regulatory_features.20201218.gff.gz
+1:${k1.hg38}\t${base}/release-111/regulation/homo_sapiens/homo_sapiens.GRCh38.Regulatory_Build.regulatory_features.20221007.gff.gz
+1:${k1.hg19}\t${base}/grch37/current/regulation/homo_sapiens/homo_sapiens.GRCh37.Regulatory_Build.regulatory_features.20201218.gff.gz
 EOF
 
 awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
@@ -232,7 +245,6 @@ wget -O - `cat TMP/jeter.url` |\\
 tabix -p bed -f ensembl.reg.bed.gz
 
 echo '##INFO=<ID=ENS_REG,Number=.,Type=String,Description="features from Ensembl Regulation">' > ensembl.reg.hdr
-
 """
 }
 
@@ -241,20 +253,21 @@ label "process_quick"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
-	path(reference)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta2),path(dict)
 output:
-       	path("dgv.*"),emit:output
+	tuple val(meta1),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.hdr"),emit:output
 script:
-	def fai = reference.find{it.name.endsWith(".fai")}.first()
-	def dict = reference.find{it.name.endsWith(".dict")}.first()
+	def base="http://dgv.tcag.ca/dgv/docs";
 """
 hostname 1>&2
 set -xe
 
 mkdir -p TMP
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:${k1.hg38}	http://dgv.tcag.ca/dgv/docs/GRCh38_hg38_variants_2020-02-25.txt
-1:${k1.hg19}	http://dgv.tcag.ca/dgv/docs/GRCh37_hg19_variants_2020-02-25.txt
+1:${k1.hg38}\t${base}/GRCh38_hg38_variants_2020-02-25.txt
+1:${k1.hg19}\t${base}/GRCh37_hg19_variants_2020-02-25.txt
 EOF
 
 awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
@@ -280,54 +293,59 @@ echo '##INFO=<ID=DGV_AF,Number=1,Type=Float,Description="DGV_FREQUENCY">' >> dgv
 
 
 process ANNOTATE {
+tag "${meta.id}"
 label "process_quick"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
-tag "${vcf.name}"
 afterScript "rm -rf TMP"
 input:
-	tuple path(vcf),path(vcfidx)
-	path(gtf1_files)
-	path(gtf2_files)
-	path(gnomad_files)
-	path(dgv_files)
-	path(ensemblreg_files)
-	path(decode_files)
+	tuple val(meta ),path(vcf),path(vcfidx)
+	tuple val(meta1),path(gtf1_bed),path(gtf1_tbi),path(gtf1_hdr)
+	tuple val(meta2),path(gtf2_bed),path(gtf2_tbi),path(gtf2_hdr)
+	tuple val(meta3),path(gnomad_bed),path(gnomad_tbi),path(gnomad_hdr)
+	tuple val(meta4),path(dgv_bed),path(dgv_tbi),path(dgv_hdr)
+	tuple val(meta5),path(reg_bed),path(reg_tbi),path(reg_hdr)
+	tuple val(meta6),path(decode_bed),path(decode_tbi),path(decode_hdr)
 output:
-	tuple path("${vcf.getBaseName()}.ann.bcf"),path("${vcf.getBaseName()}.ann.bcf.csi"),emit:output
+	tuple val(meta),path("*.bcf"),path("*.bcf.csi"),emit:vcf
 script:
-	def overlap=0.7
+	def overlap= task.ext.overlap?:0.7
+	def prefix = task.ext.prefix?:vcf.baseName+".ann"
 """
 hostname 1>&2
 mkdir -p TMP
 set -x
                 
-bcftools annotate --force --annotations "${gtf1_files.find{it.name.endsWith(".gz")}.first()}" \
-	-h "${gtf1_files.find{it.name.endsWith(".hdr")}.first()}" \
-	-c "CHROM,FROM,TO,GTF_FEATURE" \
-	--merge-logic GTF_FEATURE:unique \
+bcftools annotate --threads ${task.cpus} \\
+	--force --annotations "${gtf1_bed}" \\
+	-h "${gtf1_jdr}" \\
+	-c "CHROM,FROM,TO,GTF_FEATURE" \\
+	--merge-logic GTF_FEATURE:unique \\
 	-O u -o TMP/jeter2.bcf "${vcf}"
                 
 mv TMP/jeter2.bcf TMP/jeter1.bcf
 
-bcftools annotate --force --annotations "${gtf2_files.find{it.name.endsWith(".gz")}.first()}" \
-	-h "${gtf2_files.find{it.name.endsWith(".hdr")}.first()}" \
-	-c "CHROM,FROM,TO,GENE" \
-	--merge-logic GENE:unique \
+bcftools annotate  --threads ${task.cpus} \\
+	--force --annotations "${gtf2_bed}" \\
+	-h "${gtf2_hdr}" \\
+	-c "CHROM,FROM,TO,GENE" \\
+	--merge-logic GENE:unique \\
 	-O u -o TMP/jeter2.bcf TMP/jeter1.bcf
                 
 mv TMP/jeter2.bcf TMP/jeter1.bcf
 
-bcftools annotate --force --annotations "${ensemblreg_files.find{it.name.endsWith(".gz")}.first()}" \
-	-h "${ensemblreg_files.find{it.name.endsWith(".hdr")}.first()}" \
-	-c "CHROM,FROM,TO,ENS_REG" \
-	--merge-logic ENS_REG:unique \
+bcftools annotate  --threads ${task.cpus} \\
+	--force --annotations "${reg_bed}" \
+	-h "${reg_hdr}" \\
+	-c "CHROM,FROM,TO,ENS_REG" \\
+	--merge-logic ENS_REG:unique \\
 	-O u -o TMP/jeter2.bcf TMP/jeter1.bcf
                 
 mv TMP/jeter2.bcf TMP/jeter1.bcf
 
 
-bcftools annotate --force --annotations "${gnomad_files.find{it.name.endsWith(".gz")}.first()}" \
-	-h "${gnomad_files.find{it.name.endsWith(".hdr")}.first()}" \\
+bcftools annotate  --threads ${task.cpus} \\
+	--force --annotations "${gnomad_bed}" \
+	-h "${gnomad_hdr}" \\
 	-c "CHROM,FROM,TO,GNOMAD_ID,GNOMAD_AF" \\
 	--merge-logic 'GNOMAD_ID:first,GNOMAD_AF:max' \\
 	--min-overlap "${overlap}:${overlap}" \\
@@ -336,8 +354,9 @@ bcftools annotate --force --annotations "${gnomad_files.find{it.name.endsWith(".
 mv TMP/jeter2.bcf TMP/jeter1.bcf
 
 
-bcftools annotate --force --annotations "${decode_files.find{it.name.endsWith(".gz")}.first()}" \
-	-h "${decode_files.find{it.name.endsWith(".hdr")}.first()}" \\
+bcftools annotate  --threads ${task.cpus} \\
+	--force --annotations "${decode_bed}" \
+	-h "${decode_hdr}" \\
 	-c "CHROM,FROM,TO,DECODE_LRS" \\
 	--merge-logic 'DECODE_LRS:unique' \\
 	--min-overlap "${overlap}:${overlap}" \\
@@ -346,22 +365,21 @@ bcftools annotate --force --annotations "${decode_files.find{it.name.endsWith(".
 mv TMP/jeter2.bcf TMP/jeter1.bcf
 
 
-bcftools annotate --force --annotations "${dgv_files.find{it.name.endsWith(".gz")}.first()}" \
-	-h "${dgv_files.find{it.name.endsWith(".hdr")}.first()}" \\
+bcftools annotate  --threads ${task.cpus} \\
+	--force --annotations "${dgv_bed}" \
+	-h "${dgv_hdr}" \\
 	-c "CHROM,FROM,TO,DGV_ID,DGV_AF" \\
 	--merge-logic 'DGV_ID:first,DGV_AF:max' \\
 	--min-overlap "${overlap}:${overlap}" \\
-	-O u -o TMP/jeter2.bcf TMP/jeter1.bcf
+	-O b9 -o TMP/jeter2.bcf TMP/jeter1.bcf
                 
 mv TMP/jeter2.bcf TMP/jeter1.bcf
 
 
-
-
 bcftools index -f TMP/jeter1.bcf
 
-mv TMP/jeter1.bcf ${vcf.getBaseName()}.ann.bcf
-mv TMP/jeter1.bcf.csi ${vcf.getBaseName()}.ann.bcf.csi
+mv TMP/jeter1.bcf ${prefix}.bcf
+mv TMP/jeter1.bcf.csi ${prefix}.bcf.csi
 
 """
 }

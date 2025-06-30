@@ -25,19 +25,19 @@ SOFTWARE.
 include {k1_signature} from '../../utils/k1.nf'
 
 process DOWNLOAD_GENCODE {
-label "process_quick"
+tag "${meta1.id}"
+label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
-	tuple val(meta1),path(genome)
+	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)
+	tuple val(meta3),path(dict)
 output:
-	path("*.gencode.*"),emit:output
+	tuple val(meta1),path("*.gz"), path("*.gz.tbi"),emit:gencode
 script:
 	def k1 = k1_signature()
-	def fai= genome.find{it.name.endsWith(".fai")}
-	def fasta= genome.find{it.name.endsWith("a")}
-	def version="47"
+	def version= task.ext.version?:"47"
 	if(task.ext==null || task.ext.suffix==null) throw new IllegalArgumentException("suffix missing for ${task}");
 	def extension = task.ext.suffix
 """
