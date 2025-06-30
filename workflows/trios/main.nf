@@ -1,12 +1,14 @@
 import java.io.InputStreamReader;
 import java.util.zip.GZIPInputStream;
 
-include {CLINVAR                } from '../../subworkflows/annotation/clinvar/main.nf'
-include {ALPHAMISSENSE          } from '../../subworkflows/annotation/alphamissense/main.nf'
-include {VEP                    } from '../../subworkflows/annotation/vep/main.nf'
-include {TRIOS                  } from '../../subworkflows/trios/main.nf'
-include {TRUVARI                } from '../../subworkflows/truvari/main.nf'
-include {SNPEFF                 } from '../../subworkflows/snpeff/main.nf'
+include {CLINVAR                          } from '../../subworkflows/annotation/clinvar/main.nf'
+include {ALPHAMISSENSE                    } from '../../subworkflows/annotation/alphamissense/main.nf'
+include {VEP                              } from '../../subworkflows/annotation/vep/main.nf'
+include {TRIOS  as TRIO_SNV               } from '../../subworkflows/trios/main.nf'
+include {TRUVARI                          } from '../../subworkflows/truvari/main.nf'
+include {SNPEFF                           } from '../../subworkflows/snpeff/main.nf'
+include {DOWNLOAD_GENCODE as DOWNLOAD_GFF3} from '../../modules/gtf/download/main.nf'
+include {BCFTOOLS_BCSQ                    } from '../../modules/bcftools/csq/main.nf'
 
 Map assertKeyExists(final Map hash,final String key) {
     if(!hash.containsKey(key)) throw new IllegalArgumentException("no key ${key}'in ${hash}");
@@ -59,8 +61,7 @@ workflow {
         def fai    = [ref_hash, file(params.fai) ]
         def dict   = [ref_hash, file(params.dict) ]
         def NO_BED = [ref_hash, [] ]
-
-//        MAKE_PED([[id:"pedigree"],file(params.pedigree)])
+        def pedigree = [[id:"pedigree"],file(params.pedigree)]
 
         vcfs = Channel.fromPath(params.samplesheet)
             .splitCsv(header:true,sep:',')
@@ -92,6 +93,9 @@ workflow {
         )
 
 
+        DOWNLOAD_GFF3(fasta,fai,dict)
+
+
         vcf2bed = VCF_TO_CONTIGS(vcfs.snv) 
         vcf_snv = vcf2bed.output
             .splitText(elem:1)
@@ -105,19 +109,22 @@ workflow {
         VEP([id:"vep"],fasta,fai,dict,vcf_snv)
         vcf_snv = SUBSET_VCF.out.vcf
 
-        CLINVAR([id:"clinvar"],fasta,fai,dict,NO_BED,VEP.out.vcf)
-        vcfs = CLINVAR.out.vcf
+        CLINVAR([id:"clinvar"],fasta,fai,dict,NO_BED,vcf_snv)
+        vcf_snv = CLINVAR.out.vcf
  
-        ALPHAMISSENSE([id:"alphamissense"],fasta,fai,dict,NO_BED,CLINVAR.out.vcf)
-        vcfs = ALPHAMISSENSE.out.vcf
+        ALPHAMISSENSE([id:"alphamissense"],fasta,fai,dict,vcf_snv)
+        vcf_snv = ALPHAMISSENSE.out.vcf_snv
 
-        SNPEFF([id:"snpeff"],fasta,fai,dict,ALPHAMISSENSE.out.vcf)
-        vcfs = SNPEFF.out.vcf
+        SNPEFF([id:"snpeff"],fasta,fai,dict,vcf_snv)
+        vcf_snv = SNPEFF.out.vcf
         
-/*
-        TRIO([id:"trio"],fasta,fai,dict,SNPEFF.out.vcf)
-        vcfs = VEP.out.vcf
-	*/
+        BCFTOOLS_BCSQ(fasta,fai,DOWNLOAD_GFF3.out.gencode,vcf_snv )
+        vcf_snv = BCFTOOLS_BCSQ.out.vcf
+
+
+        TRIO_SNV([id:"trio"],fasta,fai,dict,pedigree,vcf_snv)
+        vcf_snv = TRIO_SNV.out.vcf
+	
 }
 process VCF_TO_CONTIGS{
     tag "${meta.id}"
@@ -183,7 +190,6 @@ process FILTER_FOR_HET_COMPOSITE {
         def args = meta.contig?"--regions \"${meta.contig}\"":""
         def prefix = task.ext.prefix?:meta.id+(meta.contig?"."+meta.contig:"")
         """
-        jvarkit vcffilterjdk -e 'getTools(). ().'
         """
     }
 

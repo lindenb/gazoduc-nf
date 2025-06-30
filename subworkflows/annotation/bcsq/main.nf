@@ -22,18 +22,19 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete} from './annot.functions.nf'
-def TAG="BCSQ"
+include {BCFTOOLS_BCSQ} from '../../modules/bcftools/bcsq/main.nf'
 
 workflow ANNOTATE_BCSQ {
 	take:
-		genomeId
+		meta
+		fasta
+		fai
+		dict
 		bed
 		vcfs /** tuple vcf,vcf_index */
 	main:
 		if(hasFeature("bcftools_csq") && !isBlank(params.genomes[genomeId],"gff3")) {
-			annotate_ch = ANNOTATE(genomeId,vcfs)
+			annotate_ch = BCFTOOLS_BCSQ(genomeId,vcfs)
 			out1 = annotate_ch.output
 			out2 = annotate_ch.count
 			out3 = MAKE_DOC(genomeId).output
@@ -67,47 +68,5 @@ cat << __EOF__ > ${TAG}.html
 <dd>Functional annotation with <code>bcftools csq</code>:<code>${genome.gff3}</code></dd>
 </dl>
 __EOF__
-"""
-}
-
-process ANNOTATE {
-tag "${json.name}"
-afterScript "rm -rf TMP"
-input:
-	val(genomeId)
-	path(json)
-	//tuple path(vcf),path(vcf_idx),path(bed)
-output:
-	//tuple path("OUTPUT/${TAG}.bcf"),path("OUTPUT/${TAG}.bcf.csi"),path(bed),emit:output
-	path("OUTPUT/${TAG}.json"),emit:output
-	path("OUTPUT/${TAG}.count"),emit:count
-script:
-	def genome= params.genomes[genomeId]
-	def reference = genome.fasta
-	def row = slurpJsonFile(json)
-"""
-hostname 1>&2
-${moduleLoad("bcftools")}
-mkdir -p TMP OUTPUT
-
-                
-bcftools csq -O b --force --local-csq --ncsq 10000 --fasta-ref "${reference}" --gff-annot "${genome.gff3}" -o TMP/${TAG}.bcf '${row.vcf}'
-bcftools index --force TMP/${TAG}.bcf
-
-
-cat << EOF > TMP/${TAG}.json
-{
-"vcf"   : "\${PWD}/OUTPUT/${TAG}.bcf",
-"index" : "\${PWD}/OUTPUT/${TAG}.bcf.csi",
-"bed"   : "${row.bed}"
-}
-EOF
-
-
-###
-
-bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
-mv TMP/${TAG}.* OUTPUT/
-${backDelete(row)}
 """
 }
