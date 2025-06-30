@@ -203,14 +203,36 @@ process FILTER_MENDELIAN {
     tag "${meta.id?:vcf.name}"
     label "process_single"
     conda "${moduleDir}/../../conda/bioinfo.01.yml"
+    afterScript "rm -rf TMP"
     input:
+        tuple val(meta1 ),path(pedigree)
         tuple val(meta ),path(vcf),path(idx)
     output:
         tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
     script:
         def prefix = task.ext.prefix?:vcf.baseName+".merr"
     """
-    bcftools view --threads "${task.cpus}" -i 'INFO/loConfDeNovo!="" || INFO/hiConfDeNovo!="" || INFO/MERR>0' -O b -o ${prefix}.bcf '${vcf}'
+    mkdir -p TMP
+cat << EOF > TMP/jeter.code
+final Set<String> controls = new HashSet<>(Arrays.asList(
+EOF
+
+awk '(\$3=="0" && \$4=="0") {printf("\"%s\"\\n",\$2);}' "${pedigree}" |paste -s -d, >> TMP/jeter.code
+
+cat << EOF >> TMP/jeter.code
+));
+return variant
+    .getGenotypes()
+    .stream()
+    .filter(G->controls.contains(G.getSampleName()))
+    .noneMatch(G->G.hasAltAllele())
+    ;
+EOF
+
+
+    bcftools view -i 'INFO/loConfDeNovo!="" || INFO/hiConfDeNovo!="" || INFO/MERR>0' '${vcf}' |\\
+        jvarkit -XX:-UsePerfData -Djava.io.tmpdir=TMP vcffilterjdk --filter 'CONTROL_WITH_ALT' -f TMP/jeter.code |\\
+        bcftools view -O b -o ${prefix}.bcf
     bcftools index --threads "${task.cpus}"  -f "${prefix}.bcf"
     """
 }
@@ -228,12 +250,24 @@ process FILTER_PREDICTIONS {
         def args = meta.contig?"--regions \"${meta.contig}\"":""
         def prefix = task.ext.prefix?:vcf.baseName+".filterso"
         def acn = task.ext.acn?:"SO:0001818,SO:0001629"
+        def pop = task.ext.pop?:"gnomADg_AF_nfe"
+        def freq = task.ext.freq?:0.01
         """
         mkdir -p TMP
+cat << EOF > TMP/jeter.code
+return getVepPredictionParser()
+    .getPredictions(variant).stream()
+    .map(P->P.get("${pop}"))
+    .filter(it->it!=null && !it.trim().isEmpty())
+    .mapToDouble(it->Double.parseDouble(it))
+    .anyMatch(it->it<=${freq});
+
+EOF
         bcftools view "${vcf}" |\\
-            jvarkit vcffilterso  -A '${acn}' --filterout BAD_SO |\\
-            bcftools view  -O b -o "${prefix}.vcf.gz"
-        bcftools index --threads "${task.cpus}" -t -f "${prefix}.vcf.gz"
+            jvarkit -XX:-UsePerfData -Djava.io.tmpdir=TMP vcffilterso -A '${acn}' --filterout BAD_SO |\\
+            jvarkit -XX:-UsePerfData -Djava.io.tmpdir=TMP vcffilterjdk -f TMP/jeter.code |\\
+            bcftools view  -O b -o "${prefix}.bcf"
+        bcftools index --threads "${task.cpus}" -f "${prefix}.bcf"
         """
 }
 
@@ -243,25 +277,33 @@ process MERGE_AND_FILTER {
     conda "${moduleDir}/../../conda/bioinfo.01.yml"
     afterScript "rm -rf TMP"
     input:
+        tuple val(met1),path(pedigree)
         tuple val(meta),path("VCFS/*")
+        output:
+        tuple val(meta),path("*.vcf.gz"),path("*.tbi"),emit:vcf
+        tuple val(meta),path("*.table.txt")
+        tuple val(meta),path("*.genes.tsv")
     script:
         def prefix = task.ext.prefix?:"snv"
     """
     mkdir -p TMP
-cat << EOF > TMP/jeter.code
-return false;
-EOF
-
-    find VCFS/ -name "*.vcf.gz" -o -name "*.bcf" > TMP/jeter.list
+    find VCFS/  -name "*.vcf.gz" -o -name "*.bcf" | sort > TMP/jeter.list
     
-    bcftools concat --allow-overlaps --file-list TMP/jeter.list -O v |\\
-        java -jar ~/jvarkit.jar vcffilterjdk -f TMP/jeter.code |\\
-        bcftools view  -O z -o TMP/jeter.vcf.gz
-
+    bcftools concat --allow-overlaps --file-list TMP/jeter.list -O z -o TMP/jeter.vcf.gz
     bcftools index -t -f TMP/jeter.vcf.gz
+
+    bcftools view --apply-filters '.,PASS' TMP/jeter.vcf.gz |\\
+        jvarkit -Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP vcf2table \\
+            --hide 'HOM_REF,NO_CALL' --pedigree ${pedigree} > TMP/jeter.table.txt
+
+    bcftools view --apply-filters '.,PASS' TMP/jeter.vcf.gz |\\
+        jvarkit -Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP groupbygene > TMP/jeter.genes.tsv
+
 
     mv TMP/jeter.vcf.gz ./${prefix}.vcf.gz
     mv TMP/jeter.vcf.gz.tbi ./${prefix}.vcf.gz.tbi
+    mv TMP/jeter.table.txt ./${prefix}.table.txt
+    mv TMP/jeter.genes.tsv ./${prefix}.genes.tsv
     """
 }
 
@@ -319,9 +361,7 @@ process FILTER_FOR_HET_COMPOSITE {
         def args = meta.contig?"--regions \"${meta.contig}\"":""
         def prefix = task.ext.prefix?:meta.id+(meta.contig?"."+meta.contig:"")
         """
-
-| gunzip -c | java -jar ~/jvarkit.jar vcffilterjdk -e 'return getVepPredictionParser().getPredictions(variant).stream().filter(P->P.get("Allele").matches("[ATGC]+)).map(P->P.get("gnomADg_AF_nfe")).filter(it->it!=null && !it.trim().isEmpty()).mapToDouble(it->Double.parseDouble(it)).filter(it->it<=1E-100).count()==1L;' | java -jar ~/jvarkit.jar vcf2table --hide "GENOTYPES"
-
+        bcftools view --apply-filters '.,PASS' '${vcf}'
 
 
         """
