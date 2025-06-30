@@ -169,7 +169,8 @@ workflow {
 		hg = HC_GENOTYPE(fasta,fai,dict, dbsnp, dbsnp_tbi, hc2.output )
         }
 	else if(params.combine_method.equalsIgnoreCase("genomicsDB") ||
-			params.combine_method.equalsIgnoreCase("genomicsDBAndGenotype")) {
+			params.combine_method.equalsIgnoreCase("genomicsDBAndGenotype") ||
+			params.combine_method.equalsIgnoreCase("glnexus")) {
 		bed_gvcfs = hc_ch.
 			map{[it[0].toRealPath(), it[1], it[2] ]}.
 			groupTuple().
@@ -189,7 +190,7 @@ workflow {
 			genomiddb_ch = HC_GENOMICDB_IMPORT(fasta,fai,dict,beds2_ch)
 			hg = HC_GENOMICDB_GENOTYPE(fasta,fai,dict, dbsnp, dbsnp_tbi, genomiddb_ch.output)
 			}
-		else {
+		else if( params.combine_method.equalsIgnoreCase("genomicsDBAndGenotype")){
 			hg = HC_GENOMICDB_IMPORT_AND_GENOTYPE(
 				fasta,fai,dict, 
 				dbsnp,
@@ -197,17 +198,19 @@ workflow {
 				beds2_ch
 				)
 			}
-		}
-	else  if( params.combine_method.equalsIgnoreCase("glnexus"))  {
-		hg = GLNEXUS(
+		else  if( params.combine_method.equalsIgnoreCase("glnexus"))  {
+			hg = GLNEXUS(
 				fasta,fai,dict, 
 				beds2_ch
 				)
-		}
-	else {
-		throw new IllegalArgumentException("${params.combine_method}");
-		}
-			
+			}
+		else {
+			throw new IllegalArgumentException("${params.combine_method}");
+			}
+	} else {
+                throw new IllegalArgumentException("${params.combine_method}");
+                }
+	
 		
 	concat0_ch = VCF_CONCAT1(hg.output.collate(10).map{it.flatten()})
 	concat_ch  = VCF_CONCAT2(concat0_ch.output.flatten().collect())
@@ -333,7 +336,7 @@ set -o pipefail
 mkdir -p TMP
 set -x
 	
-find ./VCFS -name "*.vcf.gz" > TMP/jeter.list
+find ./VCFS/ -name "*.vcf.gz" -o -name "*.bcf" > TMP/jeter.list
 
 MD5=`cat TMP/jeter.list | md5sum | cut -d ' ' -f1`
 
@@ -380,7 +383,7 @@ mv -v TMP/output.bcf.csi ./
 
 
 process BCFTOOLS_STATS {
-label "process_medium"
+label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 cpus 10
 input:
@@ -403,7 +406,7 @@ bcftools stats --threads ${task.cpus} --samples - --fasta-ref "${fasta}" "${vcf}
 
 process MULTIQC {
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-label "process_medium"
+label "process_single"
 input:
 	path(sample2pop)
 	path(stats)
@@ -533,14 +536,10 @@ process GLNEXUS {
         task.ext.when == null || task.ext.when
     script:
         def args = task.ext.args ?: ''
-        def prefix = task.ext.prefix ?: "${bed.simpleName}"
+        def prefix = task.ext.prefix ?: "${bed.baseName}"
         def config = task.ext.config?:"gatk"
     """
     mkdir -p TMP
-
-    ls -lah  GVCFS/* 1>&2
-
-    find GVCFS/ -name "*.gz" | LC_ALL=C sort -T TMP > GVCFS/jeter.list
 
     glnexus_cli \\
         --threads ${task.cpus} \\
