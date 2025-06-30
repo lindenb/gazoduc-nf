@@ -23,11 +23,11 @@ SOFTWARE.
 
 */
 
-include {k1_signature} from '../../../modules/utils/k1.nf'
 
 
 workflow ANNOTATE_BHFUCL {
 	take:
+		meta
 		fasta
 		fai
 		dict
@@ -47,17 +47,16 @@ afterScript "rm -rf TMP"
 label "process_quick"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-        path(fasta)
-        path(fai)
-        path(dict)
-        path(gtf)
+    tuple val(meta1),path(fasta)
+    tuple val(meta2),path(fai)
+    tuple val(meta3),path(dict)
+    tuple val(meta4),path(gtf),path(gtf_tbi)
 output:
-	path("*.bed.gz"),emit:bed
-	path("*.bed.gz.tbi"),emit:tbi
-	path("*.md"),emit:doc
+	tuple val(meta1),path("*.bed.gz"),emit:bed
+	tuple val(meta1),path("*.bed.gz.tbi"),emit:tbi
+	tuple val(meta1),path("*.md"),emit:doc
 script:
-    def k1 = k1_signature()
-    def TAG = "BHFUCL"
+    def TAG = task.ext.tag?:"BHFUCL"
     def URL = "http://ftp.ebi.ac.uk/pub/databases/GO/goa/bhf-ucl/gene_association.goa_bhf-ucl.gz"
     def WHATIZ = "Cardiovascular Gene Ontology Annotation Initiative ${URL}"
 """
@@ -103,13 +102,13 @@ afterScript "rm -rf TMP"
 label "process_quick"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-	path(tabix)
-	path(tbi)
+	tuple val(meta1),path(tabix)
+	tuple val(meta2),path(tbi)
 	tuple val(meta),path(vcf),path(vcf_idx)
 output:
     tuple val(meta),path("*.bcf"),path("*.csi"),emit:output
 script:
-    def TAG = "BHFUCL"
+    def TAG = task.ext.tag?:"BHFUCL"
     def distance = 1000;
 """
 hostname 1>&2

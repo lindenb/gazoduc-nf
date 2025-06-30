@@ -22,23 +22,24 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {k1_signature} from '../../modules/utils/k1.nf'
+include {k1_signature         } from '../../../modules/utils/k1.nf'
+include {isGRCH38             } from '../../../modules/utils/k1.nf'
+include {VEP as VEP_GRCH38    } from './grch38.nf'
 
 def k1 = k1_signature()
 
 
-workflow ANNOTATE_SV_VCF_01 {
+workflow ANNOTATE_SV {
 	take:
-		meta //bag fasta,fai/dict
+		meta 
 		fasta
 		fai
 		dict
 		gtf
-		gtf_tbi
 		vcf_ch // channel containing [vcf,vcfidx]
 	main:
-		gtf1_ch = PROCESS_GTF1(gtf,gtf_tbi)
-		gtf2_ch = PROCESS_GTF2(gtf,gtf_tbi)
+		gtf1_ch = PROCESS_GTF1(gtf)
+		gtf2_ch = PROCESS_GTF2(gtf)
 		gnomad_ch = DOWNLOAD_GNOMAD_SV(fasta,fai,dict)
 		dgv_ch = DOWNLOAD_DGV(fasta,fai,dict) 
 		ensemblreg_ch = DOWNLOAD_ENSEMBL_REG(fasta,fai,dict)
@@ -49,23 +50,28 @@ workflow ANNOTATE_SV_VCF_01 {
 			vcf_ch,
 			gtf1_ch.output,
 			gtf2_ch.output,
-			gnomad_ch.tabix, gnomad_ch.tbi,  gnomad_ch.header,
+			gnomad_ch.output,
 			dgv_ch.output,
 			ensemblreg_ch.output,
 			decode_ch.output
 			)
-
+		vcf = ANNOTATE.out.vcf
+		if(isGRCH38(fai[1])) {
+				VEP_GRCH38(meta,fasta,fai,dict,vcf)
+				vcf = VEP_GRCH38.out.vcf
+			} else {
+				throw new IllegalArgumentException("VEP: unknown build");
+			}
 	emit:
-		output = ann_ch.output
+		vcf
 	}
 
 process PROCESS_GTF1 {
-tag "${meta1.id}"
+tag "${gtf.name}"
 label "process_single"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-	tuple val(meta1),path(gtf)
-	tuple val(meta2),path(gtf_tbi)
+	tuple val(meta1),path(gtf),path(gtf_tbi)
 output:
 	tuple val(meta1),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.hdr"),emit:output
 script:
@@ -90,10 +96,9 @@ echo '##INFO=<ID=GTF_FEATURE,Number=.,Type=String,Description="features from ${g
 
 process PROCESS_GTF2 {
 label "process_single"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-	tuple val(meta1),path(gtf)
-	tuple val(meta2),path(gtf_tbi)
+	tuple val(meta1),path(gtf),path(gtf_tbi)
 output:
 	tuple val(meta1),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.hdr"),emit:output
 script:
@@ -116,14 +121,14 @@ echo '##INFO=<ID=GENE,Number=.,Type=String,Description="gene from ${gtf}">' > gt
 }
 
 process DOWNLOAD_GNOMAD_SV {
-tag "${meta1.id)}"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
+tag "${fasta.name}"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 label "process_single"
 afterScript "rm -rf TMP"
 input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)
-	tuple val(meta2),path(dict)
+	tuple val(meta3),path(dict)
 output:
 	tuple val(meta1),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.hdr"),emit:output
 script:
@@ -162,14 +167,14 @@ echo '##INFO=<ID=GNOMAD_AF,Number=1,Type=Float,Description="GNOMAD SV MAX AF">' 
 }
 
 process DOWNLOAD_DECODE_LRS {
-tag "${meta.id}"
+tag "${meta1.id?:""}"
 label "process_single"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)
-	tuple val(meta2),path(dict)
+	tuple val(meta3),path(dict)
 output:
 	tuple val(meta1),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.hdr"),emit:output
 script:
@@ -208,13 +213,14 @@ echo '##INFO=<ID=DECODE_LRS,Number=.,Type=String,Description="DECODE SV. https:/
 
 
 process DOWNLOAD_ENSEMBL_REG {
+tag "${meta1.id?:""}"
 label "process_single"
 afterScript "rm -rf TMP"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)
-	tuple val(meta2),path(dict)
+	tuple val(meta3),path(dict)
 output:
 	tuple val(meta1),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.hdr"),emit:output
 script:
@@ -249,13 +255,14 @@ echo '##INFO=<ID=ENS_REG,Number=.,Type=String,Description="features from Ensembl
 }
 
 process DOWNLOAD_DGV {
+tag "${meta1.id?:""}"
 label "process_quick"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)
-	tuple val(meta2),path(dict)
+	tuple val(meta3),path(dict)
 output:
 	tuple val(meta1),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.hdr"),emit:output
 script:
@@ -295,7 +302,7 @@ echo '##INFO=<ID=DGV_AF,Number=1,Type=Float,Description="DGV_FREQUENCY">' >> dgv
 process ANNOTATE {
 tag "${meta.id}"
 label "process_quick"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
 	tuple val(meta ),path(vcf),path(vcfidx)
@@ -317,7 +324,7 @@ set -x
                 
 bcftools annotate --threads ${task.cpus} \\
 	--force --annotations "${gtf1_bed}" \\
-	-h "${gtf1_jdr}" \\
+	-h "${gtf1_hdr}" \\
 	-c "CHROM,FROM,TO,GTF_FEATURE" \\
 	--merge-logic GTF_FEATURE:unique \\
 	-O u -o TMP/jeter2.bcf "${vcf}"

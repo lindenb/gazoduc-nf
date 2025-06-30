@@ -25,7 +25,7 @@ SOFTWARE.
 include {k1_signature} from '../../utils/k1.nf'
 
 process DOWNLOAD_GENCODE {
-tag "${meta1.id}"
+tag "${fasta.name}"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
@@ -34,10 +34,9 @@ input:
 	tuple val(meta2),path(fai)
 	tuple val(meta3),path(dict)
 output:
-	tuple val(meta1),path("*.gz"), path("*.gz.tbi"),emit:gencode
+	tuple val(meta1),path("*.gz"), path("*.gz.tbi"),emit:output
 script:
 	def k1 = k1_signature()
-	def version= task.ext.version?:"47"
 	if(task.ext==null || task.ext.suffix==null) throw new IllegalArgumentException("suffix missing for ${task}");
 	def extension = task.ext.suffix
 """
@@ -45,10 +44,10 @@ hostname 1>&2
 mkdir -p TMP
 set -o pipefail
 
-
+##  GTF/GFF3 from gencode are not compatible with bcftools csq
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:${k1.hg38}	https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_${version}/gencode.v${version}.annotation.${extension}.gz
-1:${k1.hg19}	https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_${version}/GRCh37_mapping/gencode.v${version}lift37.annotation.${extension}.gz
+1:${k1.hg38}\thttps://ftp.ensembl.org/pub/release-114/${extension}/homo_sapiens/Homo_sapiens.GRCh38.114.${extension}.gz
+1:${k1.hg19}\thttps://ftp.ensembl.org/pub/grch37/current/${extension}/homo_sapiens/Homo_sapiens.GRCh37.87.chr.${extension}.gz
 EOF
 
 awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
@@ -63,9 +62,9 @@ wget -O TMP/gencode.txt.gz `cat TMP/jeter.url`
 gunzip -c TMP/gencode.txt.gz |\\
 		jvarkit bedrenamechr -f "${fasta}" --column 1 --convert SKIP |\\
 		LC_ALL=C sort -T TMP -t '\t' -k1,1 -k4,4n |\\
-		bgzip > "${fasta.baseName}.gencode.${version}.${extension}.gz"
+		bgzip > "${fasta.baseName}.${extension}.gz"
 
-tabix -f -p gff  "${fasta.baseName}.gencode.${version}.${extension}.gz"
+tabix -f -p gff  "${fasta.baseName}.${extension}.gz"
 """
 }
 

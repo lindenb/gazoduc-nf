@@ -14,7 +14,7 @@ output:
 	tuple val(meta),path("genes.report"),emit:genes_report
 	tuple val(meta),path("variants.report"),emit:variants_report
 script:
-    def prefix = task.ext.prefix?:vcf.simpleName+".hetcomposite"
+    def prefix = task.ext.prefix?:vcf.baseName+".hetcomposite"
 """
 hostname 1>&2
 

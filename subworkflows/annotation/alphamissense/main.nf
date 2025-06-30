@@ -130,7 +130,7 @@ output:
     tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
 script:
    	def TAG = task.ext.tag?:"ALPHAMISSENSE"
-	def prefix = task.ext.prefix?:vcf.simpleName+".alphamissense"
+	def prefix = task.ext.prefix?:vcf.baseName+".alphamissense"
 """
 hostname 1>&2
 mkdir -p TMP OUTPUT

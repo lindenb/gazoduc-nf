@@ -9,12 +9,13 @@ process BCTOOLS_MENDELIAN2 {
     input:
         tuple val(meta1),path(fai)
         tuple val(meta2),path(pedigree)
-        tuple val(meta),val(contig),path(vcfidx)
+        tuple val(meta),val(vcf),path(vcfidx)
     output:
         tuple val(meta),path("*{.vcf.gz,.bcf}"),path("*{.tbi,.csi}"),emit:vcf
     script:
-        def prefix = meta.id+".mendelian."+contig
-        def suffix = ".bcf"
+        def k1 = k1_signature()
+        def prefix = task.ext.prefix?:vcf.baseName+".mendelian"
+        def suffix = task.ext.suffix?:".bcf"
     """
     mkdir -p TMP
 
@@ -33,11 +34,10 @@ process BCTOOLS_MENDELIAN2 {
         uniq > TMP/jeter.rule
 
 
-    awk '{SEX=1;if(\$5=="female")) SEX=2;printf("%s\t%s\t0\t0\t%s\\n",\$1,\$1,SEX)}' ${pedigree} >> TMP/jeter.ped
+    awk '{SEX=1;if(\$5=="female") SEX=2;printf("%s\t%s\t%s\t%s\t%s\\n",\$1,\$2,\$3,\$4,SEX)}' ${pedigree} >> TMP/jeter.ped
 
 
     bcftools +mendelian2 \\
-        --threads  "${task.cpus}" \\
         -O ${suffix.contains("bcf")?"b":"z"} \\
         -o "TMP/${prefix}${suffix}" \\
         `cat TMP/jeter.rule` \\
@@ -47,8 +47,8 @@ process BCTOOLS_MENDELIAN2 {
         -f \\
         ${suffix.contains("bcf")?"":"-t"} \\
         --threads "${task.cpus}" \\
-        "TMP/${prefix}}${suffix}"
+        "TMP/${prefix}${suffix}"
 
-    mv "TMP/${prefix}.*" ./
+    mv TMP/${prefix}* ./
     """
     }

@@ -13,21 +13,30 @@ process GATK_POSSIBLE_DENOVO {
         tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:vcf
     script:
         def prefix = task.ext.prefix?:vcf.baseName+".denovo"
+        def input_is_bcf = vcf.name.endsWith(".bcf")
     """
     mkdir -p TMP
+
+    if ${input_is_bcf}
+    then
+        bcftools view -O z --threads ${task.cpus} -o TMP/jeter1.vcf.gz '${vcf}'
+        bcftools index -f -t --threads ${task.cpus} TMP/jeter1.vcf.gz
+    fi
 
 
     awk '{SEX=\$5;if(SEX=="male") SEX="1"; if(SEX=="female") SEX="2"; PHENO="0";
          if(\$6=="affected" || \$6=="case") PHENO="2";
          if(\$6=="unaffected" || \$6=="control") PHENO="1";
-         printf("%s\t%s\t%s\t%s\t%s\t%s\\n",\$1,\$2,\$3,\$4,SEX,PHENO)}' '${ped}' ${pedigree} > TMP/jeter.ped
+         printf("%s\t%s\t%s\t%s\t%s\t%s\\n",\$1,\$2,\$3,\$4,SEX,PHENO)}' "${pedigree}" > TMP/jeter.ped
 
     gatk --java-options "-XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" VariantAnnotator \\
         -R "${fasta}" \\
         --annotation PossibleDeNovo \\
         --pedigree  TMP/jeter.ped \\
-        -V "${vcf}" \\
+        -V ${input_is_bcf? "TMP/jeter1.vcf.gz" : "\"${vcf}\""} \\
         -O "TMP/${prefix}.vcf.gz"
+
+    rm -f TMP/jeter1.vcf.gz TMP/jeter1.vcf.gz.tbi
 
     bcftools index -f -t \\
         --threads "${task.cpus}" \\

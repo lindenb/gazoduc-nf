@@ -41,8 +41,7 @@ script:
 """
 hostname 1>&2
 mkdir -p TMP
-
-                
+              
 bcftools csq \\
     --threads ${task.cpus} \\
     -O b \\
@@ -58,7 +57,7 @@ bcftools index \\
     --threads ${task.cpus} \\
     --force TMP/${prefix}.bcf
 
-mv TMP/${TAG}.bcf ./
-mv TMP/${TAG}.bcf.csi ./
+mv TMP/${prefix}.bcf ./
+mv TMP/${prefix}.bcf.csi ./
 """
 }

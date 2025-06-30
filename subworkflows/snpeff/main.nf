@@ -11,6 +11,8 @@ workflow SNPEFF {
         DOWNLOAD(fai)
         ANNOTATE(DOWNLOAD.out.db, DOWNLOAD.out.database_name, vcf)
     emit:
+        database = DOWNLOAD.out.db
+        database_name = DOWNLOAD.out.database_name
         vcf = ANNOTATE.out.vcf
 }
 
@@ -65,7 +67,7 @@ input:
 output:
 	tuple val(meta),path("*.bcf"),path("*.bcf.csi"),emit:vcf
 script:
-    def prefix=task.ext.prefix?:vcf.simpleName+".snpeff"
+    def prefix=task.ext.prefix?:vcf.baseName+".snpeff"
 """
 hostname 1>&2
 mkdir -p TMP OUTPUT

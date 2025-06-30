@@ -35,7 +35,12 @@ workflow CLINVAR {
                 bed
 		vcfs /* meta, vcf,vcf_index */
 	main:
-                DOWNLOAD(fasta,fai,dict,bed)
+                DOWNLOAD(
+                        fasta,
+                        fai,
+                        dict,
+                        bed
+                        )
 		ANNOTATE(DOWNLOAD.out.vcf, vcfs)
 	emit:
 		vcf = ANNOTATE.out.vcf

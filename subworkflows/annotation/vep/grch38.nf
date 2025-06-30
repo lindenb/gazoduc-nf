@@ -54,7 +54,7 @@ script:
     def species = task.ext.species?:"homo_sapiens"
     def merged =  task.ext.merged?:true
     def vep_directory = task.ext.vep_directory?:"/LAB-DATA/GLiCID/projects/BiRD_resources/apps/vep"
-    def prefix = task.ext.prefix?:vcf.simpleName+".vep"
+    def prefix = task.ext.prefix?:vcf.baseName+".vep"
     def cache_version = task.ext.cache_version?:"113"
     def spliceai_snv= task.ext.spliceai_snv?:"/LAB-DATA/GLiCID/projects/BiRD_resources/species/human/SpliceAI/spliceai_scores.raw.snv.hg38.vcf.gz"
     def spliceai_indel = task.ext.spliceai_index?:"/LAB-DATA/GLiCID/projects/BiRD_resources/species/human/SpliceAI/spliceai_scores.raw.indel.hg38.vcf.gz"
