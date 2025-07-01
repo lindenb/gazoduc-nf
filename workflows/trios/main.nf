@@ -83,27 +83,40 @@ workflow {
             .map{[[id:it.id],file(it.vcf),file(it.idx)]}
 
 
+        bams = Channel.empty()
+        if(params.bams) {
+            bams = Channel.fromPath(params.bams)*
+                .splitCsv(header:true,sep:',')
+                .map{assertKeyMatchRegex(it,"sample","^[A-Za-z_0-9\\.\\-]+\$")}
+                .map{assertKeyMatchRegex(it,"bam","^\\S+\\.(bam|cram)\$")}
+                .map{
+                    if(it.containsKey("bai")) return it;
+                    if(it.bam.endsWith(".cram")) return it.plus(idx : it.bam+".bai");
+                    return it.plus(idx:it.vcf+".tbi");
+                }
+                .map{assertKeyMatchRegex(it,"bai","^\\S+\\.(bai|crai)\$")}
+                .map{[[id:it.saù^me],file(it.bam),file(it.bai)]}
+
+        }
+
+
         vcfs = vcfs.branch{
             sv : isStructuralVariantVCF(it[1])
             snv: true
          }
 
 
-       DOWNLOAD_GFF3(fasta,fai,dict)
+        DOWNLOAD_GFF3(fasta,fai,dict)
 
-
-        
-
-
-         STRUCTURAL_VARIANTS(
+        STRUCTURAL_VARIANTS(
             [id:"sv"],
             fasta,
             fai,
             dict,
             DOWNLOAD_GFF3.out.output,
             pedigree,
-            vcfs.sv.take(0)
-         )
+            vcfs.sv.take(0)//TODO
+        )
 
 
         vcf2bed = VCF_TO_CONTIGS(vcfs.snv) 
