@@ -28,6 +28,8 @@ tag "${meta.id}"
 label "process_quick"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+when:
+    task.ext.when == null || task.ext.when
 input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)
@@ -36,6 +38,7 @@ input:
 
 output:
     tuple val(meta ),path("*.bcf") ,path("*.csi"),emit:vcf
+    path("versions.yml"),emit:versions
 script:
     def prefix=task.ext.prefix?:vcf.baseName+".bcsq"
 """
@@ -59,5 +62,10 @@ bcftools index \\
 
 mv TMP/${prefix}.bcf ./
 mv TMP/${prefix}.bcf.csi ./
+
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
+END_VERSIONS
 """
 }

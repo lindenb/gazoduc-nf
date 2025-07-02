@@ -17,7 +17,7 @@ process GATK_CALCULATE_GENOTYPE_POSTERIORS {
         def prefix = task.ext.prefix?:vcf.baseName+".denovo"
         def input_is_bcf = vcf.name.endsWith(".bcf")
         def args1 = task.ext.args1?:""
-        def supporting = 
+        def supporting = optional_supporting_vcf?" -supporting ${optional_supporting_vcf}":""
     """
     mkdir -p TMP
 

@@ -26,39 +26,43 @@ SOFTWARE.
 include {k1_signature} from '../../../modules/utils/k1.nf'
 
 
-workflow ANNOTATE_REMAP {
+workflow REMAP {
 	take:
+        meta
 		fasta
 		fai
 		dict
 		vcfs /* meta, vcf,vcf_index */
 	main:
-		source_ch = DOWNLOAD(fasta,fai,dict)
-		annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
+        versions = Channel.empty()
+		DOWNLOAD(fasta,fai,dict)
+        versions = versions.mix(DOWNLOAD.out.versions)
+
+		ANNOTATE(DOWNLOAD.out.output,vcfs)
+        versions = versions.mix(ANNOTATE.out.versions)
 	emit:
-		output = annotate_ch.output
-		doc = source_ch.doc
+		vcf = ANNOTATE.out.vcf
+		versions
 	}
 
 
 process DOWNLOAD {
-tag "${fasta.name}"
+tag "${meta.id?:fasta.name}"
 afterScript "rm -rf TMP"
 label "process_quick"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-        path(fasta)
-        path(fai)
-        path(dict)
+    tuple val(meta1),path(fasta)
+    tuple val(meta2),path(fai)
+    tuple val(meta3),path(dict)
 output:
-	path("*.bed.gz"),emit:bed
-	path("*.bed.gz.tbi"),emit:tbi
-	path("*.header"),emit:header
-	path("*.md"),emit:doc
+	tuple val(meta1),
+        path("*.bed.gz"), path("*.bed.gz.tbi"), path("*.header"),emit:output
 script:
     def k1 = k1_signature()
     def TAG = "REMAP"
     def WHATIZ = "ReMap is a large scale integrative analysis of DNA-binding experiments for Homo sapiens, Mus musculus, Drosophila melanogaster and Arabidopsis thaliana transcriptional regulators. The catalogues are the results of the manual curation of ChIP-seq, ChIP-exo, DAP-seq from public sources (GEO, ENCODE, ENA)."
+    def base = "https://remap.univ-amu.fr/storage/remap2022/"
 """
 hostname 1>&2
 mkdir -p TMP
@@ -67,12 +71,15 @@ mkdir -p TMP/CACHE
 
 
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:${k1.hg38}\thttps://remap.univ-amu.fr/storage/remap2022/hg38/MACS2/remap2022_crm_macs2_hg38_v1_0.bed.gz
-1:${k1.hg19}\thttps://remap.univ-amu.fr/storage/remap2022/hg19/MACS2/remap2022_crm_macs2_hg19_v1_0.bed.gz
+1:${k1.hg38}\t${base}/hg38/MACS2/remap2022_crm_macs2_hg38_v1_0.bed.gz
+1:${k1.hg19}\t${base}/hg19/MACS2/remap2022_crm_macs2_hg19_v1_0.bed.gz
 EOF
 
-awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
-join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv | sort | uniq > TMP/jeter.url
+awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' |\\
+    sed 's/^chr//' |\\
+    sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
+join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv |\\
+sort | uniq > TMP/jeter.url
 
 test -s TMP/jeter.url
 
@@ -94,43 +101,45 @@ mv TMP/${TAG}.bed.gz.tbi ./
 
 echo '##INFO=<ID=${TAG},Number=0,Type=Flag,Description="${WHATIZ}">' > ${TAG}.header
 
-cat << __EOF__ > ${TAG}.md
-${WHATIZ}
-__EOF__
-
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	url: "\${URL}"
+END_VERSIONS
 """
 }
 
 process ANNOTATE {
-tag "${vcf.name}"
+tag "${meta.id?:vcf.name}"
 afterScript "rm -rf TMP"
 label "process_quick"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-	path(tabix)
-	path(tbi)
-	path(header)
+	tuple val(meta1),path(tabix),path(tbi),path(header)
 	tuple val(meta),path(vcf),path(vcf_idx)
 output:
     tuple val(meta),path("*.bcf"),path("*.csi"),emit:output
 script:
     def TAG = "REMAP"
+    def prefix = task.ext.prefix?:vcf.baseName+".remap"
 """
 hostname 1>&2
 mkdir -p TMP OUTPUT
 
 bcftools annotate \\
+    --write-index \\
     --threads ${task.cpus} \\
     -a "${tabix}" \\
     -h "${header}" \\
     -c "CHROM,FROM,TO,${TAG}" \\
-    -O b -o TMP/${TAG}.${vcf.getBaseName()}.bcf '${vcf}'
-    
-bcftools index \\
-    --threads ${task.cpus} \\
-    --force TMP/${TAG}.${vcf.getBaseName()}.bcf
+    -O b \\
+    -o TMP/${prefix}.bcf '${vcf}'
 
 mv TMP/*.bcf ./
 mv TMP/*.bcf.csi ./
+
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
+END_VERSIONS
 """
 }

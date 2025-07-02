@@ -29,7 +29,7 @@ include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
 include {dumpParams;runOnComplete;moduleLoad} from '../../modules/utils/functions.nf'
 //include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {DOWNLOAD_CYTOBAND} from '../../modules/ucsc/download.cytoband.nf'
-include {DOWNLOAD_REFGENE} from '../../modules/ucsc/download.refgene.nf'
+include {DOWNLOAD_REFGENE } from '../../modules/ucsc/download.refgene.nf'
 
 if( params.help ) {
     dumpParams(params);
@@ -41,9 +41,20 @@ if( params.help ) {
 
 
 workflow {
-	genome = Channel.of(file(params.fasta), file(params.fai), file(params.dict)).collect()
+	def genome_hash= [
+		id:file(params.fasta).simpleName,
+		name:file(params.fasta).simpleName
+		]
+	def 
 	
-	ch1 = IGVREPORTS(genome, file(params.bams),file(params.vcf))
+	ch1 = IGVREPORTS(
+		[id:"igvreports"],
+		[genome_hash,file(params.fasta)],
+		[genome_hash,file(params.fai)],
+		[genome_hash,file(params.dict)],
+		file(params.bams),
+		file(params.vcf)
+		)
 	//html = VERSION_TO_HTML(ch1.version)
 	}
 
@@ -51,31 +62,37 @@ runOnComplete(workflow)
 
 workflow IGVREPORTS {
 	take:
+		meta
+		fasta
+		fai
+		dict
 		bams
 		vcf
 	main:
 		version_ch = Channel.empty()
 
 
-                snbam_ch = SAMTOOLS_SAMPLES(genome)
+        snbam_ch = SAMTOOLS_SAMPLES(fasta,fai,dict)
 		
 
 		compile_ch = COMPILE()
 		version_ch = version_ch.mix(compile_ch.version)
 
-		cyto_ch = DOWNLOAD_CYTOBAND(genome)
+		cyto_ch = DOWNLOAD_CYTOBAND(fasta,fai,dict)
 
-		refgene_ch = DOWNLOAD_REFGENE(genome)
+		refgene_ch = DOWNLOAD_REFGENE(fasta,fai,dict)
 
 		prepare_ch = PREPARE_IGVREPORTS(
-			genome,
+			fasta,
+			fai,
+			dict
 			compile_ch.output,
 			snbam_ch.output, 
 			vcf
 			)
                 version_ch = version_ch.mix(prepare_ch.version)
 
-		report_ch = IGVREPORT(genome, vcf, cyto_ch.output, refgene_ch.output, prepare_ch.output.splitCsv(header:true,sep:'\t') )
+		report_ch = IGVREPORT(fasta,fai,dict, vcf, cyto_ch.output, refgene_ch.output, prepare_ch.output.splitCsv(header:true,sep:'\t') )
                 version_ch = version_ch.mix(report_ch.version)
 		
 		ZIPIT(report_ch.output.collect())
@@ -85,11 +102,12 @@ workflow IGVREPORTS {
 process SAMTOOLS_SAMPLES {
 afterScript "rm -rf TMP"
 input:
-	path(genome)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta3),path(dict)
 output:
 	path("sample_bam.tsv"),emit:output
 script:
-	def fasta = genome.find{it.name.endsWith("a")}
 """
 set -o pipefail
 samtools samples -f '${fasta}' < "${bams}" | awk -F '\t' '\$3!="."' | cut -f1,2 > sample_bam.tsv
@@ -411,7 +429,9 @@ EOF
 
 process PREPARE_IGVREPORTS {
 input:
-	path(genome)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta3),path(dict)
 	path(jar)
 	path(sn2bam)
 	path(vcf)
@@ -419,7 +439,6 @@ output:
 	path("output.tsv"),emit:output
 	path("version.xml"),emit:version
 script:
-	def fasta = genome.find{it.name.endsWith("a")}
 """        
 hostname 1>&2     
 ${moduleLoad("jvarkit bcftools")}
@@ -449,16 +468,17 @@ tag "${row.title}"
 afterScript "rm -rf TMP"
 conda "${params.conda}/IGVREPORTS"
 input:
-	path(genome)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta3),path(dict)
 	path(vcf)
-	path(cytoband)
-	path(refgene)
+	tuple val(meta5),path(cytoband)
+	tuple val(meta6),path(refgene)
 	val(row)
 output:
 	path("${row.title}.html"),emit:output
 	path("version.xml"),emit:version
 script:
-	def fasta = genome.find{it.name.endsWith("a")}
 	def refgene2 = refgene.find{it.name.endsWith(".txt.gz")}.join(" ")
 """
 hostname 1>&2

@@ -6,12 +6,15 @@ process BCTOOLS_MENDELIAN2 {
     tag "${meta.id}"
     conda "${moduleDir}/../../../conda/bioinfo.01.yml"
     afterScript "rm -rf TMP"
+    when:
+        task.ext.when == null || task.ext.when
     input:
         tuple val(meta1),path(fai)
         tuple val(meta2),path(pedigree)
         tuple val(meta),val(vcf),path(vcfidx)
     output:
         tuple val(meta),path("*{.vcf.gz,.bcf}"),path("*{.tbi,.csi}"),emit:vcf
+        path("versions.yml"),emit:versions
     script:
         def k1 = k1_signature()
         def prefix = task.ext.prefix?:vcf.baseName+".mendelian"
@@ -50,5 +53,10 @@ process BCTOOLS_MENDELIAN2 {
         "TMP/${prefix}${suffix}"
 
     mv TMP/${prefix}* ./
+
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
+END_VERSIONS
     """
     }

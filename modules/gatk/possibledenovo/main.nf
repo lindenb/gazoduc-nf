@@ -3,14 +3,17 @@ process GATK_POSSIBLE_DENOVO {
     tag "${meta.id}"
     conda "${moduleDir}/../../../conda/bioinfo.01.yml"
     afterScript "rm -rf TMP"
+    when:
+        task.ext.when == null || task.ext.when
     input:
         tuple val(meta1),path(fasta)
         tuple val(meta2),path(fai)
         tuple val(meta3),path(dict)
         tuple val(meta4),path(pedigree)
-       tuple val(meta),path(vcf),path(vcfidx)
+        tuple val(meta),path(vcf),path(vcfidx)
     output:
         tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:vcf
+        path("versions.yml"),emit:versions
     script:
         def prefix = task.ext.prefix?:vcf.baseName+".denovo"
         def input_is_bcf = vcf.name.endsWith(".bcf")
@@ -40,5 +43,11 @@ process GATK_POSSIBLE_DENOVO {
     
     mv "TMP/${prefix}.vcf.gz" ./
     mv "TMP/${prefix}.vcf.gz.tbi" ./
+
+
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	gatk: "\$(gatk --version 2>&1  | paste -s -d ' ' | tr -c -d 'A-Za-z0-9._-' )"
+END_VERSIONS
     """
     }

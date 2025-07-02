@@ -25,7 +25,7 @@ SOFTWARE.
 
 
 
-workflow ANNOTATE_BHFUCL {
+workflow BHFUCL {
 	take:
 		meta
 		fasta
@@ -129,7 +129,7 @@ input:
 	tuple val(meta2),path(bed_out),path(tabix_out),path(header_out)
 	tuple val(meta),path(vcf),path(vcf_idx)
 output:
-    tuple val(meta),path("*.bcf"),path("*.csi"),emit:output
+    tuple val(meta),path("*.bcf"),path("*.csi"),emit:bed
 script:
     def TAG = task.ext.tag?:"BHFUCL"
 	def prefix=task.ext.prefix?:vcf.baseName+".bhfucl"

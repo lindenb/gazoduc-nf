@@ -1,17 +1,18 @@
 import java.io.InputStreamReader;
 import java.util.zip.GZIPInputStream;
 
-include {CLINVAR                              } from '../../subworkflows/annotation/clinvar/main.nf'
-include {ALPHAMISSENSE                        } from '../../subworkflows/annotation/alphamissense/main.nf'
-include {VEP                                  } from '../../subworkflows/annotation/vep/main.nf'
-include {TRIOS  as TRIO_SNV                   } from '../../subworkflows/trios/main.nf'
-include {TRUVARI                              } from '../../subworkflows/truvari/main.nf'
-include {SNPEFF                               } from '../../subworkflows/snpeff/main.nf'
-include {DOWNLOAD_GENCODE as DOWNLOAD_GFF3    } from '../../modules/gtf/download/main.nf'
-include {BCFTOOLS_BCSQ                        } from '../../modules/bcftools/bcsq/main.nf'
-include {ANNOTATE_SV                          } from '../../subworkflows/annotation/sv/main.nf'
-include {BCTOOLS_SETGT  as NO_CALL_TO_HOM_REF } from '../../modules/bcftools/setgt/main.nf'
-include {BCTOOLS_MENDELIAN2                   } from '../../modules/bcftools/mendelian2/main.nf'
+include {CLINVAR                                  } from '../../subworkflows/annotation/clinvar/main.nf'
+include {ALPHAMISSENSE                            } from '../../subworkflows/annotation/alphamissense/main.nf'
+include {VEP                                      } from '../../subworkflows/annotation/vep/main.nf'
+include {TRIOS  as TRIO_SNV                       } from '../../subworkflows/trios/main.nf'
+include {TRUVARI                                  } from '../../subworkflows/truvari/main.nf'
+include {SNPEFF                                   } from '../../subworkflows/snpeff/main.nf'
+include {DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GFF3    } from '../../modules/gtf/download/main.nf'
+include {DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GTF     } from '../../modules/gtf/download/main.nf'
+include {BCFTOOLS_BCSQ                            } from '../../modules/bcftools/bcsq/main.nf'
+include {ANNOTATE_SV                              } from '../../subworkflows/annotation/sv/main.nf'
+include {BCTOOLS_SETGT  as NO_CALL_TO_HOM_REF     } from '../../modules/bcftools/setgt/main.nf'
+include {BCTOOLS_MENDELIAN2                       } from '../../modules/bcftools/mendelian2/main.nf'
 
 
 Map assertKeyExists(final Map hash,final String key) {
@@ -95,7 +96,7 @@ workflow {
                     return it.plus(idx:it.vcf+".tbi");
                 }
                 .map{assertKeyMatchRegex(it,"bai","^\\S+\\.(bai|crai)\$")}
-                .map{[[id:it.saù^me],file(it.bam),file(it.bai)]}
+                .map{[[id:it.sample],file(it.bam),file(it.bai)]}
 
         }
 
@@ -107,6 +108,7 @@ workflow {
 
 
         DOWNLOAD_GFF3(fasta,fai,dict)
+        DOWNLOAD_GTF(fasta,fai,dict)
 
         STRUCTURAL_VARIANTS(
             [id:"sv"],
@@ -174,6 +176,38 @@ workflow {
                 .map{[it[0],it[1].flatten()]}
         )
 
+        triosbams_ch = Channel.fromPath(params.pedigree)
+            .splitCsv(header:false,sep:'\t')
+            .filter{!it[2].equals("0") && !it[3].equals("0")}
+            .map{[it[1],it[2],it[3]]} // child,father,modther
+            .combine(bams) // join child [ child,father,modther, metaC, bamC, baiC, ]
+            .filter{it[0].equals(it[3].id)}
+            .combine(bams) // join father [ child,father,mother, metaC, bamC, baiC, metaP, bamP, baiP ]
+            .filter{it[1].equals(it[6].id)}
+            .combine(bams) // join mother [ child,father,mother, metaC, bamC, baiC, metaP, bamP, baiP, metaM, bamM, baiM ]
+            .filter{it[2].equals(it[9].id)}
+
+       
+
+        igv_report_input_ch = MERGE_AND_FILTER.out.bed
+            .splitCsv(header:false,sep:'\t')
+            .combine(triosbams_ch) // [ chrom, start,end, child1, child2,father,mother, metaC, bamC, baiC, metaP, bamP, baiP, metaM, bamM, baiM ]
+            .map{it[3].equals(it[4])}
+            .map{it.remove(3)} // [ chrom, start,end,child1,father,mother, metaC, bamC, baiC, metaP, bamP, baiP, metaM, bamM, baiM ]
+            .map{it.insert(0,[id:"igv",contig:it[0]])} // [ meta,chrom, start,end,child1,father,mother, metaC, bamC, baiC, metaP, bamP, baiP, metaM, bamM, baiM ]
+           .take(100) //limit max igreports
+        
+        DOWNLOAD_REFGENE(fasta,fai,dict)
+        DOWNLOAD_CYTOBAND(fasta,fai,dict)
+        IGV_REPORTS (
+                fasta,
+                fai,
+                dict,
+                DOWNLOAD_CYTOBAND.out.output,
+                DOWNLOAD_REFGENE.out.output,
+                MERGE_AND_FILTER.out.vcf,
+                igv_report_input_ch
+                )
 }
 process VCF_TO_CONTIGS{
     tag "${meta.id}"
@@ -292,10 +326,11 @@ process MERGE_AND_FILTER {
     input:
         tuple val(met1),path(pedigree)
         tuple val(meta),path("VCFS/*")
-        output:
+    output:
         tuple val(meta),path("*.vcf.gz"),path("*.tbi"),emit:vcf
         tuple val(meta),path("*.table.txt")
         tuple val(meta),path("*.genes.tsv")
+        tuple val(meta),path("*.bed"),emit:bed //used for igv reports
     script:
         def prefix = task.ext.prefix?:"snv"
     """
@@ -312,11 +347,27 @@ process MERGE_AND_FILTER {
     bcftools view --apply-filters '.,PASS' TMP/jeter.vcf.gz |\\
         jvarkit -Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP groupbygene > TMP/jeter.genes.tsv
 
+    bcftools view --apply-filters '.,PASS' TMP/jeter.vcf.gz |\\
+        jvarkit -Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP bioalcidaejdk \\
+            -e 'stream().forEach{
+                final Set<String> set = new HashSet<>();
+                for(int side=0;side<2;side++) {
+                    final String tag=(i==0?"hiConfDeNovo":"loConfDeNovo");
+                    if(!variant.hasAttribute(tag)) continue; 
+                    set.addAll(variant.getAttributeAsStringList(tag,""));
+                    }
+                for(String s : set) {
+                    println(variant.getContig()+"\t"+(variant.getStart()-1)+"\t"+variant.getEnd()+"\t"+s);
+                    }
+                }' |\\
+        LC_ALL=C sort -T TMP -k1,1 -k2,2n |\\
+        uniq > TMP/jeter.bed
 
     mv TMP/jeter.vcf.gz ./${prefix}.vcf.gz
     mv TMP/jeter.vcf.gz.tbi ./${prefix}.vcf.gz.tbi
     mv TMP/jeter.table.txt ./${prefix}.table.txt
     mv TMP/jeter.genes.tsv ./${prefix}.genes.tsv
+    mv TMP/jeter.bed  ./${prefix}.bed
     """
 }
 
@@ -380,3 +431,41 @@ process FILTER_FOR_HET_COMPOSITE {
         """
     }
 
+process IGV_REPORTS {
+tag "${meta.id}"
+label "process_single"
+//conda "${moduleDir}/../../conda/bioinfo.01.yml" TODO
+input:
+        tuple val(meta1),path(fasta)
+        tuple val(meta2),path(fai)
+        tuple val(meta3),path(dict)
+        tuple val(meta4),path(cytoband)
+        tuple val(meta5),path(refgene)
+        tuple val(meta6),path(vcf),path(vcfidx)
+        tuple val(meta),val(contig),val(start),val(end),
+                val(child),val(father),val(mother),
+                val(metaC),path(bamC),pah(baiC),
+                val(metaP),path(bamP),pah(baiP),
+                val(metaM),path(bamM),pah(baiM)
+output:
+        tuple val(meta),path("*.html"),emit:html
+
+script:
+    def flanking = task.ext.flanking?:100
+    def info_columns= task.ext.info?:"VEP,BCSQ,ANN,MERR,hiConfDeNovo,loConfDeNovo"
+    def prefix = contig+"_"+((start as int)+1)+"_"+end+"_"+child
+"""
+hostname 1>&2
+mkdir -p TMP
+
+create_report ${vcf}  ${fasta} \\
+	--ideogram "${cytoband}" \\
+	--flanking ${flanking}"} \\
+	${info_columns.isEmpty()?"":"--info-columns ${info_columns}"} \\
+	--tracks ${vcf} ${bamC} ${bamP} ${bamM} ${refgene} \\
+	--output TMP/${title}.html
+
+mv -v "TMP/${title}.html" ./
+
+"""
+}
