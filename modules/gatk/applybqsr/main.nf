@@ -22,51 +22,44 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {moduleLoad} from './../utils/functions.nf'
 
-process GATK4_APPLY_BQSR_01 {
+process GATK4_APPLY_BQSR {
+label "process_short"
 tag "${row.sample} ${row.bam}"
-cache 'lenient'
-memory '5g'
-cpus 1
 afterScript 'rm -rf TMP'
 input:
-	val(meta)
-	val(row)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta3),path(dict)
+	tuple val(meta),path(bam),path(bai),path(table)
 output:
-        tuple val(row),path("${row.sample}.bqsr.bam"),emit:bam
-        path("${row.sample}.bqsr.bai"),emit:index
-        path("version.xml"),emit:version
+    tuple val(row),path("*.bam"),path("*.bai"),emit:bam
+    path("versions.yml"),emit:versions
 script:
-	def genome = params.genomes[genomeId]
-        def reference =	genome.fasta
+	def prefix = task.ext.prefix?:bam.baseName+".bqsr"
 """
 hostname 1>&2
-${moduleLoad("gatk4")}
-
 mkdir TMP
 
 # allele specific annotation are not supported in non-gvcf mode
-gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" ApplyBQSR \
-	-I "${row.bam}" \
-	-bqsr "${row.table}" \
-	-O "${row.sample}.bqsr.bam"
+gatk --java-options gatk --java-options "-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP" ApplyBQSR \
+	-R ${fasta} \\
+	-I "${row.bam}" \\
+	-bqsr "${table}" \\
+	-O "TMP/${prefix}.bam"
 
-###########################################################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="description">gatk ApplyBQSR</entry>
-	<entry key="sample">${row.sample}</entry>
-	<entry key="table">${row.table}</entry>
-	<entry key="gatk.version">\$( gatk --version 2> /dev/null  | paste -s -d ' ' )</entry>
-</properties>
+if test -f "TMP/${prefix}.bai"
+then
+	mv "TMP/${prefix}.bai" "TMP/${prefix}.bam.bai"
+fi
+
+mv "TMP/${prefix}.bam" ./
+mv "TMP/${prefix}.bam.bai" ./
+
+cat << EOF > version.yml
+${task.process}:
+    gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
 EOF
 """
 
-stub:
-"""
-touch "${row.sample}.bqsr.bam" "${row.sample}.bqsr.bai"
-echo "<properties/>" > version.xml
-"""
 }
