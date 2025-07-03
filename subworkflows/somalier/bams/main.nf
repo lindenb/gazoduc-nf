@@ -68,8 +68,8 @@ workflow SOMALIER_BAMS {
 	emit:
 		output = RELATE_SOMALIER.out.output
 		versions = version_ch
-		zip = somalier_ch.zip
-		qc = somalier_ch.qc
+		zip = RELATE_SOMALIER.out.zip
+		qc = RELATE_SOMALIER.out.qc
 
 	}
 
@@ -77,7 +77,7 @@ workflow SOMALIER_BAMS {
 process EXTRACT_BAM {
 	tag "${meta.id?:bam.name}"
 	label "process_quick"
-	conda "${moduleDir}/../../conda/somalier.yml"
+	conda "${moduleDir}/../../../conda/somalier.yml"
 	memory '2g'
 	input:
 		tuple val(meta1),path(fasta)
@@ -107,7 +107,7 @@ EOF
 
 process RELATE_SOMALIER {
 afterScript "rm -rf extracted TMP"
-conda  "${moduleDir}/../../conda/somalier.yml"
+conda  "${moduleDir}/../../../conda/somalier.yml"
 input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)

@@ -13,6 +13,7 @@ include {BCFTOOLS_BCSQ                            } from '../../modules/bcftools
 include {ANNOTATE_SV                              } from '../../subworkflows/annotation/sv/main.nf'
 include {BCTOOLS_SETGT  as NO_CALL_TO_HOM_REF     } from '../../modules/bcftools/setgt/main.nf'
 include {BCTOOLS_MENDELIAN2                       } from '../../modules/bcftools/mendelian2/main.nf'
+include {HET_COMPOSITE  as APPPLY_HET_COMPOSITE   } from '../../modules/jvarkit/hetcomposite/main.nf'
 
 
 Map assertKeyExists(final Map hash,final String key) {
@@ -152,6 +153,7 @@ workflow {
         BCFTOOLS_BCSQ(fasta,fai,DOWNLOAD_GFF3.out.output,vcf_snv )
         vcf_snv = BCFTOOLS_BCSQ.out.vcf
 
+        
         FILTER_PREDICTIONS(vcf_snv)
         vcf_snv = FILTER_PREDICTIONS.out.vcf //we can use this later for het composite
 
@@ -167,7 +169,14 @@ workflow {
         vcf_snv = ALPHAMISSENSE.out.vcf
         
         
-     
+        HET_COMPOSITE(
+            [id:"hetcomposite"],
+            fasta,
+            fai,
+            dict,
+            pedigree,
+            FILTER_PREDICTIONS.out.vcf
+        )
 	
         MERGE_AND_FILTER(
             vcf_snv
@@ -412,22 +421,30 @@ workflow HET_COMPOSITE {
         pedigree
         vcfs
     main:
-        FILTER_FOR_HET_COMPOSITE(vcfs)
+        FILTER_FOR_HET_COMPOSITE(vcfs
+            .map{[it[1],it[2]]})
+            .collect()
+            .map{[meta,it.flatten()]}
+            )
+        HET_COMPOSITE(FILTER_FOR_HET_COMPOSITE.out.vcf)
 }
 
 process FILTER_FOR_HET_COMPOSITE {
     tag "${meta.id}"
     label "process_single"
     conda "${moduleDir}/../../conda/bioinfo.01.yml"
+    afterScript "rm -rf TMP"
     input:
-        tuple val(meta),path(vcf),path(idx)
+        tuple val(meta),path("VCFS/*")
+    output:
+        tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
     script:
-        def args = meta.contig?"--regions \"${meta.contig}\"":""
-        def prefix = task.ext.prefix?:meta.id+(meta.contig?"."+meta.contig:"")
+        def prefix = task.ext.prefix?:meta.id+".filterhetcomposite"
         """
-        bcftools view --apply-filters '.,PASS' '${vcf}'
-
-
+        mkdir -p TMP
+        find VCFS/ -name "*.vcf.gz" -o -name "*.bcf" > TMP/jeter.list
+        bcftools concat -a --file-list TMP/jeter.list -O u |\\
+        bcftools view --apply-filters '.,PASS' --write-index -O b -o ${prefix}.bcf
         """
     }
 

@@ -319,10 +319,8 @@ mv TMP/jeter.g.vcf.gz.tbi "${bam.getBaseName()}.g.vcf.gz.tbi"
 
 
 process VCF_CONCAT1 {
-label "process_high"
+label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-cpus 20
-time "24h"
 afterScript "rm -rf TMP"
 input:
 	path("VCFS/*")
@@ -350,9 +348,7 @@ mv -v TMP/output.\${MD5}.bcf.csi ./
 
 process VCF_CONCAT2 {
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-label "process_high"
-cpus 20
-time "24h"
+label "process_single"
 afterScript "rm -rf TMP"
 input:
 	path("VCFS/*")

@@ -23,10 +23,10 @@ SOFTWARE.
 
 */
 
-include {moduleLoad;assertFileExists;isBlank} from '../../modules/utils/functions.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
-include {DOWNLOAD_SOMALIER} from '../../modules/somalier/somalier.download.nf'
-include {SOMALIER_DOWNLOAD_SITES} from '../../modules/somalier/somalier.download.sites.nf'
+include {moduleLoad;assertFileExists;isBlank} from '../../../modules/utils/functions.nf'
+include {MERGE_VERSION} from '../../../modules/version/version.merge.02.nf'
+include {DOWNLOAD_SOMALIER} from '../../../modules/somalier/somalier.download.nf'
+include {SOMALIER_DOWNLOAD_SITES} from '../../../modules/somalier/somalier.download.sites.nf'
 //CELUI LA est à changer ==> include {VCF_INTER_PED_01} from '../../modules/bcftools/vcf.inter.pedigree.01.nf'
 
 

@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -50,7 +50,7 @@ process BED_CLUSTER {
 		-o BEDS "${bed}"
 
 
-cat << EOF
+cat << EOF > versions.yml
 ${task.process}:
 	jvarkit: TODO
 EOF

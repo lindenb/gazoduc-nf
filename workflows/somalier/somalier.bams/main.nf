@@ -42,18 +42,28 @@ log.info paramsSummaryLog(workflow)
 
 
 
-include {SOMALIER_BAMS_01} from  '../../../subworkflows/somalier/somalier.bams.01.nf'
-include {MULTIQC} from '../../../subworkflows/multiqc/multiqc.nf'
+include {SOMALIER_BAMS    } from  '../../../subworkflows/somalier/bams'
+include {MULTIQC          } from '../../../subworkflows/multiqc/multiqc.nf'
 
 
 
 
 workflow {
-	genome_ch = [file(params.fasta) , file(params.fasta+".fai"), file(""+file(params.fasta).getParent()+"/"+file(params.fasta).getBaseName()+".dict" ) ]
-	
+	def hash_ref= [
+		id: file(params.fasta).baseName,
+		name: file(params.fasta).baseName
+		]
+	def fasta = [ hash_ref, file(params.fasta)]
+	def fai   = [ hash_ref, file(params.fai)]
+	def dict  = [ hash_ref, file(params.dict)]
+	def sites    = (params.user_sites==null ? [ hash_ref, []]:[hash_ref,file(params.user_sites)])
+	def pedigree = (params.pedigree==null   ? [ hash_ref, []]:[hash_ref,file(params.pedigree  )])
 
-	somalier_ch = SOMALIER_BAMS_01(
-		genome_ch,
+	SOMALIER_BAMS(
+		[:],
+		fasta,
+		fai,
+		dict,
 		Channel.fromPath(params.samplesheet).
 			splitCsv(header:true,sep:',').
 			map{
@@ -62,9 +72,9 @@ workflow {
 				if(!it.containsKey("bai")) throw new IllegalArgumentException("bai missing");
 				return it;
 				}.
-			map{[it.sample,file(it.bam),file(it.bai)]},
-		file(params.pedigree),
-		file(params.user_sites)
+			map{[[id:it.sample],file(it.bam),file(it.bai)]},
+		pedigree,
+		sites
 		)
 	//multiqc =  MULTIQC(somalier_ch.output.mix(somalier_ch.qc).flatten().collect())
 	}
