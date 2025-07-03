@@ -22,49 +22,33 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {moduleLoad} from '../utils/functions.nf'
-include {k1_signature} from '../utils/k1.nf'
 
-def k1 = k1_signature()
 
-process SOMALIER_DOWNLOAD_SITES {
-label "process_single"
+process SAMTOOLS_IDXSTATS {
+label "process_short"
+tag "${meta.id?:bam.name}"
 afterScript "rm -rf TMP"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-	path(genome)
+	tuple val(meta),path(bam),path(bai)
 output:
-	path("sites.vcf.*"),emit:output
+	tupe val(meta),path("*.idxstat.tsv"),emit:stats
+	tupe val(meta),path("*.bed"),emit:bed
+	path("version.yml"),emit:versions
 script:
-	def fasta = genome.find{it.name.endsWith("a")}
-	def fai = genome.find{it.name.endsWith(".fai")}
+	def prefix = meta.id?:bam.baseName
 """
 hostname 1>&2
 set -o pipefail
-set -x
-mkdir -p TMP
 
-cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:${k1.hg19}\thttps://github.com/brentp/somalier/files/3412453/sites.hg19.vcf.gz
-1:${k1.hg38}\thttps://github.com/brentp/somalier/files/3412456/sites.hg38.vcf.gz
-EOF
+samtools idxstats --threads ${task.cpus} "${bam}" > ${meta.id}.idxstat.tsv
 
-cut -f1,2 "${fai}" |\\
-	tr "\t" ":" |\\
-	sed 's/^chr//' |\\
-	sort -T TMP  > TMP/jeter2.tsv
+awk -F '\t' '(\$3!=0 && \$1!="*") {printf("%s\t0\t%s\\n",\$1,\$2);}' ${meta.id}.idxstat.tsv > ${meta.id}.bed
 
-URL=`join -t '\t' -1 1 -2 1 -o "1.2" TMP/jeter1.tsv TMP/jeter2.tsv`
-
-test ! -z "\${URL}"
-
-wget -O - "\${URL}" |\\
-	gunzip -c |\\
-	jvarkit  vcfsetdict -R "${fasta}"  --onNotFound SKIP |\\
-	bcftools sort -T TMP/sort -o TMP/sites.vcf.gz -O z
-
-bcftools index -f -t TMP/sites.vcf.gz
-
-mv -v TMP/sites* ./
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	samtools: "\$(samtools version | awk '(NR==1) {print \$NF;}')"
+END_VERSIONS
 """
 }
+

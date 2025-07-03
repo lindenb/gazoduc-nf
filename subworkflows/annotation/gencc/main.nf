@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2025 Pierre Lindenbaum
+Copyright (c) 2024 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -23,51 +23,51 @@ SOFTWARE.
 
 */
 
-include {k1_signature} from '../../../modules/utils/k1.nf'
 
-
-workflow REMAP {
+ 
+workflow GENCC {
 	take:
-        meta
+		meta
 		fasta
 		fai
 		dict
+		gtf
 		vcfs /* meta, vcf,vcf_index */
 	main:
-        versions = Channel.empty()
-		DOWNLOAD(fasta,fai,dict)
-        versions = versions.mix(DOWNLOAD.out.versions)
+		versions = Channel.empty()
+		DOWNLOAD(fasta,fai,dict,gtf)
+		versions = versions.mix(DOWNLOAD.out.versions)
 
-		ANNOTATE(DOWNLOAD.out.output,vcfs)
-        versions = versions.mix(ANNOTATE.out.versions)
+		ANNOTATE(DOWNLOAD.out.output, vcfs)
+		versions = versions.mix(ANNOTATE.out.versions)
+		
 	emit:
 		vcf = ANNOTATE.out.vcf
 		versions
-	}
+}
 
-
-process DOWNLOAD {
-tag "${meta.id?:fasta.name}"
+process DOWNLOAD{
+tag "${meta1.id?:fasta.name}"
 afterScript "rm -rf TMP"
 label "process_quick"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
     tuple val(meta1),path(fasta)
     tuple val(meta2),path(fai)
-    tuple val(meta3),path(dict)
+	tuple val(meta3),path(dict)
+    tuple val(meta4),path(gtf),path(gtf_tbi)
 output:
-	tuple val(meta1),
-        path("*.bed.gz"), path("*.bed.gz.tbi"), path("*.header"),emit:output
+	tuple val(meta1),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.header"),emit:header
+	path("versions.yml"),emit:versions
 script:
-    def k1 = k1_signature()
-    def TAG = "REMAP"
-    def WHATIZ = "ReMap is a large scale integrative analysis of DNA-binding experiments for Homo sapiens, Mus musculus, Drosophila melanogaster and Arabidopsis thaliana transcriptional regulators. The catalogues are the results of the manual curation of ChIP-seq, ChIP-exo, DAP-seq from public sources (GEO, ENCODE, ENA)."
-    def base = "https://remap.univ-amu.fr/storage/remap2022/"
+	def TAG="GENCC"
+	def URL = "https://search.thegencc.org/download/action/submissions-export-tsv"
+	def WHATIZ = "gencc The Gene Curation Coalition brings together groups engaged in the evaluation of gene-disease validity with a willingness to share data publicly https://thegencc.org/about.html"
 """
 hostname 1>&2
-mkdir -p TMP
 set -o pipefail
-mkdir -p TMP/CACHE
+mkdir -p TMP
+
 
 
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
@@ -79,27 +79,32 @@ awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' |\\
     sed 's/^chr//' |\\
     sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
 join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv |\\
-sort | uniq > TMP/jeter.url
+    sort | uniq > TMP/jeter.url
 
 test -s TMP/jeter.url
 
-wget -O - `cat TMP/jeter.url`  |\\
-        gunzip -c |\\
-        cut -f1,2,3 |\\
-        jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedrenamechr -R "${fasta}" --column 1 --convert SKIP  |\\
-        LC_ALL=C sort --buffer-size=${task.memory.mega}M -t '\t' -k1,1 -k2,2n -T TMP |\\
-        bedtools merge |\\
-	sed 's/\$/\t1/' |\\
-        bgzip > TMP/${TAG}.bed.gz
+jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP gtf2bed --columns "gtf.feature,gene_name" -R "${fasta}" "${gtf}" |\\
+	awk -F '\t' '(\$4=="gene")' |\\
+	cut -f1,2,3,5 |\\
+	LC_ALL=C sort -T TMP -t '\t' -k4,4 |\\
+	uniq > TMP/genes.bed
+
+wget --no-check-certificate -q  -O - "${URL}" |\\
+	awk -F '\t' '(NR==1) {C=-1;D=-1;for(i=1;i<=NF;i++) {if(\$i=="\\"gene_symbol\\"") C=i;if(\$i=="\\"disease_title\\"") D=i;}next;} {if(C<1 ||  D<1) next; G=\$C;H=\$D; gsub(/[^A-Za-z0-9\\.\\-]+/,"_",G);gsub(/[^A-Za-z0-9\\.\\-]+/,"_",H);  printf("%s\t%s\\n",G,H);}'  |\\
+	LC_ALL=C sort -T TMP -t '\t' -k1,1  | uniq > TMP/org.tsv
 
 
-tabix -p bed -f TMP/${TAG}.bed.gz
+LC_ALL=C  join -t '\t' -1 4 -2 1 -o '1.1,1.2,1.3,2.2' TMP/genes.bed TMP/org.tsv |\\
+	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\\
+	bgzip > TMP/${TAG}.bed.gz
+
+
+tabix --force -p bed TMP/${TAG}.bed.gz
 
 mv TMP/${TAG}.bed.gz ./
 mv TMP/${TAG}.bed.gz.tbi ./
 
-
-echo '##INFO=<ID=${TAG},Number=0,Type=Flag,Description="${WHATIZ}">' > ${TAG}.header
+echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${WHATIZ} ${URL}.">' > ${TAG}.header
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
@@ -108,34 +113,34 @@ END_VERSIONS
 """
 }
 
+
 process ANNOTATE {
 tag "${meta.id?:vcf.name}"
 afterScript "rm -rf TMP"
-label "process_quick"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	tuple val(meta1),path(tabix),path(tbi),path(header)
 	tuple val(meta),path(vcf),path(vcf_idx)
 output:
-    tuple val(meta),path("*.bcf"),path("*.csi"),emit:output
+	tuple path("*.bcf"),path("*.bcf.csi"),emit:bed
+	path("versions.yml"),emit:versions
 script:
-    def TAG = "REMAP"
-    def prefix = task.ext.prefix?:vcf.baseName+".remap"
+	def prefix = task.ext.prefix?:vcf.baseName+".gencc"
+	def TAG="GENCC"
 """
-hostname 1>&2
 mkdir -p TMP OUTPUT
 
 bcftools annotate \\
-    --write-index \\
-    --threads ${task.cpus} \\
-    -a "${tabix}" \\
-    -h "${header}" \\
-    -c "CHROM,FROM,TO,${TAG}" \\
-    -O b \\
-    -o TMP/${prefix}.bcf '${vcf}'
+	--threads ${task.cpus} \\
+	-a "${tabix}" \\
+	-h "${header}" \\
+	-c "CHROM,FROM,TO,${TAG}" \\
+	--merge-logic '${TAG}:unique' \\
+	-O b \\
+	-o TMP/${prefix}.bcf '${vcf}'
 
-mv TMP/*.bcf ./
-mv TMP/*.bcf.csi ./
+mv TMP/${prefix}.bcf ./
+mv TMP/${prefix}.bcf.csi ./
+
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":

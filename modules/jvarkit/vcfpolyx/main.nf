@@ -23,49 +23,39 @@ SOFTWARE.
 
 */
 
-process BCFTOOLS_BCSQ {
-tag "${meta.id}"
-label "process_quick"
-afterScript "rm -rf TMP"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-when:
-    task.ext.when == null || task.ext.when
-input:
-	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai)
-   	tuple val(meta3),path(gff3),path(gff3_idx) 
-    tuple val(meta ),path(vcf),path(tbi)
+process JVARKIT_VCF_POLYX {
+	label "process_single"
+	conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+	afterScript "rm -rf TMP"
+	tag "${meta.id?:vcf.name}"
+	input:
+		tuple val(meta1),path(fasta)
+		tuple val(meta2),path(fai)
+		tuple val(meta3),path(dict)
+		tuple val(meta ),path(vcf),path(idx)
+	output:
+		tuple val(meta ),path("*.bcf"),path("*.bcf.csi"),emit:vcf
+		path("versions.yml"),emit:versions
+	script:
+		def size  = task.ext.size?:10
+		def args1 = task.ext.args1?:""
+		def args2 = task.ext.args2?:""
+		def prefix  = task.ext.prefix?:vcf.baseName+".polyx"
+		def tag = task.ext.tag?:"POLYX"
+	"""
+	hostname 1>&2
+	set -o pipefail
 
-output:
-    tuple val(meta ),path("*.bcf") ,path("*.csi"),emit:vcf
-    path("versions.yml"),emit:versions
-script:
-    def prefix=task.ext.prefix?:vcf.baseName+".bcsq"
-"""
-hostname 1>&2
-mkdir -p TMP
-              
-bcftools csq \\
-    --threads ${task.cpus} \\
-    -O b \\
-    --force \\
-    --local-csq \\
-    --ncsq 10000 \\
-    --fasta-ref "${fasta}" \\
-    --gff-annot "${gff3}" \\
-    -o TMP/${prefix}.bcf \\
-    "${vcf}"
+	mkdir -p TMP
 
-bcftools index \\
-    --threads ${task.cpus} \\
-    --force TMP/${prefix}.bcf
+	bcftools view  ${args1} "${vcf}" |\\
+	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfpolyx \\
+			-n '${size}' \\
+			--reference '${fasta}' \\
+			--tag "${tag}"   |\\
+	bcftools view ${args2} --write-index -O b -o TMP/${prefix}.bcf
 
-mv TMP/${prefix}.bcf ./
-mv TMP/${prefix}.bcf.csi ./
-
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
-END_VERSIONS
-"""
-}
+	mv TMP/${prefix}.bcf ./
+	mv TMP/${prefix}.bcf.csi ./
+	"""
+	}

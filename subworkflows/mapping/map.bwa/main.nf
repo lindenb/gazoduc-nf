@@ -28,9 +28,6 @@ include {SAMBAMBA_MARKDUP_01} from '../../modules/sambamba/sambamba.markdup.01.n
 include {SAMTOOLS_MERGE_01} from '../../modules/samtools/samtools.merge.01.nf'
 include {SAMTOOLS_BAM_TO_CRAM_01} from '../../modules/samtools/samtools.bam2cram.01.nf'
 include {MERGE_VERSION as MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
-include {GATK4_BASE_RECALIBRATOR_01} from '../../modules/gatk/gatk4.base.recalibration.01.nf'
-include {GATK4_GATHER_BQSR_01} from '../../modules/gatk/gatk4.gather.bqsr.01.nf'
-include {GATK4_APPLY_BQSR_01} from '../../modules/gatk/gatk4.apply.bqsr.01.nf'
 include {moduleLoad;isBlank;parseBoolean;getVersionCmd} from '../../modules/utils/functions.nf'
 include {SEQTK_SPLITFASTQ} from '../fastq/split.fastq.nf'
 include {ORA_TO_FASTQ}  from '../ora/ora2fastq.nf'
@@ -38,24 +35,33 @@ include {ORA_TO_FASTQ}  from '../ora/ora2fastq.nf'
 workflow MAP_BWA_01 {
 	take:
 		meta
-		genomeId
-		fastq_ch
+		fasta
+		fai
+		dict
+		fastqs
 	main:
-		version_ch = Channel.empty()
+		versions = Channel.empty()
+		def max_size = meta.max_size?:1_000_000_000L;
+	
+		choice = fastqs.branch {
+			big: it[1].size() >= max_size || (itsize()>2 && it[2].size() >= max_size)
+			small: true
+		}
 
-		fastq1_ch =  ORA_TO_FASTQ([:], fastq_ch)
-		version_ch = version_ch.mix(fastq1_ch.version)
+		fastq_ch2 =  SEQTK_SPLITFASTQ(choice.big)
+		versions = version_ch.mix(fastq_ch2.versions)
+
+
+		R1 = SEQTK_SPLITFASTQ.out.R1
+			.flatMap{T->T[1].map{[T[0],it]}}
+		R2 = SEQTK_SPLITFASTQ.out.R2
+			flatMap{T->T[1].map{[T[0],it]}}
+
+		r1r2_ch = R1.join(R2)
 
 	
-		fastq_ch2 =  SEQTK_SPLITFASTQ([:], fastq1_ch.output)
-		version_ch = version_ch.mix(fastq_ch2.version)
-
-		r1r2_ch= fastq_ch2.output.map{T->T.plus([
-			"genomeId":genomeId
-			])}
-	
-		bam1_ch = BWA_MEM_01([:], r1r2_ch)
-		version_ch = version_ch.mix(bam1_ch.version)
+		bam1_ch = BWA_MEM_01(fasta,fai,dict, r1r2_ch.mix(choice.small))
+		versions = version_ch.mix(bam1_ch.versions)
 	
 
 		merge_ch = SAMTOOLS_MERGE_01([:], genomeId, bam1_ch.output.map{T->[T[0].sample,T[1]] }.groupTuple())
@@ -65,23 +71,7 @@ workflow MAP_BWA_01 {
 		version_ch = version_ch.mix(markdup_ch.version)
 
 		if( parseBoolean(params.bwa.with_bqsr) ) {
-			beds_ch = CONTIGS_IN_BAM([:], genomeId, markdup_ch.bam)
-			version_ch = version_ch.mix(beds_ch.version)
-
-			brecal_ch = GATK4_BASE_RECALIBRATOR_01([:], beds_ch.output.splitCsv(header:true,sep:'\t'))
-			version_ch = version_ch.mix(brecal_ch.version)
-	
-			gather_ch = GATK4_GATHER_BQSR_01([:], brecal_ch.output.map{T->[
-				["sample":T[0].sample,"bam":T[0].bam],
-				T[1]
-				]}.groupTuple())
-			version_ch = version_ch.mix(gather_ch.version)
-
-		
-			applybqsr_ch = GATK4_APPLY_BQSR_01([:], gather_ch.output.map{T->
-				T[0].plus("table":T[1])
-				})
-			version_ch = version_ch.mix(applybqsr_ch.version)
+			
 		
 			cram_ch = SAMTOOLS_BAM_TO_CRAM_01([:],applybqsr_ch.bam.map{T->["sample":T[0],"bam":T[1],"genomeId":genomeId]})
 			version_ch = version_ch.mix(cram_ch.version)
@@ -97,42 +87,3 @@ workflow MAP_BWA_01 {
 		version= version_ch.version
 		bams = cram_ch.output
 	}
-
-process CONTIGS_IN_BAM {
-tag "${sample} ${bam.name}"
-executor "local"
-input:
-	val(meta)
-	val(genomeId)
-	tuple val(sample),val(bam)
-output:
-	path("bam.contigs.tsv"),emit:output
-	path("version.xml"),emit:version
-script:
-	def genome = params.genomes[genomeId]
-	def reference = genome.fasta
-"""
-hostname 1>&2
-${moduleLoad("samtools jvarkit")}
-set -o pipefail
-mkdir -p TMP
-
-samtools idxstats "${bam}" |\
-	 awk -F '\t' '(\$3!=0 && \$1!="*") {printf("%s\t0\t%s\\n",\$1,\$2);}' |\
-	 java -jar \${JVARKIT_DIST}/bedcluster.jar --reference "${reference}" -o TMP  ${meta.bqsr_cluster_method?:""}
-	 
-	 echo -e 'sample\tbam\tbed\tgenomeId' > bam.contigs.tsv
-	 find \${PWD}/TMP -type f -name "*.bed" |\
-                awk -F '\t' '{printf("${sample}\\t${bam}\\t%s\\t${genomeId}\\n",\$0);}' >> bam.contigs.tsv
-
-###########################################################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-       	<entry key="name">${task.process}</entry>
-        <entry key="description">bam to bed</entry>
-        <entry key="recalGroup">${meta.bqsr_cluster_method}</entry>
-        <entry key="versions">${getVersionCmd("samtools jvarkit/bedcluster awk")}</entry>
-</properties>
-EOF
-"""
-}

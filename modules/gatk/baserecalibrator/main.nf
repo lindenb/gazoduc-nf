@@ -22,48 +22,39 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {moduleLoad} from './../utils/functions.nf'
 
-process GATK4_GATHER_BQSR_01 {
-tag "${key.sample} ${key.bam} N=${L.size()}"
-cache 'lenient'
-memory '5g'
-cpus 1
+process GATK4_BASE_RECALIBRATOR {
+tag "${meta.id?:bam.nam}"
+label "process_single"
 afterScript 'rm -rf TMP'
 input:
-	val(meta)
-	tuple val(key),val(L)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta3),path(dict)
+	tuple val(meta4),path(known),path(known_idx)
+	tuple val(meta ),path(bam),path(bai),path(optional_bed)
 output:
-        tuple val(key),path("${key.sample}.recal.table"),emit:output
-        path("version.xml"),emit:version
+	tuple val(row),path("*.recal.table"),emit:table
+	path("versions.yml"),emit:versions
 script:
+	
+	def bedarg = (optional_bed?"-L \"${optional_bed}\"":"")
+	def prefix = task.ext.prefix?:meta.id+(optional_bed?"."+optional_bed.baseName:"")+".recal"
 """
 hostname 1>&2
-${moduleLoad("gatk4")}
+mkdir TMP
 
-mkdir -p TMP
+gatk --java-options "-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP" BaseRecalibrator \\
+	-I "${bam}" \\
+	 ${bedarg} \\
+	 ${known?"--known-sites ${known}":""} \\
+	-O "${prefix}.table" \\
+	-R "${fasta}"
 
-# allele specific annotation are not supported in non-gvcf mode
-gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" GatherBQSRReports \
-	${L.collect(V->"-I "+V).join(" ")} \
-	-O "${key.sample}.recal.table" 
-
-###########################################################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="description">gatk GatherBQSRReports</entry>
-	<entry key="sample">${key.sample}</entry>
-	<entry key="bam">${key.bam}</entry>
-	<entry key="count">${L.size()}</entry>
-	<entry key="gatk.version">\$( gatk --version 2> /dev/null  | paste -s -d ' ' )</entry>
-</properties>
+cat << EOF > version.yml
+${task.process}:
+    gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
 EOF
 """
 
-stub:
-"""
-touch "${key.sample}.recal.table"
-echo "<properties/>" > version.xml
-"""
 }

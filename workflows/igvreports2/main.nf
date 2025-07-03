@@ -45,7 +45,14 @@ def toLoc(def row) {
 	}
 
 workflow {
-	 genome = Channel.of(file(params.fasta), file(params.fai), file(params.dict)).collect()
+	 def genome_hash = [
+		id : file(params.fasta).simpleName,
+		name: file(params.fasta).simpleName
+	 	]
+	 def fasta = [genome_hash, file(params.fasta) ]
+	 def fai = [genome_hash, file(params.fai) ]
+	 def dict = [genome_hash, file(params.dict) ]
+	 
 	 bams_ch = Channel.fromPath(params.bams).
 		splitText().
 		map{it.trim()}.
@@ -68,7 +75,7 @@ workflow {
 			set{contig_pos_bams_ch}
 
 
-         	covpos_ch = FIND_COVERAGE_AT_LOC(genome,contig_pos_bams_ch)
+        covpos_ch = FIND_COVERAGE_AT_LOC(fasta,fai,dict,contig_pos_bams_ch)
 		ch1 = covpos_ch.output.map{[ [it[0],it[1]], it[2]]}.groupTuple()
 		ch2 = MERGE_COVERAGE_AT_LOC(file(params.sample2collection), ch1)
 		
@@ -80,12 +87,12 @@ workflow {
 			map{[it[0][0],it[0][1],it[0][2],it[0][3],it[1]]}
 
 		ch4.view()
-		cyto_ch = DOWNLOAD_CYTOBAND(genome)
+		cyto_ch = DOWNLOAD_CYTOBAND(fasta,fai,dict)
 
-		refgene_ch = DOWNLOAD_REFGENE(genome)
+		refgene_ch = DOWNLOAD_REFGENE(fasta,fai,dict)
 
 		report_ch = APPLY_IGVREPORT(
-			genome,
+			fasta,fai,dict,
 			cyto_ch.output,
 			refgene_ch.output,
 			ch4
@@ -111,12 +118,13 @@ tag "${contig}:${pos} N=${bams.size()}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
-	path(genome)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta3),path(dict)
 	tuple val(contig),val(pos),val(bams)
 output:
 	tuple val(contig),val(pos),path("*.tsv"),emit:output
 script:
-	def fasta = genome.find{it.name.endsWith("a")}
 """
 set -o pipefail
 mkdir -p TMP
@@ -246,15 +254,16 @@ label "process_quick"
 conda "${moduleDir}/../../conda/igv-reports.yml"
 //afterScript "rm -rf TMP"
 input:
-	path(genome)
-	path(cytoband)
-	path(refgene)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta3),path(dict)
+	tuple val(meta4),path(cytoband)
+	tuple val(meta5),path(refgene)
 	tuple val(contig),val(pos),val(page),val(page_max),val(bams)
 output:
 	tuple val(contig),val(pos),path("page${page}.html"),emit:output
 script:
 	def title = contig+"_"+pos
-	def fasta = genome.find{it.name.endsWith("a")}
 	def refgene2 = refgene.find{it.name.endsWith(".txt.gz")}.join(" ")
 	def pagei = (page as int)
 	def page_maxi = (int)(page_max as double)

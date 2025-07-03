@@ -24,7 +24,7 @@ SOFTWARE.
 
 include {k1_signature} from '../../utils/k1.nf'
 
-process DOWNLOAD_GENCODE {
+process DOWNLOAD_GTF_OR_GFF3 {
 tag "${fasta.name}"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
@@ -35,6 +35,7 @@ input:
 	tuple val(meta3),path(dict)
 output:
 	tuple val(meta1),path("*.gz"), path("*.gz.tbi"),emit:output
+	path("versions.yml"),emit:versions
 script:
 	def k1 = k1_signature()
 	if(task.ext==null || task.ext.suffix==null) throw new IllegalArgumentException("suffix missing for ${task}");
@@ -65,6 +66,12 @@ gunzip -c TMP/gencode.txt.gz |\\
 		bgzip > "${fasta.baseName}.${extension}.gz"
 
 tabix -f -p gff  "${fasta.baseName}.${extension}.gz"
+
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	bcftools: "\$(tabix version | awk '(NR==1) {print \$NF;}')"
+	URL: "\$(cat TMP/jeter.url)"
+END_VERSIONS
 """
 }
 

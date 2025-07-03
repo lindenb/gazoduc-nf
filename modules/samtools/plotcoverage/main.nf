@@ -1,5 +1,6 @@
 /*
-Copyright (c) 2025 Pierre Lindenbaum
+
+Copyright (c) 2024 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -22,56 +23,63 @@ SOFTWARE.
 
 */
 
-include {k1_signature} from '../../utils/k1.nf'
+include {moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
 
-
-process DOWNLOAD_CYTOBAND {
-tag "${meta1.id?:fasta.name}"
-label "process_quick"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+process SAMTOOLS_DEPTH_PLOT_COVERAGE {
+tag "${row.bam}"
 afterScript "rm -rf TMP"
+cpus 1
 input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)
 	tuple val(meta3),path(dict)
+	tuple val(meta4),path(gtf),path(gtfidx)
+	tuple val(meta ),path("BAMS/*")
 output:
-	tuple val(meta1),path("*.cytoBandIdeo.txt"),emit:output
+	tuple val(meta),val("*.pdf"),emit:pdf
 	path("versions.yml"),emit:versions
 script:
-	def k1 = k1_signature()
-	def base = "https://hgdownload.cse.ucsc.edu/goldenPath"
-	def prefix = task.ext.prefix?:fasta.baseName
+	def prefix = row.prefix?:""
+	def contig = row.contig
+	def start = row.start
+	def end = row.end
+	def mapq = row.mapq?:1
+
 """
 hostname 1>&2
+set -x
 mkdir -p TMP
-set -o pipefail
-
-cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:${k1.hg19}\t${base}/hg19/database/cytoBandIdeo.txt.gz
-1:${k1.hg38}\t${base}/hg38/database/cytoBandIdeo.txt.gz
-1:${k1.canFam3}\t${base}/canFam3/database/cytoBandIdeo.txt.gz
-1:${k1.canFam4}\t${base}/canFam4/database/cytoBandIdeo.txt.gz
-EOF
-
-awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' |\\
-	sed 's/^chr//' |\\
-	sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
-
-join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv |\\
-	sort | uniq > TMP/jeter.url
-
-test -s TMP/jeter.url
+find BAMS/ -name "*.bam" -o -name "*.cram" | sort > TMP/bams.list
 
 
-wget -O TMP/cytoBandIdeo.txt.gz `cat TMP/jeter.url`
+echo "SN\tDEPTH\tmaxDP" > TMP/depths.tsv
 
-gunzip -c TMP/cytoBandIdeo.txt.gz |\\
-		jvarkit bedrenamechr -f "${fasta}" --column 1 --convert SKIP > "${prefix}.cytoBandIdeo.txt" 
+# call samtools depth
+cat "TMP/bams.list" | samtools samples  | cut -f1,2 | while read SN BAM
+do
+	
+	samtools depth  -a -r "${contig}:${start}-${end}" "\${BAM}" | cut -f 2,3 > TMP/\${SN}.depth.txt
+	echo -n "\${SN}\tTMP/\${SN}.depth.txt\t" >> TMP/depths.tsv
+	# get max cov
+	cut -f2 TMP/\${SN}.depth.txt | sort -T . -n | tail -1 >> TMP/depths.tsv
+done
 
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-	url: "\${`cat TMP/jeter.url`}"
-END_VERSIONS
+# exons
+echo "contig\tstart\tend" > TMP/exons.bed
+if ${meta.containsKey("gtf")} ; then
+	tabix "${meta.gtf}"  "${contig}:${start}-${end}" |\
+	awk -F '\t' '(\$3=="exon")' |\
+	cut -f1,4,5 | sort -T TMP | uniq >> TMP/exons.bed
+fi
+
+
+cat "${moduleDir}/plot.R" |\\
+	m4 -D__CONTIG__=${contig} \\
+		-D__START__=${start} \\
+		-D__END__=${end}  > TMP/jeter.R
+
+R --vanilla < TMP/jeter.R
+
+
 """
 }
-

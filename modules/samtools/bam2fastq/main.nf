@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2025 Pierre Lindenbaum
+Copyright (c) 2024 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -23,49 +23,73 @@ SOFTWARE.
 
 */
 
-process BCFTOOLS_BCSQ {
-tag "${meta.id}"
-label "process_quick"
+
+process BAM_TO_FASTQ {
+label "process_medium"
+tag "${meta.id?:bam.name}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-when:
-    task.ext.when == null || task.ext.when
 input:
-	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai)
-   	tuple val(meta3),path(gff3),path(gff3_idx) 
-    tuple val(meta ),path(vcf),path(tbi)
-
+	tuple val(meta),path(bam),path(bai),path(fasta),path(fai),path(optional_bed)
 output:
-    tuple val(meta ),path("*.bcf") ,path("*.csi"),emit:vcf
-    path("versions.yml"),emit:versions
+	tuple val(meta),
+			path("*.paired.R1.fq.gz"),
+			path("*.paired.R2.fq.gz"),
+			path("*.singleton.fq.gz"),
+			path("*.other.fq.gz"),emit:fastq
+	path("version.yml"),emit:versions
 script:
-    def prefix=task.ext.prefix?:vcf.baseName+".bcsq"
+	def has_bed = optional_bed?true:false
+	def fetch_pairs = task.attempt==1?" --fetch-pairs ":""
+	def sample = meta.id?:bam.baseName
 """
 hostname 1>&2
+set -o pipefail
+
 mkdir -p TMP
-              
-bcftools csq \\
-    --threads ${task.cpus} \\
-    -O b \\
-    --force \\
-    --local-csq \\
-    --ncsq 10000 \\
-    --fasta-ref "${fasta}" \\
-    --gff-annot "${gff3}" \\
-    -o TMP/${prefix}.bcf \\
-    "${vcf}"
 
-bcftools index \\
-    --threads ${task.cpus} \\
-    --force TMP/${prefix}.bcf
 
-mv TMP/${prefix}.bcf ./
-mv TMP/${prefix}.bcf.csi ./
+# extract reads
+if ${has_bed}
+then
+	samtools view  \\
+		--fast \\
+		--threads ${task.cpus} \\
+		${fetch_pairs} \\
+		--reference "${fasta}" \\
+		-M \\
+		-O BAM \\
+		-o TMP/jeter.bam \\
+		--regions-file "${optional_bed}" \\
+		"${bam}"
+fi
+
+
+# collate
+samtools collate \\
+	-f \\
+	--threads ${(task.cpus as int) -1} \\
+	-O \\
+	-u -\\
+	-no-PG \\
+	--reference "${fasta}" \\
+	"${has_bed ? "TMP/jeter.bam":"${bam}"}" TMP/tmp.collate |\\
+	samtools fastq \\
+		-n \\
+		--threads 1 \\
+		-1 TMP/${sample}.paired.R1.fq.gz \\
+		-2 TMP/${sample}.paired.R2.fq.gz \\
+		-s TMP/${sample}.singleton.fq.gz \\
+		-0 TMP/${sample}.other.fq.gz
+
+
+
+mv -v TMP/${sample}*.fq.gz ./
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
+	samtools: "\$(samtools version | awk '(NR==1) {print \$NF;}')"
 END_VERSIONS
 """
 }
+

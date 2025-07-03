@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2025 Pierre Lindenbaum
+Copyright (c) 2024 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -23,49 +23,31 @@ SOFTWARE.
 
 */
 
-process BCFTOOLS_BCSQ {
-tag "${meta.id}"
-label "process_quick"
-afterScript "rm -rf TMP"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-when:
-    task.ext.when == null || task.ext.when
+process GATK4_GATHER_BQSR {
+tag "${meta.id?:""}"
+label "process_single"
+afterScript 'rm -rf TMP'
 input:
-	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai)
-   	tuple val(meta3),path(gff3),path(gff3_idx) 
-    tuple val(meta ),path(vcf),path(tbi)
-
+	tuple val(meta),path("TABLES/*")
 output:
-    tuple val(meta ),path("*.bcf") ,path("*.csi"),emit:vcf
+    tuple val(meta),path("*.recal.table"),emit:table
     path("versions.yml"),emit:versions
 script:
-    def prefix=task.ext.prefix?:vcf.baseName+".bcsq"
 """
 hostname 1>&2
 mkdir -p TMP
-              
-bcftools csq \\
-    --threads ${task.cpus} \\
-    -O b \\
-    --force \\
-    --local-csq \\
-    --ncsq 10000 \\
-    --fasta-ref "${fasta}" \\
-    --gff-annot "${gff3}" \\
-    -o TMP/${prefix}.bcf \\
-    "${vcf}"
 
-bcftools index \\
-    --threads ${task.cpus} \\
-    --force TMP/${prefix}.bcf
+find TABLES/ -name "*.table" |\\
+	awk '{printf("-I %s\\n",\$0);}' > TMP/arguments.list
 
-mv TMP/${prefix}.bcf ./
-mv TMP/${prefix}.bcf.csi ./
+gatk --java-options "-Xmx${task.memory.giga}g  -XX:-UsePerfData  -Djava.io.tmpdir=TMP" GatherBQSRReports \
+	--arguments_file  TMP/arguments.list \\
+	-O "${meta.id}.recal.table" 
 
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
-END_VERSIONS
+cat << EOF > version.yml
+${task.process}:
+    gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
+EOF
 """
+
 }

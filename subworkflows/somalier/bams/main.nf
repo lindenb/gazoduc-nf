@@ -23,18 +23,19 @@ SOFTWARE.
 
 */
 
-include {moduleLoad;assertFileExists;isBlank} from '../../modules/utils/functions.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 //include {DOWNLOAD_SOMALIER} from '../../modules/somalier/somalier.download.nf'
-include {SOMALIER_DOWNLOAD_SITES} from '../../modules/somalier/somalier.download.sites.nf'
+include {SOMALIER_DOWNLOAD_SITES} from '../../../modules/somalier/download.sites/main.nf'
 //include {SAMTOOLS_SAMPLES} from '../samtools/samtools.samples.03.nf'
 
 
 
 
-workflow SOMALIER_BAMS_01 {
+workflow SOMALIER_BAMS {
 	take:
-		genome // [fasta,fai,dict]
+		meta
+		fasta
+		fai
+		dict
 		samplesheet // sample,bam,bai
 		pedigree // pedigree for somalier
 		user_sites //file or no file
@@ -43,28 +44,30 @@ workflow SOMALIER_BAMS_01 {
 
 
 
-		if(user_sites.name.equals("NO_FILE")) {
-			sites_ch = SOMALIER_DOWNLOAD_SITES(genome)
-			//version_ch = version_ch.mix(sites_ch.version)
-			sites_vcf= sites_ch.output
-			}
-		else {
+		if(user_sites[1]) {
 			sites_vcf = Channel.of(user_sites).
 				map{[file(it),file(it+".tbi")]}.collect()
 			}
+		else
+			{
+			SOMALIER_DOWNLOAD_SITES(fasta,fai,dict)
+			version_ch = version_ch.mix(SOMALIER_DOWNLOAD_SITES.out.versions)
+			sites_vcf= SOMALIER_DOWNLOAD_SITES.out.vcf
+			}
 
-		ch3 = EXTRACT_BAM(genome, sites_vcf, samplesheet)
-		version_ch = version_ch.mix(ch3.version)
+		EXTRACT_BAM(fasta,fai,dict, sites_vcf, samplesheet)
+		version_ch = version_ch.mix(EXTRACT_BAM.out.versions.first())
 	
-		somalier_ch = RELATE_SOMALIER(genome, ch3.output.collect(), pedigree)
-		version_ch = version_ch.mix(somalier_ch.version)
-
-			
-		//version_ch = MERGE_VERSION( "somalier",version_ch.collect())
+		RELATE_SOMALIER(
+			fasta,fai,dict,
+			EXTRACT_BAM.out.output.collect(),
+			pedigree
+			)
+		version_ch = version_ch.mix(RELATE_SOMALIER.out.versions)
 
 	emit:
-		output = somalier_ch.output
-		//version = version_ch
+		output = RELATE_SOMALIER.out.output
+		versions = version_ch
 		zip = somalier_ch.zip
 		qc = somalier_ch.qc
 
@@ -72,35 +75,31 @@ workflow SOMALIER_BAMS_01 {
 
 
 process EXTRACT_BAM {
-	tag "${sample}"
+	tag "${meta.id?:bam.name}"
 	label "process_quick"
 	conda "${moduleDir}/../../conda/somalier.yml"
 	memory '2g'
 	input:
-		path(genome)
-		path(site_files)
-		tuple val(sample),path(bam),path(bai)
+		tuple val(meta1),path(fasta)
+		tuple val(meta2),path(fai)
+		tuple val(meta3),path(dict)
+		tuple val(meta4),path(sites),path(sites_idx)
+		tuple val(meta),path(bam),path(bai)
 	output:
-		path("extracted/${sample}.somalier"),emit:output
-		path("version.xml"),emit:version
+		path("extracted/*.somalier"),emit:output
+		path("versions.yml"),emit:versions
 	script:
-		def sites = site_files.find{it.name.endsWith(".vcf.gz")}
-		def fasta = genome.find{it.name.endsWith("a")}
 	"""
 	hostname 1>&2
 	mkdir -p extracted
 	somalier extract -d extracted --sites "${sites}" -f "${fasta}" "${bam}"
 	
-	test -s "extracted/${sample}.somalier"
+	test -s "extracted/${meta.id}.somalier"
 
-##################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">somalier extract</entry>
-        <entry key="sample">${sample}</entry>
-        <entry key="bam">${bam}</entry>
-</properties>
+
+cat << EOF > versions.yml
+${task.process}:
+    somalier: todo
 EOF
 	"""
 	}
@@ -110,18 +109,19 @@ process RELATE_SOMALIER {
 afterScript "rm -rf extracted TMP"
 conda  "${moduleDir}/../../conda/somalier.yml"
 input:
-	path(genome)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta3),path(dict)
 	path("EXTRACT/*")
-	path(pedigree)
+	tuple val(meta4),path(pedigree)
 output:
-	path("${params.prefix?:""}somalier.bams/*"),emit:output
-	path("${params.prefix?:""}somalier.bams.zip"),emit:zip
-	path("${params.prefix?:""}somalier_mqc.html"),emit:qc
-	path("version.xml"),emit:version
+	path("somalier.bams/*"),emit:output
+	path("somalier.bams.zip"),emit:zip
+	path("somalier_mqc.html"),emit:qc
+	path("versions.yml"),emit:versions
 script:
-	def fasta = genome.find{it.name.endsWith("a")}
 	def max_rows_html = 50
-	def prefix=params.prefix?:""
+	def prefix=task.ext.prefix?:""
 """
 hostname 1>&2
 set -x
@@ -130,7 +130,7 @@ mkdir -p TMP
 mkdir -p "${prefix}somalier.bams"
 
 somalier relate --output-prefix=${prefix}somalier.bams/${prefix}bams \\
-	${pedigree.name.equals("NO_FILE")?"":"-p '${pedigree}'"} \\
+	${pedigree?"-p '${pedigree}'":""} \\
 	EXTRACT/*.somalier
 
 # may not exist
@@ -186,13 +186,9 @@ EOF
 
 mv -v  TMP/jeter.html "${prefix}somalier_mqc.html"
 
-##################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">run somalier on bams</entry>
-        <entry key="pedigree">${pedigree}</entry>
-</properties>
+cat << EOF > versions.yml
+${task.process}:
+    somalier: todo
 EOF
 """
 }
