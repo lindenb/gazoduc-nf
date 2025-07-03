@@ -45,8 +45,7 @@ workflow SOMALIER_BAMS {
 
 
 		if(user_sites[1]) {
-			sites_vcf = Channel.of(user_sites).
-				map{[file(it),file(it+".tbi")]}.collect()
+			sites_vcf = user_sites
 			}
 		else
 			{
@@ -55,7 +54,31 @@ workflow SOMALIER_BAMS {
 			sites_vcf= SOMALIER_DOWNLOAD_SITES.out.vcf
 			}
 
-		EXTRACT_BAM(fasta,fai,dict, sites_vcf, samplesheet)
+		/*
+		samplesheet can be
+			META BAM BAI
+		or
+			META BAM BAI FASTA FAI
+
+		if this is the first option, add FASTA and FAI
+		*/
+		ch1 = samplesheet.branch {
+				tuple5: it.size()==5
+				tuple3: it.size()==3
+				other:true
+				}
+
+		ch1.other.map{throw new IllegalArgumentException("bad input for somalier ${it} size=${it.size()}");}
+
+
+
+		ch2 = ch1.tuple3
+			.map{ it+[fasta[1],fai[1]] }
+			.mix( ch1.tuple5)
+
+
+
+		EXTRACT_BAM(sites_vcf, ch2)
 		version_ch = version_ch.mix(EXTRACT_BAM.out.versions.first())
 	
 		RELATE_SOMALIER(
@@ -76,15 +99,12 @@ workflow SOMALIER_BAMS {
 
 process EXTRACT_BAM {
 	tag "${meta.id?:bam.name}"
-	label "process_quick"
+	label "process_single"
 	conda "${moduleDir}/../../../conda/somalier.yml"
-	memory '2g'
+	array 100
 	input:
-		tuple val(meta1),path(fasta)
-		tuple val(meta2),path(fai)
-		tuple val(meta3),path(dict)
-		tuple val(meta4),path(sites),path(sites_idx)
-		tuple val(meta),path(bam),path(bai)
+		tuple val(meta1),path(sites),path(sites_idx)
+		tuple val(meta),path(bam),path(bai),path(fasta),path(fai)
 	output:
 		path("extracted/*.somalier"),emit:output
 		path("versions.yml"),emit:versions
@@ -94,7 +114,7 @@ process EXTRACT_BAM {
 	mkdir -p extracted
 	somalier extract -d extracted --sites "${sites}" -f "${fasta}" "${bam}"
 	
-	test -s "extracted/${meta.id}.somalier"
+	test -s extracted/*.somalier
 
 
 cat << EOF > versions.yml

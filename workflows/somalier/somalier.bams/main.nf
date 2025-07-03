@@ -64,15 +64,20 @@ workflow {
 		fasta,
 		fai,
 		dict,
-		Channel.fromPath(params.samplesheet).
-			splitCsv(header:true,sep:',').
-			map{
+		Channel.fromPath(params.samplesheet)
+			.splitCsv(header:true,sep:',')
+			.map{
 				if(!it.containsKey("sample")) throw new IllegalArgumentException("sample missing");
 				if(!it.containsKey("bam")) throw new IllegalArgumentException("bam missing");
 				if(!it.containsKey("bai")) throw new IllegalArgumentException("bai missing");
-				return it;
-				}.
-			map{[[id:it.sample],file(it.bam),file(it.bai)]},
+				def key=  [id:it.sample];
+				if(it.containsKey("fasta") && !it.fasta.trim().isEmpty()) {
+					def fasta2 = it.fasta
+					def fai2 = (it.containsKey("fai") && !it.fasta.trim().isEmpty()? it.fai : fasta2 +".fai")
+					return [key,file(it.bam),file(it.bai),file(fasta2),file(fai2)]
+					}
+				return [key,file(it.bam),file(it.bai)]
+				},
 		pedigree,
 		sites
 		)

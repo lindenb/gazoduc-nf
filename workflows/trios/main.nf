@@ -14,6 +14,7 @@ include {ANNOTATE_SV                              } from '../../subworkflows/ann
 include {BCTOOLS_SETGT  as NO_CALL_TO_HOM_REF     } from '../../modules/bcftools/setgt/main.nf'
 include {BCTOOLS_MENDELIAN2                       } from '../../modules/bcftools/mendelian2/main.nf'
 include {HET_COMPOSITE  as APPPLY_HET_COMPOSITE   } from '../../modules/jvarkit/hetcomposite/main.nf'
+include {BCFTOOL_CONCAT                           } from '../../modules/bcftools/concat/main.nf'
 
 
 Map assertKeyExists(final Map hash,final String key) {
@@ -116,9 +117,9 @@ workflow {
             fasta,
             fai,
             dict,
-            DOWNLOAD_GFF3.out.output,
+            DOWNLOAD_GTF.out.output,
             pedigree,
-            vcfs.sv.take(0)//TODO
+            vcfs.sv.take(10)//TODO
         )
 
 
@@ -273,7 +274,13 @@ cat << EOF > TMP/jeter.code
 final Set<String> controls = new HashSet<>(Arrays.asList(
 EOF
 
-awk '(\$3=="0" && \$4=="0") {printf("\"%s\"\\n",\$2);}' "${pedigree}" |paste -s -d, >> TMP/jeter.code
+awk '(\$3=="0" && \$4=="0") {print \$2;}' "${pedigree}" | sort| uniq > TMP/jeter.controls
+
+comm -13 <(cut -f2  "${pedigree}" | sort | uniq) \\
+     <(bcftools query -l "${vcf}"| sort | uniq)  >> TMP/jeter.controls
+
+
+ awk '{printf("\"%s\"\\n",\$2);}' TMP/jeter.controls | paste -s -d, >> TMP/jeter.code
 
 cat << EOF >> TMP/jeter.code
 ));
@@ -380,17 +387,20 @@ process MERGE_AND_FILTER {
     """
 }
 
+/********************************************************************************************
+ * STRUCTURAL_VARIANTS
+ */
 workflow STRUCTURAL_VARIANTS {
     take:
         meta
         fasta
         fai
         dict
-        gff3
+        gtf
         pedigree
         vcfsv
     main:
-
+        versions = Channel.empty()
         TRUVARI(
 	        [id:"truvari"],
             fasta,
@@ -403,15 +413,19 @@ workflow STRUCTURAL_VARIANTS {
             fasta,
             fai,
             dict,
-            gff3,
+            gtf,
             TRUVARI.out.vcf
         )
         
         NO_CALL_TO_HOM_REF(ANNOTATE_SV.out.vcf)
         BCTOOLS_MENDELIAN2(fai, pedigree, NO_CALL_TO_HOM_REF.out.vcf)
-
+    emit:
+        versions
 }
 
+/********************************************************************************************
+ * HET_COMPOSITE
+ */
 workflow HET_COMPOSITE {
     take:
         meta
@@ -421,12 +435,31 @@ workflow HET_COMPOSITE {
         pedigree
         vcfs
     main:
-        FILTER_FOR_HET_COMPOSITE(vcfs
-            .map{[it[1],it[2]]})
-            .collect()
-            .map{[meta,it.flatten()]}
+        versions = Channel.empty()
+
+        BCFTOOL_CONCAT(
+            vcfs
+                .map{[it[1],it[2]]})
+                .collect()
+                .map{[meta,it.flatten()]},
+            [[:],[]]//NO BED
             )
-        HET_COMPOSITE(FILTER_FOR_HET_COMPOSITE.out.vcf)
+        versions = versions.mix(BCFTOOL_CONCAT.out.versions)
+
+        FILTER_FOR_HET_COMPOSITE(BCFTOOL_CONCAT.out.vcf)
+        versions = versions.mix(FILTER_FOR_HET_COMPOSITE.out.versions)
+        
+        APPPLY_HET_COMPOSITE(
+                fasta,
+                fai,
+                dict,
+                pedigree,
+                FILTER_FOR_HET_COMPOSITE.out.vcf
+                )
+        versions = versions.mix(APPPLY_HET_COMPOSITE.out.versions)
+    emit:
+        vcf = APPPLY_HET_COMPOSITE.out.vcf
+        versions
 }
 
 process FILTER_FOR_HET_COMPOSITE {
@@ -436,15 +469,19 @@ process FILTER_FOR_HET_COMPOSITE {
     afterScript "rm -rf TMP"
     input:
         tuple val(meta),path("VCFS/*")
+        path("versions.yml"),emit:versions
     output:
         tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
     script:
         def prefix = task.ext.prefix?:meta.id+".filterhetcomposite"
         """
+        //TODO
         mkdir -p TMP
         find VCFS/ -name "*.vcf.gz" -o -name "*.bcf" > TMP/jeter.list
         bcftools concat -a --file-list TMP/jeter.list -O u |\\
         bcftools view --apply-filters '.,PASS' --write-index -O b -o ${prefix}.bcf
+
+        touch versions.yml
         """
     }
 
