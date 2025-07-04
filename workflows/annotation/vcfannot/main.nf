@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -27,27 +27,26 @@ nextflow.enable.dsl=2
 include {moduleLoad;runOnComplete} from '../../../modules/utils/functions.nf'
 include {ANNOTATE_VCF_01} from '../../../subworkflows/annotation/annotation.vcf.01.nf'
 include {MERGE_VERSION} from '../../../modules/version/version.merge.02.nf'
-include {JVARKIT_VCF_TO_INTERVALS_01} from '../../../subworkflows/jvarkit/jvarkit.vcf2intervals.nf'
+include {JVARKIT_VCF_TO_INTERVALS_01} from '../../../subworkflows/jvarkit/vcf2intervals/main.nf'
 include {COLLECT_TO_FILE_01} from '../../../modules/utils/collect2file.01.nf'
 include {BCFTOOLS_CONCAT_01} from '../../../subworkflows/bcftools/bcftools.concat.01.nf'
 include {VCF_TO_BED} from '../../../modules/bcftools/vcf2bed.01.nf'
 
 
 workflow {
-	ann_ch = ANNOTATE_VCF(params.genomeId, file(params.vcf), file(params.bed), file(params.pedigree))
-	}
+	version_ch = Channel.empty()
+	def ref_hash = [
+		id: file(params.fasta).baseName,
+		name: file(params.fasta).baseName
+		]
+	def fasta = [ ref_hash, file(params.fasta) ]
+	def fai =   [ ref_hash, file(params.fai) ]
+	def dict =  [ ref_hash, file(params.dict) ]
+	def dict =  [ [id:"pedigree"], params.pedigree==null? [] : file(params.pedigree) ]
 
+	
 
-workflow ANNOTATE_VCF {
-	take:
-		genomeId
-		vcf
-		bed
-		pedigree
-	main:
-		version_ch = Channel.empty()
-
-			vcf2intervals_ch = JVARKIT_VCF_TO_INTERVALS_01([distance: params.vcf2interval_distance,min_distance:200], vcf,file("NO_FILE"))
+	vcf2intervals_ch = JVARKIT_VCF_TO_INTERVALS_01([distance: params.vcf2interval_distance,min_distance:200], vcf,file("NO_FILE"))
 			version_ch = version_ch.mix(vcf2intervals_ch.version)
 
 			ch1_ch = vcf2intervals_ch.bed.splitCsv(sep:'\t',header:false).map{T->[
