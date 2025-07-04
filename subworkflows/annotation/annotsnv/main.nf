@@ -24,7 +24,12 @@ SOFTWARE.
 */
 
 include {ALPHAMISSENSE} from '../alphamissense/main.nf'
+include {BHFUCL} from '../bhfucl/main.nf'
+include {SNPEFF} from '../snpeff/main.nf'
+include {RMSK} from '../rmsk/main.nf'
 include {BCFTOOLS_BCSQ} from  '../../../modules/bcftools/bcsq/main.nf'
+include {JVARKIT_VCF_POLYX} from  '../../../modules/jvarkit/vcfpolyx/main.nf'
+include {VEP} from '../vep/main.nf'
 
 /*
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
@@ -41,7 +46,6 @@ include {ANNOTATE_REMAP} from './step.remap.nf'
 include {ANNOTATE_GNOMADSV} from './step.gnomadsv.nf'
 include {ANNOTATE_REGFEATURES} from './step.regfeatures.nf'
 include {ANNOTATE_AVADA} from './step.avada.nf'
-include {ANNOTATE_VEP} from './step.vep.nf'
 include {ANNOTATE_GNOMAD_GENOME} from './step.gnomad.genome.nf'
 include {ANNOTATE_CONTRAST} from './step.contrast.nf'
 include {ANNOTATE_POLYX} from './step.polyx.nf'
@@ -99,6 +103,31 @@ workflow ANNOTATE {
 		BCFTOOLS_BCSQ(fasta, fai, dict, gff3, vcf)
 		versions = versions.mix(BCFTOOLS_BCSQ.out.versions)
 		vcf = BCFTOOLS_BCSQ.out.vcf
+
+		step_ch = SNPEFF(meta, fasta, fai, dict, vcf)
+		versions = versions.mix(SNPEFF.out.versions)
+		vcf = SNPEFF.out.vcf
+
+
+		JVARKIT_VCF_POLYX(fasta,fai,dict,vcf)
+		versions = versions.mix(JVARKIT_VCF_POLYX.out.versions)
+		vcf = JVARKIT_VCF_POLYX.out.vcf
+		
+		CLINVAR(meta,fasta,fai,dict,NO_BED,vcf)
+		versions = versions.mix(CLINVAR.out.versions)
+		vcf = CLINVAR.out.vcf
+
+
+		RMSK(meta, fasta, fai, dict,vcf)
+		versions = versions.mix(RMSK.out.versions)
+		vcf = RMSK.out.vcf
+
+		BHFUCL(meta, fasta, fai, dict, gtf, vcf)
+		versions = versions.mix(BHFUCL.out.versions)
+		vcf = BHFUCL.out.vcf
+
+
+
 		/*
 		step_ch = STEP_FIRST(rows)
 		step_ch = ANNOTATE_RMSK(genomeId, bed, step_ch.output)
@@ -109,21 +138,13 @@ workflow ANNOTATE {
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 		
-		step_ch = ANNOTATE_BCSQ(genomeId, bed, step_ch.output)
-		count_ch = count_ch.mix(step_ch.count)
-		doc_ch = count_ch.mix(step_ch.doc)
 		
-		step_ch = ANNOTATE_CLINVAR(genomeId, bed, step_ch.output)
-		count_ch = count_ch.mix(step_ch.count)
-		doc_ch = count_ch.mix(step_ch.doc)
+		
 		
 		step_ch = ANNOTATE_SIMPLE_REPEATS(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)		
 		
-		step_ch = ANNOTATE_SNPEFF(genomeId, bed, step_ch.output)
-		count_ch = count_ch.mix(step_ch.count)
-		doc_ch = count_ch.mix(step_ch.doc)
 
 		step_ch = ANNOTATE_FILTERSO(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)

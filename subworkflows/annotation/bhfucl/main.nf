@@ -60,10 +60,10 @@ input:
     tuple val(meta2),path(fai)
     tuple val(meta3),path(dict)
     tuple val(meta4),path(gtf),path(gtf_tbi)
-	path("versions.yml"),emit:versions
 output:
 	tuple val(meta1),path("*IN.bed.gz"), path("*IN.bed.gz.tbi"), path("*IN.header"), emit:bed_in
 	tuple val(meta1),path("*OUT.bed.gz"),path("*OUT.bed.gz.tbi"),path("*OUT.header"),emit:bed_out
+	path("versions.yml"),emit:versions
 script:
     def TAG = task.ext.tag?:"BHFUCL"
     def URL = "http://ftp.ebi.ac.uk/pub/databases/GO/goa/bhf-ucl/gene_association.goa_bhf-ucl.gz"
@@ -106,7 +106,7 @@ mv TMP/*.bed.gz ./
 mv TMP/*.bed.gz.tbi ./
 
 
-echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${WHATIZ} ${url}">' > ${TAG}_IN.header
+echo -e "##INFO=<ID=${TAG},Number=.,Type=String,Description=\\"${WHATIZ} \${URL}\\">" > ${TAG}_IN.header
 echo '##INFO=<ID=${TAG}_NEAR,Number=.,Type=String,Description="Near gene distance=${extend}. ${WHATIZ} ${url}">' > ${TAG}_OUT.header
 
 

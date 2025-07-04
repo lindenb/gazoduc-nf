@@ -22,45 +22,39 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+process BCFTOOLS_NORM {
+label "process_single"
+tag "${meta.id?:""}"
+afterScript "rm -rf TMP"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+input:
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta3),path(optional_bed)
+	tuple val(meta),path(vcf),path(vcfidx)
+output:
+	tuple val(meta),path("*.bcf"),path("*.bcf.csi"),emit:vcf
+	path("versions.yml"),emit:versions
+script:
+	def args1 = task.ext.args1?:""
+	def args2 = task.ext.args2?:"--remove-duplicates --multiallelics -both"
+	def args3 = task.ext.args3?:"-i 'ALT!=\"*\"'"
+	def prefix = task.ext.prefix?:vcf.baseName+".norm"
+	def argsbed = optional_bed?"--regions-file \"${optional_bed}\"":""
+"""
+mkdir -p TMP
+set -o pipefail
 
-process JVARKIT_VCF_POLYX {
-	label "process_single"
-	conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-	afterScript "rm -rf TMP"
-	tag "${meta.id?:vcf.name}"
-	input:
-		tuple val(meta1),path(fasta)
-		tuple val(meta2),path(fai)
-		tuple val(meta3),path(dict)
-		tuple val(meta ),path(vcf),path(idx)
-	output:
-		tuple val(meta ),path("*.bcf"),path("*.bcf.csi"),emit:vcf
-		path("versions.yml"),emit:versions
-	script:
-		def size  = task.ext.size?:10
-		def args1 = task.ext.args1?:""
-		def args2 = task.ext.args2?:""
-		def prefix  = task.ext.prefix?:vcf.baseName+".polyx"
-		def tag = task.ext.tag?:"POLYX"
-	"""
-	hostname 1>&2
-	set -o pipefail
+bcftools view ${argsbed} ${args1} -o u '${vcf}' |\\
+	bcftools norm ${args2} --fasta-ref '${fasta}'  -O u |\\
+	bcftools view ${args3} --write-index  -O b -o TMP/${prefix}.bcf
 
-	mkdir -p TMP
-
-	bcftools view  ${args1} "${vcf}" |\\
-	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfpolyx \\
-			-n '${size}' \\
-			--reference '${fasta}' \\
-			--tag "${tag}"   |\\
-	bcftools view ${args2} --write-index -O b -o TMP/${prefix}.bcf
-
-	mv TMP/${prefix}.bcf ./
-	mv TMP/${prefix}.bcf.csi ./
+mv TMP/${prefix}.bcf ./
+mv TMP/${prefix}.bcf.csi ./
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	jvarkit: todo
+	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
 END_VERSIONS
-	"""
-	}
+"""
+}

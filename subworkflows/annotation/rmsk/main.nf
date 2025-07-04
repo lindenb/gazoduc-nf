@@ -45,7 +45,7 @@ workflow RMSK {
 
 
 process DOWNLOAD{
-tag "${meta.id?:fasta.name}"
+tag "${meta1.id?:fasta.name}"
 afterScript "rm -rf TMP"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
@@ -56,6 +56,7 @@ input:
 output:
 	tuple val(meta1),path("*.bed.gz"), path("*.bed.gz.tbi"), path("*.header"),emit:output
 script:
+	def k1 = k1_signature()
     def base = "https://hgdownload.cse.ucsc.edu/goldenPath"
 	def TAG = task.ext.tag?:"RMSK"
 

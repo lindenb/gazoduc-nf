@@ -11,7 +11,7 @@ input:
 output:
 	tuple val("rmsk"),path("rmsk.bed.gz"),path("rmsk.header"),emit:bed
 	path("rmsk.bed.gz.tbi"), emit:tbi
-	path("version.xml"), emit:version
+	path("version.yml"), emit:versions
 script:
 	def url =	(isHg19(reference)?"https://hgdownload.cse.ucsc.edu/goldenPath/hg19/database/rmsk.txt.gz":
 			(isHg38(reference)?"https://hgdownload.cse.ucsc.edu/goldenPath/hg38/database/rmsk.txt.gz":
@@ -35,14 +35,9 @@ fi
 bgzip rmsk.bed
 tabix -p bed rmsk.bed
 
-########################################################################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<dl id="${task.process}">
-	<dt>name</dt><dd>${task.process}</dd>
-	<dt>description</dt><dd>repeat masker regions</dd>
-	<dt>url</dt><dd>${url}</dd>
-<properties>
-EOF
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+    db: todo
+END_VERSIONS
 """
 }

@@ -8,8 +8,13 @@ workflow VEP {
         dict
         vcf
     main:
+        versions = Channel.empty()
         VEP_INSTALL_PLUGINS([[:],"SpliceAI,LOEUF,UTRAnnotator"])
+        versions = versions.mix(VEP_INSTALL_PLUGINS.out.versions)
+
         DOWNLOAD_UTR_ANNOTATOR(fasta)
+        versions = versions.mix(DOWNLOAD_UTR_ANNOTATOR.out.versions)
+        
         APPLY_VEP(
             fasta,
             fai,
@@ -17,8 +22,10 @@ workflow VEP {
             DOWNLOAD_UTR_ANNOTATOR.out.output,
             vcf
             )
+        versions = versions.mix(APPLY_VEP.out.versions)
     emit:
         vcf=APPLY_VEP.out.vcf
+        versions
 }
 
 process DOWNLOAD_UTR_ANNOTATOR {
@@ -29,10 +36,17 @@ input:
     tuple val(meta1),path(fasta)
 output:
     tuple val(meta1),path("*.txt"),emit:output
+    path("versions.yml"),emit:versions
 script:
     def f1="uORF_5UTR_GRCh38_PUBLIC.txt"
 """
 wget -O "${f1}" "https://github.com/ImperialCardioGenetics/UTRannotator/raw/refs/heads/master/${f1}"
+
+
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+    db: todo
+END_VERSIONS
 """
 }
 
@@ -49,6 +63,7 @@ input:
     tuple val(meta),path(vcf),path(tbi)
 output:
         tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:vcf
+        path("versions.yml"),emit:versions
 script:
     def assembly = task.ext.assembly?:"GRCh38"
     def species = task.ext.species?:"homo_sapiens"
@@ -90,5 +105,10 @@ vep \\
 
 bcftools view --threads ${task.cpus} -O z -o "${prefix}.vcf.gz" TMP/jeter.vcf
 bcftools index --threads ${task.cpus} -t -f "${prefix}.vcf.gz"
+
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+    db: todo
+END_VERSIONS
 """
 }

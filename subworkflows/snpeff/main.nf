@@ -8,12 +8,17 @@ workflow SNPEFF {
         dict
         vcf
     main:
+        versions = Channel.empty()
         DOWNLOAD(fai)
+        versions = versions.mix(DOWNLOAD.out.versions)
+
         ANNOTATE(DOWNLOAD.out.db, DOWNLOAD.out.database_name, vcf)
+        versions = versions.mix(ANNOTATE.out.versions)
     emit:
         database = DOWNLOAD.out.db
         database_name = DOWNLOAD.out.database_name
         vcf = ANNOTATE.out.vcf
+        versions
 }
 
 
@@ -26,6 +31,7 @@ input:
 output:
     tuple val(meta),path("SNPEFF"),emit:db
     tuple val(meta),path("*.database"),emit:database_name
+    path("versions.yml"),emit:versions
 script:
     def k1= k1_signature()
 """
@@ -50,6 +56,12 @@ test -s SNPEFFX/*/snpEffectPredictor.bin
 mv SNPEFFX "SNPEFF"
 
 mv TMP/jeter.database "\${DB}.database"
+
+
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	snpeff: "todo"
+END_VERSIONS
 """
 }
 
@@ -66,6 +78,7 @@ input:
 	tuple val(meta ),path(vcf),path(vcfidx)
 output:
 	tuple val(meta),path("*.bcf"),path("*.bcf.csi"),emit:vcf
+    path("versions.yml"),emit:versions
 script:
     def prefix=task.ext.prefix?:vcf.baseName+".snpeff"
 """
@@ -88,5 +101,10 @@ bcftools index --threads ${task.cpus} TMP/${prefix}.bcf
 
 mv TMP/${prefix}.bcf ./
 mv TMP/${prefix}.bcf.csi ./
+
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	snpeff: "todo"
+END_VERSIONS
 """
 }
