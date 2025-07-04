@@ -24,35 +24,37 @@ SOFTWARE.
 */
 
 
-process BED_CLUSTER {
-	label "process_single"
-	tag "${meta.id?:""} "
-	afterScript "rm -rf TMP"
-	input:
-		tuple val(meta1),path(fasta)
-		tuple val(meta2),path(fai)
-		tuple val(meta3),path(dict)
-		tuple val(meta ),path(bed)
-	output:
-		tuple val(meta), path("BEDS/*"),emit:bed
-		path("versions.yml"),emit:versions
-	script:
-		if(!meta.containsKey("bed_cluster_method")) throw new IllegalArgumentException("bed_cluster_method undefined ${task.process}");
-		def args = task.ext.args?:""
-		if(args.trim().isEmpty()) throw new IllegalArgumentException("method for bedcluter must be defined in ${task.process}")
-	"""
-	hostname 1>&2
-	set -o pipefail
-	mkdir -p TMP BEDS
-	jvarkit  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedcluster \\
-		-R "${fasta}" \\
-		${args} \\
-		-o BEDS "${bed}"
+process VCF_TO_BED {
+label "process_single"
+array 100
+tag "${meta.id?:""}"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+input:
+	tuple val(meta),path(vcf),path(idx)
+output:
+	tuple val(meta),path("*.bed"),path(vcf),path(idx),optional:true,emit:output
+	tuple val(meta),path("*.bed"),optional:true,emit:bed
+	path("versions.yml"),emit:versions
+script:	
+	def prefix= task.ext.prefix?:vcf.baseName+".interval"
+"""
+hostname 1>&2
+set -o pipefail
+mkdir -p OUT TMP
+
+bcftools index -s "${vcf}" |\\
+	awk -F '\t' '{printf("%s\t0\t%s\\n",\$1,\$2);}' |\\
+	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter.bed
+	
+if test -s TMP/jeter.bed
+then
+	mv TMP/jeter.bed "${prefix}.bed"
+fi
 
 
 cat << EOF > versions.yml
 ${task.process}:
 	jvarkit: TODO
 EOF
-	"""
-	}
+"""
+}

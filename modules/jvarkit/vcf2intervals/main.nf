@@ -24,17 +24,16 @@ SOFTWARE.
 */
 
 process JVARKIT_VCF_TO_INTERVALS_01 {
-	label "queue_quick"
-	cpus 1
-	memory "5G"
-	time "3h"
+	label "process_single"
 	conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 	afterScript "rm -rf TMP"
 	tag "${interval} ${vcf.name}"
 	input:
 		tuple val(interval),path(bed),path(vcf),path(idx)
+		
 	output:
 		path("*.bed"),emit:bed /* chrom/start/end/vcf/idx */
+		path("versions.yml"),emit:versions
 	script:
 		if(!task.ext.containsKey("distance")) throw new IllegalStateException("task.ext.distance missing for ${task.process}");
 		if(!task.ext.containsKey("min_distance")) throw new IllegalStateException("task.ext.min_distance missing for ${task.process}");
@@ -56,5 +55,10 @@ process JVARKIT_VCF_TO_INTERVALS_01 {
 
 	MD5=`echo '${interval} ${bed} ${vcf} ${idx}' | sha1sum | cut -d ' ' -f1`	
 	mv TMP/intervals.bed "\${MD5}.vcf2interval.bed"
+
+cat << EOF > versions.yml
+${task.process}:
+	jvarkit: TODO
+EOF
 	"""
 	}

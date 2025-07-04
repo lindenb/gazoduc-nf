@@ -34,11 +34,16 @@ workflow ALPHAMISSENSE {
 		bed
 		vcfs /* meta, vcf,vcf_index */
 	main:
+		versions = Channel.empty()
+		
 		source_ch = DOWNLOAD(fasta,fai,dict,bed)
-		annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
+		versions = versions.mix(DOWNLOAD.out.versions)
+
+		ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
+		versions = versions.mix(ANNOTATE.out.versions)
 	emit:
-		vcf = annotate_ch.vcf
-		doc = source_ch.doc
+		vcf = ANNOTATE.out.vcf
+		versions
 	}
 
 
@@ -56,6 +61,7 @@ output:
 	tuple val(meta1),path("*.tsv.gz.tbi"),emit:tbi
 	tuple val(meta1),path("*.header"),emit:header
 	tuple val(meta1),path("*.md"),emit:doc
+	path("versions.yml"),emit:versions
 script:
     def k1 = k1_signature()
     def TAG = task.ext.tag?:"ALPHAMISSENSE"
@@ -112,6 +118,10 @@ cat << EOF > ${TAG}.md
 ${whatis}
 EOF
 
+cat << EOF > versions.yml
+${task.process}:
+	jvarkit: TODO
+EOF
 """
 }
 
@@ -128,6 +138,7 @@ input:
     tuple val(meta ),path(vcf),path(vcf_idx)
 output:
     tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
+	path("versions.yml"),emit:versions
 script:
    	def TAG = task.ext.tag?:"ALPHAMISSENSE"
 	def prefix = task.ext.prefix?:vcf.baseName+".alphamissense"
@@ -149,5 +160,10 @@ bcftools index \\
 
 mv TMP/*.bcf ./
 mv TMP/*.bcf.csi ./
+
+cat << EOF > versions.yml
+${task.process}:
+	jvarkit: TODO
+EOF
 """
 }

@@ -24,35 +24,35 @@ SOFTWARE.
 */
 
 
-process BED_CLUSTER {
-	label "process_single"
-	tag "${meta.id?:""} "
-	afterScript "rm -rf TMP"
-	input:
-		tuple val(meta1),path(fasta)
-		tuple val(meta2),path(fai)
-		tuple val(meta3),path(dict)
-		tuple val(meta ),path(bed)
-	output:
-		tuple val(meta), path("BEDS/*"),emit:bed
-		path("versions.yml"),emit:versions
-	script:
-		if(!meta.containsKey("bed_cluster_method")) throw new IllegalArgumentException("bed_cluster_method undefined ${task.process}");
-		def args = task.ext.args?:""
-		if(args.trim().isEmpty()) throw new IllegalArgumentException("method for bedcluter must be defined in ${task.process}")
-	"""
-	hostname 1>&2
-	set -o pipefail
-	mkdir -p TMP BEDS
-	jvarkit  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedcluster \\
-		-R "${fasta}" \\
-		${args} \\
-		-o BEDS "${bed}"
+process BEDTOOLS_INTERSECT {
+label "process_single"
+tag "${meta.id?:""}"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+input:
+    tuple val(meta1),path(fai)
+	tuple val(meta),path(file1),path(file2)    
+output:
+	tuple val(meta),path("*.${suffix}"),emit:output
+	path("versions.yml"),emit:versions
+script:	
+    suffix = task.ext.suffix?:".bed"
+    def sizes = fai?"-g ${fai}":''
+    def prefix = task.ext.prefix?:meta.id+".intersect"
+"""
+hostname 1>&2
+set -o pipefail
+mkdir -p OUT TMP
+
+bedtools intersect \\
+    ${sizes} \\
+    -a ${file1} \\
+    -b ${file2} > "${prefix}${suffix}"
+
 
 
 cat << EOF > versions.yml
 ${task.process}:
-	jvarkit: TODO
+	bedtools: TODO
 EOF
-	"""
-	}
+"""
+}

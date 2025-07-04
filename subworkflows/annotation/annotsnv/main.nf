@@ -22,6 +22,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+
+include {ALPHAMISSENSE} from '../alphamissense/main.nf'
+include {BCFTOOLS_BCSQ} from  '../../../modules/bcftools/bcsq/main.nf'
+
+/*
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {BCFTOOLS_CONCAT} from '../bcftools/bcftools.concat.02.nf'
@@ -48,7 +53,6 @@ include {ANNOTATE_BHFUCL} from './step.bhfucl.nf'
 include {ANNOTATE_NORM} from './step.norm.nf'
 include {ANNOTATE_SPLICEAI} from './step.spliceai.nf'
 include {ANNOTATE_STRINGDB} from './step.stringdb.nf'
-include {ANNOTATE_ALPHAMISSENSE} from './step.alphamissense.nf'
 include {ANNOTATE_MONDO} from './step.mondo.nf'
 include {ANNOTATE_CCRE} from './step.ccre.nf'
 include {ANNOTATE_CADD} from './step.cadd.nf'
@@ -56,7 +60,7 @@ include {ANNOTATE_REGULOME} from './step.regulome.nf'
 include {ANNOTATE_UORFDB} from './step.uorfdb.nf'
 include {ANNOTATE_REVEL} from './step.revel.nf'
 include {ANNOTATE_MNV} from './step.mnv.nf'
-
+*/
 /*
 
 	step.gnomad.constraint.nf
@@ -68,17 +72,34 @@ include {ANNOTATE_MNV} from './step.mnv.nf'
 	step.trio-dnm2.nf
 	step.uniprot.nf
 */
+boolean hasFeature(hash,key) {
+	def k2 = "with_"+key;
+	if(!hash.containsKey(k2)) return false;
+	return hash[k2].equals(true);
+	}
 
-workflow ANNOTATE_VCF_01 {
+workflow ANNOTATE {
 	take:
-		genomeId
-		bed
-		rows /* vcf, idx, bed, interval */
+		meta
+		fasta
+		fai
+		dict
+		gtf
+		gff3
+		pedigree
+		vcf
 	main:
-		version_ch = Channel.empty()
-		count_ch = Channel.empty()
-		doc_ch = Channel.empty()
-		
+		versions = Channel.empty()
+		def NO_BED = [meta,[]];
+
+		ALPHAMISSENSE(meta, fasta, fai, dict, NO_BED,vcf)
+		versions = versions.mix(ALPHAMISSENSE.out.versions)
+		vcf = ALPHAMISSENSE.out.vcf
+
+		BCFTOOLS_BCSQ(fasta, fai, dict, gff3, vcf)
+		versions = versions.mix(BCFTOOLS_BCSQ.out.versions)
+		vcf = BCFTOOLS_BCSQ.out.vcf
+		/*
 		step_ch = STEP_FIRST(rows)
 		step_ch = ANNOTATE_RMSK(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
@@ -156,9 +177,6 @@ workflow ANNOTATE_VCF_01 {
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 		
-		step_ch = ANNOTATE_ALPHAMISSENSE(genomeId, bed, step_ch.output)
-		count_ch = count_ch.mix(step_ch.count)
-		doc_ch = count_ch.mix(step_ch.doc)
 
 		step_ch = ANNOTATE_SPLICEAI(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
@@ -202,9 +220,9 @@ workflow ANNOTATE_VCF_01 {
 		
 
 		version_ch = MERGE_VERSION("VCF annotation", version_ch.collect())
+		*/
 	emit:
-		version= version_ch
-		output = rows
+		versions = versions_ch
 	}
 
 

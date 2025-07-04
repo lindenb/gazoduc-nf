@@ -24,54 +24,145 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-include {moduleLoad;runOnComplete} from '../../../modules/utils/functions.nf'
-include {ANNOTATE_VCF_01} from '../../../subworkflows/annotation/annotation.vcf.01.nf'
-include {MERGE_VERSION} from '../../../modules/version/version.merge.02.nf'
-include {JVARKIT_VCF_TO_INTERVALS_01} from '../../../subworkflows/jvarkit/vcf2intervals/main.nf'
-include {COLLECT_TO_FILE_01} from '../../../modules/utils/collect2file.01.nf'
-include {BCFTOOLS_CONCAT_01} from '../../../subworkflows/bcftools/bcftools.concat.01.nf'
-include {VCF_TO_BED} from '../../../modules/bcftools/vcf2bed.01.nf'
+include {runOnComplete} from '../../../modules/utils/functions.nf'
+//include {ANNOTATE_VCF_01} from '../../../subworkflows/annotation/annotation.vcf.01.nf'
+//include {MERGE_VERSION} from '../../../modules/version/version.merge.02.nf'
+//include {JVARKIT_VCF_TO_INTERVALS_01} from '../../../subworkflows/jvarkit/vcf2intervals/main.nf'
+//include {COLLECT_TO_FILE_01} from '../../../modules/utils/collect2file.01.nf'
+//include {BCFTOOLS_CONCAT_01} from '../../../subworkflows/bcftools/bcftools.concat.01.nf'
+//include {VCF_TO_BED} from '../../../modules/bcftools/vcf2bed/main.nf'
+//include {VCF_TO_BED} from '../../../modules/bcftools/vcf2bed/main.nf'
+include {DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GTF   } from '../../../modules/gtf/download/main.nf'
+include {DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GFF3  } from '../../../modules/gtf/download/main.nf'
+//include {ANNOTATE                               } from '../../../subworkflows/annotation/annotsnv/main.nf'
+include {ANNOTATE                                 } from '../../../subworkflows/annotation/annotsnv/main.nf'
+include {SPLIT_N_VARIANTS                         } from '../../../subworkflows/jvarkit/splitnvariants/main.nf'
+
 
 
 workflow {
-	version_ch = Channel.empty()
+	versions = Channel.empty()
 	def ref_hash = [
 		id: file(params.fasta).baseName,
 		name: file(params.fasta).baseName
 		]
-	def fasta = [ ref_hash, file(params.fasta) ]
-	def fai =   [ ref_hash, file(params.fai) ]
-	def dict =  [ ref_hash, file(params.dict) ]
-	def dict =  [ [id:"pedigree"], params.pedigree==null? [] : file(params.pedigree) ]
-
+	def fasta =    [ ref_hash, file(params.fasta) ]
+	def fai =      [ ref_hash, file(params.fai) ]
+	def dict =     [ ref_hash, file(params.dict) ]
+	def pedigree = [ ref_hash, (params.pedigree ? file(params.pedigree) : []) ]
+	def bed =      [ ref_hash, (params.bed ? file(params.bed) : []) ]
+	
 	
 
-	vcf2intervals_ch = JVARKIT_VCF_TO_INTERVALS_01([distance: params.vcf2interval_distance,min_distance:200], vcf,file("NO_FILE"))
-			version_ch = version_ch.mix(vcf2intervals_ch.version)
 
-			ch1_ch = vcf2intervals_ch.bed.splitCsv(sep:'\t',header:false).map{T->[
-				vcf: file(T[3]),
-				vcf_index: file(T[3]+ (T[3].endsWith(".vcf.gz")?".tbi":".csi")),
-				bed: file("NO_FILE"),
-				interval : T[0]+":"+((T[1] as int)+1)+"-"+T[2]
-				]}
+	vcfs = Channel.fromPath(params.samplesheet)
+		.splitCsv(header:true,sep:",")
+		.map{
+			if(it.containsKey("index")) return it;
+			def suffix = it.vcf.endsWith(".vcf.gz")?".tbi":".csi"
+			return it.plus(index:it.vcf+suffix);
+			}
+		.map{
+			if(it.containsKey("id")) return it;
+			return it.plus(id:file(it.vcf).baseName);
+			}
+		.map {[[id:it.id],file(it.vcf),file(it.index)]}
+		.view()
 
-		ann_ch = ANNOTATE_VCF_01(genomeId, bed, ch1_ch)
-		version_ch = version_ch.mix(ann_ch.version)
+	SPLIT_N_VARIANTS( [id:"annot"], fasta, fai, dict, vcfs,bed)
+	versions= versions.mix(SPLIT_N_VARIANTS.out.versions)
 
+	DOWNLOAD_GTF(fasta,fai,dict)
+	DOWNLOAD_GFF3(fasta,fai,dict)
+	/*
+	ANNOTATE(
+		[id:"annot"],
+		fasta,
+		fai,
+		dict,
+		DOWNLOAD_GTF.out.output,
+		DOWNLOAD_GFF3.out.output,		
+		pedigree,
+		SPLIT_N_VARIANTS.out.vcf
+		)
+	versions= versions.mix(ANNOTATE.out.versions) */
+	}
+
+workflow ANNOTATE_VCF {
+	take:
+		meta
+		fasta
+		fai
+		dict
+		vcf
+		bed
+		pedigree
+	main:
+		version_ch = Channel.empty()
+		
+		
+
+		/*
+		ann_ch = ANNOTATE(meta,
+			fasta,
+			fai,
+			dict,
+			bed,
+			SPLIT_N_VARIANTS()
+			)
+		version_ch = version_ch.mix(ann_ch.versions)
+		*/
+
+	/*
 		tofile_ch = COLLECT_TO_FILE_01([suffix:".list"], ann_ch.output.map{T->T.annot_vcf}.collect())
-		version_ch = version_ch.mix(tofile_ch.version)
+		version_ch = version_ch.mix(tofile_ch.versions)
 
 		concat_ch = BCFTOOLS_CONCAT_01([:], tofile_ch.output, file("NO_FILE") )
 		version_ch = version_ch.mix(concat_ch.version)
-
-		version_ch = MERGE_VERSION("vcfannot",version_ch.collect())
+	*/
 	emit:
-		version = version_ch
-		output = concat_ch.vcf
+		versions
+		//vcf = concat_ch.vcf
 	}
 
 runOnComplete(workflow);
 
+process SPLIT_VCF {
+tag "${meta.id?:""}"
+label "process_single"
+afterScript "rm -rf TMP"
+input:
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta3),path(dict)
+	tuple val(meta4),path(bed)
+	tuple val(meta ),path(vcf),path(idx)
+output:
+	tuple path("BEDS/*.bed"),val(meta),path(vcf),path(idx)
+script:
+	def method = task.ext.method?:""
+	def has_bed= bed?true:false
+"""
+mkdir -p TMP
+bcftools index -s "${vcf}" |\\
+	awk -F '\t' '{printft("%s\t0\t%s\\n",\$1,\$2);}' |\\
+	sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter1.bed
 
+if ${has_bed}
+then
+	${bed.name.endsWith(".gz")?"gunzip -c":"cat"} "${bed}" |\\
+		grep -vE '^(browser|track)' |\\
+		cut -f1,2,3 |\
+		sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter2.bed
+	
+	bedtools intersect -a TMP/jeter1.bed -b TMP/jeter2.bed |\\
+		sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter3.bed
+	
+	mv TMP/jeter3.bed TMP/jeter1.bed
+fi
+
+mkdir -p BEDS
+jvarkit bedcluster ${method} -R ${fasta} -o BEDS TMP/jeter1.bed
+"""
+}
 

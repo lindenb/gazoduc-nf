@@ -25,7 +25,7 @@ SOFTWARE.
 include {k1_signature} from '../../utils/k1.nf'
 
 process DOWNLOAD_GTF_OR_GFF3 {
-tag "${fasta.name}"
+tag "${meta1.id?:fasta.name}"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
@@ -38,8 +38,15 @@ output:
 	path("versions.yml"),emit:versions
 script:
 	def k1 = k1_signature()
-	if(task.ext==null || task.ext.suffix==null) throw new IllegalArgumentException("suffix missing for ${task}");
-	def extension = task.ext.suffix
+	def extension = (task.ext==null || task.ext.suffix==null?
+		(task.process.toString().toLowerCase().endsWith("gtf")?"gtf":
+			(task.process.toString().toLowerCase().endsWith("gff3")?"gff3":""))
+		:task.ext.suffix
+		)
+	
+	if(extension.isEmpty()) throw new IllegalArgumentException("suffix missing for ${task.process}");
+	def release = task.ext.release?:"114"
+	def base = task.ext.base?:"https://ftp.ensembl.org/pub"
 """
 hostname 1>&2
 mkdir -p TMP
@@ -47,13 +54,17 @@ set -o pipefail
 
 ##  GTF/GFF3 from gencode are not compatible with bcftools csq
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:${k1.hg38}\thttps://ftp.ensembl.org/pub/release-114/${extension}/homo_sapiens/Homo_sapiens.GRCh38.114.${extension}.gz
-1:${k1.hg19}\thttps://ftp.ensembl.org/pub/grch37/current/${extension}/homo_sapiens/Homo_sapiens.GRCh37.87.chr.${extension}.gz
+1:${k1.hg38}\t${base}/release-${release}/${extension}/homo_sapiens/Homo_sapiens.GRCh38.${release}.${extension}.gz
+1:${k1.hg19}\t${base}/grch37/current/${extension}/homo_sapiens/Homo_sapiens.GRCh37.87.chr.${extension}.gz
 EOF
 
-awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
+awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' |\\
+	sed 's/^chr//' |\\
+	sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
 
-join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv | sort | uniq > TMP/jeter.url
+join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv |\\
+	sort |\\
+	uniq > TMP/jeter.url
 
 test -s TMP/jeter.url
 
