@@ -78,8 +78,14 @@ script:
 """
 mkdir -p TMP
 
+bcftools query -l '${vcf}' |\\
+    awk 'END{N=NR;if(N==0) N=1;B=5000.0/N;if(B<1000.0) B=1000;printf("%d\\n",int(B));}' > TMP/jeter.buffer_size
+
+
 bcftools view "${vcf}" |\\
 vep \\
+    ${task.cpus>1?"--fork ${task.cpus}":""} \\
+    --buffer_size `cat TMP/jeter.buffer_size` \\
     --cache \\
     --dir "${vep_directory}" \\
     --species ${species} \\
@@ -101,7 +107,7 @@ vep \\
     --no_stats \\
     --plugin SpliceAI,snv=${spliceai_snv},indel=${spliceai_indel} \\
     --plugin LOEUF,file=${loeuf},match_by=gene \\
-    --plugin UTRAnnotator,file=${utrfile}
+    --plugin UTRAnnotator,file=${utrfile} 
 
 bcftools view --threads ${task.cpus} -O z -o "${prefix}.vcf.gz" TMP/jeter.vcf
 bcftools index --threads ${task.cpus} -t -f "${prefix}.vcf.gz"

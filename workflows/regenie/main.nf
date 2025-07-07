@@ -154,7 +154,7 @@ workflow {
 runOnComplete(workflow)
 
 process DIGEST_SAMPLESHEET {
-label "queue_quick"
+label "process_single"
 memory "1G"
 time "3h"
 tag "${vcf.name}"

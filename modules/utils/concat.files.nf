@@ -26,7 +26,7 @@ SOFTWARE.
 
 process CONCAT_FILES_01 {
 afterScript "rm -rf TMP"
-label "queue_quick"
+label "process_single"
 time "3h"
 input:
         path("INPUT/*")

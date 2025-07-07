@@ -110,6 +110,7 @@ END_VERSIONS
 
 
 process ANNOTATE {
+label "process_single"
 tag "${meta.id?:vcf.name}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"

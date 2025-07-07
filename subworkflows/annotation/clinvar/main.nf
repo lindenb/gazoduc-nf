@@ -54,7 +54,7 @@ workflow CLINVAR {
 
 process DOWNLOAD {
 afterScript "rm -rf TMP"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
     tuple val(meta1),path(fasta)
@@ -124,7 +124,7 @@ EOF
 
 process ANNOTATE {
 tag "${meta.id}"
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
