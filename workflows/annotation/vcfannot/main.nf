@@ -58,6 +58,11 @@ workflow {
 	vcfs = Channel.fromPath(params.samplesheet)
 		.splitCsv(header:true,sep:",")
 		.map{
+			if(!it.vcf) throw new IllegalArgumentException("vcf missing in ${params.samplesheet}")
+			if(!(it.vcf.endsWith(".vcf.gz") || it.vcf.endsWith(".bcf"))) throw new IllegalArgumentException("bad vcf suffix ${it.vcf} in ${params.samplesheet}")
+			return it;
+			}
+		.map{
 			if(it.containsKey("index")) return it;
 			def suffix = it.vcf.endsWith(".vcf.gz")?".tbi":".csi"
 			return it.plus(index:it.vcf+suffix);
@@ -68,6 +73,14 @@ workflow {
 			}
 		.map {[[id:it.id],file(it.vcf),file(it.index)]}
 		.view()
+
+
+	if(!bed[1]) {
+		
+		SCATTER_TO_BED([id:"annot"],fasta,fai,dict)
+		bed = SCATTER_TO_BED.out.bed
+	}
+
 
 	SPLIT_N_VARIANTS( [id:"annot"], fasta, fai, dict, vcfs,bed)
 	versions= versions.mix(SPLIT_N_VARIANTS.out.versions)
