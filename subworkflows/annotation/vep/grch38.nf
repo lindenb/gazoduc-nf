@@ -51,8 +51,8 @@ END_VERSIONS
 }
 
 process APPLY_VEP {
-tag "${meta.id} ${vcf.baseName}"
-label "process_single"
+tag "${meta.id?:vcf.baseName}"
+label "process_single"// single is killed
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:

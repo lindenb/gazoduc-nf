@@ -35,15 +35,20 @@ workflow CLINVAR {
                 bed
 		vcfs /* meta, vcf,vcf_index */
 	main:
+                versions = Channel.empty()
                 DOWNLOAD(
                         fasta,
                         fai,
                         dict,
                         bed
                         )
+                versions = versions.mix(DOWNLOAD.out.versions)
+
 		ANNOTATE(DOWNLOAD.out.vcf, vcfs)
+                versions = versions.mix(ANNOTATE.out.versions)
 	emit:
 		vcf = ANNOTATE.out.vcf
+                versions
 	}
 
 
@@ -57,7 +62,8 @@ input:
     tuple val(meta3),path(dict)
     tuple val(meta4),path(bed)
 output:
-	tuple val(meta1),path("*.bcf"),path("*.bcf.csi"),emit:vcf
+    tuple val(meta1),path("*.bcf"),path("*.bcf.csi"),emit:vcf
+    path("versions.yml"),emit:versions
 script:
     def k1= k1_signature();
     def prefix = "clinvar"
@@ -107,6 +113,12 @@ bcftools index  \\
 
 mv TMP/${prefix}.bcf ./
 mv TMP/${prefix}.bcf.csi ./
+
+
+cat << EOF > versions.yml
+${task.process}:
+    bcftools: TODO
+EOF
 """
 }
 
@@ -120,6 +132,7 @@ input:
         tuple val(meta ),path(vcf),path(tbi)
 output:
         tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:vcf
+        path("versions.yml"),emit:versions
 script:
         def prefix = task.ext.prefix?:vcf.baseName+".clinvar"
 """
@@ -137,5 +150,10 @@ bcftools index --threads ${task.cpus} -t -f "TMP/jeter.vcf.gz"
 
 mv TMP/jeter.vcf.gz "${prefix}.vcf.gz"
 mv TMP/jeter.vcf.gz.tbi "${prefix}.vcf.gz.tbi"
+
+cat << EOF > versions.yml
+${task.process}:
+	bcftools: TODO
+EOF
 """
 }

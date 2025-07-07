@@ -45,7 +45,7 @@ workflow SIMPLE_REPEATS {
 
 
 process DOWNLOAD{
-tag "${meta.id?:fasta.name}"
+tag "${meta1.id?:fasta.name}"
 afterScript "rm -rf TMP"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
@@ -55,7 +55,9 @@ input:
     tuple val(meta3),path(dict)
 output:
 	tuple val(meta1),path("*.bed.gz"), path("*.bed.gz.tbi"), path("*.header"),emit:output
+	path("versions.yml"),emit:versions
 script:
+	def k1 = k1_signature()
     def base = "https://hgdownload.cse.ucsc.edu/goldenPath"
 	def TAG = task.ext.tag?:"SREPEAT"
 
@@ -91,7 +93,7 @@ tabix -p bed -f TMP/${TAG}.bed.gz
 mv TMP/${TAG}.bed.gz ./
 mv TMP/${TAG}.bed.gz.tbi ./
 
-echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${whatis}">' > ${TAG}.header
+echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="Simple Repeats from UCSC">' > ${TAG}.header
 
 
 
@@ -112,7 +114,7 @@ input:
 	tuple val(meta1),path(tabix),path(tbi),path(header)
 	tuple val(meta),path(vcf),path(vcf_idx)
 output:
-	tuple val(meta), path("*.bcf"), path("*.bcf.csi"),emit:bed
+	tuple val(meta), path("*.bcf"), path("*.bcf.csi"),emit:vcf
 	path("versions.yml"),emit:versions
 script:
 	def TAG = task.ext.tag?:"SREPEAT"

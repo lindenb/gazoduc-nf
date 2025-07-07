@@ -28,8 +28,11 @@ def TAG="MNV"
 
 workflow ANNOTATE_MNV {
 	take:
-		genomeId
-		bed
+  		meta
+		fasta
+		fai
+		dict
+		gtf
 		vcfs /** tuple vcf,vcf_index */
 	main:
 

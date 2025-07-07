@@ -23,19 +23,21 @@ SOFTWARE.
 
 */
 process INTERVAL_LIST_TO_BED {
-tag "${meta1.id?:interval_list.name}"
+tag "${meta.id?:interval_list.name}"
 label "process_single"
 afterScript "rm -rf TMP"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-	tuple val(meta) path(interval_list)
+	tuple val(meta),path(interval_list)
 output:
-    path("exclude.bed"),emit:output
+    tuple val(meta),path("*.bed"),emit:bed
+    path("versions.yml"),emit:versions
 script:
 	def prefix = task.ext.prefix?:interval_list.baseName
 """
+mkdir -p TMP
 gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" IntervalListToBed \\
-    --INPUT "TMP/jeter.interval_list" \\
+    --INPUT "${interval_list}" \\
     --OUTPUT "TMP/jeter.bed" \\
     --SORT true
 

@@ -38,16 +38,20 @@ boolean test_fai_chr1(fai,K1_length) {
 				return tokens[1].equals(K1_length);
 			}
 		}
+	} catch(Throwable err) {
+		log.info("Error err: "+err);
+		err.printStackTrace();
+		throw err;
 	}
 	return false;
 }
 
-boolean isGRCH38(fai) {
+boolean isGRCh38(fai) {
 	def k1 = k1_signature();
 	return test_fai_chr1(fai,String.valueOf(k1.hg38));
 }
 
-boolean isGRCH37(fai) {
+boolean isGRCh37(fai) {
 	def k1 = k1_signature();
 	return test_fai_chr1(fai,String.valueOf(k1.hg19));
 }

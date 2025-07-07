@@ -25,11 +25,16 @@ SOFTWARE.
 
 include {ALPHAMISSENSE} from '../alphamissense/main.nf'
 include {BHFUCL} from '../bhfucl/main.nf'
-include {SNPEFF} from '../snpeff/main.nf'
+include {SNPEFF} from '../../snpeff/main.nf'
 include {RMSK} from '../rmsk/main.nf'
 include {BCFTOOLS_BCSQ} from  '../../../modules/bcftools/bcsq/main.nf'
 include {JVARKIT_VCF_POLYX} from  '../../../modules/jvarkit/vcfpolyx/main.nf'
 include {VEP} from '../vep/main.nf'
+include {CLINVAR} from '../clinvar/main.nf'
+include {REVEL} from '../revel/main.nf'
+include {CADD} from  '../../../modules/cadd/main.nf'
+include {VISTA} from '../vista/main.nf'
+include {SIMPLE_REPEATS} from '../simple_repeats/main.nf'
 
 /*
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
@@ -38,9 +43,6 @@ include {BCFTOOLS_CONCAT} from '../bcftools/bcftools.concat.02.nf'
 include {STEP_FIRST} from './step.first.nf'
 include {ANNOTATE_RMSK} from './step.rmsk.nf'
 include {ANNOTATE_BCSQ} from './step.bcsq.nf'
-include {ANNOTATE_CLINVAR} from './step.clinvar.nf'
-include {ANNOTATE_VISTA} from './step.vista.nf'
-include {ANNOTATE_SNPEFF} from './step.snpeff.nf'
 include {ANNOTATE_SIMPLE_REPEATS} from './step.simple_repeats.nf'
 include {ANNOTATE_REMAP} from './step.remap.nf'
 include {ANNOTATE_GNOMADSV} from './step.gnomadsv.nf'
@@ -62,7 +64,6 @@ include {ANNOTATE_CCRE} from './step.ccre.nf'
 include {ANNOTATE_CADD} from './step.cadd.nf'
 include {ANNOTATE_REGULOME} from './step.regulome.nf'
 include {ANNOTATE_UORFDB} from './step.uorfdb.nf'
-include {ANNOTATE_REVEL} from './step.revel.nf'
 include {ANNOTATE_MNV} from './step.mnv.nf'
 */
 /*
@@ -100,13 +101,17 @@ workflow ANNOTATE {
 		versions = versions.mix(ALPHAMISSENSE.out.versions)
 		vcf = ALPHAMISSENSE.out.vcf
 
-		BCFTOOLS_BCSQ(fasta, fai, dict, gff3, vcf)
+		BCFTOOLS_BCSQ(fasta, fai, gff3, vcf)
 		versions = versions.mix(BCFTOOLS_BCSQ.out.versions)
 		vcf = BCFTOOLS_BCSQ.out.vcf
 
-		step_ch = SNPEFF(meta, fasta, fai, dict, vcf)
+		SNPEFF(meta, fasta, fai, dict, vcf)
 		versions = versions.mix(SNPEFF.out.versions)
 		vcf = SNPEFF.out.vcf
+
+		VEP(meta, fasta, fai, dict, vcf)
+		versions = versions.mix(VEP.out.versions)
+		vcf = VEP.out.vcf
 
 
 		JVARKIT_VCF_POLYX(fasta,fai,dict,vcf)
@@ -126,24 +131,35 @@ workflow ANNOTATE {
 		versions = versions.mix(BHFUCL.out.versions)
 		vcf = BHFUCL.out.vcf
 
+		REVEL(meta, fasta, fai, dict, vcf)
+		versions = versions.mix(REVEL.out.versions)
+		vcf = REVEL.out.vcf
+
+		VISTA(meta, fasta, fai, dict, vcf)
+		versions = versions.mix(VISTA.out.versions)
+		vcf = VISTA.out.vcf
 
 
+		SIMPLE_REPEATS(meta, fasta, fai, dict, vcf)
+		versions = versions.mix(SIMPLE_REPEATS.out.versions)
+		vcf = SIMPLE_REPEATS.out.vcf
+
+		if(params.cadd && params.cadd.endsWith(".gz")) {
+			CADD(fasta,fai,dict,
+				[[:],file(params.cadd), file(params.cadd+".tbi")],
+				vcf
+				)
+			versions = versions.mix(CADD.out.versions)
+			vcf = CADD.out.vcf
+			}
 		/*
-		step_ch = STEP_FIRST(rows)
-		step_ch = ANNOTATE_RMSK(genomeId, bed, step_ch.output)
-		count_ch = count_ch.mix(step_ch.count)
-		doc_ch = count_ch.mix(step_ch.doc)
+		
 		
 		step_ch = ANNOTATE_VISTA(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 		
 		
-		
-		
-		step_ch = ANNOTATE_SIMPLE_REPEATS(genomeId, bed, step_ch.output)
-		count_ch = count_ch.mix(step_ch.count)
-		doc_ch = count_ch.mix(step_ch.doc)		
 		
 
 		step_ch = ANNOTATE_FILTERSO(genomeId, bed, step_ch.output)
@@ -190,18 +206,12 @@ workflow ANNOTATE {
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)		
 		
-		step_ch = ANNOTATE_BHFUCL(genomeId, bed, step_ch.output)
-		count_ch = count_ch.mix(step_ch.count)
-		doc_ch = count_ch.mix(step_ch.doc)
 				
 		step_ch = ANNOTATE_STRINGDB(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 		
 
-		step_ch = ANNOTATE_SPLICEAI(genomeId, bed, step_ch.output)
-		count_ch = count_ch.mix(step_ch.count)
-		doc_ch = count_ch.mix(step_ch.doc)
 
 		step_ch = ANNOTATE_MONDO(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
@@ -211,9 +221,6 @@ workflow ANNOTATE {
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 
-		step_ch = ANNOTATE_CADD(genomeId, bed, step_ch.output)
-		count_ch = count_ch.mix(step_ch.count)
-		doc_ch = count_ch.mix(step_ch.doc)
 
 		step_ch = ANNOTATE_REGULOME(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
@@ -221,12 +228,7 @@ workflow ANNOTATE {
 
 		step_ch = ANNOTATE_UORFDB(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
-		doc_ch = count_ch.mix(step_ch.doc)
-
-		step_ch = ANNOTATE_REVEL(genomeId, bed, step_ch.output)
-		count_ch = count_ch.mix(step_ch.count)
-		doc_ch = count_ch.mix(step_ch.doc)
-
+		doc_ch = count_ch.mix(step_ch.do
 
 		step_ch = ANNOTATE_MNV(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
@@ -243,7 +245,7 @@ workflow ANNOTATE {
 		version_ch = MERGE_VERSION("VCF annotation", version_ch.collect())
 		*/
 	emit:
-		versions = versions_ch
+		versions
 	}
 
 

@@ -1,5 +1,6 @@
 
 process SPLIT_N_VARIANTS {
+label "process_single"
 tag "${meta.id?:""}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
@@ -7,11 +8,11 @@ input:
 	tuple val(meta ),path(vcf),path(idx),path(optional_bed)
 output:
 	tuple val(meta),path("OUT/*.vcf.gz"),optional:true,emit:vcf
-	tuple val(meta),path("OUT/*.vcf.gz.tbi"),optional:true,emit:tbi
+	tuple val(meta),path("OUT/*.tbi"),optional:true,emit:tbi
 	tuple val(meta),path("*.MF"),optional:true,emit:manifest
-	path("versions.yml"),emit:version
+	path("versions.yml"),emit:versions
 script:
-	def method = params.split_vcf_method?:""
+	def method = task.ext.method?:""
 	if(method.trim().isEmpty()) throw new IllegalArgumentException("method undefined for ${task.process}");
 	def has_bed = optional_bed?true:false
 	def args1 = task.ext.args1?:""
@@ -45,7 +46,7 @@ fi
 bcftools view ${args1} \\
 	${has_bed?" --regions-file TMP/jeter3.bed":""} \\
 	"${vcf}" |\\
-	java -Xmx${task.memory.giga}g  -XX:-UsePerfData  -Djava.io.tmpdir=TMP vcfsplitnvariants \\
+	jvarkit -Xmx${task.memory.giga}g  -XX:-UsePerfData  -Djava.io.tmpdir=TMP vcfsplitnvariants \\
 	--manifest ${prefix}.MF \\
 	${method} \\
 	-o OUT/${prefix}

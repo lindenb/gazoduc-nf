@@ -11,7 +11,8 @@ input:
     tuple val(meta4),path(cadd_tabix),path(cadd_tbi)
     tuple val(meta),path(vcf),path(idx)
 output:
-
+    tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
+    path("versions.yml"),emit:versions
 script:
     def prefix = task.ext.prefix?:vcf.baseName+".cadd"
     def TAG = task.ext.tag?:"CADD"
@@ -73,5 +74,9 @@ bcftools index \\
 mv TMP/${prefix}.bcf ./
 mv TMP/${prefix}.bcf.csi ./
 
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	TODO: "TODO"
+END_VERSIONS
 """
 }

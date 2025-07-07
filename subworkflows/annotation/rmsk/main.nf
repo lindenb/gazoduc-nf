@@ -55,6 +55,7 @@ input:
     tuple val(meta3),path(dict)
 output:
 	tuple val(meta1),path("*.bed.gz"), path("*.bed.gz.tbi"), path("*.header"),emit:output
+	path("versions.yml"),emit:versions
 script:
 	def k1 = k1_signature()
     def base = "https://hgdownload.cse.ucsc.edu/goldenPath"
@@ -80,10 +81,10 @@ sort | uniq > TMP/jeter.url
 URL=`cat TMP/jeter.url`
 
 set -o pipefail
-wget --no-check-certificate -O - "${url}" |\\
+wget --no-check-certificate -O - "\${URL}" |\\
 	gunzip -c |\\
 	cut -f6-8 |\\
-	java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${fasta}" --column 1 --convert SKIP  |\\
+	jvarkit bedrenamechr -XX:-UsePerfData  -Djava.io.tmpdir=TMP -f "${fasta}" --column 1 --convert SKIP  |\\
 		sort  -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
 		bedtools merge |\\
 		sed 's/\$/\t1/' |\\
@@ -95,7 +96,7 @@ tabix -p bed -f TMP/${TAG}.bed.gz
 mv TMP/${TAG}.bed.gz ./
 mv TMP/${TAG}.bed.gz.tbi ./
 
-echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${whatis}">' > ${TAG}.header
+echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="Repeat Masker from UCSC">' > ${TAG}.header
 
 
 
@@ -116,7 +117,7 @@ input:
 	tuple val(meta1),path(tabix),path(tbi),path(header)
 	tuple val(meta),path(vcf),path(vcf_idx)
 output:
-	tuple val(meta), path("*.bcf"), path("*.bcf.csi"),emit:bed
+	tuple val(meta), path("*.bcf"), path("*.bcf.csi"),emit:vcf
 	path("versions.yml"),emit:versions
 script:
 	def TAG = task.ext.tag?:"RMSK"

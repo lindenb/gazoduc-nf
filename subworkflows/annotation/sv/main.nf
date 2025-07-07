@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 include {k1_signature         } from '../../../modules/utils/k1.nf'
-include {isGRCH38             } from '../../../modules/utils/k1.nf'
+include {isGRCh38             } from '../../../modules/utils/k1.nf'
 include {VEP as VEP_GRCH38    } from './grch38.nf'
 
 def k1 = k1_signature()

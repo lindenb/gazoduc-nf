@@ -26,46 +26,55 @@ include {k1_signature} from '../../../modules/utils/k1.nf'
 
 
 
-workflow ANNOTATE_VISTA {
+workflow VISTA {
 	take:
+		meta
 		fasta
 		fai
 		dict
 		vcfs /* meta, vcf,vcf_index */
 	main:
-		source_ch = DOWNLOAD(fasta,fai,dict)
-		annotate_ch = ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
+		versions = Channel.empty()
+		
+		DOWNLOAD(fasta,fai,dict)
+		versions = versions.mix(DOWNLOAD.out.versions)
+
+		ANNOTATE(DOWNLOAD.out.bed, DOWNLOAD.out.tbi,DOWNLOAD.out.header,vcfs)
+		versions = versions.mix(ANNOTATE.out.versions)
 	emit:
-		output = annotate_ch.output
-		doc = source_ch.doc
+		vcf = ANNOTATE.out.vcf
+		versions
+		doc = DOWNLOAD.out.doc
 }
 
 process DOWNLOAD{
-tag "${fasta.name}"
+tag "${meta1.id?:fasta.name}"
 afterScript "rm -rf TMP"
 label "process_quick"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-        path(fasta)
-        path(fai)
-        path(dict)
+    tuple val(meta1),path(fasta)
+    tuple val(meta2),path(fai)
+    tuple val(meta3),path(dict)
 output:
-	path("*.bed.gz"),emit:bed
-	path("*.bed.gz.tbi"),emit:tbi
-	path("*.header"),emit:header
-	path("*.md"),emit:doc
+	tuple val(meta1),path("*.bed.gz"),emit:bed
+	tuple val(meta1),path("*.bed.gz.tbi"),emit:tbi
+	tuple val(meta1),path("*.header"),emit:header
+	tuple val(meta1),path("*.md"),emit:doc
+	tuple val(meta1),path("versions.yml"),emit:versions
 script:
-    	def k1 = k1_signature()
+    def k1 = k1_signature()
    	def TAG = "VISTA"
 	def whatis="VISTA enhancers"
+	def base = "https://hgdownload.cse.ucsc.edu/gbdb"
 """
 set -o pipefail
 hostname 1>&2
 mkdir -p TMP/CACHE
 
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:${k1.hg38}\thttps://hgdownload.cse.ucsc.edu/gbdb/hg38/vistaEnhancers/vistaEnhancers.bb
-1:${k1.hg19}\thttps://hgdownload.cse.ucsc.edu/gbdb/hg19/vistaEnhancers/vistaEnhancers.bb
+1:${k1.hg38}\t${base}/hg38/vistaEnhancers/vistaEnhancers.bb
+1:${k1.hg19}\t${base}/hg19/vistaEnhancers/vistaEnhancers.bb
 EOF
 
 awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
@@ -91,21 +100,27 @@ echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${whatis}">' > ${TAG}.
 cat << EOF > ${TAG}.md
 Vista enhancer.
 EOF
+
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	TODO: "TODO"
+END_VERSIONS
 """
 }
 
 process ANNOTATE {
-tag "${vcf.name}"
+tag "${meta.id?:vcf.name}"
 afterScript "rm -rf TMP"
 label "process_quick"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-	path(tabix)
-	path(tbi)
-	path(header)
+	tuple val(meta1),path(tabix)
+	tuple val(meta2),path(tbi)
+	tuple val(meta3),path(header)
 	tuple val(meta),path(vcf),path(vcf_idx)
 output:
-    tuple val(meta),path("*.bcf"),path("*.csi"),emit:output
+    tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
+	path("versions.yml"),emit:versions
 script:
     def TAG = "VISTA"
 """
@@ -125,5 +140,11 @@ bcftools index \\
 
 mv TMP/*.bcf ./
 mv TMP/*.bcf.csi ./
+
+
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	TODO: "TODO"
+END_VERSIONS
 """
 }

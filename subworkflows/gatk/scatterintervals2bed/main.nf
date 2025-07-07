@@ -23,8 +23,8 @@ SOFTWARE.
 
 */
 
-include { SCATTER_INTERVALS_BY_NS  } from '../../modules/gatk/scatter.intervals/main.nf'
-include { INTERVAL_LIST_TO_BED }  from '../../modules/gatk/interval.list2bed/main.nf'
+include { SCATTER_INTERVALS_BY_NS  } from '../../../modules/gatk/scatter.intervals/main.nf'
+include { INTERVAL_LIST_TO_BED }  from '../../../modules/gatk/interval.list2bed/main.nf'
 
 workflow SCATTER_TO_BED {
 	take:
@@ -35,7 +35,7 @@ workflow SCATTER_TO_BED {
 	main:
 		versions = Channel.empty()
 		
-		SCATTER_INTERVALS_BY_NS(reference)
+		SCATTER_INTERVALS_BY_NS(fasta,fai,dict)
 		versions = versions.mix(SCATTER_INTERVALS_BY_NS.out.versions)
 
 		INTERVAL_LIST_TO_BED(SCATTER_INTERVALS_BY_NS.out.interval_list)

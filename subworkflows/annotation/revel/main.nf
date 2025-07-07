@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {isGRCh37;isGRCh38} from '../../modules/utils/k1.nf'
+include {isGRCh37;isGRCh38} from '../../../modules/utils/k1.nf'
 
 
 workflow REVEL {
@@ -34,23 +34,34 @@ workflow REVEL {
 		vcfs /* meta,vcf,idx */
 	main:
 		versions = Channel.empty()
-		DOWNLOAD(fasta, fai,fasta)
-		versions = versions.mix(DOWNLOAD.out.version)
-		ANNOTATE(DOWNLOAD.out.outputn, vcfs)
-		versions = versions.mix(ANNOTATE.out.version)
+		
+		if(isGRCh37(fai[1])) {
+			column =  2
+		}else if(isGRCh38(fai[1])) {
+			column =  3
+		} else {
+			column =  -1
+		}
+		
+		DOWNLOAD(fasta,fai,column)
+		versions = versions.mix(DOWNLOAD.out.versions)
+		
+		ANNOTATE(DOWNLOAD.out.output, vcfs)
+		versions = versions.mix(ANNOTATE.out.versions)
 	emit:
 		vcf = ANNOTATE.out.vcf
 		versions
 }
 
 process DOWNLOAD {
-tag "${meta1.id?:vcf.name}"
+tag "${meta1.id?:fasta.name}"
 label "process_single"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai)
+	tuple val(meta2),path(fai),val(colpos)
+	val(colpos)
 output:
 	tuple val(meta1),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.header"),emit:output
 	path("versions.yml"),emit:versions
@@ -58,7 +69,7 @@ script:
 	def TAG = "REVEL"
 	def WHATIZ="REVEL is an ensemble method for predicting the pathogenicity of missense variants in the human genome. https://doi.org/10.1016/j.ajhg.2016.08.016 ."
 	def url = task.ext.url?:"https://zenodo.org/records/7072866/files/revel-v1.3_all_chromosomes.zip?download=1"
-	def colpos= isGRCh37(fai)?2: isGRCh38(fai)?3:-1
+	//def colpos= isGRCh37(fai)?2: isGRCh38(fai)?3:-1
 	if(colpos<1) {
 		throw new IllegalArgumentException("Bad fai version ${task.process}");
 		}

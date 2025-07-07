@@ -36,8 +36,8 @@ include {DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GTF   } from '../../../modules/gtf/dow
 include {DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GFF3  } from '../../../modules/gtf/download/main.nf'
 //include {ANNOTATE                               } from '../../../subworkflows/annotation/annotsnv/main.nf'
 include {ANNOTATE                                 } from '../../../subworkflows/annotation/annotsnv/main.nf'
-include {SPLIT_N_VARIANTS                         } from '../../../subworkflows/jvarkit/splitnvariants/main.nf'
-
+include {SCATTER_TO_BED                           } from '../../../subworkflows/gatk/scatterintervals2bed/main.nf'
+include {SPLIT_N_VARIANTS                         } from '../../../modules/jvarkit/splitnvariants/main.nf'
 
 
 workflow {
@@ -76,18 +76,44 @@ workflow {
 
 
 	if(!bed[1]) {
-		
 		SCATTER_TO_BED([id:"annot"],fasta,fai,dict)
 		bed = SCATTER_TO_BED.out.bed
-	}
+		versions= versions.mix(SCATTER_TO_BED.out.versions)
+	} 
 
-
-	SPLIT_N_VARIANTS( [id:"annot"], fasta, fai, dict, vcfs,bed)
+	SPLIT_N_VARIANTS(
+		vcfs.combine(bed).map{[it[0],it[1],it[2],it[4]]}
+		)
 	versions= versions.mix(SPLIT_N_VARIANTS.out.versions)
+
+	ch1 = SPLIT_N_VARIANTS.out.vcf.
+		flatMap{
+			def L=[]
+			for(X in it[1]) {
+				L.add([it[0],X])
+			}
+		return L;
+		}
+
+	ch2= SPLIT_N_VARIANTS.out.tbi
+		.flatMap{T->{
+			def L=[]
+			for(X in T[1]) {
+				L.add([T[0],X])
+				}
+			return L;
+			}}
+	
+	vcf = ch1.combine(ch2)
+		.filter{it[0].equals(it[2])}
+		.filter{(it[1].toRealPath()+".tbi").equals(it[3].toRealPath())}
+		.map{[it[0],it[1],it[3]]}
+		.view()
+
 
 	DOWNLOAD_GTF(fasta,fai,dict)
 	DOWNLOAD_GFF3(fasta,fai,dict)
-	/*
+	
 	ANNOTATE(
 		[id:"annot"],
 		fasta,
@@ -96,9 +122,9 @@ workflow {
 		DOWNLOAD_GTF.out.output,
 		DOWNLOAD_GFF3.out.output,		
 		pedigree,
-		SPLIT_N_VARIANTS.out.vcf
+		vcf
 		)
-	versions= versions.mix(ANNOTATE.out.versions) */
+	versions= versions.mix(ANNOTATE.out.versions)
 	}
 
 workflow ANNOTATE_VCF {
@@ -139,43 +165,3 @@ workflow ANNOTATE_VCF {
 	}
 
 runOnComplete(workflow);
-
-process SPLIT_VCF {
-tag "${meta.id?:""}"
-label "process_single"
-afterScript "rm -rf TMP"
-input:
-	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai)
-	tuple val(meta3),path(dict)
-	tuple val(meta4),path(bed)
-	tuple val(meta ),path(vcf),path(idx)
-output:
-	tuple path("BEDS/*.bed"),val(meta),path(vcf),path(idx)
-script:
-	def method = task.ext.method?:""
-	def has_bed= bed?true:false
-"""
-mkdir -p TMP
-bcftools index -s "${vcf}" |\\
-	awk -F '\t' '{printft("%s\t0\t%s\\n",\$1,\$2);}' |\\
-	sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter1.bed
-
-if ${has_bed}
-then
-	${bed.name.endsWith(".gz")?"gunzip -c":"cat"} "${bed}" |\\
-		grep -vE '^(browser|track)' |\\
-		cut -f1,2,3 |\
-		sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter2.bed
-	
-	bedtools intersect -a TMP/jeter1.bed -b TMP/jeter2.bed |\\
-		sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter3.bed
-	
-	mv TMP/jeter3.bed TMP/jeter1.bed
-fi
-
-mkdir -p BEDS
-jvarkit bedcluster ${method} -R ${fasta} -o BEDS TMP/jeter1.bed
-"""
-}
-

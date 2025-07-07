@@ -106,8 +106,8 @@ mv TMP/*.bed.gz ./
 mv TMP/*.bed.gz.tbi ./
 
 
-echo -e "##INFO=<ID=${TAG},Number=.,Type=String,Description=\\"${WHATIZ} \${URL}\\">" > ${TAG}_IN.header
-echo '##INFO=<ID=${TAG}_NEAR,Number=.,Type=String,Description="Near gene distance=${extend}. ${WHATIZ} ${url}">' > ${TAG}_OUT.header
+echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${WHATIZ} ${URL}">' > ${TAG}_IN.header
+echo '##INFO=<ID=${TAG}_NEAR,Number=.,Type=String,Description="Near gene distance=${extend}. ${WHATIZ} ${URL}">' > ${TAG}_OUT.header
 
 
 cat << END_VERSIONS > versions.yml
@@ -129,7 +129,9 @@ input:
 	tuple val(meta2),path(bed_out),path(tabix_out),path(header_out)
 	tuple val(meta),path(vcf),path(vcf_idx)
 output:
-    tuple val(meta),path("*.bcf"),path("*.csi"),emit:bed
+    tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
+	path("versions.yml"),emit:versions
+
 script:
     def TAG = task.ext.tag?:"BHFUCL"
 	def prefix=task.ext.prefix?:vcf.baseName+".bhfucl"

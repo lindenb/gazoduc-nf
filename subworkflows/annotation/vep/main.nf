@@ -1,4 +1,4 @@
-include {isGRCH38} from '../../../modules/utils/k1.nf'
+include {isGRCh38} from '../../../modules/utils/k1.nf'
 include {VEP as VEP_GRCH38} from './grch38.nf'
 
 workflow VEP {
@@ -10,7 +10,7 @@ workflow VEP {
         vcf
     main:
         versions = Channel.empty()
-        if(isGRCH38(fai[1])) {
+        if(isGRCh38(fai[1])) {
             VEP_GRCH38(meta,fasta,fai,dict,vcf)
             versions = versions.mix(VEP_GRCH38.out.versions)
             

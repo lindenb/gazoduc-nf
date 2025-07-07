@@ -36,10 +36,15 @@ workflow ALPHAMISSENSE {
 	main:
 		versions = Channel.empty()
 		
-		source_ch = DOWNLOAD(fasta,fai,dict,bed)
+		DOWNLOAD(fasta,fai,dict,bed)
 		versions = versions.mix(DOWNLOAD.out.versions)
 
-		ANNOTATE(source_ch.bed, source_ch.tbi,source_ch.header,vcfs)
+		DOWNLOAD.out.bed.view{"it1 ${it}"}
+		DOWNLOAD.out.tbi.view{"it2 ${it}"}
+		DOWNLOAD.out.header.view{"it3 ${it}"}
+		vcfs.view{"it4 ${it}"}
+
+		ANNOTATE(DOWNLOAD.out.bed, DOWNLOAD.out.tbi, DOWNLOAD.out.header, vcfs)
 		versions = versions.mix(ANNOTATE.out.versions)
 	emit:
 		vcf = ANNOTATE.out.vcf
@@ -127,7 +132,7 @@ EOF
 
 
 process ANNOTATE {
-tag "${vcf.name}"
+tag "${meta.id?:vcf.name}"
 afterScript "rm -rf TMP"
 label "process_quick"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
