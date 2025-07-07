@@ -113,7 +113,7 @@ runOnComplete(workflow)
 
 
 process FIND_COVERAGE_AT_LOC {
-label "process_quick"
+label "process_single"
 tag "${contig}:${pos} N=${bams.size()}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
@@ -140,7 +140,7 @@ mv TMP/jeter.tsv "coverage.\${MD5}.tsv"
 }
 
 process MERGE_COVERAGE_AT_LOC {
-label "process_quick"
+label "process_single"
 tag "${key[0]}:${key[1]}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
@@ -250,7 +250,7 @@ awk -f TMP/jeter.awk TMP/merged.tsv > index.html
 
 process APPLY_IGVREPORT {
 tag "${contig}:${pos} page ${page}/${page_max} N=${bams.size()}"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../conda/igv-reports.yml"
 //afterScript "rm -rf TMP"
 input:

@@ -38,7 +38,7 @@ include {DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GFF3  } from '../../../modules/gtf/dow
 include {ANNOTATE                                 } from '../../../subworkflows/annotation/annotsnv/main.nf'
 include {SCATTER_TO_BED                           } from '../../../subworkflows/gatk/scatterintervals2bed/main.nf'
 include {SPLIT_N_VARIANTS                         } from '../../../modules/jvarkit/splitnvariants/main.nf'
-
+include {BCFTOOL_CONCAT                           } from '../../../modules/bcftools/concat/main.nf'
 
 workflow {
 	versions = Channel.empty()
@@ -124,6 +124,15 @@ workflow {
 		pedigree,
 		vcf
 		)
+
+	BCFTOOL_CONCAT(
+		ANNOTATE.out.vcf
+			.map{[ it[0], [it[1],it[2]] ]}
+			.groupTuple()
+			.map{[it[0],it[1].flatten()]} , 
+		[[id:"nobed"],[]]
+		)
+
 	versions= versions.mix(ANNOTATE.out.versions)
 	}
 

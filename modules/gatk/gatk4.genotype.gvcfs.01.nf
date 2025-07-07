@@ -24,7 +24,7 @@ SOFTWARE.
 */
 process HC_GENOTYPE {
 tag "${bed.name}"
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:

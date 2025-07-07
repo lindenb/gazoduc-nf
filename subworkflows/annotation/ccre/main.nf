@@ -45,7 +45,7 @@ workflow ANNOTATE_CCRE {
 process DOWNLOAD{
 tag "${fasta.name}"
 afterScript "rm -rf TMP"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
         path(fasta)
@@ -104,7 +104,7 @@ __EOF__
 process ANNOTATE {
 tag "${vcf.name}"
 afterScript "rm -rf TMP"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	path(tabix)

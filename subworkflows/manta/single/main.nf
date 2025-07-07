@@ -76,7 +76,7 @@ workflow MANTA_GERMLINE_SINGLE_SV01 {
 
 process APPLY_MANTA_GERMLINE_SINGLE {
     tag "${sample} ${bam.name}"
-    label "process_quick_high"
+    label "process_single_high"
     conda "${moduleDir}/../../../conda/manta.yml"
     afterScript "rm -rf TMP"
     input:

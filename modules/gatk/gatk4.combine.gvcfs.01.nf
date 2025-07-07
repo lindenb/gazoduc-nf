@@ -24,7 +24,7 @@ SOFTWARE.
 */
 process HC_COMBINE1 {
 tag "${bed.name}"
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 errorStrategy "retry"
 maxRetries 2

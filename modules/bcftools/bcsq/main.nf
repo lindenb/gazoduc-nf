@@ -25,7 +25,7 @@ SOFTWARE.
 
 process BCFTOOLS_BCSQ {
 tag "${meta.id}"
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 when:

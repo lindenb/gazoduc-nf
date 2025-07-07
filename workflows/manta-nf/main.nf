@@ -38,7 +38,7 @@ workflow SINGLE_SAMPLE {
 
 process ALIGNMENT_STATS {
 tag "${sample}"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../conda/manta.yml"
 input:
 	path(fasta)	
@@ -61,7 +61,7 @@ MANTA_BIN_DIR=`dirname \${CONFIG_MANTA_EXE}`
 
 process MERGE_ALIGNMENT_STATS {
 tag "${sample}"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../conda/manta.yml"
 input:
 	tuple val(sample),path("STATS/*")
@@ -81,7 +81,7 @@ MANTA_BIN_DIR=`dirname \${CONFIG_MANTA_EXE}`
 
 process SUMMARIZE_STATS {
 tag "${sample}"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../conda/manta.yml"
 input:
         tuple val(sample),path(stats)
@@ -100,7 +100,7 @@ MANTA_BIN_DIR=`dirname \${CONFIG_MANTA_EXE}`
 
 process FAIDX_INFO {
 tag "${fai}"
-label "process_quick"
+label "process_single"
 input:
         path(fai)
 output:
@@ -113,7 +113,7 @@ awk -F '\t' '(\$1 ~ /^(chr)?[0-9XY]*\$/ ) {printf("%s\t%d\\n",\$1,NR);}' '${fai}
 
 process ESTIMATE_CHROM_DEPTH {
 tag "${sample} ${contig}"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../conda/manta.yml"
 input:
         path(fasta)
@@ -136,7 +136,7 @@ MANTA_BIN_DIR=`dirname \${CONFIG_MANTA_EXE}`
 
 process CAT_CHROM_DEPTH {
 tag "${sample}"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../conda/manta.yml"
 input:
         tuple val(sample),path("CONTIG/*")

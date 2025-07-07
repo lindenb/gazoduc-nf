@@ -43,7 +43,7 @@ process DOWNLOAD_GNOMAD {
 tag "${contig}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
-label "process_quick"
+label "process_single"
 input:
 	val(contig)
 output:
@@ -68,7 +68,7 @@ echo "${params.outdir}/TMP/gnomad.${contig}.tsv.gz" > gnomad.${contig}.txt
 process MERGE_GNOMAD {
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
-label "process_quick"
+label "process_single"
 input:
 	path("TSV/*")
 output:
@@ -95,7 +95,7 @@ afterScript "rm -rf TMP"
 tag "${name} ${contig}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
-label "process_quick"
+label "process_single"
 input:
 	tuple val(contig),val(name)
 output:
@@ -148,7 +148,7 @@ rm -fv ${params.outdir}/TMP/tmp.cadd.${name}.*
 process DOWNLOAD_VARIANT_CATALOG {
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
-label "process_quick"
+label "process_single"
 output:
 	path("xhunter.flag"),emit:output
 script:
@@ -197,7 +197,7 @@ touch genmod.flag
 
 
 process HGNC {
-label "process_quick"
+label "process_single"
 output:
 	path("hgnc.flag"),emit:output
 script:

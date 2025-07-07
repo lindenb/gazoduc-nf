@@ -245,6 +245,7 @@ workflow ANNOTATE {
 		version_ch = MERGE_VERSION("VCF annotation", version_ch.collect())
 		*/
 	emit:
+		vcf
 		versions
 	}
 

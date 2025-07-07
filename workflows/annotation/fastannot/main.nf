@@ -66,7 +66,7 @@ workflow  {
 
 
 process VCF_TO_BED {
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	tuple path(vcf),path(vcfidx)
@@ -85,7 +85,7 @@ bcftools index -s "${vcf}" |\
 
 process VCF_TO_INTERVALS {
 tag "${contig} ${start0} ${end} ${vcf} ${vcfidx} ${bed}"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
@@ -128,7 +128,7 @@ fi
 process ANNOT {
 tag "${contig}:${start0}-${end}"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 memory "5g"
 input:

@@ -84,7 +84,7 @@ workflow {
 
 process HC_BAM_BED {
 tag "${chrom}:${start}-${end} ${sample}"
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 errorStrategy "retry"
 maxRetries 2
@@ -122,7 +122,7 @@ mv TMP/jeter.g.vcf.gz.tbi "${prefix}.g.vcf.gz.tbi"
 
 process GATHER_VCFS {
 tag "${sample}"
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 errorStrategy "retry"
 maxRetries 2

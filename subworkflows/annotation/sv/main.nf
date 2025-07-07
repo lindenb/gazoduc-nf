@@ -256,7 +256,7 @@ echo '##INFO=<ID=ENS_REG,Number=.,Type=String,Description="features from Ensembl
 
 process DOWNLOAD_DGV {
 tag "${meta1.id?:""}"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
@@ -301,7 +301,7 @@ echo '##INFO=<ID=DGV_AF,Number=1,Type=Float,Description="DGV_FREQUENCY">' >> dgv
 
 process ANNOTATE {
 tag "${meta.id}"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:

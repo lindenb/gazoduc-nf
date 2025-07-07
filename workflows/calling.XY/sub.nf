@@ -30,7 +30,7 @@ workflow MAKE_STATS {
 
 
 process EXTRACT_SAMPLES {
-label "process_quick"
+label "process_single"
 tag "${sex}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
@@ -58,7 +58,7 @@ cut -f1 sample2sex.${sex}.tsv | sort | uniq > samples.${sex}.txt
 }
 
 process BCFTOOLS_STATS {
-label "process_quick"
+label "process_single"
 tag "sex:${sex} bed:${bed.name} samples:${samples.name} ctg:${contig}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
@@ -121,7 +121,7 @@ zip -9 -r "multiqc.${sex}.${bed.name}.${contig}.zip" "multiqc.${sex}.${bed.name}
 
 
 process MULTIQC_MALE_VS_FEMALE {
-label "process_quick"
+label "process_single"
 tag "${directory} ${sample2sex.name} ${contig}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"

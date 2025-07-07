@@ -50,7 +50,7 @@ workflow VISTA {
 process DOWNLOAD{
 tag "${meta1.id?:fasta.name}"
 afterScript "rm -rf TMP"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
     tuple val(meta1),path(fasta)
@@ -111,7 +111,7 @@ END_VERSIONS
 process ANNOTATE {
 tag "${meta.id?:vcf.name}"
 afterScript "rm -rf TMP"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	tuple val(meta1),path(tabix)

@@ -106,7 +106,7 @@ boolean isClusterError(task) {
 	}
 
 process GRAPHTYPER {
-label "process_quick"
+label "process_single"
 tag "(level ${level}) ${contig}:${start}-${end}"
 conda "${moduleDir}/../../../conda/graphtyper.yml"
 afterScript "rm -rf TMP TMP2"

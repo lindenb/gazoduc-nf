@@ -224,7 +224,7 @@ workflow {
 
 
 process HC_GENOMICDB_SAMPLE_MAP {
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 input:
         path("VCFS/*")
@@ -258,7 +258,7 @@ test -s "sample.\${MD5}.map"
 process HC_BAM_BED {
 tag "${bed.name} ${bam.name}"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 errorStrategy "retry"
 maxRetries 2
@@ -448,7 +448,7 @@ fi
 
 process HC_GENOMICDB_IMPORT_AND_GENOTYPE {
 tag "${bed.name}"
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:

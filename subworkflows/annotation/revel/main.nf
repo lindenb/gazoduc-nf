@@ -120,7 +120,7 @@ output:
 	path("versions.yml"),emit:versions
 script:
 	def TAG = "REVEL"
-	def prefix = task.ext.prefix?:vcf.baseName+".rsource_ch.bed, source_ch.tbi,source_ch.header,vcfsevel"
+	def prefix = task.ext.prefix?:vcf.baseName+".revel"
 """
 mkdir -p TMP OUTPUT
 

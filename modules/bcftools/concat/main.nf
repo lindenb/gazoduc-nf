@@ -28,7 +28,7 @@ process BCFTOOL_CONCAT {
 label "process_single"
 tag "${meta.id?:""}"
 afterScript "rm -rf TMP"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	tuple val(meta ),path("VCFS/*") 
 	tuple val(meta1),path(optional_bed)
@@ -51,12 +51,12 @@ script:
 	then
 
 		bcftools concat \\
-			--write-index ${args} \\
+			--write-index \\
 			--threads ${task.cpus} \\
 			${args1} \\
 			${args2} \\
 			${args3} \\
-			--O b9 \\
+			-O b9 \\
 			--file-list TMP/jeter.list \\
 			-o "TMP/jeter.bcf" 
 
@@ -86,7 +86,7 @@ script:
 			${args1} \\
 			${args2} \\
 			${args3} \\
-			--O b9 \\
+			-O b9 \\
 			--file-list TMP/jeter2.list \\
 			-o "TMP/jeter.bcf" 
 

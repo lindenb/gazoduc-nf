@@ -127,7 +127,7 @@ workflow {
 
 process APPLY_SAMTOOLS_IDXSTAT {
 tag "${sample}"
-label "process_quick"
+label "process_single"
 cpus 1
 input:
       	tuple path(fasta),path(fai),path(dict)
@@ -146,7 +146,7 @@ samtools idxstats --threads ${task.cpus} "${bam}" > "${sample}.idxstat.txt"
 
 
 process APPLY_SAMTOOLS_FLAGSTAT {
-label "process_quick"
+label "process_single"
 tag "${sample}"
 afterScript "rm -rf TMP"
 cpus 1
@@ -175,7 +175,7 @@ touch version.xml
 
 process APPLY_SAMTOOLS_STATS {
 tag "${sample}"
-label "process_quick"
+label "process_single"
 time "3h"
 afterScript "rm -rf TMP"
 cpus 1
@@ -203,7 +203,7 @@ mv -v "TMP/jeter.stats.txt" "${sample}.stats.txt"
 
 process APPLY_COLLECT_WGS_METRICS {
 tag "${sample}"
-label "process_quick"
+label "process_single"
 time "3h"
 afterScript "rm -rf TMP"
 memory "3g"
@@ -241,7 +241,7 @@ EOF
 
 process APPLY_MOSDEPTH {
 	tag "${sample} ${bam.name}"
-	label "process_quick"
+	label "process_single"
 	time "3h"
 	afterScript "rm -rf TMP"
 	/** cpus 1 must be specified in config */

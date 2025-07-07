@@ -2,7 +2,7 @@
 
 process VEP_INSTALL_PLUGINS {
 tag "${meta.id}"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	tuple val(meta),val(plugins)

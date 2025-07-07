@@ -115,7 +115,7 @@ runOnComplete(workflow);
 
 
 process MAKE_INTERVALS {
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
@@ -169,7 +169,7 @@ mv TMP/windows.bed ./
 
 process MOSDEPTH {
 tag "${sample}"
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/mosdepth.yml"
 input:
@@ -206,7 +206,7 @@ test "${sample}.cov.txt"
 
 process READ_LENGTH {
 tag "${sample}"
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
@@ -229,7 +229,7 @@ samtools view -F 3844 -T "${fasta}" "${bam}" |\\
 }
 
 process DIGEST_DEPTH {
-label "process_quick"
+label "process_single"
 input:
 	val(L)
 output:

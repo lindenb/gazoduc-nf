@@ -26,7 +26,7 @@ include {parseBoolean;isBlank} from '../utils/functions.nf'
 
 process MOSDEPTH_RUN_01 {
 	tag "${row.sample} ${file(row.bam).name}"
-	label "process_quick"
+	label "process_single"
 	afterScript "rm -rf TMP"
 	input:
 		path(executable)

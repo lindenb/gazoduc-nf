@@ -25,7 +25,7 @@ SOFTWARE.
 include {k1_signature} from '../../utils/k1.nf'
 
 process DOWNLOAD_GENCODE {
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:

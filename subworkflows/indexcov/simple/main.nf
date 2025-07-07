@@ -138,7 +138,7 @@ script:
  **/
 process REBUILD_BAI {
     tag "${sample} ${bam.name} mapq=${params.mapq}"
-    label "process_quick"
+    label "process_single"
     afterScript "rm -rf TMP"
     input:
         path(fasta)

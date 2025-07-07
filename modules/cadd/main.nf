@@ -1,7 +1,7 @@
 process CADD {
 tag "${meta.id?:vcf.name}"
 label "process_single"
-conda "${moduleDir}/../../conda/bwa.yml"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 
 input:

@@ -53,7 +53,7 @@ workflow BHFUCL {
 process DOWNLOAD {
 tag "${fasta.name}"
 afterScript "rm -rf TMP"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
     tuple val(meta1),path(fasta)
@@ -122,7 +122,7 @@ END_VERSIONS
 process ANNOTATE {
 tag "${vcf.name}"
 afterScript "rm -rf TMP"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	tuple val(meta1),path(bed_in),path(tabix_in),path(header_in)
@@ -156,7 +156,7 @@ bcftools annotate \\
 
 bcftools annotate \\
 	--threads ${task.cpus} \\
-	-a "${tabix_out}" \\
+	-a "${bed_out}" \\
 	-h "${header_out}" \\
 	--write-index \\
 	--keep-sites -e 'INFO/${TAG} != ""' \\

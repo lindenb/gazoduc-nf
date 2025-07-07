@@ -123,7 +123,7 @@ workflow XX {
 }
 
 process DOWNLOAD_DELLY2 {
-	label "process_quick"
+	label "process_single"
 	output:
 		path("delly"),emit:output
 	script:
@@ -140,7 +140,7 @@ process DOWNLOAD_DELLY2 {
 
 
 process SCATTER_TO_BED {
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
@@ -172,7 +172,7 @@ test -s ./exclude.bed
 
 
 process GET_MAPPABILITY {
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
 	path(reference)
@@ -211,7 +211,7 @@ fi
 
 
 process GET_EXCLUDE {
-label "process_quick"
+label "process_single"
 afterScript "rm -f jeter.bed jeter2.bed jeter.interval_list"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:

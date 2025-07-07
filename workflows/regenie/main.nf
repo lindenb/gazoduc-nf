@@ -243,7 +243,7 @@ mv TMP/sample2pop.txt pedigree.sample2population.tsv
 }
 
 process WGSELECT {
-label "process_quick"
+label "process_single"
 array 100
 tag "${contig}:${start1}-${end} ${vcf.name}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
@@ -391,7 +391,7 @@ bcftools index --threads ${task.cpus} "wgselect.${contig}_${start1}_${end}.bcf"
 
 
 process PLINK2_VCF2PGEN {
-label "process_quick_high"
+label "process_single_high"
 afterScript "rm -rf TMP"
 tag "chr${contig}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
@@ -433,7 +433,7 @@ plink2 ${vcf.name.endsWith(".bcf")?"--bcf":"--vcf"} "${vcf}"  \\
 
 
 process PLINK2_MERGE_PGEN {
-label "process_quick_high"
+label "process_single_high"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
@@ -629,7 +629,7 @@ mv TMP/sites.vcf.gz ./
 }
 
 process STEP1 {
-label "process_quick_high"
+label "process_single_high"
 conda "${moduleDir}/../../conda/regenie.yml"
 afterScript "rm -rf TMP"
 input:
@@ -759,7 +759,7 @@ EOF
 
 process MAKE_FUNCTIONAL_ANNOT_PER_CTG {
 tag "chr${contig}"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"   
 afterScript "rm -rf TMP"
 input:
@@ -798,7 +798,7 @@ bcftools view -O v '${vcf}' |\\
 
 process MAKE_BED {
 tag "chr${contig} ${select_bed.name}"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
@@ -846,7 +846,7 @@ bcftools view --regions-file TMP/jeter.bed -O v '${vcf}' |\\
 
 process MAKE_SLIDING {
 tag "chr${contig} ${win_size}/${win_shift}"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"   
 afterScript "rm -rf TMP"
 input:
@@ -880,7 +880,7 @@ bcftools view -O v '${vcf}' |\\
 
 
 process STEP2 {
-label "process_quick_high"
+label "process_single_high"
 array 100
 tag "chr${contig} ${title} ${annot.name}"
 conda "${moduleDir}/../../conda/regenie.yml"
@@ -945,7 +945,7 @@ process MERGE_AND_PLOT {
 tag "${title}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
-label "process_quick"
+label "process_single"
 input:
 	path(genome)
 	tuple val(title),val(L) //path("INPUT/*")
@@ -1151,7 +1151,7 @@ workflow RUN_PCA {
 
 
 process PCA_PER_CONTIG {
-label "process_quick_high"
+label "process_single_high"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 tag "${contig}"
 afterScript "rm -rf TMP"
@@ -1295,7 +1295,7 @@ mv -v TMP/plink.${contig}.* ./
 
 
 process MERGE_PIHAT {
-label "process_quick_high"
+label "process_single_high"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
@@ -1355,7 +1355,7 @@ mv -v TMP/plink* ./
 
 process PLOT_PCA {
 tag "${col1} vs ${col2}"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
@@ -1402,7 +1402,7 @@ R --no-save < TMP/jeter.R
 
 
 process PLOT_AVERAGE_PIHAT {
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
@@ -1449,7 +1449,7 @@ R --no-save < TMP/jeter.R
 
 process PIHAT_PER_SAMPLE {
 tag "${plink_genome}"
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 input:
 	path(pedigree_files)
@@ -1474,7 +1474,7 @@ R --no-save < TMP/jeter.R
 
 
 process MAKE_PNG_ARCHIVE {
-label "process_quick"
+label "process_single"
 input:
 	path("PNGS/*")
 output:
@@ -1554,7 +1554,7 @@ rm -rf '${dir}'
 process ANNOT_HITS {
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
-label "process_quick"
+label "process_single"
 input:
 	path(genome)
 	path("INPUT/*")
@@ -1651,7 +1651,7 @@ mv TMP/digest.tsv digest.tsv
 
 process MAKE_SNPLIST {
 afterScript "rm -rf TMP"
-label "process_quick"
+label "process_single"
 input:
 	val(regenie_files)
 	val(snp_files)

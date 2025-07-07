@@ -118,7 +118,7 @@ runOnComplete(workflow)
 
 process PAR_TO_BED {
 tag "${fai.name}"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
@@ -173,7 +173,7 @@ mv TMP/par.bed ./
 
 process MAKE_FEMALE_FASTA {
 tag "${fasta.name}"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
@@ -206,7 +206,7 @@ cp ${dict} female.${fasta.simpleName}.dict
 
 process BWA_INDEX_GENOME {
 tag "${fasta.name}"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../conda/bwa.yml"
 afterScript "rm -rf TMP"
 input:
@@ -223,7 +223,7 @@ script:
 
 process REMAP_XY {
 tag "${sample} ${bam.name} ${sex}"
-label "process_quick_high"
+label "process_single_high"
 conda "${moduleDir}/../../conda/bwa.yml"
 afterScript "rm -rf TMP"
 
@@ -296,7 +296,7 @@ mv TMP/stats.json ${sample}.stats.json
 
 process GATK_GVCF {
 tag "${sample} ${par_bed.name} ${contig} ${par} ${fasta.name} ${sex}"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 array 100
 afterScript "rm -rf TMP"
@@ -328,7 +328,7 @@ mv TMP/jeter.g.vcf.gz.tbi ${sample}.${contig}.${par}.vcf.gz.tbi
 
 process MAKE_WINDOWS {
 tag "${type}"
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
@@ -351,7 +351,7 @@ mv TMP/jeter.bed ${type}_${w}_${s}.bed
 
 process GATK_GENOTYPE {
 tag "${interval}"
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
@@ -405,7 +405,7 @@ mv TMP/jeter.vcf.gz.tbi "${title}.vcf.gz.tbi"
 }
 
 process CONCAT_VCFS {
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
@@ -431,7 +431,7 @@ mv TMP/gatk4.xy.* ./
 
 process SAMTOOLS_STATS {
 tag "${sample} ${sex} ${bed.name} ${contigs}"
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 array 100
@@ -464,7 +464,7 @@ mv TMP/jeter.stats "${sample}.${contigs}.${bed.name}.${sex}.stats.txt"
 
 
 process SAMTOOLS_MQC {
-label "process_quick"
+label "process_single"
 tag "id:${id}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
@@ -497,7 +497,7 @@ zip -9 -r "multiqc.samtools.${id}.zip" "multiqc.samtools.${id}"
 
 
 process ZIP_OF_ZIPS {
-label "process_quick"
+label "process_single"
 input:
         path("ZIP/*")
 output:

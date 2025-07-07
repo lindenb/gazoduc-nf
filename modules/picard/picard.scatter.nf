@@ -28,7 +28,7 @@ nextflow.enable.dsl=2
 
 
 process SCATTER_INTERVALS_BY_NS {
-label "process_quick"
+label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:

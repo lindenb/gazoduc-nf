@@ -24,7 +24,7 @@ SOFTWARE.
 */
 process HC_GENOMICDB_GENOTYPE {
 tag "${bed.name}"
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 memory = {20.GB  * task.attempt}
 errorStrategy "retry"

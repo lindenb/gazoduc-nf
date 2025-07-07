@@ -24,7 +24,7 @@ SOFTWARE.
 */
 process HC_COMBINE2 {
 tag "${bed.name}"
-label "process_quick"
+label "process_single"
 afterScript "rm -rf TMP"
 input:
         tuple val(meta1),path(fasta)

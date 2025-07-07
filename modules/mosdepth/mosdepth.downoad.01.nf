@@ -25,7 +25,7 @@ SOFTWARE.
 
 
 process MOSDEPTH_DOWNLOAD_01 {
-label "process_quick"
+label "process_single"
 output:
 	path("mosdepth"),emit:output
 script:
