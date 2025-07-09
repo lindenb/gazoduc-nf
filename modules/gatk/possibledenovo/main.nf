@@ -26,7 +26,7 @@ process GATK_POSSIBLE_DENOVO {
         bcftools index -f -t --threads ${task.cpus} TMP/jeter1.vcf.gz
     fi
 
-    awk -f "${moduleDir}/pedigree4gatk.awk' "${pedigree}" > TMP/jeter.ped
+    awk -f "${moduleDir}/pedigree4gatk.awk" "${pedigree}" > TMP/jeter.ped
 
     gatk --java-options "-XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" VariantAnnotator \\
         -R "${fasta}" \\

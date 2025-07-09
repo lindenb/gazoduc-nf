@@ -7,8 +7,8 @@ conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	tuple val(meta ),path(vcf),path(idx),path(optional_bed)
 output:
-	tuple val(meta),path("OUT/*.vcf.gz"),optional:true,emit:vcf
-	tuple val(meta),path("OUT/*.tbi"),optional:true,emit:tbi
+	tuple val(meta),path("OUT/*.vcf.gz",arity:"0..*"),optional:true,emit:vcf
+	tuple val(meta),path("OUT/*.tbi",arity:"0..*"),optional:true,emit:tbi
 	tuple val(meta),path("*.MF"),optional:true,emit:manifest
 	path("versions.yml"),emit:versions
 script:
@@ -16,7 +16,7 @@ script:
 	if(method.trim().isEmpty()) throw new IllegalArgumentException("method undefined for ${task.process}");
 	def has_bed = optional_bed?true:false
 	def args1 = task.ext.args1?:""
-	def prefix = task.ext.prefix?:vcf.baseName+".split"
+	def prefix = task.ext.prefix?:vcf.baseName+(has_bed?"."+optional_bed.baseName:"")+".split"
 """
 hostname 1>&2
 set -o pipefail

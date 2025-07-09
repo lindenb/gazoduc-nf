@@ -56,7 +56,7 @@ workflow ANNOTATE_SV {
 			decode_ch.output
 			)
 		vcf = ANNOTATE.out.vcf
-		if(isGRCH38(fai[1])) {
+		if(isGRCh38(fai[1])) {
 				VEP_GRCH38(meta,fasta,fai,dict,vcf)
 				vcf = VEP_GRCH38.out.vcf
 			} else {

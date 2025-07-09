@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,40 +24,28 @@ SOFTWARE.
 */
 /** use linux split to split a file into parts */
 process LINUX_SPLIT {
-executor "local"
-tag "${filein.name}"
+label "process_single"
+afterScript "rm -rf TMP"
+tag "${meta.id?:filein.name}"
 input:
-      	val(meta)
-        path(filein)
+        tuple val(meta),path(filein)
 output:
-        path("clusters.list"),emit:output
-	path("version.xml"),emit:version
+        tuple val(meta),path("OUT/*",arity:"0..*"),emit:output
+		path("versions.yml"),emit:versions
 script:
-       	def prefix = meta.prefix?:"chunck."
-       	def suffix = meta.suffix?:".txt"
-       	def method = meta.method?:"--lines=10"
-        """
+       	def prefix = task.ext.prefix?:"chunck."
+       	def suffix = task.ext.suffix?:"."+filein.extension
+       	def method = task.ext.method?:""
+		if(method.trim().isEmpty()) throw new IllegalArgumentException("in ${task.process} method missing");
+"""
 
-	mkdir TMP
-        split -a 9 --additional-suffix=${suffix} ${method} "${filein}" "TMP/${prefix}"
+mkdir -p TMP
+split -a 9 --additional-suffix=${suffix} ${method} "${filein}" "TMP/${prefix}"
+mv TMP OUT
 
-      	find \${PWD}/TMP -type f -name "${prefix}*${suffix}" > clusters.list
-
-	cat <<- EOF > version.xml
-	<properties id="${task.process}">
-		<entry key="Name">${task.process}</entry>
-		<entry key="Description">Split file into parts</entry>
-		<entry key="Input">${filein}</entry>
-		<entry key="method">${method}</entry>
-		<entry key="N-FILES">\$(wc -l < clusters.list)</entry>
-		<entry key="Output">clusters.list</entry>
-	</properties>
-	EOF
-        """
-	stub:
-	"""
-	echo empty.txt
-	echo "\${PWD}/empty.txt" > clusters.list
-	echo "<properties/>" > version.xml
-	"""
-	}
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	split: "todo"
+END_VERSIONS
+"""
+}

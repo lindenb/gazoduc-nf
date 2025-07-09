@@ -77,10 +77,14 @@ input:
     tuple val(meta2),path(db_name)
 	tuple val(meta ),path(vcf),path(vcfidx)
 output:
-	tuple val(meta),path("*.bcf"),path("*.bcf.csi"),emit:vcf
+	tuple val(meta),path("*.bcf"),path("*.bcf.csi"),optional:true,emit:vcf
     path("versions.yml"),emit:versions
 script:
     def prefix=task.ext.prefix?:vcf.baseName+".snpeff"
+    def accessions = task.ext.accessions?:"" // keep blank, no filter by default. Otherwise you want SO:0001818,SO:0001629"
+    def args1 = task.ext.args1?:"-noLog -noStats -lof"
+    def args2 = task.ext.args2?:""
+
 """
 hostname 1>&2
 mkdir -p TMP OUTPUT
@@ -91,16 +95,30 @@ bcftools view '${vcf}' -O v |\\
 	snpEff -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP eff \\
         -dataDir "\${PWD}/${config}" \\
 		-nodownload \\
-        -noLog \\
-        -noStats \\
-        -lof \\
+        ${args1} \\
         `cat ${db_name}` > TMP/jeter1.vcf
 
-bcftools sort --max-mem '${task.memory.giga}G' -T TMP/tmp -O b -o TMP/${prefix}.bcf TMP/jeter1.vcf
-bcftools index --threads ${task.cpus} TMP/${prefix}.bcf
+if ${!accessions.trim().isEmpty()}
+then
+    jvarkit -Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP \\
+        vcffilterso \\
+        ${args2} \\
+        --acn "${accessions}" \\
+        TMP/jeter1.vcf >  TMP/jeter2.vcf
+    
+    mv TMP/jeter2.vcf TMP/jeter1.vcf
+fi
 
-mv TMP/${prefix}.bcf ./
-mv TMP/${prefix}.bcf.csi ./
+bcftools sort --max-mem '${task.memory.giga}G' -T TMP/tmp -O b -o TMP/jeter.bcf TMP/jeter1.vcf
+bcftools index --threads ${task.cpus} TMP/jeter.bcf
+
+
+if test \$(bcftools index -s TMP/jeter.bcf |wc -l) -gt 0
+then
+    mv TMP/jeter.bcf ${prefix}.bcf 
+    mv TMP/jeter.bcf.csi ${prefix}.bcf.csi
+fi
+
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":

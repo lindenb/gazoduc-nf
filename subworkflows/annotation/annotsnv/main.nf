@@ -35,7 +35,8 @@ include {REVEL} from '../revel/main.nf'
 include {CADD} from  '../../../modules/cadd/main.nf'
 include {VISTA} from '../vista/main.nf'
 include {SIMPLE_REPEATS} from '../simple_repeats/main.nf'
-
+include {JVARKIT_FILTER_LOWQUAL} from  '../../../modules/jvarkit/lowqual/main.nf'
+include {JVARKIT_VCFGNOMAD}  from  '../../../modules/jvarkit/vcfgnomad/main.nf'
 /*
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
@@ -152,6 +153,21 @@ workflow ANNOTATE {
 			versions = versions.mix(CADD.out.versions)
 			vcf = CADD.out.vcf
 			}
+		
+		JVARKIT_FILTER_LOWQUAL(vcf)
+		versions = versions.mix(JVARKIT_FILTER_LOWQUAL.out.versions)
+		vcf = JVARKIT_FILTER_LOWQUAL.out.vcf
+		
+
+		if(params.gnomad && params.gnomad.endsWith(".gz")) {
+			JVARKIT_VCFGNOMAD(
+				[[:],file(params.gnomad), file(params.gnomad+".tbi")],
+				vcf
+				)
+			versions = versions.mix(JVARKIT_VCFGNOMAD.out.versions)
+			vcf = JVARKIT_VCFGNOMAD.out.vcf
+			}
+
 		/*
 		
 		
@@ -169,10 +185,7 @@ workflow ANNOTATE {
 		step_ch = ANNOTATE_REMAP(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
-		
-		step_ch = ANNOTATE_GNOMAD_GENOME(genomeId, bed, step_ch.output)
-		count_ch = count_ch.mix(step_ch.count)
-		doc_ch = count_ch.mix(step_ch.doc)
+
 		
 		step_ch = ANNOTATE_GNOMADSV(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)
@@ -182,9 +195,7 @@ workflow ANNOTATE {
 		count_ch = count_ch.mix(step_ch.count)
 		doc_ch = count_ch.mix(step_ch.doc)
 	
-		step_ch = ANNOTATE_POLYX(genomeId, bed, step_ch.output)
-		count_ch = count_ch.mix(step_ch.count)
-		doc_ch = count_ch.mix(step_ch.doc)
+
 		
 		step_ch = ANNOTATE_AVADA(genomeId, bed, step_ch.output)
 		count_ch = count_ch.mix(step_ch.count)

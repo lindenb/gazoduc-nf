@@ -39,11 +39,6 @@ workflow ALPHAMISSENSE {
 		DOWNLOAD(fasta,fai,dict,bed)
 		versions = versions.mix(DOWNLOAD.out.versions)
 
-		DOWNLOAD.out.bed.view{"it1 ${it}"}
-		DOWNLOAD.out.tbi.view{"it2 ${it}"}
-		DOWNLOAD.out.header.view{"it3 ${it}"}
-		vcfs.view{"it4 ${it}"}
-
 		ANNOTATE(DOWNLOAD.out.bed, DOWNLOAD.out.tbi, DOWNLOAD.out.header, vcfs)
 		versions = versions.mix(ANNOTATE.out.versions)
 	emit:

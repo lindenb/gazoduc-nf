@@ -32,7 +32,7 @@ process JVARKIT_VCFGNOMAD {
 		tuple val(meta ),path(gnomadvcf),path(gnomadvcf_idx)
 		tuple val(meta ),path(vcf),path(idx)
 	output:
-		tuple val(meta ),path("*.bcf"),path("*.bcf.csi"),emit:vcf
+		tuple val(meta ),path("*.bcf"),path("*.bcf.csi"),optional:true,emit:vcf
 		path("versions.yml"),emit:versions
 	script:
 		def buffer_size  = task.ext.buffer_size?:(task.attempt==1?100:10)
@@ -41,7 +41,10 @@ process JVARKIT_VCFGNOMAD {
 		def fields = task.ext.fields?:"AF_nfe"
 		def args1 = task.ext.args1?:""
 		def args2 = task.ext.args2?:""
+		def args3 = task.ext.args3?:""
+		def args4 = task.ext.args4?:""
 		def prefix  = task.ext.prefix?:vcf.baseName+".gnomad"
+		def expr = task.ext.filterjdk?:""
 	"""
 	set -o pipefail
 
@@ -54,12 +57,30 @@ process JVARKIT_VCFGNOMAD {
 		--max-af ${max_af} \\
 		--gnomad "${gnomadvcf}" \\
 		--fields "${fields}" |\\
-	bcftools view ${args2} -O b -o TMP/${prefix}.bcf
+	bcftools view ${args2} -O b -o TMP/jeter.bcf
 
-	bcftools index --threads ${task.cpus} -f TMP/${prefix}.bcf
+	
 
-	mv TMP/${prefix}.bcf ./
-	mv TMP/${prefix}.bcf.csi ./
+	if ${!expr.isEmpty()}
+	then
+		set -x
+		
+		bcftools view  ${args3} TMP/jeter.bcf |\\
+		jvarkit -XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcffilterjdk \\
+				${expr} |\\
+			bcftools view ${args4} -O b -o TMP/jeter2.bcf
+
+		mv TMP/jeter2.bcf TMP/jeter.bcf
+	fi
+
+
+	bcftools index --threads ${task.cpus} -f TMP/jeter.bcf
+
+    if test \$(bcftools index -s TMP/jeter.bcf |wc -l) -gt 0
+	then
+		mv TMP/jeter.bcf ${prefix}.bcf 
+		mv TMP/jeter.bcf.csi ${prefix}.bcf.csi
+	fi
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":

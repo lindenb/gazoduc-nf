@@ -28,7 +28,7 @@ process GATK_CALCULATE_GENOTYPE_POSTERIORS {
     fi
 
 
-    awk -f "${moduleDir}/../possibledenovo/pedigree4gatk.awk' "${pedigree}" > TMP/jeter.ped
+    awk -f '${moduleDir}/../possibledenovo/pedigree4gatk.awk' "${pedigree}" > TMP/jeter.ped
 
     gatk --java-options "-XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" CalculateGenotypePosteriors \\
         -R "${fasta}" \\

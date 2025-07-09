@@ -34,12 +34,19 @@ output:
     path("versions.yml"),emit:versions
 script:
 	def prefix = task.ext.prefix?:interval_list.baseName
+    def expr = task.ext.awk_filter?:""
 """
 mkdir -p TMP
 gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" IntervalListToBed \\
     --INPUT "${interval_list}" \\
     --OUTPUT "TMP/jeter.bed" \\
     --SORT true
+
+if ${!expr.trim().isEmpty()}
+then
+    awk -F '\t' '(${expr})' "TMP/jeter.bed" > "TMP/jeter2.bed"
+    mv "TMP/jeter2.bed" "TMP/jeter.bed"
+fi
 
 mv TMP/jeter.bed ./${prefix}.bed
 

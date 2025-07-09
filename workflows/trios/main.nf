@@ -1,12 +1,8 @@
 import java.io.InputStreamReader;
 import java.util.zip.GZIPInputStream;
 
-include {CLINVAR                                  } from '../../subworkflows/annotation/clinvar/main.nf'
-include {ALPHAMISSENSE                            } from '../../subworkflows/annotation/alphamissense/main.nf'
 include {VEP                                      } from '../../subworkflows/annotation/vep/main.nf'
-include {TRIOS  as TRIO_SNV                       } from '../../subworkflows/trios/main.nf'
 include {TRUVARI                                  } from '../../subworkflows/truvari/main.nf'
-include {SNPEFF                                   } from '../../subworkflows/snpeff/main.nf'
 include {DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GFF3    } from '../../modules/gtf/download/main.nf'
 include {DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GTF     } from '../../modules/gtf/download/main.nf'
 include {BCFTOOLS_BCSQ                            } from '../../modules/bcftools/bcsq/main.nf'
@@ -14,8 +10,8 @@ include {ANNOTATE_SV                              } from '../../subworkflows/ann
 include {BCTOOLS_SETGT  as NO_CALL_TO_HOM_REF     } from '../../modules/bcftools/setgt/main.nf'
 include {BCTOOLS_MENDELIAN2                       } from '../../modules/bcftools/mendelian2/main.nf'
 include {HET_COMPOSITE  as APPPLY_HET_COMPOSITE   } from '../../modules/jvarkit/hetcomposite/main.nf'
-include {BCFTOOL_CONCAT                           } from '../../modules/bcftools/concat/main.nf'
-
+include {BCFTOOL_CONCAT as CONCAT1                } from '../../modules/bcftools/concat/main.nf'
+include {WORKFLOW_SNV                             } from './sub.snv.nf'
 
 Map assertKeyExists(final Map hash,final String key) {
     if(!hash.containsKey(key)) throw new IllegalArgumentException("no key ${key}'in ${hash}");
@@ -67,8 +63,9 @@ workflow {
         def fasta  = [ref_hash, file(params.fasta) ]
         def fai    = [ref_hash, file(params.fai) ]
         def dict   = [ref_hash, file(params.dict) ]
-        def NO_BED = [ref_hash, [] ]
+        def bed    = params.bed!=null ? [ref_hash,file(params.bed)] : [ref_hash, [] ]
         def pedigree = [[id:"pedigree"],file(params.pedigree)]
+        
 
         vcfs = Channel.fromPath(params.samplesheet)
             .splitCsv(header:true,sep:',')
@@ -87,6 +84,7 @@ workflow {
 
 
         bams = Channel.empty()
+        /*
         if(params.bams) {
             bams = Channel.fromPath(params.bams)*
                 .splitCsv(header:true,sep:',')
@@ -100,7 +98,7 @@ workflow {
                 .map{assertKeyMatchRegex(it,"bai","^\\S+\\.(bai|crai)\$")}
                 .map{[[id:it.sample],file(it.bam),file(it.bai)]}
 
-        }
+        } */
 
 
         vcfs = vcfs.branch{
@@ -112,6 +110,7 @@ workflow {
         DOWNLOAD_GFF3(fasta,fai,dict)
         DOWNLOAD_GTF(fasta,fai,dict)
 
+    /*
         STRUCTURAL_VARIANTS(
             [id:"sv"],
             fasta,
@@ -120,19 +119,22 @@ workflow {
             DOWNLOAD_GTF.out.output,
             pedigree,
             vcfs.sv.take(10)//TODO
-        )
+        )*/
 
 
-        vcf2bed = VCF_TO_CONTIGS(vcfs.snv) 
-        vcf_snv = vcf2bed.output
-            .splitText(elem:1)
-            .map{[it[0],it[1].trim(),it[2],it[3]]}
-            .map{[it[0].plus(contig:it[1]),it[2],it[3]]}
-
-        
-        
-        SUBSET_VCF(fasta,fai, vcf_snv)
-        vcf_snv = SUBSET_VCF.out.vcf
+        WORKFLOW_SNV(
+             [id:"snv"],
+            fasta,
+            fai,
+            dict,
+            bed,
+            pedigree,
+            [ref_hash,file(params.gnomad),file(params.gnomad+".tbi")],
+            DOWNLOAD_GFF3.out.output,
+            DOWNLOAD_GTF.out.output,
+            vcfs.snv
+            )
+/*
 
         TRIO_SNV(
             [id:"trio"],
@@ -144,31 +146,17 @@ workflow {
             )
         vcf_snv = TRIO_SNV.out.vcf
 
-        
+
+        // ANNOTATION FIRST before trios, then we can use it for het composite    
         VEP([id:"vep"],fasta,fai,dict,vcf_snv)
-        vcf_snv = SUBSET_VCF.out.vcf
+        vcf_snv = VEP.out.vcf
 
-        SNPEFF([id:"snpeff"],fasta,fai,dict,vcf_snv)
-        vcf_snv = SNPEFF.out.vcf
 
-        BCFTOOLS_BCSQ(fasta,fai,DOWNLOAD_GFF3.out.output,vcf_snv )
-        vcf_snv = BCFTOOLS_BCSQ.out.vcf
 
-        
+
         FILTER_PREDICTIONS(vcf_snv)
         vcf_snv = FILTER_PREDICTIONS.out.vcf //we can use this later for het composite
 
-        FILTER_MENDELIAN(vcf_snv)
-        vcf_snv = SUBSET_VCF.out.vcf
-
-        vcf_snv  = Channel.empty()
-
-        CLINVAR([id:"clinvar"],fasta,fai,dict,NO_BED,vcf_snv)
-        vcf_snv = CLINVAR.out.vcf
- 
-        ALPHAMISSENSE([id:"alphamissense"],fasta,fai,dict,NO_BED,vcf_snv)
-        vcf_snv = ALPHAMISSENSE.out.vcf
-        
         
         HET_COMPOSITE(
             [id:"hetcomposite"],
@@ -176,8 +164,20 @@ workflow {
             fai,
             dict,
             pedigree,
-            FILTER_PREDICTIONS.out.vcf
-        )
+            vcf_snv
+            )
+        
+        vcf_snv  = Channel.empty()
+
+        
+
+        
+
+        FILTER_MENDELIAN(pedigree, vcf_snv)
+        vcf_snv = FILTER_MENDELIAN.out.vcf
+*/
+        /*
+        
 	
         MERGE_AND_FILTER(
             vcf_snv
@@ -218,42 +218,8 @@ workflow {
                 MERGE_AND_FILTER.out.vcf,
                 igv_report_input_ch
                 )
+        */
 }
-process VCF_TO_CONTIGS{
-    tag "${meta.id}"
-    label "process_single"
-    conda "${moduleDir}/../../conda/bioinfo.01.yml"
-    input:
-        tuple val(meta),path(vcf),path(idx)
-    output:
-        tuple val(meta),path("chroms.txt"),path(vcf),path(idx),emit:output
-    script:
-        """
-        bcftools index -s "${vcf}" | cut -f1 > chroms.txt
-        """
-}
-
-process SUBSET_VCF {
-    tag "${meta.id} ${meta.contig?:""}"
-    label "process_single"
-    conda "${moduleDir}/../../conda/bioinfo.01.yml"
-    input:
-        tuple val(meta1),path(fasta)
-        tuple val(meta2),path(fai)
-        tuple val(meta ),path(vcf),path(idx)
-    output:
-        tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:vcf
-    script:
-        def args = meta.contig?"--regions \"${meta.contig}\"":""
-        def prefix = task.ext.prefix?:meta.id+(meta.contig?"."+meta.contig:"")
-        """
-        bcftools norm --multiallelics -both --fasta-ref "${fasta}" -O u  ${args}  "${vcf}" |\\
-        bcftools view -e 'ALT=="*"' -Ou |\\
-        bcftools annotate --set-id '%VKX'  -O z -o "${prefix}.vcf.gz"
-        bcftools index --threads "${task.cpus}" -t -f "${prefix}.vcf.gz"
-        """
-}
-
 
 
 process FILTER_MENDELIAN {
@@ -298,40 +264,6 @@ EOF
         bcftools view -O b -o ${prefix}.bcf
     bcftools index --threads "${task.cpus}"  -f "${prefix}.bcf"
     """
-}
-
-process FILTER_PREDICTIONS {
-    tag "${meta.id}"
-    label "process_single"
-    conda "${moduleDir}/../../conda/bioinfo.01.yml"
-    afterScript "rm -rf TMP"
-    input:
-        tuple val(meta ),path(vcf),path(idx)
-    output:
-        tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
-    script:
-        def args = meta.contig?"--regions \"${meta.contig}\"":""
-        def prefix = task.ext.prefix?:vcf.baseName+".filterso"
-        def acn = task.ext.acn?:"SO:0001818,SO:0001629"
-        def pop = task.ext.pop?:"gnomADg_AF_nfe"
-        def freq = task.ext.freq?:0.01
-        """
-        mkdir -p TMP
-cat << EOF > TMP/jeter.code
-return getVepPredictionParser()
-    .getPredictions(variant).stream()
-    .map(P->P.get("${pop}"))
-    .filter(it->it!=null && !it.trim().isEmpty())
-    .mapToDouble(it->Double.parseDouble(it))
-    .anyMatch(it->it<=${freq});
-
-EOF
-        bcftools view "${vcf}" |\\
-            jvarkit -XX:-UsePerfData -Djava.io.tmpdir=TMP vcffilterso -A '${acn}' --filterout BAD_SO |\\
-            jvarkit -XX:-UsePerfData -Djava.io.tmpdir=TMP vcffilterjdk -f TMP/jeter.code |\\
-            bcftools view  -O b -o "${prefix}.bcf"
-        bcftools index --threads "${task.cpus}" -f "${prefix}.bcf"
-        """
 }
 
 process MERGE_AND_FILTER {
@@ -418,8 +350,11 @@ workflow STRUCTURAL_VARIANTS {
         )
         
         NO_CALL_TO_HOM_REF(ANNOTATE_SV.out.vcf)
-        BCTOOLS_MENDELIAN2(fai, pedigree, NO_CALL_TO_HOM_REF.out.vcf)
+        //BCTOOLS_MENDELIAN2(fai, pedigree, NO_CALL_TO_HOM_REF.out.vcf)
+	vcf = Channel.empty()
     emit:
+	vcf
+        //vcf = BCTOOLS_MENDELIAN2.out.vcf
         versions
 }
 
@@ -436,17 +371,17 @@ workflow HET_COMPOSITE {
         vcfs
     main:
         versions = Channel.empty()
-
-        BCFTOOL_CONCAT(
+        /** merge VCFS */
+        CONCAT1(
             vcfs
-                .map{[it[1],it[2]]})
+                .map{[it[1],it[2]]}
                 .collect()
                 .map{[meta,it.flatten()]},
             [[:],[]]//NO BED
             )
-        versions = versions.mix(BCFTOOL_CONCAT.out.versions)
+        versions = versions.mix(CONCAT1.out.versions)
 
-        FILTER_FOR_HET_COMPOSITE(BCFTOOL_CONCAT.out.vcf)
+        FILTER_FOR_HET_COMPOSITE(CONCAT1.out.vcf)
         versions = versions.mix(FILTER_FOR_HET_COMPOSITE.out.versions)
         
         APPPLY_HET_COMPOSITE(
@@ -468,18 +403,17 @@ process FILTER_FOR_HET_COMPOSITE {
     conda "${moduleDir}/../../conda/bioinfo.01.yml"
     afterScript "rm -rf TMP"
     input:
-        tuple val(meta),path("VCFS/*")
-        path("versions.yml"),emit:versions
+        tuple val(meta),path(vcf),path(vcfix)
     output:
         tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
+        path("versions.yml"),emit:versions
+
     script:
         def prefix = task.ext.prefix?:meta.id+".filterhetcomposite"
         """
-        //TODO
         mkdir -p TMP
-        find VCFS/ -name "*.vcf.gz" -o -name "*.bcf" > TMP/jeter.list
-        bcftools concat -a --file-list TMP/jeter.list -O u |\\
-        bcftools view --apply-filters '.,PASS' --write-index -O b -o ${prefix}.bcf
+        bcftools view ${vcf} |\\
+        	bcftools view --apply-filters '.,PASS' --write-index -O b -o ${prefix}.bcf
 
         touch versions.yml
         """

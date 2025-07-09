@@ -37,16 +37,18 @@ output:
 	path("versions.yml"),emit:versions
 script:
 	def args1 = task.ext.args1?:""
-	def args2 = task.ext.args2?:"--remove-duplicates --multiallelics -both"
+	def args2 = task.ext.args2?:"--remove-duplicates --multiallelics -both --old-rec-tag MULTIALLELIC"
 	def args3 = task.ext.args3?:"-i 'ALT!=\"*\"'"
 	def prefix = task.ext.prefix?:vcf.baseName+".norm"
 	def argsbed = optional_bed?"--regions-file \"${optional_bed}\"":""
+	def set_id = task.ext.set_id?:"" //eg %VKX
 """
 mkdir -p TMP
 set -o pipefail
 
-bcftools view ${argsbed} ${args1} -o u '${vcf}' |\\
+bcftools view ${argsbed} ${args1} -O u '${vcf}' |\\
 	bcftools norm ${args2} --fasta-ref '${fasta}'  -O u |\\
+	${set_id.isEmpty()?"":"bcftools annotate --set-id '${set_id}' -O u |"}\\
 	bcftools view ${args3} --write-index  -O b -o TMP/${prefix}.bcf
 
 mv TMP/${prefix}.bcf ./

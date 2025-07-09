@@ -1,0 +1,67 @@
+include {SNPEFF as APPLY_SNPEFF                   } from '../../subworkflows/snpeff/main.nf'
+include {JVARKIT_VCFGNOMAD                        } from '../../modules/jvarkit/vcfgnomad/main.nf'
+include {BCFTOOLS_NORM                            } from '../../modules/bcftools/norm/main.nf'
+include {SPLIT_VCF                                } from '../../subworkflows/jvarkit/splitnvariants/main.nf'
+include {WORKFLOW_DENOVO_SNV                      } from './sub.denovo.snv.nf'
+
+
+workflow WORKFLOW_SNV {
+take:
+    meta
+    fasta
+    fai
+    dict
+    bed
+    pedigree
+    gnomad
+    gff3
+    gtf
+    vcf
+main:
+    versions = Channel.empty()
+
+    /** break the VCF into parts */
+    SPLIT_VCF(
+        meta,
+        fasta,
+        fai,
+        dict,
+        bed,
+        vcf
+        )
+    vcf = SPLIT_VCF.output.vcf
+
+
+    /** normalize variants */
+    BCFTOOLS_NORM(
+        fasta,fai,
+        [[:],[]],/* no bed */
+        vcf
+        )
+    versions = versions.mix(BCFTOOLS_NORM.out.versions)
+    vcf = BCFTOOLS_NORM.out.vcf
+
+    /** filter variants for prediction */
+    APPLY_SNPEFF(meta,fasta,fai,dict,vcf)
+    versions = versions.mix(APPLY_SNPEFF.out.versions)
+    vcf = APPLY_SNPEFF.out.vcf
+  
+    /** filter variants for gnomad */
+    JVARKIT_VCFGNOMAD(gnomad,vcf)
+    versions = versions.mix(JVARKIT_VCFGNOMAD.out.versions)
+    vcf = JVARKIT_VCFGNOMAD.out.vcf
+
+    WORKFLOW_DENOVO_SNV(
+        meta,
+        fasta,
+        fai,
+        dict,
+        gff3,
+        gtf,
+        pedigree,
+        vcf
+        )
+     versions = versions.mix(WORKFLOW_DENOVO_SNV.out.versions)
+emit:
+    versions
+}

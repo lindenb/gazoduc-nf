@@ -28,27 +28,34 @@ process BED_CLUSTER {
 	label "process_single"
 	tag "${meta.id?:""} "
 	afterScript "rm -rf TMP"
+	conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 	input:
 		tuple val(meta1),path(fasta)
 		tuple val(meta2),path(fai)
 		tuple val(meta3),path(dict)
 		tuple val(meta ),path(bed)
 	output:
-		tuple val(meta), path("BEDS/*"),emit:bed
+		tuple val(meta), path("BEDS/*",arity:"0..*"),emit:bed
 		path("versions.yml"),emit:versions
 	script:
-		if(!meta.containsKey("bed_cluster_method")) throw new IllegalArgumentException("bed_cluster_method undefined ${task.process}");
 		def args = task.ext.args?:""
-		if(args.trim().isEmpty()) throw new IllegalArgumentException("method for bedcluter must be defined in ${task.process}")
+		if(args.trim().isEmpty()) throw new IllegalArgumentException("args for bedcluter must be defined in ${task.process}")
 	"""
 	hostname 1>&2
 	set -o pipefail
-	mkdir -p TMP BEDS
-	jvarkit  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedcluster \\
+	mkdir -p TMP/TMP2 BEDS
+	jvarkit  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -XX:-UsePerfData bedcluster \\
 		-R "${fasta}" \\
 		${args} \\
-		-o BEDS "${bed}"
+		-o TMP/TMP2 "${bed}"
 
+	#force uniq names for later
+	MD5=\$(pwd | sha1sum  | cut -c 1-10)
+	find TMP/TMP2 -type f -name "*.bed" |\
+	while read F
+	do
+		mv "\${F}" "BEDS/\${MD5}.\$(basename "\$F")"
+	done
 
 cat << EOF > versions.yml
 ${task.process}:

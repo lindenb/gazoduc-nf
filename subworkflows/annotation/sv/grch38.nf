@@ -37,8 +37,15 @@ script:
 """
 mkdir -p TMP
 
+
+bcftools query -l '${vcf}' |\\
+    awk 'END{N=NR;if(N==0) N=1;B=5000.0/N;if(B<1000.0) B=1000;printf("%d\\n",int(B));}' > TMP/jeter.buffer_size
+
+
 bcftools view "${vcf}" |\\
 vep \\
+    ${task.cpus>1?"--fork ${task.cpus}":""} \\
+    --buffer_size `cat TMP/jeter.buffer_size` \\
     --cache \\
     --dir "${vep_directory}" \\
     --species ${species} \\
@@ -46,7 +53,6 @@ vep \\
     --assembly ${assembly} \\
     --cache_version "${cache_version}" \\
     --fasta "${params.fasta}" \\
-    --dir_plugins "${plugindir}/" \\
     --offline \\
     --symbol \\
     --format vcf \\
