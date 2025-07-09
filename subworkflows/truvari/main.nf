@@ -65,6 +65,7 @@ process APPLY_TRUVARI {
 		tuple val(meta ),path("VCFS/*")
     output:
 		tuple val(meta),path("*.bcf"),path("*.bcf.csi"),emit: vcf
+		path("versions.yml"),emit:versions
     script:
 		def args1 = task.ext.args1?:""
 		def args2 = task.ext.args2?:""
@@ -108,5 +109,11 @@ process APPLY_TRUVARI {
 	bcftools index --threads ${task.cpus} -f TMP/${prefix}.bcf
 	mv TMP/${prefix}.bcf ./
 	mv TMP/${prefix}.bcf.csi ./
+
+
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	truvari: todo
+END_VERSIONS
     """
    }

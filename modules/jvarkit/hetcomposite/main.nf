@@ -36,8 +36,8 @@ input:
     tuple val(meta),path(vcf),path(vcfidx) // MUST BE ANNOTATED WITH SNPEFF, REMOVE FREQUENT VARIANTS
 output:
 	tuple val(meta),path("*.bcf"),path("*.bcf.csi"),emit:vcf
-	tuple val(meta),path("*.genes.report"),emit:genes_report
-	tuple val(meta),path("*.variants.report"),emit:variants_report
+	tuple val(meta),path("*.genes.report.bed"),emit:genes_report
+	tuple val(meta),path("*.variants.report.txt"),emit:variants_report
 	path("versions.yml"),emit:versions
 when:
 	task.ext.when == null || task.ext.when
@@ -75,9 +75,9 @@ mv TMP/jeter2.vcf TMP/jeter1.vcf
 jvarkit -Xmx${task.memory.giga}G  -Djava.io.tmpdir=TMP vcfcomposite \\
 	--extractors "${extractors}" \\
 	--filter "" \\
-	--genes ${prefix}.genes.report \\
+	--genes ${prefix}.genes.report.bed \\
 	--pedigree  TMP/pedigree.tsv \\
-	--report ${prefix}.variants.report \\
+	--report ${prefix}.variants.report.txt \\
 	--tmpDir TMP \\
 	--max-variants ${max_variants} \\
 	TMP/jeter1.vcf > TMP/jeter2.vcf
