@@ -60,7 +60,7 @@ afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai),val(colpos)
+	tuple val(meta2),path(fai)
 	val(colpos)
 output:
 	tuple val(meta1),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.header"),emit:output

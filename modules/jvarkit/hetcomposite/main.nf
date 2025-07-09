@@ -27,7 +27,7 @@ process HET_COMPOSITE {
 tag "${meta.id?:""}"
 label "process_single"
 afterScript "rm -rf TMP"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
     tuple val(meta1),path(fasta)
     tuple val(meta2),path(fai)
@@ -51,17 +51,18 @@ hostname 1>&2
 mkdir -p TMP
 set -x
 
-
+# convert pedigree if no 6th column
+awk '{S=\$6 ; if(NF==5 || S=="") { if(\$3!="0" && \$4!="0") {S="case";} else {S="control"} }  printf("%s\t%s\t%s\t%s\t%s\t%s\\n",\$1,\$2,\$3,\$4,\$5,S);}' ${pedigree} > TMP/pedigree.tsv
 
 ## all other samples are controls
 comm -13 \\
-	<(cut -f 2 '${pedigree}' | sort | uniq) \\
+	<(cut -f 2 TMP/pedigree.tsv  | sort | uniq) \\
 	<(bcftools query -l '${vcf}'| sort | uniq) |\\
 	awk '{printf("if(!acceptControl(variant,\\"%s\\")) return false;\\n",\$1);}' >> TMP/custom.m4
 
-awk -F '\t' '(\$6=="control" || \$6=="unaffected") {printf("if(!acceptControl(variant,\\"%s\\")) return false;\\n",\$2);}'  '${pedigree}' >> TMP/custom.m4
+awk -F '\t' '(\$6=="control" || \$6=="unaffected") {printf("if(!acceptControl(variant,\\"%s\\")) return false;\\n",\$2);}'  TMP/pedigree.tsv >> TMP/custom.m4
 
-awk -F '\t' '((\$6=="case" || \$6=="affected") && \$3!="0" && \$4!="0") {printf("if(acceptTrio(variant,\\"%s\\",\\"%s\\",\\"%s\\")) return true;\\n",\$2,\$3,\$4);}'  '${pedigree}'  >> TMP/custom.m4
+awk -F '\t' '(\$6=="case" || \$6=="affected") {printf("if(acceptTrio(variant,\\"%s\\",\\"%s\\",\\"%s\\")) return true;\\n",\$2,\$3,\$4);}' TMP/pedigree.tsv  >> TMP/custom.m4
 
 
 m4 -P -I TMP < "${moduleDir}/select.m4"  > TMP/jeter.code
@@ -75,7 +76,7 @@ jvarkit -Xmx${task.memory.giga}G  -Djava.io.tmpdir=TMP vcfcomposite \\
 	--extractors "${extractors}" \\
 	--filter "" \\
 	--genes ${prefix}.genes.report \\
-	--pedigree  "${pedigree}" \\
+	--pedigree  TMP/pedigree.tsv \\
 	--report ${prefix}.variants.report \\
 	--tmpDir TMP \\
 	--max-variants ${max_variants} \\

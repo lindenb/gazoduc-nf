@@ -34,7 +34,7 @@ input:
 	tuple val(meta2),path(fai)
 	tuple val(meta3),path(dict)
 output:
-	tuple val(meta1),path("*.refGene.txt.*"),emit:output
+	tuple val(meta1),path("*.refGene.txt.gz"),path("*.refGene.txt.gz.tbi"),emit:output
 	path("versions.yml"),emit:versions
 script:
 	def k1 = k1_signature()
@@ -72,7 +72,7 @@ tabix -f -0 -b 5 -e 6 -s 3 "${fasta.baseName}.refGene.txt.gz"
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	url: "\${`cat TMP/jeter.url`}"
+	url: "\$(cat TMP/jeter.url)"
 END_VERSIONS
 """
 }

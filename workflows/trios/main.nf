@@ -2,16 +2,14 @@ import java.io.InputStreamReader;
 import java.util.zip.GZIPInputStream;
 
 include {VEP                                      } from '../../subworkflows/annotation/vep/main.nf'
-include {TRUVARI                                  } from '../../subworkflows/truvari/main.nf'
 include {DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GFF3    } from '../../modules/gtf/download/main.nf'
 include {DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GTF     } from '../../modules/gtf/download/main.nf'
 include {BCFTOOLS_BCSQ                            } from '../../modules/bcftools/bcsq/main.nf'
-include {ANNOTATE_SV                              } from '../../subworkflows/annotation/sv/main.nf'
-include {BCTOOLS_SETGT  as NO_CALL_TO_HOM_REF     } from '../../modules/bcftools/setgt/main.nf'
 include {BCTOOLS_MENDELIAN2                       } from '../../modules/bcftools/mendelian2/main.nf'
 include {HET_COMPOSITE  as APPPLY_HET_COMPOSITE   } from '../../modules/jvarkit/hetcomposite/main.nf'
 include {BCFTOOL_CONCAT as CONCAT1                } from '../../modules/bcftools/concat/main.nf'
 include {WORKFLOW_SNV                             } from './sub.snv.nf'
+include {WORKFLOW_SV                              } from './sub.sv.nf'
 
 Map assertKeyExists(final Map hash,final String key) {
     if(!hash.containsKey(key)) throw new IllegalArgumentException("no key ${key}'in ${hash}");
@@ -84,22 +82,58 @@ workflow {
 
 
         bams = Channel.empty()
-        /*
+        triosbams_ch = Channel.empty()
+        
         if(params.bams) {
-            bams = Channel.fromPath(params.bams)*
+            bams = Channel.fromPath(params.bams)
                 .splitCsv(header:true,sep:',')
                 .map{assertKeyMatchRegex(it,"sample","^[A-Za-z_0-9\\.\\-]+\$")}
                 .map{assertKeyMatchRegex(it,"bam","^\\S+\\.(bam|cram)\$")}
                 .map{
                     if(it.containsKey("bai")) return it;
-                    if(it.bam.endsWith(".cram")) return it.plus(idx : it.bam+".bai");
-                    return it.plus(idx:it.vcf+".tbi");
+                    if(it.bam.endsWith(".cram")) return it.plus(bai : it.bam+".crai");
+                    return it.plus(bai:it.bam+".bai");
+                }
+                .map{
+                    if(it.containsKey("fasta")) return it;
+                    return it.plus(fasta:params.fasta);
+                }
+                .map{
+                    if(it.containsKey("fai")) return it;
+                    return it.plus(fai:it.fasta+".fai");
+                }
+                .map{
+                    if(it.containsKey("dict")) return it;
+                    return it.plus(dict: it.fasta.replaceAll("\\.(fasta|fa|fna)\$",".dict"));
                 }
                 .map{assertKeyMatchRegex(it,"bai","^\\S+\\.(bai|crai)\$")}
-                .map{[[id:it.sample],file(it.bam),file(it.bai)]}
+                .map{[[id:it.sample],file(it.bam),file(it.bai),file(it.fasta),file(it.fai),file(it.dict)]}
+            
 
-        } */
+            triosbams_ch = Channel.fromPath(params.pedigree)
+                .splitCsv(header:false,sep:'\t')
+                .filter{!it[2].equals("0") && !it[3].equals("0")}
+                .map{[it[1],it[2],it[3]]} // child,father,modther
+                .combine(bams) // join child [ child,father,mother, metaC, bamC, baiC, fastaC, faiC, dictC ]
+                .filter{it[0].equals(it[3].id)}
+                .combine(bams) // join child [ child,father,mother, metaC, bamC, baiC, fastaC, faiC, dictC,  metaF, bamF, baiF, fastaF, faiF, dictF, ]
+                .filter{it[1].equals(it[9].id) && it[6].equals(it[12])} //father and same fasta
+                .combine(bams) // join child [ child,father,mother, metaC, bamC, baiC, fastaC, faiC, dictC,  metaF, bamF, baiF, fastaF, faiF, dictF, metaM, bamM, baiM, fastaM, faiM, dictM ]
+                .filter{it[2].equals(it[15].id) && it[6].equals(it[18])} //father and same fasta
+                .map{[
+                    it[0], //child
+                    it[1], //father
+                    it[2], //mother
+                    it[6], //fasta
+                    it[7], //fai
+                    it[8], //dict
+                    it[4], it[5], // bamC, baiC
+                    it[10],it[11], // bamP, baiP
+                    it[16],it[17] // bamM, baiM
+                ]}
+        }   
 
+      
 
         vcfs = vcfs.branch{
             sv : isStructuralVariantVCF(it[1])
@@ -123,7 +157,7 @@ workflow {
 
 
         WORKFLOW_SNV(
-             [id:"snv"],
+            [id:"snv"],
             fasta,
             fai,
             dict,
@@ -132,93 +166,24 @@ workflow {
             [ref_hash,file(params.gnomad),file(params.gnomad+".tbi")],
             DOWNLOAD_GFF3.out.output,
             DOWNLOAD_GTF.out.output,
+            triosbams_ch,
             vcfs.snv
             )
-/*
-
-        TRIO_SNV(
-            [id:"trio"],
+        
+        WORKFLOW_SV(
+            [id:"snv"],
             fasta,
             fai,
             dict,
+            bed,
             pedigree,
-            vcf_snv
+            DOWNLOAD_GFF3.out.output,
+            DOWNLOAD_GTF.out.output,
+            triosbams_ch,
+            vcfs.sv
             )
-        vcf_snv = TRIO_SNV.out.vcf
-
-
-        // ANNOTATION FIRST before trios, then we can use it for het composite    
-        VEP([id:"vep"],fasta,fai,dict,vcf_snv)
-        vcf_snv = VEP.out.vcf
-
-
-
-
-        FILTER_PREDICTIONS(vcf_snv)
-        vcf_snv = FILTER_PREDICTIONS.out.vcf //we can use this later for het composite
-
-        
-        HET_COMPOSITE(
-            [id:"hetcomposite"],
-            fasta,
-            fai,
-            dict,
-            pedigree,
-            vcf_snv
-            )
-        
-        vcf_snv  = Channel.empty()
-
-        
-
-        
-
-        FILTER_MENDELIAN(pedigree, vcf_snv)
-        vcf_snv = FILTER_MENDELIAN.out.vcf
-*/
-        /*
-        
-	
-        MERGE_AND_FILTER(
-            vcf_snv
-                .map{[[id:"snv"],it[1],it[2]]}
-                .groupTuple()
-                .map{[it[0],it[1].flatten()]}
-        )
-
-        triosbams_ch = Channel.fromPath(params.pedigree)
-            .splitCsv(header:false,sep:'\t')
-            .filter{!it[2].equals("0") && !it[3].equals("0")}
-            .map{[it[1],it[2],it[3]]} // child,father,modther
-            .combine(bams) // join child [ child,father,modther, metaC, bamC, baiC, ]
-            .filter{it[0].equals(it[3].id)}
-            .combine(bams) // join father [ child,father,mother, metaC, bamC, baiC, metaP, bamP, baiP ]
-            .filter{it[1].equals(it[6].id)}
-            .combine(bams) // join mother [ child,father,mother, metaC, bamC, baiC, metaP, bamP, baiP, metaM, bamM, baiM ]
-            .filter{it[2].equals(it[9].id)}
 
        
-
-        igv_report_input_ch = MERGE_AND_FILTER.out.bed
-            .splitCsv(header:false,sep:'\t')
-            .combine(triosbams_ch) // [ chrom, start,end, child1, child2,father,mother, metaC, bamC, baiC, metaP, bamP, baiP, metaM, bamM, baiM ]
-            .map{it[3].equals(it[4])}
-            .map{it.remove(3)} // [ chrom, start,end,child1,father,mother, metaC, bamC, baiC, metaP, bamP, baiP, metaM, bamM, baiM ]
-            .map{it.insert(0,[id:"igv",contig:it[0]])} // [ meta,chrom, start,end,child1,father,mother, metaC, bamC, baiC, metaP, bamP, baiP, metaM, bamM, baiM ]
-           .take(100) //limit max igreports
-        
-        DOWNLOAD_REFGENE(fasta,fai,dict)
-        DOWNLOAD_CYTOBAND(fasta,fai,dict)
-        IGV_REPORTS (
-                fasta,
-                fai,
-                dict,
-                DOWNLOAD_CYTOBAND.out.output,
-                DOWNLOAD_REFGENE.out.output,
-                MERGE_AND_FILTER.out.vcf,
-                igv_report_input_ch
-                )
-        */
 }
 
 
@@ -333,23 +298,9 @@ workflow STRUCTURAL_VARIANTS {
         vcfsv
     main:
         versions = Channel.empty()
-        TRUVARI(
-	        [id:"truvari"],
-            fasta,
-            fai,
-            dict,
-            vcfsv
-        )
-        ANNOTATE_SV(
-            meta,
-            fasta,
-            fai,
-            dict,
-            gtf,
-            TRUVARI.out.vcf
-        )
-        
-        NO_CALL_TO_HOM_REF(ANNOTATE_SV.out.vcf)
+      
+      
+      
         //BCTOOLS_MENDELIAN2(fai, pedigree, NO_CALL_TO_HOM_REF.out.vcf)
 	vcf = Channel.empty()
     emit:
@@ -419,41 +370,3 @@ process FILTER_FOR_HET_COMPOSITE {
         """
     }
 
-process IGV_REPORTS {
-tag "${meta.id}"
-label "process_single"
-//conda "${moduleDir}/../../conda/bioinfo.01.yml" TODO
-input:
-        tuple val(meta1),path(fasta)
-        tuple val(meta2),path(fai)
-        tuple val(meta3),path(dict)
-        tuple val(meta4),path(cytoband)
-        tuple val(meta5),path(refgene)
-        tuple val(meta6),path(vcf),path(vcfidx)
-        tuple val(meta),val(contig),val(start),val(end),
-                val(child),val(father),val(mother),
-                val(metaC),path(bamC),pah(baiC),
-                val(metaP),path(bamP),pah(baiP),
-                val(metaM),path(bamM),pah(baiM)
-output:
-        tuple val(meta),path("*.html"),emit:html
-
-script:
-    def flanking = task.ext.flanking?:100
-    def info_columns= task.ext.info?:"VEP,BCSQ,ANN,MERR,hiConfDeNovo,loConfDeNovo"
-    def prefix = contig+"_"+((start as int)+1)+"_"+end+"_"+child
-"""
-hostname 1>&2
-mkdir -p TMP
-
-create_report ${vcf}  ${fasta} \\
-	--ideogram "${cytoband}" \\
-	--flanking ${flanking}"} \\
-	${info_columns.isEmpty()?"":"--info-columns ${info_columns}"} \\
-	--tracks ${vcf} ${bamC} ${bamP} ${bamM} ${refgene} \\
-	--output TMP/${title}.html
-
-mv -v "TMP/${title}.html" ./
-
-"""
-}

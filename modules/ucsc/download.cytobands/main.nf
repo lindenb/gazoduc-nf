@@ -70,7 +70,7 @@ gunzip -c TMP/cytoBandIdeo.txt.gz |\\
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	url: "\${`cat TMP/jeter.url`}"
+	url: "\$(cat TMP/jeter.url)"
 END_VERSIONS
 """
 }
