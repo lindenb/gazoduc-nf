@@ -218,7 +218,7 @@ END_VERSIONS
 
 process CALL_DELLY {
     tag "${meta.id}"
-    label "process_medium"
+    label "process_short"
     afterScript "rm -rf TMP"
     conda "${moduleDir}/../../conda/delly.yml"
     input:
@@ -256,7 +256,7 @@ END_VERSIONS
 //  merge many files: https://github.com/dellytools/delly/issues/158
 process MERGE_DELLY {
     tag "${fasta.name}"
-    label "process_medium"
+    label "process_single"
     afterScript "rm -rf TMP"
     conda "${moduleDir}/../../../conda/delly.yml"
     input:
@@ -264,10 +264,11 @@ process MERGE_DELLY {
 	tuple val(meta2),path(fai)
 	tuple val(meta),path("VCFS/*")
     output:
-	    tuple val(meta),path("merged.bcf"),path("merged.bcf.csi"),emit:vcf
+	    tuple val(meta),path("*.bcf"),path("*.bcf.csi"),emit:vcf
         path("versions.yml"),emit:versions
     script:
-	def with_bnd = task.ext.with_bnd?:true
+	    def with_bnd = task.ext.with_bnd?:true
+        def prefix = task.ext.prefix?:"merged"
     """
     hostname 1>&2
     export LC_ALL=C
@@ -277,14 +278,14 @@ process MERGE_DELLY {
     find VCFS/ -name "*.bcf" > TMP/jeter.tsv
     test -s TMP/jeter.tsv    
 
-    delly merge -o TMP/merged.bcf TMP/jeter.tsv 1>&2
+    delly merge -o TMP/${prefix}.bcf TMP/jeter.tsv 1>&2
 
 	if ${!with_bnd} ; then
-        bcftools view -e 'INFO/SVTYPE="BND"' -O b -o  merged.bcf TMP/merged.bcf
-		bcftools index -f merged.bcf
+        bcftools view -e 'INFO/SVTYPE="BND"' -O b -o  ${prefix}.bcf TMP/${prefix}.bcf
+		bcftools index -f ${prefix}.bcf
 	else
-		mv TMP/merged.bcf ./
-		mv TMP/merged.bcf.csi ./
+		mv TMP/${prefix}.bcf ./
+		mv TMP/${prefix}.bcf.csi ./
 	fi
 
 cat << END_VERSIONS > versions.yml
@@ -296,7 +297,7 @@ END_VERSIONS
     }
 
 process GENOTYPE_DELLY {
-    label "process_short"
+    label "process_single"
     tag "${meta.id}"
     afterScript 'rm -rf TMP'
     conda "${moduleDir}/../../../conda/delly.yml"
@@ -340,7 +341,7 @@ END_VERSIONS
 
 process MERGE_GENOTYPES {
     tag "${meta.id}"
-    label "process_medium"
+    label "process_short"
     afterScript "rm -rf TMP"
     conda "${moduleDir}/../../../conda/delly.yml"
     input:

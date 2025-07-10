@@ -5,8 +5,9 @@ include {ALPHAMISSENSE                            } from '../../subworkflows/ann
 include {BHFUCL                                   } from '../../subworkflows/annotation/bhfucl/main.nf'
 include {BCFTOOLS_BCSQ                            } from '../../modules/bcftools/bcsq/main.nf'
 include {REVEL                                    } from '../../subworkflows/annotation/revel/main.nf'
-include {DOWNLOAD_CYTOBAND                         } from '../../modules/ucsc/download.cytobands/main.nf'
+include {DOWNLOAD_CYTOBAND                        } from '../../modules/ucsc/download.cytobands/main.nf'
 include {DOWNLOAD_REFGENE                         } from '../../modules/ucsc/download.refgene/main.nf'
+include {CARDIOPANEL                              } from '../../subworkflows/cardiopanel/main.nf'
 
 
 workflow WORKFLOW_DENOVO_SNV {
@@ -64,6 +65,9 @@ main:
  
     REVEL(meta,fasta,fai,dict,vcf)
     vcf = REVEL.out.vcf
+
+    CARDIOPANEL(meta,fasta,fai,dict,gtf,vcf)
+    vcf = CARDIOPANEL.out.vcf
 
     REPORT(pedigree,vcf)
 
@@ -201,11 +205,25 @@ script:
     def flanking = task.ext.flanking?:100
     def start = ((start0 as int)+1)
     def end = (end0 as int)
-    def info_columns= task.ext.info?:"CLINVAR_CLNSIG,REVEL,BCSQ,ANN,MERR,hiConfDeNovo,loConfDeNovo,ALPHAMISSENSE_PATHOGENOCITY,ALPHAMISSENSE_CLASS"
+    def info_columns= task.ext.info?:"CARDIOPANEL CLINVAR_CLNSIG REVEL BCSQ ANN MERR hiConfDeNovo loConfDeNovo,ALPHAMISSENSE_PATHOGENOCITY ALPHAMISSENSE_CLASS"
     def prefix = contig+  "_" + String.format("%09d",start) + (start==end?"":"_"+String.format("%09d",end)) +"_" + child
 """
 hostname 1>&2
 mkdir -p TMP
+
+bcftools view \\
+    --samples "${child},${father},${mother}" \\
+    --trim-unseen-allele \\
+    --trim-alt-alleles \\
+    --force-samples \\
+    --regions "${contig}:${start}-${end}" \\
+    -O u \\
+    "${vcf}" |\\
+    bcftools view -i 'AC[*]>0' -O z -o TMP/jeter.vcf.gz
+
+bcftools index -f -t TMP/jeter.vcf.gz
+
+echo -e "${contig}\t${start0}\t${end0}" > TMP/jeter.bed
 
 ##gunzip -c "${refgene}" > TMP/${refgene.baseName}
 
@@ -223,13 +241,14 @@ Generated on \$(date) by \${USER}.
 </div>
 EOF
 
-create_report ${vcf}  ${fasta} \\
+create_report TMP/jeter.bed  \\
+    ${fasta} \\
     --header TMP/header.html \\
     --header TMP/footer.html \\
 	--ideogram "${cytoband}" \\
 	--flanking ${flanking} \\
-	${info_columns.isEmpty()?"":"--info-columns ${info_columns}"} \\
-	--tracks ${vcf} ${bamC} ${bamP} ${bamM} ${refgene} \\
+	${info_columns.isEmpty()?"":"--info-columns \"${info_columns}\""} \\
+	--tracks  TMP/jeter.vcf.gz ${bamC} ${bamP} ${bamM} ${refgene} \\
 	--output TMP/jeter.html
 
 mv -v "TMP/jeter.html" ./${prefix}.html
