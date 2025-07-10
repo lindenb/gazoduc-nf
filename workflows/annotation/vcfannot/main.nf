@@ -75,42 +75,18 @@ workflow {
 		.view()
 
 
-	if(!bed[1]) {
-		SCATTER_TO_BED([id:"annot"],fasta,fai,dict)
-		bed = SCATTER_TO_BED.out.bed
-		versions= versions.mix(SCATTER_TO_BED.out.versions)
-	} 
 
-	SPLIT_N_VARIANTS(
-		vcfs.combine(bed).map{[it[0],it[1],it[2],it[4]]}
-		)
-	versions= versions.mix(SPLIT_N_VARIANTS.out.versions)
-
-	ch1 = SPLIT_N_VARIANTS.out.vcf.
-		flatMap{
-			def L=[]
-			for(X in it[1]) {
-				L.add([it[0],X])
-			}
-		return L;
-		}
-
-	ch2= SPLIT_N_VARIANTS.out.tbi
-		.flatMap{T->{
-			def L=[]
-			for(X in T[1]) {
-				L.add([T[0],X])
-				}
-			return L;
-			}}
+	 /** break the VCF into parts */
+    SPLIT_VCF(
+        [id:"annot"],
+        fasta,
+        fai,
+        dict,
+        bed,
+        vcfs
+        )
+    vcfs = SPLIT_VCF.output.vcf
 	
-	vcf = ch1.combine(ch2)
-		.filter{it[0].equals(it[2])}
-		.filter{(it[1].toRealPath()+".tbi").equals(it[3].toRealPath())}
-		.map{[it[0],it[1],it[3]]}
-		.view()
-
-
 	DOWNLOAD_GTF(fasta,fai,dict)
 	DOWNLOAD_GFF3(fasta,fai,dict)
 	
@@ -122,7 +98,7 @@ workflow {
 		DOWNLOAD_GTF.out.output,
 		DOWNLOAD_GFF3.out.output,		
 		pedigree,
-		vcf
+		vcfs
 		)
 
 	BCFTOOL_CONCAT(
@@ -136,41 +112,5 @@ workflow {
 	versions= versions.mix(ANNOTATE.out.versions)
 	}
 
-workflow ANNOTATE_VCF {
-	take:
-		meta
-		fasta
-		fai
-		dict
-		vcf
-		bed
-		pedigree
-	main:
-		version_ch = Channel.empty()
-		
-		
-
-		/*
-		ann_ch = ANNOTATE(meta,
-			fasta,
-			fai,
-			dict,
-			bed,
-			SPLIT_N_VARIANTS()
-			)
-		version_ch = version_ch.mix(ann_ch.versions)
-		*/
-
-	/*
-		tofile_ch = COLLECT_TO_FILE_01([suffix:".list"], ann_ch.output.map{T->T.annot_vcf}.collect())
-		version_ch = version_ch.mix(tofile_ch.versions)
-
-		concat_ch = BCFTOOLS_CONCAT_01([:], tofile_ch.output, file("NO_FILE") )
-		version_ch = version_ch.mix(concat_ch.version)
-	*/
-	emit:
-		versions
-		//vcf = concat_ch.vcf
-	}
 
 runOnComplete(workflow);

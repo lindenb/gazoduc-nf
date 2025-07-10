@@ -32,11 +32,14 @@ include {JVARKIT_VCF_POLYX} from  '../../../modules/jvarkit/vcfpolyx/main.nf'
 include {VEP} from '../vep/main.nf'
 include {CLINVAR} from '../clinvar/main.nf'
 include {REVEL} from '../revel/main.nf'
+include {CARDIOPANEL} from '../cardiopanel/main.nf'
 include {CADD} from  '../../../modules/cadd/main.nf'
 include {VISTA} from '../vista/main.nf'
 include {SIMPLE_REPEATS} from '../simple_repeats/main.nf'
 include {JVARKIT_FILTER_LOWQUAL} from  '../../../modules/jvarkit/lowqual/main.nf'
 include {JVARKIT_VCFGNOMAD}  from  '../../../modules/jvarkit/vcfgnomad/main.nf'
+include {HMC} from '../hmc/main.nf'
+
 /*
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
 include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
@@ -154,6 +157,15 @@ workflow ANNOTATE {
 			vcf = CADD.out.vcf
 			}
 		
+		CARDIOPANEL(meta, fasta, fai, dict, gtf, vcf)
+		versions = versions.mix(CARDIOPANEL.out.versions)
+		vcf = CARDIOPANEL.out.vcf
+
+		HMC(meta, fasta, fai, dict, vcf)
+		versions = versions.mix(HMC.out.versions)
+		vcf = HMC.out.vcf
+
+
 		JVARKIT_FILTER_LOWQUAL(vcf)
 		versions = versions.mix(JVARKIT_FILTER_LOWQUAL.out.versions)
 		vcf = JVARKIT_FILTER_LOWQUAL.out.vcf
@@ -169,12 +181,6 @@ workflow ANNOTATE {
 			}
 
 		/*
-		
-		
-		step_ch = ANNOTATE_VISTA(genomeId, bed, step_ch.output)
-		count_ch = count_ch.mix(step_ch.count)
-		doc_ch = count_ch.mix(step_ch.doc)
-		
 		
 		
 
@@ -247,13 +253,6 @@ workflow ANNOTATE {
 
 		
 
-		vcfs2 = step_ch.output.map{T->slurpJsonFile(T)}.map{T->[vcf:T.vcf,index:T.index]}
-                
-
-                concat_ch = BCFTOOLS_CONCAT([method:"all"], vcfs2 , file("NO_FILE"))
-		
-
-		version_ch = MERGE_VERSION("VCF annotation", version_ch.collect())
 		*/
 	emit:
 		vcf

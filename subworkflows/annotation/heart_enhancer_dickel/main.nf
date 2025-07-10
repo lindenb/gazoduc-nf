@@ -28,6 +28,7 @@ include {k1_signature} from '../../../modules/utils/k1.nf'
 
 workflow ANNOTATE_HEART_ENHANCER_DICKEL {
 	take:
+		meta
 		fasta
 		fai
 		dict

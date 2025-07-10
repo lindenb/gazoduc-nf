@@ -2,6 +2,7 @@
 include {TRUVARI                                  } from '../../subworkflows/truvari/main.nf'
 include {ANNOTATE_SV                              } from '../../subworkflows/annotation/sv/main.nf'
 include {SAMTOOLS_DEPTH_PLOT_COVERAGE             } from  '../../modules/samtools/plotcoverage/main.nf'
+include {DELLY                                    } from '../../subworkflows/delly2/main.nf'
 
 workflow WORKFLOW_SV {
 take:
@@ -17,6 +18,21 @@ take:
     vcf
 main:
     versions = Channel.empty()
+
+
+    vcf=Channel.empty()
+
+    ch1  = triosbams_ch
+        .filter{it[3].equals(fasta[1])}
+        .flatMap{[
+            [ [id:it[0],status:"case"], it[6], it[7]],
+            [ [id:it[1],status:"control"], it[8], it[8]],
+            [ [id:it[2],status:"control"], it[9], it[10]]
+        ]}
+    
+    DELLY(meta,fasta,fai,dict,ch1)
+
+    /*
     TRUVARI(
 	        meta,
             fasta,
@@ -74,6 +90,7 @@ main:
             .collect()
             .map{[[id:"cnv"],it]}
         )
+    */
 emit:
     versions
 }

@@ -25,7 +25,7 @@ SOFTWARE.
 
 
 
-workflow BHFUCL {
+workflow CARDIOPANEL {
 	take:
 		meta
 		fasta
@@ -51,7 +51,7 @@ workflow BHFUCL {
 	}
 		
 process DOWNLOAD {
-tag "${fasta.name}"
+tag "${meta1?:fasta.name}"
 afterScript "rm -rf TMP"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
@@ -65,9 +65,9 @@ output:
 	tuple val(meta1),path("*OUT.bed.gz"),path("*OUT.bed.gz.tbi"),path("*OUT.header"),emit:bed_out
 	path("versions.yml"),emit:versions
 script:
-    def TAG = task.ext.tag?:"BHFUCL"
-    def URL = "http://ftp.ebi.ac.uk/pub/databases/GO/goa/bhf-ucl/gene_association.goa_bhf-ucl.gz"
-    def WHATIZ = "Cardiovascular Gene Ontology Annotation Initiative ${URL}"
+    def TAG = task.ext.tag?:"CARDIOPANEL"
+    def FILE = task.ext.file?:"\${HOME}/notebook/data/genes/20220421.genes.cardioPanel_CECAS_CHU_Nantes.txt"
+    def WHATIZ = "Cardiopanel ${FILE}"
 	def extend = task.ext.extend?:1000
 """
 hostname 1>&2
@@ -75,23 +75,43 @@ mkdir -p TMP
 set -o pipefail
 mkdir -p TMP
 
-jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP gtf2bed  --columns "gtf.feature,gene_name" -R "${fasta}"  "${gtf}" |\\
+export LC_ALL=C
+
+if test -f "${FILE}"
+then
+	grep -v "#" "${FILE}" |\\
+		grep -v '^\$' |\\
+		sort -T TMP |  uniq > TMP/genes.txt
+
+
+	echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${WHATIZ}">' > ${TAG}_IN.header
+	echo '##INFO=<ID=${TAG}_NEAR,Number=.,Type=String,Description="Near gene distance=${extend}. ${WHATIZ}">' > ${TAG}_OUT.header
+
+else
+
+	touch TMP/genes.txt
+	
+	echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${TAG} NOT AVAILABLE">' > ${TAG}_IN.header
+	echo '##INFO=<ID=${TAG}_NEAR,Number=.,Type=String,Description="NOT AVAILABLE">' > ${TAG}_OUT.header
+
+fi
+
+jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP gtf2bed  \\
+		--columns "gtf.feature,gene_name" -R "${fasta}"  "${gtf}" |\\
 	awk -F '\t' '\$4=="gene" && \$5!="." && \$5!=""' |\\
+	grep -f  TMP/genes.txt -F |\\
 	cut -f1,2,3,5 |\\
     LC_ALL=C sort --buffer-size=${task.memory.mega}M -t '\t' -k4,4 -T TMP  |\\
 	uniq > TMP/genes.bed
 
-wget -O - "${URL}" |\\
-	gunzip -c |\\
-	awk -F '\t' '/#/{next} (\$4 ~ /^NOT/) {next;} {print \$3;}' |\\
-	uniq | LC_ALL=C sort -T TMP | uniq > TMP/genes.txt
 
-LC_ALL=C  join -t '\t' -1 4 -2 1 -o '1.1,1.2,1.3,1.4' TMP/genes.bed TMP/genes.txt |\\
-	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\\
+join -t '\t' -1 4 -2 1 -o '1.1,1.2,1.3,1.4' TMP/genes.bed TMP/genes.txt |\\
+	sort -T TMP -t '\t' -k1,1 -k2,2n |\\
 	uniq |\\
 	bgzip > TMP/${TAG}_IN.bed.gz
 
 tabix --force -p bed TMP/${TAG}_IN.bed.gz
+
 
 gunzip -c TMP/${TAG}_IN.bed.gz |\\
 	bedtools slop -b ${extend} -g ${fai} |\\
@@ -101,18 +121,15 @@ gunzip -c TMP/${TAG}_IN.bed.gz |\\
 
 tabix --force -p bed TMP/${TAG}_OUT.bed.gz
 
-
 mv TMP/*.bed.gz ./
 mv TMP/*.bed.gz.tbi ./
 
 
-echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${WHATIZ} ${URL}">' > ${TAG}_IN.header
-echo '##INFO=<ID=${TAG}_NEAR,Number=.,Type=String,Description="Near gene distance=${extend}. ${WHATIZ} ${URL}">' > ${TAG}_OUT.header
 
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	url: "${URL}"
+	url: "${FILE}"
 END_VERSIONS
 """
 }
@@ -133,14 +150,11 @@ output:
 	path("versions.yml"),emit:versions
 
 script:
-    def TAG = task.ext.tag?:"BHFUCL"
-	def prefix=task.ext.prefix?:vcf.baseName+".bhfucl"
-    def distance = task.ext.distance?:1000;
+    def TAG = task.ext.tag?:"CARDIOPANEL"
+	def prefix=task.ext.prefix?:vcf.baseName+".cardiopanel"
 """
 hostname 1>&2
-set -o pipefail
 mkdir -p TMP OUTPUT
-
 
 
 bcftools annotate \\
@@ -165,8 +179,6 @@ bcftools annotate \\
 	--merge-logic '${TAG}_NEAR:unique' \\
 	-o TMP/${prefix}.bcf \\
 	TMP/jeter.bcf
-
-
 
 mv TMP/*${prefix}.bcf ./
 mv TMP/${prefix}.bcf.csi ./

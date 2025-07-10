@@ -43,7 +43,7 @@ workflow REVEL {
 			column =  -1
 		}
 		
-		DOWNLOAD(fasta,fai,column)
+		DOWNLOAD(fasta,fai,dict,column)
 		versions = versions.mix(DOWNLOAD.out.versions)
 		
 		ANNOTATE(DOWNLOAD.out.output, vcfs)
@@ -61,6 +61,7 @@ conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)
+	tuple val(meta3),path(dict)
 	val(colpos)
 output:
 	tuple val(meta1),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.header"),emit:output
@@ -78,13 +79,14 @@ hostname 1>&2
 mkdir -p TMP
 wget -O TMP/jeter.zip "${url}"
 
+
 unzip -p TMP/jeter.zip  revel_with_transcript_ids |\\
 	tail -n +2 |\\
 	tr "," "\t" |\\
 	cut -f 1,${colpos},4,5,8 |\\
 	awk -F '\t' '\$2!="."' |\\
 	uniq |\\
-	jvarkit  -Djava.io.tmpdir=TMP  bedrenamechr -R "${fai}" --column 1 --convert SKIP  |\\
+	jvarkit  -Djava.io.tmpdir=TMP  bedrenamechr -R "${fasta}" --column 1 --convert SKIP  |\\
 		LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
 		uniq |\\
 		bgzip > TMP/${TAG}.bed.gz

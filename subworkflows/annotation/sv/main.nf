@@ -270,6 +270,10 @@ script:
 """
 hostname 1>&2
 set -xe
+set -o pipefail
+
+env | grep PROXY || true
+
 
 mkdir -p TMP
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
@@ -277,7 +281,8 @@ cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
 1:${k1.hg19}\t${base}/GRCh37_hg19_variants_2020-02-25.txt
 EOF
 
-awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
+awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' |\
+	sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
 
 join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv | sort | uniq > TMP/jeter.url
 
@@ -285,7 +290,7 @@ test -s TMP/jeter.url
 
 wget  -O - `cat TMP/jeter.url` |\
 	awk -F '\t' '(NR==1){col=-1;for(i=1;i<=NF;i++) {if(col<0 && \$i=="frequency") col=i;} next;} {if(col>1) printf("%s\\t%s\\t%s\\t%s\\t%s\\n",\$2,\$3,\$4,\$1,(\$col ~ /^[0-9Ee\\-\\.]+\$/? \$col:"."));}'  |\
-	java bedrenamechr -f "${dict}" --column 1 --convert SKIP |\
+	jvarkit -XX:-UsePerfData -Djava.io.tmpdir=TMP  bedrenamechr -f "${dict}" --column 1 --convert SKIP |\
 	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\\
 	bgzip > dgv.bed.gz
 

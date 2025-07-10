@@ -276,7 +276,7 @@ rm jeter2.bed
 
 process CALL_DELLY {
     tag "${name}"
-    memory "10g"
+    label "process_short"
     afterScript "rm -rf TMP"
     input:
 	path(reference)
@@ -381,8 +381,6 @@ process MERGE_GENOTYPES {
     conda "${moduleDir}/../../conda/bioinfo.01.yml"
     afterScript "rm -rf TMP"
     label "process_high"
-    cache 'lenient'
-    memory "20g"
     input:
 	path(bcfs)
     output:
@@ -436,7 +434,7 @@ else
 
 process FILTER_DELLY {
     conda "${moduleDir}/../../conda/bioinfo.01.yml"
-    label "process_medium"
+    label "process_short"
     input:
 	path(reference)
         path(delly)
@@ -490,8 +488,7 @@ process CALL_CNV {
     tag "${name}"
     cache 'lenient'
     afterScript "rm -rf TMP"
-    errorStrategy 'finish'
-    memory '10 g'
+     label "process_short"
     input:
 	val(meta)
 	val(genomeId)
