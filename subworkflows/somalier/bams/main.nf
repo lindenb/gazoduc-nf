@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -36,7 +36,7 @@ workflow SOMALIER_BAMS {
 		fasta
 		fai
 		dict
-		samplesheet // sample,bam,bai
+		bams_ch // sample,bam,bai
 		pedigree // pedigree for somalier
 		user_sites //file or no file
 	main:
@@ -55,14 +55,14 @@ workflow SOMALIER_BAMS {
 			}
 
 		/*
-		samplesheet can be
+		bams_ch can be
 			META BAM BAI
 		or
 			META BAM BAI FASTA FAI
 
 		if this is the first option, add FASTA and FAI
 		*/
-		ch1 = samplesheet.branch {
+		ch1 = bams_ch.branch {
 				tuple5: it.size()==5
 				tuple3: it.size()==3
 				other:true

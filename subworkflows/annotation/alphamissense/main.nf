@@ -161,9 +161,9 @@ bcftools index \\
 mv TMP/*.bcf ./
 mv TMP/*.bcf.csi ./
 
-cat << EOF > versions.yml
-${task.process}:
-	jvarkit: TODO
-EOF
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
+END_VERSIONS
 """
 }

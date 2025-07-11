@@ -1,13 +1,7 @@
 include {TRIOS  as TRIO_SNV                       } from '../../subworkflows/trios/main.nf'
 include {BCFTOOL_CONCAT                           } from '../../modules/bcftools/concat/main.nf'
-include {CLINVAR                                  } from '../../subworkflows/annotation/clinvar/main.nf'
-include {ALPHAMISSENSE                            } from '../../subworkflows/annotation/alphamissense/main.nf'
-include {BHFUCL                                   } from '../../subworkflows/annotation/bhfucl/main.nf'
-include {BCFTOOLS_BCSQ                            } from '../../modules/bcftools/bcsq/main.nf'
-include {REVEL                                    } from '../../subworkflows/annotation/revel/main.nf'
 include {DOWNLOAD_CYTOBAND                        } from '../../modules/ucsc/download.cytobands/main.nf'
 include {DOWNLOAD_REFGENE                         } from '../../modules/ucsc/download.refgene/main.nf'
-include {CARDIOPANEL                              } from '../../subworkflows/cardiopanel/main.nf'
 
 
 workflow WORKFLOW_DENOVO_SNV {
@@ -50,24 +44,7 @@ main:
     versions =  versions.mix(KEEP_DE_NOVO.out.versions)
     vcf = BCFTOOL_CONCAT.out.vcf
 
-    
-    BCFTOOLS_BCSQ(fasta,fai,gff3,vcf )
-    vcf = BCFTOOLS_BCSQ.out.vcf
-    
-    CLINVAR(meta,fasta,fai,dict,[[id:"nobed"],[]],vcf)
-    vcf = CLINVAR.out.vcf
 
-    ALPHAMISSENSE(meta,fasta,fai,dict,[[id:"nobed"],[]],vcf)
-    vcf = ALPHAMISSENSE.out.vcf
-
-    BHFUCL(meta,fasta,fai,dict,gtf,vcf)
-    vcf = BHFUCL.out.vcf
- 
-    REVEL(meta,fasta,fai,dict,vcf)
-    vcf = REVEL.out.vcf
-
-    CARDIOPANEL(meta,fasta,fai,dict,gtf,vcf)
-    vcf = CARDIOPANEL.out.vcf
 
     REPORT(pedigree,vcf)
 

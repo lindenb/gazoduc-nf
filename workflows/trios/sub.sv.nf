@@ -20,33 +20,25 @@ main:
     versions = Channel.empty()
 
 
-    vcf=Channel.empty()
 
     ch1  = triosbams_ch
         .filter{it[3].equals(fasta[1])}
         .flatMap{[
             [ [id:it[0],status:"case"], it[6], it[7]],
-            [ [id:it[1],status:"control"], it[8], it[8]],
-            [ [id:it[2],status:"control"], it[9], it[10]]
+            [ [id:it[1],status:"control"], it[8], it[9]],
+            [ [id:it[2],status:"control"], it[10], it[11]]
         ]}
     
     DELLY(meta,fasta,fai,dict,ch1)
+    vcf = DELLY.out.vcf
 
-    /*
-    TRUVARI(
-	        meta,
-            fasta,
-            fai,
-            dict,
-            vcf
-        )
     ANNOTATE_SV(
             meta,
             fasta,
             fai,
             dict,
             gtf,
-            TRUVARI.out.vcf
+            DELLY.out.vcf
         )
 
     FILTER_SV(fasta,fai,dict,
@@ -79,7 +71,6 @@ main:
             [it[11],it[12],it[13],it[14],it[15],it[16]]// bam and bai for child/father/mother
             ]
             }
-        .filter{(it[0].svlen as int) > 10000}
         .take(50)
         .view()
     
@@ -90,7 +81,7 @@ main:
             .collect()
             .map{[[id:"cnv"],it]}
         )
-    */
+    
 emit:
     versions
 }

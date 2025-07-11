@@ -33,12 +33,12 @@ private boolean acceptTrio(final VariantContext vc,String cm,String fm,String mm
 public Object apply(final VariantContext variant) {
     double max_freq = 0.01;
     if(variant.hasAttribute("GNOMAD_AF")) {
-        double af = variant.getAttributeAsDouble("GNOMAD_AF","");
+        double af = variant.getAttributeAsDouble("GNOMAD_AF",0.0);
         if(af >= max_freq) return false;
     }
 
     if(variant.hasAttribute("DGV_AF")) {
-        double af = variant.getAttributeAsDouble("DGV_AF","");
+        double af = variant.getAttributeAsDouble("DGV_AF",0.0);
         if(af >= max_freq) return false;
     }
 

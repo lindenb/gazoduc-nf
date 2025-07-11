@@ -68,7 +68,7 @@ script:
     def k1= k1_signature();
     def prefix = "clinvar"
     def base = "https://ftp.ncbi.nlm.nih.gov/pub/clinvar"
-    def args = bed?"--regions-overlap 1 --targets-file TMP/nochr.bed":""
+    def local_vcf = task.ext.local_vcf?:"NO_FILE" 
 
 """
 set -o pipefail
@@ -80,6 +80,15 @@ if ${bed?true:false}
 then
        sed 's/^chr//' '${bed}' >  TMP/nochr.bed
 fi
+
+
+if test -f "${local_vcf}" && test -f "${local_vcf}.tbi"
+then
+ 
+bcftools view -O v ${bed?"--regions-file TMP/nochr.bed":""} "${local_vcf}" |\\
+        jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  vcfsetdict -R "${fasta}"  -n SKIP |\\
+        bcftools view -O b -o TMP/jeter.bcf
+else
 
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
 1:${k1.hg38}\t${base}/vcf_GRCh38/clinvar.vcf.gz
@@ -93,9 +102,11 @@ join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv | sort | uniq > TM
 test -s TMP/jeter.url
 
 wget -O - `cat TMP/jeter.url` |\\
-        bcftools view -O v ${args}  |\\
+        bcftools view -O v ${bed?"--regions-overlap 1 --targets-file TMP/nochr.bed":""} |\\
         jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  vcfsetdict -R "${fasta}"  -n SKIP |\\
         bcftools view -O b -o TMP/jeter.bcf
+
+fi
 
 bcftools view --header-only TMP/jeter.bcf | grep "^##INFO" | cut -d '=' -f 3 | cut -d, -f 1| grep -v "#"  |\\
         awk '{printf("INFO/%s\tCLINVAR_%s\\n",\$1,\$1);}' > TMP/rename.tsv

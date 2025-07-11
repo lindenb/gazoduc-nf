@@ -218,7 +218,7 @@ END_VERSIONS
 
 process CALL_DELLY {
     tag "${meta.id}"
-    label "process_short"
+    label "process_single" // INCREASE MEMORY IN CONFIG !
     afterScript "rm -rf TMP"
     conda "${moduleDir}/../../conda/delly.yml"
     input:
@@ -258,7 +258,7 @@ process MERGE_DELLY {
     tag "${fasta.name}"
     label "process_single"
     afterScript "rm -rf TMP"
-    conda "${moduleDir}/../../../conda/delly.yml"
+    conda "${moduleDir}/../../conda/delly.yml"
     input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)
@@ -297,10 +297,10 @@ END_VERSIONS
     }
 
 process GENOTYPE_DELLY {
-    label "process_single"
+    label "process_single" // INCREASE MEMORY IN CONFIG !
     tag "${meta.id}"
     afterScript 'rm -rf TMP'
-    conda "${moduleDir}/../../../conda/delly.yml"
+    conda "${moduleDir}/../../conda/delly.yml"
 
     input:
 	    tuple val(meta1),path(fasta)
@@ -343,7 +343,7 @@ process MERGE_GENOTYPES {
     tag "${meta.id}"
     label "process_short"
     afterScript "rm -rf TMP"
-    conda "${moduleDir}/../../../conda/delly.yml"
+    conda "${moduleDir}/../../conda/delly.yml"
     input:
 	    tuple val(meta),path("VCFS/*")
     output:
@@ -374,7 +374,7 @@ END_VERSIONS
 
 process FILTER_DELLY {
     tag "${meta.id}"
-    conda "${moduleDir}/../../../conda/delly.yml"
+    conda "${moduleDir}/../../conda/delly.yml"
     label "process_single"
     input:
 	    tuple val(meta1),path(fasta)

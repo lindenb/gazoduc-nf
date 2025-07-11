@@ -28,7 +28,6 @@ def buildFromFai(fai) {
 
 
 boolean test_fai_chr1(fai,K1_length) {
-	System.err.println("#####"+fai);
 	try(BufferedReader br=  java.nio.file.Files.newBufferedReader(fai)) {
 		for(;;) {
 			final String line = br.readLine();

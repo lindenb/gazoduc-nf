@@ -10,6 +10,7 @@ include {HET_COMPOSITE  as APPPLY_HET_COMPOSITE   } from '../../modules/jvarkit/
 include {BCFTOOL_CONCAT as CONCAT1                } from '../../modules/bcftools/concat/main.nf'
 include {WORKFLOW_SNV                             } from './sub.snv.nf'
 include {WORKFLOW_SV                              } from './sub.sv.nf'
+include {SOMALIER_BAMS                            } from '../../subworkflows/somalier/bams/main.nf'
 
 Map assertKeyExists(final Map hash,final String key) {
     if(!hash.containsKey(key)) throw new IllegalArgumentException("no key ${key}'in ${hash}");
@@ -56,7 +57,8 @@ boolean isStructuralVariantVCF(vcf) {
 
 workflow {
         def ref_hash = [
-            id: file(params.fasta).simpleName
+            id: file(params.fasta).simpleName,
+            ucsc_name: (params.ucsc_name?:"undefined")
             ]
         def fasta  = [ref_hash, file(params.fasta) ]
         def fai    = [ref_hash, file(params.fai) ]
@@ -109,6 +111,17 @@ workflow {
                 .map{assertKeyMatchRegex(it,"bai","^\\S+\\.(bai|crai)\$")}
                 .map{[[id:it.sample],file(it.bam),file(it.bai),file(it.fasta),file(it.fai),file(it.dict)]}
             
+
+            SOMALIER_BAMS(
+                [id:"somalier"],
+                fasta,
+                fai,
+                dict,
+		        triosbams_ch, // sample,bam,bai
+		        pedigree, // pedigree for somalier
+		        [[id:"no_sites"],[]]
+            )
+
 
             triosbams_ch = Channel.fromPath(params.pedigree)
                 .splitCsv(header:false,sep:'\t')

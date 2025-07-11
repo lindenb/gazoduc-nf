@@ -39,6 +39,7 @@ workflow HMC {
 		ANNOTATE(DOWNLOAD.out.output,vcfs)
         versions = versions.mix(ANNOTATE.out.versions)
 	emit:
+		doc = DOWNLOAD.out.doc
 		vcf = ANNOTATE.out.vcf
 		versions
 	}
@@ -58,6 +59,7 @@ input:
 output:
 	tuple val(meta1),path("*.bed.gz"), path("*.bed.gz.tbi"), path("*.header"),emit:output
 	path("versions.yml"),emit:versions
+	path("doc.md"),emit:doc
 script:
 	def k1 = k1_signature()
 	def TAG=  task.ext.tag?:"HMC"
@@ -94,6 +96,18 @@ mv TMP/${TAG}.bed.gz ./
 mv TMP/${TAG}.bed.gz.tbi ./
 
 echo '##INFO=<ID=${TAG},Number=1,Type=Float,Description="${WHATIZ}">' > ${TAG}.header
+
+
+cat << 'EOF' > doc.md
+# annotations:hmc
+
+`INFO/${TAG}` : HMC value.
+
+> https://www.cardiodb.org/hmc/  Homologous Missense Constraint (HMC) is a novel amino acid 
+> level measure of genetic intolerance within human population
+
+EOF
+
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":

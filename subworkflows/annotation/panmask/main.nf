@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,7 +24,7 @@ SOFTWARE.
 */
 include {k1_signature} from '../../../modules/utils/k1.nf'
 
-workflow RMSK {
+workflow PANMASK {
 	take:
         meta
 		fasta
@@ -60,52 +60,74 @@ output:
 	path("doc.md"),emit:doc
 script:
 	def k1 = k1_signature()
-    def base = "https://hgdownload.cse.ucsc.edu/goldenPath"
-	def TAG = task.ext.tag?:"RMSK"
+    def base = "https://zenodo.org/records/15683328/files/"
+	def TAG = task.ext.tag?:"PANMASK"
 
 """
 hostname 1>&2
 mkdir -p TMP
 
+export LC_ALL=C
 
 
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:${k1.hg38}\t${base}/hg38/database/rmsk.txt.gz
-1:${k1.hg19}\t${base}/hg19/database/rmsk.txt.gz
+1:${k1.hg38}\t${base}/hg38.pm151a-v2.easy.bed.gz?download=1
 EOF
 
 awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' |\\
     sed 's/^chr//' |\\
     sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
+
 join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv |\\
-sort | uniq > TMP/jeter.url
+	sort | uniq > TMP/jeter.url
+
+
 
 URL=`cat TMP/jeter.url`
 
-set -o pipefail
-wget --no-check-certificate -O - "\${URL}" |\\
-	gunzip -c |\\
-	cut -f6-8 |\\
-	jvarkit bedrenamechr -XX:-UsePerfData  -Djava.io.tmpdir=TMP -f "${fasta}" --column 1 --convert SKIP  |\\
-		sort  -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
+if test -s TMP/jeter.url
+then
+
+	cut -f1,2 ${fai} | sort  -T TMP -t '\t' -k1,1 -k2,2n > TMP/genome.size
+
+	wget --no-check-certificate -O - "\${URL}" |\\
+		gunzip -c |\\
+		cut -f1,2,3 |\\
+		jvarkit bedrenamechr -XX:-UsePerfData  -Djava.io.tmpdir=TMP -f "${fasta}" --column 1 --convert SKIP  |\\
+		sort  -T TMP -t '\t' -k1,1 -k2,2n |\\
 		bedtools merge |\\
+		sort -T TMP -t '\t' -k1,1 -k2,2n |\\
+		bedtools complement -i - -g TMP/genome.size |\\
+		awk -F '\t' '(\$1 ~ /^(chr)?[0-9XY]+\$/)' |\\
+		sort -T TMP -t '\t' -k1,1 -k2,2n |\\
 		sed 's/\$/\t1/' |\\
 		bgzip > TMP/${TAG}.bed.gz
-	
+
+	echo '##INFO=<ID=${TAG},Number=0,Type=Flag,Description="Panmask provides a list of hard regions for short-read variant calling against the human genome GRCh38 . See https://zenodo.org/records/15683328">' > ${TAG}.header
+
+
+else
+	touch TMP/${TAG}.bed
+	bgzip > TMP/${TAG}.bed
+
+	echo '##INFO=<ID=${TAG},Number=0,Type=Flag,Description="Panmask was NOT available for this build">' > ${TAG}.header
+
+fi
 
 tabix -p bed -f TMP/${TAG}.bed.gz
 
 mv TMP/${TAG}.bed.gz ./
 mv TMP/${TAG}.bed.gz.tbi ./
 
-echo '##INFO=<ID=${TAG},Number=0,Type=Flag,Description="Repeat Masker from UCSC">' > ${TAG}.header
 
 cat << 'EOF' > doc.md
-# annotations:repeatmasker
+# annotations:panmask
 
-`INFO/${TAG}` : Repeat Masker regions from UCSC
+Panmask (https://zenodo.org/records/15683328) provides a list of easy/hard regions for short-read variant calling against the 
+human genome GRCh38. 
 
 EOF
+
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
@@ -128,8 +150,8 @@ output:
 	tuple val(meta), path("*.bcf"), path("*.bcf.csi"),emit:vcf
 	path("versions.yml"),emit:versions
 script:
-	def TAG = task.ext.tag?:"RMSK"
-	def prefix=task.ext.prefix?:vcf.baseName+".rmsk"
+	def TAG = task.ext.tag?:"PANMASK"
+	def prefix=task.ext.prefix?:vcf.baseName+".panmask"
 """
 mkdir -p TMP
 

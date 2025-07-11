@@ -38,7 +38,10 @@ include {VISTA} from '../vista/main.nf'
 include {SIMPLE_REPEATS} from '../simple_repeats/main.nf'
 include {JVARKIT_FILTER_LOWQUAL} from  '../../../modules/jvarkit/lowqual/main.nf'
 include {JVARKIT_VCFGNOMAD}  from  '../../../modules/jvarkit/vcfgnomad/main.nf'
-include {HMC} from '../hmc/main.nf'
+include {HMC      } from '../hmc/main.nf'
+include {PANMASK      } from '../panmask/main.nf'
+include {TISSUES      } from '../../jensenlab/tissues/main.nf'
+include {DISEASES      } from '../../jensenlab/diseases/main.nf'
 
 /*
 include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
@@ -179,6 +182,20 @@ workflow ANNOTATE {
 			versions = versions.mix(JVARKIT_VCFGNOMAD.out.versions)
 			vcf = JVARKIT_VCFGNOMAD.out.vcf
 			}
+
+		PANMASK(meta, fasta, fai, dict, vcf)
+		versions = versions.mix(PANMASK.out.versions)
+		vcf = PANMASK.out.vcf
+
+		TISSUES(meta, fasta, fai, dict, gtf, vcf)
+		versions = versions.mix(TISSUES.out.versions)
+		vcf = TISSUES.out.vcf
+
+		DISEASES(meta, fasta, fai, dict, gtf, vcf)
+		versions = versions.mix(DISEASES.out.versions)
+		vcf = DISEASES.out.vcf
+
+
 
 		/*
 		

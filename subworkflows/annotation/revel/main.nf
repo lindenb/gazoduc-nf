@@ -49,6 +49,7 @@ workflow REVEL {
 		ANNOTATE(DOWNLOAD.out.output, vcfs)
 		versions = versions.mix(ANNOTATE.out.versions)
 	emit:
+		doc = DOWNLOAD.out.doc
 		vcf = ANNOTATE.out.vcf
 		versions
 }
@@ -66,6 +67,7 @@ input:
 output:
 	tuple val(meta1),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.header"),emit:output
 	path("versions.yml"),emit:versions
+	path("doc.md"),emit:doc
 script:
 	def TAG = "REVEL"
 	def WHATIZ="REVEL is an ensemble method for predicting the pathogenicity of missense variants in the human genome. https://doi.org/10.1016/j.ajhg.2016.08.016 ."
@@ -99,6 +101,16 @@ mv TMP/${TAG}.bed.gz.tbi ./
 
 echo '##INFO=<ID=${TAG},Number=1,Type=Float,Description="${WHATIZ} ${url}">' > ${TAG}.header
 
+
+cat << 'EOF' > doc.md
+# annotations:revel
+
+`INFO/${TAG}` : REVEL
+
+> REVEL is an ensemble method for predicting the pathogenicity of missense variants in the 
+> human genome. https://doi.org/10.1016/j.ajhg.2016.08.016
+
+EOF
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":

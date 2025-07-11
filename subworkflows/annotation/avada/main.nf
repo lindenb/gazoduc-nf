@@ -22,125 +22,122 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {slurpJsonFile;moduleLoad} from '../../modules/utils/functions.nf'
-include {hasFeature;isBlank;backDelete;isHg19} from './annot.functions.nf'
-def TAG="AVADA"
+include {isGRCh37} from '../../../modules/utils/k1.nf'
 
-workflow ANNOTATE_AVADA {
+
+workflow AVADA {
 	take:
-		genomeId
-		bed
-		vcfs /** json : tuple vcf,vcf_index */
+		meta
+		fasta
+		fai
+		dict
+		vcfs /* meta, vcf,vcf_index */
 	main:
-
 	
-		if(hasFeature("avada") && isHg19(genomeId) ) {
-			source_ch = DOWNLOAD(genomeId)
-			annotate_ch = ANNOTATE(source_ch.vcf, source_ch.index,vcfs)
-			out1 = annotate_ch.output
-			out2 = annotate_ch.count
-			out3 = MAKE_DOC().output
+		if(isGRCh37(fai) ) {
+			DOWNLOAD(fasta,fai,dict)
+			ANNOTATE(DOWNLOAD.out.vcf,vcfs)
+			vcf = ANNOTATE.out.vcf
+			doc = ANNOTATE.out.doc
+			versions = ANNOTATE.out.versions
 			}
 		else
 			{
-			out1 = vcfs
-			out2 = Channel.empty()
-			out3 = Channel.empty()
+			doc = Channel.empty()
+			versions = Channel.empty()
+			vcf = vcfs
 			}
 	emit:
-		output = out1
-		count = out2
-		doc = out3
+		doc
+		versions
+		vcf
 	}
 
 
 process DOWNLOAD {
 afterScript "rm -rf TMP"
-memory "3g"
+label "process_single"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-        val(genomeId)
+    tuple val(meta1),path(fasta)
+    tuple val(meta2),path(fai)
+    tuple val(meta3),path(dict)
 output:
-       	path("${TAG}.db.bcf"),emit:vcf
-        path("${TAG}.db.bcf.csi"),emit:index
+	path val(meta1),path("*.db.bcf"),path("*.db.bcf.csi"),emit:vcf
+	path("versions.yml"),emit:versions
+	path("doc.md"),emit:doc
 script:
-	def genome = params.genomes[genomeId]
-	def reference = genome.fasta
-       	def url = "http://bejerano.stanford.edu/AVADA/avada_v1.00_2016.vcf.gz"
-	def whatis = "pubmed-id in avada. The AVADA database includes unvalidated variant evidence data, automatically retrieved from 61,116 full text papers deposited in PubMed until 07-2016"
+	def TAG=task.ext.tag?:"AVADA"
+	def url = task.ext.url?:"http://bejerano.stanford.edu/AVADA/avada_v1.00_2016.vcf.gz"
 """
 hostname 1>&2
-${moduleLoad("bcftools jvarkit")}
-set -o pipefail
 mkdir -p TMP
 
 wget -O - "${url}" |\\
 	gunzip -c |\\
 	awk -F '\t' '/^#CHROM/ {printf("##INFO=<ID=PMID,Number=.,Type=String,Description=\\"AVADA PMID\\">\\n##INFO=<ID=GENE_SYMBOL,Number=.,Type=String,Description=\\"AVADA GENE_SYMBOL\\">\\n##INFO=<ID=ENSEMBL_ID,Number=.,Type=String,Description=\\"AVADA ENSEMBL_ID\\">\\n##INFO=<ID=ENTREZ_ID,Number=.,Type=String,Description=\\"AVADA ENTREZ_ID\\">\\n##INFO=<ID=REFSEQ_ID,Number=.,Type=String,Description=\\"AVADA REFSEQ_ID\\">\\n##INFO=<ID=STRAND,Number=.,Type=String,Description=\\"AVADA STRAND\\">\\n##INFO=<ID=ORIGINAL_VARIANT_STRING,Number=.,Type=String,Description=\\"AVADA ORIGINAL_VARIANT_STRING\\">\\n\\n");} {print;}' |\\
 	sed 's/PMID/${TAG}_PMID/g' |\
-	java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -jar \${JVARKIT_DIST}/jvarkit.jar vcfsetdict -R "${reference}"  -n SKIP |\\
+	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfsetdict -R "${fasta}"  -n SKIP |\\
 	bcftools sort -T TMP/tmp -O b -o TMP/${TAG}.db.bcf
 
 bcftools view --header-only TMP/${TAG}.db.bcf | grep "^##INFO" | cut -d '=' -f3 | cut -d ',' -f1 | grep -v '^PMID' | awk '{printf("INFO/%s\t${TAG}_%s\\n",\$1,\$1);}' > TMP/rename.tsv
 bcftools annotate --rename-annots TMP/rename.tsv -O b -o TMP/jeter.bcf TMP/${TAG}.db.bcf
 mv TMP/jeter.bcf TMP/${TAG}.db.bcf
 
-bcftools index --force TMP/${TAG}.db.bcf
+bcftools index --threads '${task.cpus}' --force TMP/${TAG}.db.bcf
 
 mv TMP/${TAG}.db.bcf ./
 mv TMP/${TAG}.db.bcf.csi ./
-"""
-}
 
 
-process MAKE_DOC {
-executor "local"
-output:
-	path("${TAG}.html"),emit:output
-script:
-"""
-cat << __EOF__ > ${TAG}.html
-<dl>
-<dt>${TAG}</dt>
-<dd>pubmed-id in avada. The AVADA database includes <b>unvalidated</b> variant evidence data, automatically retrieved from 61,116 full text papers deposited in PubMed until 07-2016</dd>
-</dl>
-__EOF__
-"""
-}
 
-process ANNOTATE {
-tag "${json.name}"
-afterScript "rm -rf TMP"
-input:
-	path(database)
-	path(database_idx)
-	path(json)
-	//tuple path(vcf),path(vcf_idx),path(bed)
-output:
-	//tuple path("OUTPUT/${TAG}.bcf"),path("OUTPUT/${TAG}.bcf.csi"),path(bed),emit:output
-	path("OUTPUT/${TAG}.json"),emit:output
-	path("OUTPUT/${TAG}.count"),emit:count
-script:
-	 def row = slurpJsonFile(json)
-"""
-hostname 1>&2
-${moduleLoad("bcftools")}
-mkdir -p TMP OUTPUT
+cat << 'EOF' > doc.md
+# annotations:avada
 
-bcftools annotate -a "${database}" -c "${TAG}_PMID" --merge-logic '${TAG}_PMID:unique' -O b -o TMP/${TAG}.bcf '${row.vcf}'
-bcftools index --force TMP/${TAG}.bcf
+`INFO/${TAG}`
 
+> pubmed-id in avada. The AVADA database includes **unvalidated** variant evidence data, 
+> automatically retrieved from 61,116 full text papers deposited in PubMed until 07-2016
 
-cat << EOF > TMP/${TAG}.json
-{
-"vcf"   : "\${PWD}/OUTPUT/${TAG}.bcf",
-"index" : "\${PWD}/OUTPUT/${TAG}.bcf.csi",
-"bed"   : "${row.bed}"
-}
 EOF
 
-###
-bcftools query -N -f '.'  TMP/${TAG}.bcf | wc -c | awk '{printf("${TAG}\t%s\\n",\$1);}' > TMP/${TAG}.count
-mv TMP/${TAG}.* OUTPUT/
-${backDelete(row)}
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
+END_VERSIONS
+"""
+}
+
+
+process ANNOTATE {
+tag "${meta.id?vcf.name}"
+afterScript "rm -rf TMP"
+input:
+	tuple val(met1),path(database),path(database_idx)
+	tuple val(meta),path(vcf),path(vcf_idx)
+output:
+    tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
+	path("versions.yml"),emit:versions
+script:
+	def TAG=task.ext.tag?:"AVADA"
+"""
+hostname 1>&2
+mkdir -p TMP OUTPUT
+
+bcftools annotate \\
+	--write-index \\
+	--threads ${task.cpus} \\
+	-a "${database}" \\
+	-c "${TAG}_PMID" \\
+	--merge-logic '${TAG}_PMID:unique' \\
+	-O b \\
+	-o TMP/${TAG}.bcf \\
+	'${vcf}'
+
+
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
+END_VERSIONS
 """
 }
