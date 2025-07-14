@@ -545,7 +545,7 @@ process GLNEXUS {
         ${args} \\
         GVCFS/*vcf.gz > TMP/jeter.bcf
 
-    bcftools +fill-tags --threads ${task.cpus} -O b9 -o TMP/jeter2.bcf TMP/jeter.bcf -- -t AN,AC,AF
+    bcftools +fill-tags --threads ${task.cpus} -O b9 -o TMP/jeter2.bcf TMP/jeter.bcf -- -t  AN,AC,AF,AC_Hom,AC_Het,AC_Hemi,NS
     bcftools index --threads ${task.cpus}  --force TMP/jeter2.bcf
 
     mv TMP/jeter2.bcf ./${prefix}.bcf

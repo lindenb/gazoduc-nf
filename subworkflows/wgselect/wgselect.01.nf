@@ -235,7 +235,7 @@ test ! -z "\${JVARKIT_JAR}"
 
 
 	# force recalculation of AF/AC/AN #########################################################
-	bcftools  +fill-tags -O u -o TMP/jeter2.bcf TMP/jeter1.bcf -- -t AN,AC,AF
+	bcftools  +fill-tags -O u -o TMP/jeter2.bcf TMP/jeter1.bcf -- -t  AN,AC,AF,AC_Hom,AC_Het,AC_Hemi,NS
 	countIt "filltags" TMP/jeter1.bcf TMP/jeter2.bcf
 	mv TMP/jeter2.bcf TMP/jeter1.bcf
 

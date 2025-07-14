@@ -225,7 +225,7 @@ do
 done
 
 bcftools merge --threads ${task.cpus} --file-list TMP/jeter2.list --missing-to-ref  -O u |\
-	bcftools +fill-tags -O b  -o "${params.prefix?:""}${contig}.merged.bcf"  -- -t AN,AC,AF
+	bcftools +fill-tags -O b  -o "${params.prefix?:""}${contig}.merged.bcf"  -- -t  AN,AC,AF,AC_Hom,AC_Het,AC_Hemi,NS
 bcftools index --threads ${task.cpus} "${params.prefix?:""}${contig}.merged.bcf"
 
 """

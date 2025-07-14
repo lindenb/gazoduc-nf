@@ -295,7 +295,7 @@ export LC_ALL=C
 	mv TMP/jeter2.bcf TMP/jeter1.bcf 
 
 	# update AC,AN,AF ############################################################
-        bcftools +fill-tags --threads ${task.cpus}  -O u -o TMP/jeter2.bcf TMP/jeter1.bcf  -- -t AF,AN,AC
+        bcftools +fill-tags --threads ${task.cpus}  -O u -o TMP/jeter2.bcf TMP/jeter1.bcf  -- -t  AN,AC,AF,AC_Hom,AC_Het,AC_Hemi,NS
 	mv TMP/jeter2.bcf TMP/jeter1.bcf
 
 	## too many alleles

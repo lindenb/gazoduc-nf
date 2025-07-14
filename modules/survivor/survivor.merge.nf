@@ -68,7 +68,7 @@ ${survivor.toRealPath()} merge TMP/sample_files.list ${survivor_params} TMP/samp
 
 	bcftools annotate -x 'INFO/SUPP_VEC' -O u TMP/sample_merged.vcf |\
 	bcftools sort --max-mem "${task.memory.giga}G" -T TMP -O u  |\
-	bcftools +fill-tags -O u -- -t AN,AC,AF |\
+	bcftools +fill-tags -O u -- -t  AN,AC,AF,AC_Hom,AC_Het,AC_Hemi,NS |\
 	bcftools view -O b -o "TMP/merged.bcf"
 
 bcftools index TMP/merged.bcf

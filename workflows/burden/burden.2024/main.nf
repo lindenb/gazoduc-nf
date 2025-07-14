@@ -647,7 +647,7 @@ cat TMP/controls.txt TMP/cases.txt > TMP/all.samples.txt
 
 
 bcftools view --trim-unseen-allele --trim-alt-alleles --samples-file TMP/all.samples.txt -O u TMP/jeter1.bcf |\\
-	bcftools +fill-tags -O b -o TMP/jeter2.bcf  -- -t AF,AN,AC
+	bcftools +fill-tags -O b -o TMP/jeter2.bcf  -- -t  AN,AC,AF,AC_Hom,AC_Het,AC_Hemi,NS
 mv TMP/jeter2.bcf TMP/jeter1.bcf
 ${countVariants("TMP/jeter1.bcf")}
 

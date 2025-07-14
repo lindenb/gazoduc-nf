@@ -748,7 +748,7 @@ do
 done
 
 bcftools merge --missing-to-ref --file-list "TMP/merged.list" -O u |\
-	 bcftools  +fill-tags -O b  -o "${meta.prefix?:""}merged.bcf" '-'  -- -t AN,AC,AF
+	 bcftools  +fill-tags -O b  -o "${meta.prefix?:""}merged.bcf" '-'  -- -t  AN,AC,AF,AC_Hom,AC_Het,AC_Hemi,NS
 bcftools index "${meta.prefix?:""}merged.bcf"
 
 

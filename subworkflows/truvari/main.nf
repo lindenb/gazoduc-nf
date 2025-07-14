@@ -101,7 +101,7 @@ process APPLY_TRUVARI {
 	truvari collapse ${args3} --reference "${fasta}" -i "TMP/merged.vcf.gz" -c TMP/collapsed.vcf.gz |\\
 		bcftools view -O u -o TMP/jeter.bcf
 	
-	bcftools +fill-tags --threads ${task.cpus}  -O u -o TMP/jeter2.bcf TMP/jeter.bcf -- -t AN,AC,AF 
+	bcftools +fill-tags --threads ${task.cpus}  -O u -o TMP/jeter2.bcf TMP/jeter.bcf -- -t  AN,AC,AF,AC_Hom,AC_Het,AC_Hemi,NS
 	mv TMP/jeter2.bcf TMP/jeter.bcf
 		
 	bcftools sort -T TMP/sort -O b -o TMP/${prefix}.bcf TMP/jeter.bcf
