@@ -23,43 +23,55 @@ SOFTWARE.
 
 */
 
-
-process BED_CLUSTER {
+process JVARKIT_VCF_SET_DICTIONARY {
 	label "process_single"
-	tag "${meta.id?:""} "
-	afterScript "rm -rf TMP"
 	conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+	afterScript "rm -rf TMP"
+	tag "${meta.id?:vcf.name}"
 	input:
-		tuple val(meta1),path(fasta)
-		tuple val(meta2),path(fai)
-		tuple val(meta3),path(dict)
-		tuple val(meta ),path(bed)
+		tuple val(meta1),path(dict_source)
+		tuple val(meta ),path(vcf),path(idx)
 	output:
-		tuple val(meta), path("BEDS/*",arity:"0..*"),emit:bed
+		tuple val(meta ),path("*.{bcf,vcf.gz}"),path("*.{bcf.csi,vcf.gz.tbi}"),emit:vcf
 		path("versions.yml"),emit:versions
 	script:
-		def args = task.ext.args?:""
-		if(args.trim().isEmpty()) throw new IllegalArgumentException("args for bedcluter must be defined in ${task.process}")
+		def size  = task.ext.size?:10
+		def args1 = task.ext.args1?:""
+		def args2 = task.ext.args2?:"-n SKIP"
+		def args3 = task.ext.args3?:""
+		def prefix  = task.ext.prefix?:vcf.baseName+".setdict"
+		def sort = (task.ext.sort?:false) as boolean
+		def suffix = task.ext.extension?:".bcf"
+		def is_bcf = suffix.endsWith("bcf")
 	"""
 	hostname 1>&2
 	set -o pipefail
-	mkdir -p TMP/TMP2 BEDS
-	jvarkit  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -XX:-UsePerfData bedcluster \\
-		-R "${fasta}" \\
-		${args} \\
-		-o TMP/TMP2 "${bed}"
 
-	#force uniq names for later
-	MD5=\$(pwd | sha1sum  | cut -c 1-10)
-	find TMP/TMP2 -type f -name "*.bed" |\
-	while read F
-	do
-		mv "\${F}" "BEDS/\${MD5}.\$(basename "\$F")"
-	done
+	mkdir -p TMP
 
-cat << EOF > versions.yml
-${task.process}:
-	jvarkit: "\$(jvarkit --version)"
-EOF
+	bcftools view  ${args1} "${vcf}" |\\
+	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfsetdict \\
+			${args2} \\
+			--reference '${dict_source}' |\\
+	${sort?"bcftools sort -T TMP/sort -O u -m \"${task.memory.giga}G\"  |":""} \\
+	bcftools view ${args3} \\
+		-O ${is_bcf?"b":"z"} \\
+		-o TMP/${prefix}.${is_bcf?"bcf":"vcf.gz"}
+	
+
+	bcftools index \\
+		-f \\
+		${is_bcf?"":"-t"} \\
+		--threads ${task.cpus} \\
+		TMP/${prefix}.${is_bcf?"bcf":"vcf.gz"}
+	
+
+	mv TMP/${prefix}.${is_bcf?"bcf":"vcf.gz"} ./
+	mv TMP/${prefix}.${is_bcf?"bcf.csi":"vcf.gz.tbi"} ./
+
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	jvarkit: todo
+END_VERSIONS
 	"""
 	}

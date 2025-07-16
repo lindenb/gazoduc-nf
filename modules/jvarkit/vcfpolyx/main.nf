@@ -58,9 +58,9 @@ process JVARKIT_VCF_POLYX {
 	mv TMP/${prefix}.bcf ./
 	mv TMP/${prefix}.bcf.csi ./
 
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-	jvarkit: todo
-END_VERSIONS
+cat << EOF > versions.yml
+${task.process}:
+	jvarkit: "\$(jvarkit --version)"
+EOF
 	"""
 	}

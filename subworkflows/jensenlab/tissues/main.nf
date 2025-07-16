@@ -40,13 +40,14 @@ workflow TISSUES {
 		versions = versions.mix(DOWNLOAD.out.versions)
 
 		ANNOTATE(
-			DOWNLOAD.out.bed
+			DOWNLOAD.out.bed,
 			vcfs
 			)
 		versions = versions.mix(ANNOTATE.out.versions)
 	emit:
-		vcf = ANNOTATE.out.vcf
-		versions
+		
+        vcf = ANNOTATE.out.vcf	
+        versions
         doc = DOWNLOAD.out.doc
 
 	}
@@ -62,8 +63,8 @@ input:
     tuple val(meta3),path(dict)
     tuple val(meta4),path(gtf),path(gtf_tbi)
 output:
-	tuple val(meta1),path("*.bed.gz"), path("*.bed.gz.tbi"), path("*.header"), emit:bed
-	path("versions.yml"),emit:versions
+    tuple val(meta1),path("*.bed.gz"), path("*.bed.gz.tbi"), path("*.header"), emit:bed
+    path("versions.yml"),emit:versions
     path("doc.md"),emit:doc
 script:
     def TAG = task.ext.tag?:"TISSUES"
@@ -102,19 +103,16 @@ echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${WHATIZ}">' > ${TAG}.
 echo '##INFO=<ID=${TAG}_BRENDA,Number=.,Type=String,Description="${WHATIZ}">' >> ${TAG}.header
 
 
-
-
 cat << 'EOF' > doc.md
 # annotations:tissues
 
 > TISSUES (https://tissues.jensenlab.org/Search) is a weekly updated web resource that integrates evidence on tissue expression 
 > from manually curated literature, proteomics and transcriptomics screens, and automatic text mining. 
 
-The treshold limit was "${treshold}".
+Tags:
 
-`INFO/${TAG}` is the name of the tissue
-
-`INFO/${TAG}_BRENDA` is the identifier in the "Brenda Ontology".
+ - `INFO/${TAG}` is the name of the tissue
+ - `INFO/${TAG}_BRENDA` is the identifier in the "Brenda Ontology".
 
 > The BRENDA tissue ontology (BTO) represents a comprehensive structured encyclopedia.
 > It provides terms, classifications, and definitions of tissues, organs, anatomical structures, 
@@ -139,8 +137,7 @@ afterScript "rm -rf TMP"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-	tuple val(meta1),path(bed_in),path(tabix_in),path(header_in)
-	tuple val(meta2),path(bed_out),path(tabix_out),path(header_out)
+	tuple val(meta1),path(bed),path(bed_idx),path(header)
 	tuple val(meta),path(vcf),path(vcf_idx)
 output:
     tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
@@ -158,7 +155,7 @@ mkdir -p TMP OUTPUT
 
 bcftools annotate \\
 	--threads ${task.cpus} \\
-	-a "${bed_in}" \\
+	-a "${bed}" \\
 	-h "${header}" \\
 	--write-index \\
 	-c "CHROM,POS,END,${TAG}_BRENDA,${TAG}" \\
@@ -168,8 +165,8 @@ bcftools annotate \\
 	'${vcf}'
 
 
-mv TMP/*${prefix}.bcf ./
-mv TMP/${prefix}.bcf.csi ./
+mv TMP/jeter.bcf ${prefix}.bcf
+mv TMP/jeter.bcf.csi ${prefix}.bcf.csi
 
 
 cat << END_VERSIONS > versions.yml

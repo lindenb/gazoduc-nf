@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 
-workflow DISEASE {
+workflow DISEASES {
 	take:
 		meta
 		fasta
@@ -38,7 +38,7 @@ workflow DISEASE {
 		versions = versions.mix(DOWNLOAD.out.versions)
 
 		ANNOTATE(
-			DOWNLOAD.out.bed
+			DOWNLOAD.out.bed,
 			vcfs
 			)
 		versions = versions.mix(ANNOTATE.out.versions)
@@ -61,12 +61,12 @@ workflow DISEASE {
 		tuple val(meta4),path(gtf),path(gtf_tbi)
 	output:
 		tuple val(meta1),path("*.bed.gz"), path("*.bed.gz.tbi"), path("*.header"), emit:bed
-		path("version.xml"),emit:version
+		path("versions.yml"),emit:versions
 		path("doc.md"),emit:doc
 	script:
 		def url = task.ext.url?:"https://download.jensenlab.org/human_disease_textmining_filtered.tsv"
 		def treshold = task.ext.treshold ?:4.5
-		def TAG = task.ext.tag?:"DISEASE"
+		def TAG = task.ext.tag?:"DISEASES"
 		def WHATIZ = "DISEASES is a weekly updated web resource that integrates evidence on disease-gene associations from automatic text mining, manually curated literature, cancer mutation data, and genome-wide association studies. ${url}. Treshold=${treshold}"
 
 	"""
@@ -89,7 +89,7 @@ workflow DISEASE {
 	test -s TMP/jeter.b
 
 
-	join -t '\t' -1 4 -2 1 -o '1.1,1.2,1.3,1.4,2.2,2.3' TMP/jeter.a TMP/jeter.b |\
+	join -t '\t' -1 4 -2 1 -o '1.1,1.2,1.3,1.4,2.2,2.3' TMP/genes.bed TMP/jeter.b |\
 		LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n | uniq > TMP/jeter.bed
 
 	bgzip TMP/jeter.bed
@@ -99,7 +99,7 @@ workflow DISEASE {
 	mv TMP/jeter.bed.gz.tbi diseases.bed.gz.tbi
 
 	echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${WHATIZ}">' > diseases.header
-	echo '##INFO=<ID=${TAG}_DOID,Number=.,Type=String,Description="${WHATIZ}">' > diseases.header
+	echo '##INFO=<ID=${TAG}_DOID,Number=.,Type=String,Description="${WHATIZ}">' >> diseases.header
 
 
 
@@ -107,17 +107,19 @@ workflow DISEASE {
 cat << 'EOF' > doc.md
 # annotations:diseases
 
-DISEASES (https://diseases.jensenlab.org/Search) is a weekly updated web resource that integrates evidence on disease-gene associations from 
-automatic text mining, manually curated literature, cancer mutation data, and genome-wide association studies.
+> DISEASES (https://diseases.jensenlab.org/Search) is a weekly updated web resource that integrates evidence on disease-gene associations from 
+> automatic text mining, manually curated literature, cancer mutation data, and genome-wide association studies.
 
 The treshold limit was "${treshold}".
 
-`INFO/${TAG}` is the name of the disease
+Tags:
 
-`INFO/${TAG}_DOID` is the identifier in the "Disease Ontology" . The Disease Ontology has been developed 
-as a standardized ontology  for human disease with the purpose of providing 
-the biomedical community with consistent, reusable and sustainable descriptions of human disease terms, 
-phenotype characteristics.
+ - `INFO/${TAG}` is the name of the disease
+ - `INFO/${TAG}_DOID` is the identifier in the "Disease Ontology" 
+
+> The Disease Ontology has been developed  as a standardized ontology  for human disease with the purpose of providing 
+> the biomedical community with consistent, reusable and sustainable descriptions of human disease terms, 
+> phenotype characteristics.
 
 EOF
 
@@ -143,13 +145,12 @@ output:
 	path("versions.yml"),emit:versions
 
 script:
-    def TAG = task.ext.tag?:"TISSUE"
-	def prefix=task.ext.prefix?:vcf.baseName+".diseases"
+    def TAG = task.ext.tag?:"DISEASES"
+   def prefix=task.ext.prefix?:vcf.baseName+".diseases"
 """
 hostname 1>&2
 set -o pipefail
-mkdir -p TMP OUTPUT
-
+mkdir -p TMP
 
 
 bcftools annotate \\
@@ -164,8 +165,8 @@ bcftools annotate \\
 	'${vcf}'
 
 
-mv TMP/*${prefix}.bcf ./
-mv TMP/${prefix}.bcf.csi ./
+mv TMP/jeter.bcf ./${prefix}.bcf
+mv TMP/jeter.bcf.csi ./${prefix}.bcf.csi
 
 
 cat << END_VERSIONS > versions.yml

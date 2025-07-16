@@ -87,6 +87,7 @@ main:
 	versions = versions.mix(TISSUES.out.versions)
 	vcf = TISSUES.out.vcf
 
+
     DISEASES(meta, fasta, fai, dict, gtf, vcf)
 	versions = versions.mix(DISEASES.out.versions)
 	vcf = DISEASES.out.vcf

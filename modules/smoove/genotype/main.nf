@@ -1,54 +1,41 @@
-process GENOTYPE_BAM {
-tag "${row.sample}/${file(row.bam).name}/${file(merged).name}"
-cache "lenient"
-errorStrategy "retry"
-maxRetries 5
-memory "10g"
-afterScript  "rm -rf TMP TMP2"
-cpus 1 /* can only parallelize up to 2 or 3 threads on a single-sample and it's most efficient to use 1 thread. */
+process SMOOVE_GENOTYPE {
+label "process_short"
+tag "${meta.id}"
+afterScript  "rm -rf TMP"
 input:
-	val(meta)
-	val(genomeId)
-	val(img)
-	val(merged)
-	val(row)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta3),path(sitesvcf),path(sitesvcfidx)
+	tuple val(meta ),path(bam),path(bai)
+
 output:
-	path("${row.sample}-smoove.regenotyped.vcf.gz"),emit:vcf
-	path("${row.sample}-smoove.regenotyped.vcf.gz.tbi"),emit:tbi
-	path("version.xml"),emit:version
+	tuple val(meta), path("*.vcf.gz"), path("*.vcf.gz.tbi"),emit:vcf
+	path("versions.yml"),emit:versions
 script:
-	def reference = params.genomes[genomeId].fasta
-	def sample = row.sample
-	def bam = row.bam
-	def ref = file(reference)
-	def vcf0 = file(merged)
-	def xbam = file(bam)
+	def sample=meta.id
+	def prefix = task.ext.prefix?:meta.id+".genotype"
 """
 	hostname 1>&2
-	#module load singularity/2.4.5
-	module load bcftools/0.0.0
-	mkdir -p TMP
 	# smoove will write to the system TMPDIR. For large cohorts, make sure to set this to something with a lot of space
-	mkdir -p TMP2
-	export TMPDIR=\${PWD}/TMP2
+	mkdir -p TMP/TMP2
+	export TMPDIR=\${PWD}/TMP/TMP2
 
-	singularity exec\
-		--home \${PWD} \
-		--bind ${xbam.getParent()}:/bamdir \
-		--bind ${vcf0.getParent()}:/mergeddir \
-		--bind ${ref.getParent()}:/ref \
-		--bind \${PWD}/TMP:/outdir \
-		${img} \
-		smoove genotype -x  \
-			--vcf /mergeddir/${vcf0.name} \
-			--outdir /outdir \
-			--name ${sample} \
-			--fasta /ref/${ref.name} \
-			-p ${task.cpus} \
-			/bamdir/${xbam.name}
+	smoove genotype -d -x \\
+		--vcf "${sitesvcf}" \\
+		--outdir TMP \\
+		--name ${sample} \\
+		--fasta ${fasta} \\
+		-p ${task.cpus} \\
+		${bam}
 
-	bcftools sort  --max-mem ${task.memory.giga}G  -T TMP -o ${sample}-smoove.regenotyped.vcf.gz -O z TMP/${sample}-smoove.genotyped.vcf.gz
-	bcftools index -t -f ${sample}-smoove.regenotyped.vcf.gz
+	bcftools sort  \\
+		--max-mem ${task.memory.giga}G \\
+		-T TMP/sort \\
+		-o ${prefix}.vcf.gz \\
+		-O z \\
+		TMP/${sample}-smoove.genotyped.vcf.gz
+	
+	bcftools index --threads ${task.cpus} -t -f ${prefix}.vcf.gz
 
 
 cat <<- EOF > versions.yml

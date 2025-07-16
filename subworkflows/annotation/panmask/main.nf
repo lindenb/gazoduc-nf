@@ -68,7 +68,7 @@ hostname 1>&2
 mkdir -p TMP
 
 export LC_ALL=C
-
+set -x
 
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
 1:${k1.hg38}\t${base}/hg38.pm151a-v2.easy.bed.gz?download=1
@@ -93,7 +93,7 @@ then
 	wget --no-check-certificate -O - "\${URL}" |\\
 		gunzip -c |\\
 		cut -f1,2,3 |\\
-		jvarkit bedrenamechr -XX:-UsePerfData  -Djava.io.tmpdir=TMP -f "${fasta}" --column 1 --convert SKIP  |\\
+		jvarkit -XX:-UsePerfData  -Djava.io.tmpdir=TMP bedrenamechr -f "${fasta}" --column 1 --convert SKIP  |\\
 		sort  -T TMP -t '\t' -k1,1 -k2,2n |\\
 		bedtools merge |\\
 		sort -T TMP -t '\t' -k1,1 -k2,2n |\\
@@ -101,14 +101,14 @@ then
 		awk -F '\t' '(\$1 ~ /^(chr)?[0-9XY]+\$/)' |\\
 		sort -T TMP -t '\t' -k1,1 -k2,2n |\\
 		sed 's/\$/\t1/' |\\
-		bgzip > TMP/${TAG}.bed.gz
+		bgzip  > TMP/${TAG}.bed.gz
 
 	echo '##INFO=<ID=${TAG},Number=0,Type=Flag,Description="Panmask provides a list of hard regions for short-read variant calling against the human genome GRCh38 . See https://zenodo.org/records/15683328">' > ${TAG}.header
 
 
 else
 	touch TMP/${TAG}.bed
-	bgzip > TMP/${TAG}.bed
+	bgzip TMP/${TAG}.bed
 
 	echo '##INFO=<ID=${TAG},Number=0,Type=Flag,Description="Panmask was NOT available for this build">' > ${TAG}.header
 
@@ -123,8 +123,10 @@ mv TMP/${TAG}.bed.gz.tbi ./
 cat << 'EOF' > doc.md
 # annotations:panmask
 
-Panmask (https://zenodo.org/records/15683328) provides a list of easy/hard regions for short-read variant calling against the 
-human genome GRCh38. 
+> Panmask (https://zenodo.org/records/15683328) provides a list of easy/hard regions for short-read variant calling against the 
+> human genome GRCh38. 
+
+The flag ` TAG` means that the region is hard to call.
 
 EOF
 

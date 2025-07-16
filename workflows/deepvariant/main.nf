@@ -70,10 +70,17 @@ workflow {
 	def fasta =    [ refhash, file(params.fasta) ]
 	def fai   =    [ refhash, file(params.fai)  ]
 	def dict  =    [ refhash, file(params.dict) ]
-	def bed =      [ refhash, (params.bed==null?[]:file(params.bed))]
-	def pedigree = [ refhash, (params.pedigree==null?[]:file(params.pedigree))]
-	
+	def bed   =    [ refhash, []]
+	def pedigree = [ refhash, []]
+
+	if(params.bed!=null) {
+		bed  =  [ refhash, file(params.bed) ]
+	}
+	if(params.pedigree!=null) {
+		pedigree  =  [ refhash, file(params.pedigree) ]
+	}
 	versions = Channel.empty()
+	
 
 	if(params.bed==null) {
 		SCATTER_TO_BED(refhash,fasta,fai,dict)
@@ -82,18 +89,6 @@ workflow {
 		}
 
 
-	BEDCLUSTER(fasta,fai,dict,bed)
-	versions = versions.mix(BEDCLUSTER.out.versions)
-
-	bed = BEDCLUSTER.out.bed.flatMap{
-		def L=[]
-		for(f in it[1]) {
-			L.add([[id:f.name],f]);
-			}
-		return L;
-		}
-	
-/*
 	
 	bams_ch = Channel.fromPath(params.samplesheet)
         .splitCsv(header:true,sep:',')
@@ -107,21 +102,20 @@ workflow {
 		.map{assertKeyMatchRegex(it,"bai","^\\S+\\.(bai|crai)\$")}
 		.map{[[id:it.sample],file(it.bam),file(it.bai)]}
 
-	ch1 = bams_ch.combine(bed).multiFlatMap{
-		bam: [it[0],it[1],it[3]],
-		bed:[it[3],it[4]
-		}
-
 
 	DEEPVARIANT_TRIOS(
 		[id:"trios"],
 		fasta,
 		fai,
 		dict,
+		bed,
 		pedigree,
-		ch1.bed,
-		ch1.bam
+		bams_ch
 		)
+
+
+/*
+
 	versions = versions.mix(TRIOS.out.versions)
 
 	BCFTOOLS_CONCAT(

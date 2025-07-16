@@ -22,10 +22,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {SMOOVE_CALL        } from '../../modules/smoove/call'
-
-
-
+include {SMOOVE_CALL                        } from '../../../modules/smoove/call'
+include {SMOOVE_MERGE                       } from '../../../modules/smoove/merge'
+include {SMOOVE_GENOTYPE                    } from '../../../modules/smoove/genotype'
+include {SMOOVE_PASTE                       } from '../../../modules/smoove/paste'
 
 workflow SMOOVE_SV {
 	take:
@@ -34,80 +34,63 @@ workflow SMOOVE_SV {
 		fai
 		dict
 		exclude_bed
-		gff3
 		bams
 	main:
 
 		versions = Channel.empty()
 
-	
-
         /* if there is no meta.status, treat everyone as case */
-        bams.map{[it[0].containsKey("status") ? it[0] : it[0].plus("status":"case"), it[1], it[2]] }.
+        bams.map{[it[0].status ? it[0] : it[0].plus("status":"case"), it[1], it[2]] }.
 			branch{
 				controls : it[0].status && it[0].status.equals("control")
 				cases : true
 			}.set{bams_status_ch}
 
+
 		SMOOVE_CALL(
 			fasta,
 			fai,
-			dict,
+			exclude_bed,
 			bams_status_ch.cases
 			)
-		versions = versions.mix(SMOOVE_CALL.out.versions.first())
-		
+		versions = versions.mix(SMOOVE_CALL.out.versions)
+	
 
+		ch1 = SMOOVE_CALL.out.vcf
+				.map{[it[1],it[2]]}
+				.collect()
+				.map{[meta,it]}
+
+		
 		SMOOVE_MERGE(
 			fasta,
 			fai,
-			dict,
-			SMOOVE_CALL.out.vcf
-				.map{[it[1],it[2]]}
-				.collect()
-				.map{[meta,it.flatten()]}
+			ch1
 			)
 
-		versions = versions.mix(SMOOVE_MERGE.out.versions)
-
+		versions = versions.mix(SMOOVE_MERGE.out.versions)	
+		
 
 		SMOOVE_GENOTYPE(
 			fasta,
 			fai,
-			dict,
 			SMOOVE_MERGE.out.vcf,
 			bams
 		)
 
-
 		versions = versions.mix(SMOOVE_GENOTYPE.out.versions)
 
-		SMOOVE_GENOTYPE.out.vcf
+		SMOOVE_PASTE(fasta,fai,dict,SMOOVE_GENOTYPE.out.vcf
 			.map{[it[1],it[2]]}
 			.collect()
-			.map{[meta,it[1].sort{t->t[0].name}]} // prevent cache invalidation due to order
-
-			.flatMap{
-				def sorted =L.sort{A,B -> A[0].compareTo(B[0])};
-
-			}
-
-		
-		PASTE_LEVEL1(fasta,fai,dict,S)
-		versions = versions.mix(PASTE_LEVEL1.out.versions)
-
-		PASTE_LEVEL2(fasta,fai,dict,S)
-		versions = versions.mix(PASTE_LEVEL2.out.versions)
-
-		SMOOVE_ANNOTATE(fasta,fai,dict,gff3,PASTE_LEVEL2.out.vcf)
-
+			.map{[meta,it]}
+		)
+		versions = versions.mix(SMOOVE_PASTE.out.versions)
+	
 	emit:
-		version = version_ch.version
-		vcf = SMOOVE_ANNOTATE.out.vcf
+		versions
+		vcf = SMOOVE_PASTE.out.vcf
 	}
-
-
-
 
 
 
