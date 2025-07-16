@@ -27,14 +27,13 @@ process DEEP_TRIO3 /* 1 child+2 parents */{
 label "process_single"
 tag "${meta.id} ${C_bam.name} ${optional_bed?optional_bed.name:""}"
 afterScript "rm -rf TMP  .keras  .parallel"
-conda "${moduleDir}/../../../conda/deepvariant.yml"
 input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)
 	tuple val(meta3),path(dict)
 	tuple val(meta ),path(C_bam),path(C_bai), // CHILD
 	 	path(F_bam),path(F_bai),//PARENT 1
-		path(M_bam),path(M_bai) //PARENT 2 is optional
+		path(M_bam),path(M_bai), //PARENT 2 is optional
 		path(optional_bed)
 output:
 	tuple val(meta),
@@ -58,7 +57,6 @@ script:
 	def mother = meta.mother
 	def model_type = task.ext.model_type?:(meta.model_type?:"")
 	if(model_type.isEmpty()) throw new IllegalArgumentException("${task.process} missing ext.model_type (e.g WGS,WES,PACBIO,ONT_R104,HYBRID_PACBIO_ILLUMINA)");
-	def prefix = task.ext.prefix?:"deepvariant"
 	def keep_gvcf= (task.ext.keep_gvcf?:true) as boolean
 	def keep_vcf= (task.ext.keep_vcf?:true) as boolean
 """

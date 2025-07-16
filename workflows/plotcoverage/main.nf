@@ -36,15 +36,67 @@ if( params.help ) {
 }
 
 
-workflow {
-	reference = Channel.of(file(params.fasta), file(params.fai), file(params.dict)).collect()
-	ch1 = Channel.fromPath(params.bams).
-		splitText().
-		map{it.trim()}.
-		map{[file(it),file(it+(it.endsWith(".bam")?".bai":".crai"))]}
 
-	ch1 = PLOT_COVERAGE_01(reference, ch1 , file(params.bed))
-	}
+Map assertKeyExists(final Map hash,final String key) {
+    if(!hash.containsKey(key)) throw new IllegalArgumentException("no key ${key}'in ${hash}");
+    return hash;
+}
+
+Map assertKeyExistsAndNotEmpty(final Map hash,final String key) {
+    assertKeyExists(hash,key);
+    def value = hash.get(key);
+    if(value.isEmpty()) throw new IllegalArgumentException("empty ${key}'in ${hash}");
+    return hash;
+}
+
+Map assertKeyMatchRegex(final Map hash,final String key,final String regex) {
+    assertKeyExists(hash,key);
+    def value = hash.get(key);
+    if(!value.matches(regex)) throw new IllegalArgumentException(" ${key}'in ${hash} doesn't match regex '${regex}'.");
+    return hash;
+}
+
+
+workflow {
+
+	def refhash=[
+		id: file(params.fasta).baseName,
+		name: file(params.fasta).baseName,
+		ucsc_name :( params.ucsc_name?:"undefined"),
+		ensembl_name : (params.ensembl_name?:"undefined")
+		]
+
+	def fasta =    [ refhash, file(params.fasta) ]
+	def fai   =    [ refhash, file(params.fai)  ]
+	def dict  =    [ refhash, file(params.dict) ]
+	def gtf   =    [ refhash, file(params.gtf), file(params.gtf+".tbi")]
+	def bed =      [ refhash, file(params. bed)  ]
+
+
+	bams_ch = Channel.fromPath(params.samplesheet)
+        .splitCsv(header:true,sep:',')
+        .map{assertKeyMatchRegex(it,"sample","^[A-Za-z_0-9\\.\\-]+\$")}
+        .map{assertKeyMatchRegex(it,"bam","^\\S+\\.(bam|cram)\$")}
+        .map{
+            if(it.containsKey("bai")) return it;
+            if(it.bam.endsWith(".cram")) return it.plus(bai : it.bam+".crai");
+            return it.plus(bai:it.bam+".bai");
+        	}
+		.map{assertKeyMatchRegex(it,"bai","^\\S+\\.(bai|crai)\$")}
+		.map{[[id:it.sample],file(it.bam),file(it.bai)]}
+
+
+
+	ch1 = PLOT_COVERAGE_01(
+		[id:"plotcoverage"],
+		fasta,
+		fai,
+		dict,
+		gtf,
+		bed,
+		bams_ch
+		)
+}
 
 runOnComplete(workflow);
 

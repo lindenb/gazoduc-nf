@@ -27,82 +27,120 @@ include {SAMTOOLS_SAMPLES02} from '../../subworkflows/samtools/samtools.samples.
 
 workflow PLOT_COVERAGE_01 {
 	take:
-		reference
-		bams //[bam,bai]
+		meta
+		fasta
+		fai
+		dict
+		gtf
 		bed
+		bams //[bam,bai]
 	main:
+		versions = Channel.empty()
+		EXTEND_BED(fasta,fai,dict, bed)
+		versions = versions.mix(EXTEND_BED.out.versions)
 
-		x_ch = EXTEND_BED(reference, bed)
-
-		c1_ch = x_ch.bed.splitCsv(header: true,sep:'\t',strip:true)
-
-		cov_ch = DRAW_COVERAGE(reference , c1_ch.combine(bams))
-
-		input_merge_ch = cov_ch.pdf.
-			map{T->[T[0].chrom+"_"+T[0].delstart+"_"+T[0].delend,T[1]]}.
-			groupTuple()
+		c1_ch = EXTEND_BED.out.bed.
+			map{it[1]}.
+			splitCsv(header: true,sep:'\t',strip:true)
 
 
-		merge_pdf_ch = MERGE_PDFS(input_merge_ch)
 
-		zip_ch = ZIP_ALL(merge_pdf_ch.output.collect())
+		DRAW_COVERAGE(fasta,fai,dict,gtf,c1_ch.combine(bams))
+		versions = versions.mix(DRAW_COVERAGE.out.versions)
+
+		MERGE_PDFS(
+			DRAW_COVERAGE.out.pdf
+				.map{T->[[id:T[0].chrom+"_"+T[0].delstart+"_"+T[0].delend],T[1]]}
+				.groupTuple()
+			)
+		versions = versions.mix(MERGE_PDFS.out.versions)
+
+
+		ZIP_ALL(MERGE_PDFS.out.pdf.collect().map{[meta,it]})
+		versions = versions.mix(ZIP_ALL.out.versions)
 	emit:
-		zip = zip_ch.zip
+		zip =ZIP_ALL.out.zip
+		versions
 	}
 
 
 process EXTEND_BED {
-	label "process_short"
-	tag "${bed}"
+	label "process_single"
+	tag "${meta.id} ${bed.name}"
 	conda "${moduleDir}/../../conda/bioinfo.01.yml"
 	input:
-		path(genome)
-		path(bed)
+		tuple val(meta1),path(fasta)
+		tuple val(meta2),path(fai)
+		tuple val(meta3),path(dict)
+		tuple val(meta),path(bed)
 	output:
-		path("extend.bed"),emit:bed
+		tuple val(meta),path("*.bed"),emit:bed
+		path("versions.yml"),emit:versions
 	script:
-		def reference = genome.find{it.name.endsWith("a")}
-		def fai = genome.find{it.name.endsWith(".fai")}
 		def extend = task.ext.extend_bed?:"3.0"
 		def max_sv_len = ((task.ext.max_sv_length?:-1) as int)
+		def min_sv_len = ((task.ext.min_sv_length?:-1) as int)
 	"""
 	hostname 1>&2
-	set -o pipefail
-
 	mkdir TMP
 	cut -f1,2 "${fai}" > TMP/jeter.genome
 
-	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -R "${reference}" -c 1 "${bed}" | \
-		awk -F '\t' '{M=${max_sv_len};L=int(\$3)-int(\$2);if(M>0 && L>M) next; printf("%s\t%s\t%s\t%s\\n",\$1,\$2,\$3,(NF==3 || \$4==""?".":\$4));}' > TMP/jeter1.bed
+cat << 'EOF' > jeter.awk
+BEGIN {
+	M=${max_sv_len};
+	N=${min_sv_len};
+	}
 
-	cut -f 1,2,3 TMP/jeter1.bed | bedtools slop -i - -g TMP/jeter.genome ${extend.toString().contains(".")?"-pct":""} -b ${extend} | cut -f 2,3 > TMP/jeter2.bed
+/^(browser|track|#)/ {
+	next;
+	}
+
+	{
+	L=int(\$3)-int(\$2);
+	if(M>0 && L>M) next;
+	if(N>0 && L<N) next;
+	printf("%s\t%s\t%s\t%s\\n",\$1,\$2,\$3, (NF==3 || \$4==""?".":\$4) );
+	}
+EOF
+
+	jvarkit  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedrenamechr -R "${fasta}" -c 1 "${bed}" | \\
+		awk -F '\t' -f jeter.awk > TMP/jeter1.bed
+
+	cut -f 1,2,3 TMP/jeter1.bed |\\
+		bedtools slop -i - -g TMP/jeter.genome ${extend.toString().contains(".")?"-pct":""} -b ${extend} |\\
+		cut -f 2,3 > TMP/jeter2.bed
 
 	# make title
 	echo "chrom\tdelstart\tdelend\ttitle\tstart\tend" > TMP/extend.bed
 
 	# paste to get chrom/original-start/original-end/x- start/x-end
-        paste TMP/jeter1.bed TMP/jeter2.bed |\
-		sort -T TMP -t '\t' -k1,1V -k2,2n -k3,3n --unique  >> TMP/extend.bed
+	paste TMP/jeter1.bed TMP/jeter2.bed |\\
+	    sort -T TMP -t '\t' -k1,1V -k2,2n -k3,3n --unique  >> TMP/extend.bed
 
 	test -s TMP/extend.bed
 
 	mv TMP/extend.bed ./
+
+	touch versions.yml
 	"""
 	}
 
 
 process DRAW_COVERAGE {
 	tag "${row.chrom}:${row.delstart}-${row.delend} ${row.title} ${bam.name} len=${1+(row.end as int)-(row.start as int)}"
-	label "process_short"
+	label "process_single"
 	conda "${moduleDir}/../../conda/bioinfo.01.yml"
-        afterScript "rm -rf TMP"
+    afterScript "rm -rf TMP"
 	input:
-		path(reference)
-		tuple val(row),path(bam),path(bai)
+		tuple val(meta1),path(fasta)
+		tuple val(meta2),path(fai)
+		tuple val(meta3),path(dict)
+		tuple val(meta4),path(gtf),path(gtfidx)
+		tuple val(row),val(meta),path(bam),path(bai)
 	output:
 		tuple val(row),path("*.pdf"),emit:pdf
+		path("versions.yml"),emit:versions
 	script:
-		def genome = reference.find{it.name.endsWith("a")}
 		def LARGE_SV = 200_000
 		def svlen = 1 + (row.end as int ) - (row.start as int)
 		def gene_type = (svlen < LARGE_SV?"exon":"gene")
@@ -111,19 +149,16 @@ process DRAW_COVERAGE {
 	hostname 1>&2
 	mkdir -p TMP
 
-	SAMPLE=`echo "${bam}" | samtools samples -f "${genome}"| cut -f 1 | head -n 1`
-	test ! -z "\${SAMPLE}"
-
-	if ${!params.gtf} ; then
+	if ${!gtf} ; then
 
 		touch TMP/exons.R
 
 	else
 
-		tabix "${params.gtf}" "${row.chrom}:${row.start}-${row.end}" |\
-			awk -F '\t' '(\$3=="${gene_type}") {printf("%s\t%d\t%s\\n",\$1,int(\$4)-1,\$5);}' |\
-			LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\
-			bedtools merge |\
+		tabix "${gtf}" "${row.chrom}:${row.start}-${row.end}" |\\
+			awk -F '\t' '(\$3=="${gene_type}") {printf("%s\t%d\t%s\\n",\$1,int(\$4)-1,\$5);}' |\\
+			LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\\
+			bedtools merge |\\
 			awk -F '\t' '{printf("rect(%d, 0,%d, -1, col=\\\"green\\\")\\n",\$2,\$3);}' > TMP/exons.R
 
 	fi
@@ -140,7 +175,7 @@ cat ${moduleDir}/plot.coverage.R |\\
 	-D_LARGE_SV_=${LARGE_SV} \
 	-D_CONTIG_=${row.chrom} \
 	-D_CHROM_=${row.chrom} \
-	-D_SAMPLE_=\${SAMPLE} \
+	-D_SAMPLE_=${meta.id} \
 	-D_BAM_=${bam} \
 	-D_START_=${row.start} \
 	-D_END_=${row.end} \
@@ -153,41 +188,47 @@ cat ${moduleDir}/plot.coverage.R |\\
 
 R --vanilla < TMP/jeter.R
 
-mv TMP/jeter.pdf "${row.chrom}_${row.start}_${row.end}.\${SAMPLE}.pdf" 
+mv TMP/jeter.pdf "${row.chrom}_${row.start}_${row.end}.${meta.id}.pdf"
+
+touch versions.yml
 """
 }
 
 
 process MERGE_PDFS {
-	tag "${title}"
-	label "process_short"
+	tag "${meta.id}"
+	label "process_single"
 	conda "${moduleDir}/../../conda/ghostscript.yml"
 	input:
-		tuple val(title),path("PDF/*")
+		tuple val(meta),path("PDF/*")
 	output:
-		path("${title}.pdf"),emit:output
+		tuple val(meta),path("*.pdf"),emit:pdf
+		path("versions.yml"),emit:versions
 	script:
+		def title = meta.id
 	"""
 	hostname 1>&2
 
-	find PDF/ -type l -name "*.pdf" | LC_ALL=C sort > jeter.txt
+	find PDF/ -type l -name "*.pdf" | LC_ALL=C sort -V > jeter.txt
 
 	test -s jeter.txt
 
 	gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -dPDFSETTINGS=/prepress -sOutputFile=${title}.pdf `cat jeter.txt`
 
 	rm jeter.txt
+	touch versions.yml
 	"""
 	}
 
 process ZIP_ALL {
-	label "process_short"
-	input:
-		path("PDF/*")
-	output:
-		path("all.zip"),emit:zip
-	script:
-		def dir = (params.prefix?:"")+"archive"
+label "process_single"
+input:
+	tuple val(meta),path("PDF/*")
+output:
+	tuple val(meta),path("all.zip"),emit:zip
+	path("versions.yml"),emit:versions
+script:
+	def dir = (params.prefix?:"")+"archive"
 	"""
 hostname 1>&2
 mkdir -p "${dir}"
@@ -255,7 +296,7 @@ EOF
 zip -9r  "all.zip" ${dir}
 rm  -f ${dir}/*.pdf
 rm  -f ${dir}/*.html
-
+touch versions.yml
 """
 }
 

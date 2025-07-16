@@ -1,4 +1,5 @@
-include {BED_CLUSTER} from '../../../modules/jvarkit/bedcluster'
+include {BED_CLUSTER   } from '../../../modules/jvarkit/bedcluster'
+include {DEEP_TRIO3    } from '../../../modules/deepvariant/deep_trio3'
 
 
 workflow DEEPVARIANT_TRIOS {
@@ -63,14 +64,15 @@ main:
 		without_family_ch = Channel.empty()//TODO a ce jour pas de situation ou les echantillons ne sont pas utilises
 	}
 
-
-		DEEP_TRIO3(
+	DEEP_TRIO3(
 		fasta,
 		fai,
 		dict,
-		trio3_ch.map{it.plus(bed[1)}.plus(bed[1)}
+		trio3_ch.combine(bed)
+			.map{[it[0],it[2],it[3],it[5],it[6],it[8],it[9],it[11]]} //meta,c.bam,c.bai, f.bam,f.bai, m.bam,m.bai, bed
 		)
-
+	
+	versions= versions.mix(DEEP_TRIO3.out.versions)
 
 /*
 	
