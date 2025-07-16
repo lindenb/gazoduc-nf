@@ -56,7 +56,7 @@ workflow PLOT_COVERAGE_01 {
 		versions = versions.mix(MERGE_PDFS.out.versions)
 
 
-		ZIP_ALL(MERGE_PDFS.out.pdf.collect().map{[meta,it]})
+		ZIP_ALL(MERGE_PDFS.out.pdf.map{it[1]}.collect().map{[meta,it]})
 		versions = versions.mix(ZIP_ALL.out.versions)
 	emit:
 		zip =ZIP_ALL.out.zip

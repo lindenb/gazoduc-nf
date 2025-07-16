@@ -61,9 +61,10 @@ script:
 	def keep_vcf= (task.ext.keep_vcf?:true) as boolean
 """
 	hostname 1>&2
-	mkdir -p TMP/TMP
+	mkdir -p TMP/TMP TMP/LOGS
 	
 	run_deeptrio \\
+		--logging_dir TMP/LOGS \\
 		--model_type ${model_type} \\
 		--ref "${fasta}" \\
 		--reads_child "${C_bam}" \\
@@ -81,7 +82,10 @@ script:
   		--output_gvcf_child  TMP/child.g.vcf.gz \\
   		--output_gvcf_parent1 TMP/father.g.vcf.gz \\
   		--output_gvcf_parent2 TMP/mother.g.vcf.gz \\
-  		 1>&2
+		1>&2
+
+
+	find TMP -type f 1>&2
 
 if ${keep_gvcf}
 then
@@ -105,7 +109,7 @@ fi
 
 cat << EOF > versions.yml
 "${task.process}":
-    deep_variant: "\$(run_deepvariant --version)"
+    deep_trio: "\$(run_deeptrio --version 2> /dev/null  | awk '(NR==1) {print \$NF;}')"
 EOF
 """
 }
