@@ -36,33 +36,29 @@ input:
 		path(M_bam),path(M_bai), //PARENT 2 is optional
 		path(optional_bed)
 output:
-	tuple val(meta),
-		path("*.C.g.vcf.gz"),path("*.C.g.vcf.gz.tbi"),
-		path("*.F.g.vcf.gz"),path("*.F.g.vcf.gz.tbi"),
-		path("*.M.g.vcf.gz"),path("*.M.g.vcf.gz.tbi"),
-		path(optional_bed),optional:true,emit:gvcf
-	
-	tuple val(meta),
-		path("*.C.std.vcf.gz"),path("*.C.std.vcf.gz.tbi"),
-		path("*.F.std.vcf.gz"),path("*.F.std.vcf.gz.tbi"),
-		path("*.M.std.vcf.gz"),path("*.M.std.vcf.gz.tbi"),
-		path(optional_bed),optional:true,emit:vcf
+	tuple val(meta),path("*.g.vcf.gz"),  path("*.g.vcf.gz.tbi"),  path(optional_bed),optional:true,emit:gvcf
+	tuple val(meta),path("*.std.vcf.gz"),path("*.std.vcf.gz.tbi"),path(optional_bed),optional:true,emit:vcf
 		
 	path("versions.yml"),emit:versions
 script:
 	if(!meta.father) throw new IllegalArgumentException("${task.process} missing meta.father")
 	if(!meta.mother) throw new IllegalArgumentException("${task.process} missing meta.mother")
+	if(meta.father.equals(meta.mother)) throw new IllegalArgumentException("${task.process} father=mother")
+	if(meta.father.equals(meta.id)) throw new IllegalArgumentException("${task.process} father=id")
+	if(meta.mother.equals(meta.id)) throw new IllegalArgumentException("${task.process} mother=id")
 	def child = meta.id
 	def father = meta.father
 	def mother = meta.mother
 	def model_type = task.ext.model_type?:(meta.model_type?:"")
 	if(model_type.isEmpty()) throw new IllegalArgumentException("${task.process} missing ext.model_type (e.g WGS,WES,PACBIO,ONT_R104,HYBRID_PACBIO_ILLUMINA)");
-	def keep_gvcf= (task.ext.keep_gvcf?:true) as boolean
-	def keep_vcf= (task.ext.keep_vcf?:true) as boolean
+	def keep_gvcf= (task.ext.keep_gvcf?:false) as boolean
+	def keep_vcf= (task.ext.keep_vcf?:false) as boolean
+	if(!keep_gvcf && !keep_vcf) throw new IllegalArgumentException("${task.process} discard all")
 """
 	hostname 1>&2
 	mkdir -p TMP/TMP TMP/LOGS
-	
+	export TMPDIR=\${PWD}/TMP/TMP	
+
 	run_deeptrio \\
 		--logging_dir TMP/LOGS \\
 		--model_type ${model_type} \\
@@ -71,7 +67,7 @@ script:
 		--reads_parent1 "${F_bam}" \\
 		--reads_parent2 "${M_bam}" \\
 		--sample_name_child "${child}" \\
-	    --sample_name_parent1 "${father}" \\
+ 	    --sample_name_parent1 "${father}" \\
 	    --sample_name_parent2 "${mother}" \\
 		--num_shards ${task.cpus} \\
 		--intermediate_results_dir TMP/TMP \\
@@ -89,22 +85,27 @@ script:
 
 if ${keep_gvcf}
 then
-	mv TMP/child.g.vcf.gz      "${child}.C.g.vcf.gz"
-	mv TMP/child.g.vcf.gz.tbi  "${child}.C.g.vcf.gz.tbi"
-	mv TMP/father.g.vcf.gz     "${father}.F.g.vcf.gz"
-	mv TMP/father.g.vcf.gz.tbi "${father}.F.g.vcf.gz.tbi"
-	mv TMP/mother.g.vcf.gz     "${mother}.M.g.vcf.gz"
-	mv TMP/mother.g.vcf.gz.tbi "${mother}.M.g.vcf.gz.tbi"
+		mv TMP/child.g.vcf.gz      "${child}.C.g.vcf.gz"
+		mv TMP/child.g.vcf.gz.tbi  "${child}.C.g.vcf.gz.tbi"
+
+		mv TMP/father.g.vcf.gz     "${father}.F.g.vcf.gz"
+		mv TMP/father.g.vcf.gz.tbi "${father}.F.g.vcf.gz.tbi"
+
+		mv TMP/mother.g.vcf.gz     "${mother}.M.g.vcf.gz"
+		mv TMP/mother.g.vcf.gz.tbi "${mother}.M.g.vcf.gz.tbi"
 fi
 
 if ${keep_vcf}
 then
-	mv TMP/child.vcf.gz        "${child}.C.std.vcf.gz"
-	mv TMP/child.vcf.gz.tbi    "${child}.C.std.vcf.gz.tbi"
-	mv TMP/father.vcf.gz       "${father}.F.std.vcf.gz"
-	mv TMP/father.vcf.gz.tbi   "${father}.F.std.vcf.gz.tbi"
-	mv TMP/mother.vcf.gz       "${mother}.M.std.vcf.gz"
-	mv TMP/mother.vcf.gz.tbi   "${mother}.M.std.vcf.gz.tbi"
+
+		mv TMP/child.vcf.gz        "${child}.C.std.vcf.gz"
+		mv TMP/child.vcf.gz.tbi    "${child}.C.std.vcf.gz.tbi"
+
+		mv TMP/father.vcf.gz       "${father}.F.std.vcf.gz"
+		mv TMP/father.vcf.gz.tbi   "${father}.F.std.vcf.gz.tbi"
+
+		mv TMP/mother.vcf.gz       "${mother}.M.std.vcf.gz"
+		mv TMP/mother.vcf.gz.tbi   "${mother}.M.std.vcf.gz.tbi"
 fi
 
 cat << EOF > versions.yml
