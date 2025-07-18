@@ -34,6 +34,7 @@ output:
     path("versions.yml"),emit:versions
 script:
     def k1= k1_signature()
+    def snpeff_database_directory = task.ext.snpeff_database_directory?:"NODIR"
 """
 mkdir -p SNPEFFX TMP
 
@@ -50,10 +51,18 @@ DB=`cat TMP/jeter.database`
 
 test ! -z "\${DB}"
 
-snpEff -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  download -dataDir  "\${PWD}/SNPEFFX"  "\${DB}"
+if test -f "${snpeff_database_directory}/\${DB}/snpEffectPredictor.bin"
+then
+
+    ln -s "${snpeff_database_directory}" "SNPEFF"
+
+else
+
+snpEff  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  download -dataDir  "\${PWD}/SNPEFFX"  "\${DB}"
 
 test -s SNPEFFX/*/snpEffectPredictor.bin
 mv SNPEFFX "SNPEFF"
+fi
 
 mv TMP/jeter.database "\${DB}.database"
 

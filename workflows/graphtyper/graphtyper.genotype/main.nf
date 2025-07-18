@@ -127,6 +127,7 @@ output:
 script:
 	def fasta = genome.find{it.name.endsWith("a")}
 	def regex= '^(chr)?[0-9XY]+\$'
+	def args1 = task.ext.args1 ?:" -w 50000 -s 49990"
 """
 mkdir -p TMP
 export LC_ALL=C
@@ -160,7 +161,7 @@ awk -F '\t' '(\$1 ~ /${regex}/ )' TMP/jeter.bed |\\
 	
 cut -f1,2,3 all.bed |\\
 	sort -T TMP -t '\t' -k1,1 -k2,2n  |\\
-	bedtools makewindows -w 50000 -s 49990 -b - > TMP/windows.bed
+	bedtools makewindows ${args1} -b - > TMP/windows.bed
 test -s TMP/windows.bed
 mv TMP/windows.bed ./
 """
@@ -218,8 +219,8 @@ script:
 	def fasta = genome.find{it.name.endsWith("a")}
 	def n_reads = 1000
 """
-
 mkdir -p TMP
+set +o pipefail
 
 samtools view -F 3844 -T "${fasta}" "${bam}" |\\
 	cut -f 10 |\\
@@ -267,6 +268,7 @@ EOF
 process MERGE {
 tag "${contig} N=${L.size()}"
 label "process_medium"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
         tuple val(contig),val(L)
@@ -276,7 +278,6 @@ output:
 script:
 	def args = "--remove-duplicates"
 """
-module load bcftools
 mkdir -p TMP
 set -x
 cat << EOF >  TMP/jeter.list
@@ -289,11 +290,13 @@ split -a 9 --additional-suffix=.list --lines=\${SQRT} TMP/jeter.list TMP/chunck.
 
 find TMP/ -type f -name "chunck*.list" | while read F
 do
-                bcftools concat --write-index --threads ${task.cpus} ${args} -a -O b --file-list "\${F}" -o "\${F}.bcf" 
+                bcftools concat --threads ${task.cpus} ${args} -a -O b --file-list "\${F}" -o "\${F}.bcf" 
+		bcftools index --threads ${task.cpus} -f "\${F}.bcf"
                 echo "\${F}.bcf" >> TMP/jeter2.list
 done
 
-bcftools concat --write-index ${args} --threads ${task.cpus} -a -O b9 --file-list TMP/jeter2.list -o "TMP/jeter.bcf" 
+bcftools concat ${args} --threads ${task.cpus} -a -O b9 --file-list TMP/jeter2.list -o "TMP/jeter.bcf" 
+bcftools index --threads ${task.cpus} -f "TMP/jeter.bcf"
 
 mv TMP/jeter.bcf ${contig}.merged.bcf
 mv TMP/jeter.bcf.csi ${contig}.merged.bcf.csi
