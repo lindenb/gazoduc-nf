@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -52,7 +52,9 @@ workflow {
 			{
 			in_vcf_ch = Channel.fromPath(params.vcf)
 			}
-		in_vcf_ch = in_vcf_ch.map{[it, file(it.name.endsWith(".bcf")?""+it+".csi":""+it+".tbi")]}.collect()
+		in_vcf_ch = in_vcf_ch
+			.map{[it, file(it.name.endsWith(".bcf")?""+it+".csi":""+it+".tbi")]}
+			.collect()
 		vcf2bed_ch = BCF_TO_VCF(in_vcf_ch)
 
 		compile_ch= COMPILE_MINIKIT()
