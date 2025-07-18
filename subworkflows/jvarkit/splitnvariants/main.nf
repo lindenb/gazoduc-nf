@@ -32,6 +32,7 @@ main:
 		versions= versions.mix(BED_CLUSTER.out.versions)
 		bed = BED_CLUSTER.out.bed.flatMap{toFlatMap(it)}
     	} 
+	vcfs.view{"#IT1 $it"}
 
 	SPLIT_N_VARIANTS(
 		vcfs.combine(bed).map{[it[0],it[1],it[2],it[4]]}

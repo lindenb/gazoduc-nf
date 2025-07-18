@@ -24,7 +24,7 @@ SOFTWARE.
 */
 process BCFTOOLS_NORM {
 label "process_single"
-tag "${meta.id?:""}"
+tag "${meta.id?:""} ${vcf.name} ${optional_bed?optional_bed.name:""}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:

@@ -41,6 +41,7 @@ boolean isStructuralVariantVCF(vcf) {
                 String line;
                 while((line=br.readLine())!=null) {
                     if(!line.startsWith("#")) break;
+                    if(line.equals("##source=Graphtyper")) return false;
                     if(line.equals("##source=DRAGEN_SV")) return true;
                     if(line.startsWith("##INFO=<ID=SVTYPE,")) found++;
                     if(line.startsWith("##INFO=<ID=SVLEN,")) found++;
@@ -81,7 +82,6 @@ workflow {
                 }
             .map{assertKeyMatchRegex(it,"idx","^\\S+\\.(tbi|csi)\$")}
             .map{[[id:it.id],file(it.vcf),file(it.idx)]}
-
 
         bams = Channel.empty()
         triosbams_ch = Channel.empty()
@@ -153,7 +153,6 @@ workflow {
             snv: true
          }
 
-
         DOWNLOAD_GFF3(fasta,fai,dict)
         DOWNLOAD_GTF(fasta,fai,dict)
 
@@ -167,6 +166,7 @@ workflow {
             pedigree,
             vcfs.sv.take(10)//TODO
         )*/
+
 
 
         WORKFLOW_SNV(
