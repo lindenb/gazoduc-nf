@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -23,33 +23,39 @@ SOFTWARE.
 
 */
 
-include {TRUVARI_COLLAPSE} from '../../modules/truvari/collapse'
+process MANTA_CONVERT_INVERSION {
+    label "process_single"
+    tag "${meta.id?:""} ${vcf.name}"
+    afterScript "rm -rf TMP"
+    conda "${moduleDir}/../../../conda/manta.yml"
+    input:
+		tuple val(meta1),path(fasta)
+		tuple val(meta2),path(fai)
+		tuple val(meta3),path(dict)
+        tuple val(meta),path(vcf),path(vcfidx)
+    output:
+        tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:vcf
+    	path("versions.yml"),emit:versions
+  
+    script:
+        def prefix = task.ext.prefix?:meta.id+".inv"
+	"""
+	hostname 1>&2
+	mkdir -p TMP
+    
+    convertInversion.py  `which samtools` "${fasta}" "${vcf}" |\\
+        bcftools sort -T TMP/sort -O z -o 
 
+    bcftools index --threads ${task.cpus} -f -t TMP/jeter.vcf.gz
 
-Map groupByFunction(hash,meta) {
-	return [id:"truvari"];
+    mv  TMP/jeter.vcf.gz "${prefix}.vcf.gz"
+    mv  TMP/jeter.vcf.gz.tbi "${prefix}.vcf.gz.tbi"
+
+cat << EOF > versions.yml
+"${task.process}":
+	manta: "\$(configManta.py --version)"
+EOF
+"""
 }
 
-workflow TRUVARI {
-     take:
-		meta
-		fasta
-		fai
-		dict
-        vcfs /* [meta,vcf,idx] */
-     main:
-	 	versions = Channel.empty()
-		TRUVARI_COLLAPSE(
-			fasta,
-			fai,
-			dict,
-			vcfs
-				.map{[groupByFunction(it,meta), [it[1],it[2]] ]}
-				.groupTuple()
-				.map{[it[0],it[1].flatten()]}
-			)
-		versions = versions.mix(TRUVARI_COLLAPSE.out.versions)
-	emit:
-		vcf = TRUVARI_COLLAPSE.out.vcf
-		versions
-	}
+

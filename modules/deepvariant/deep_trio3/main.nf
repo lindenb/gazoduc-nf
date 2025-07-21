@@ -56,11 +56,11 @@ script:
 	if(!keep_gvcf && !keep_vcf) throw new IllegalArgumentException("${task.process} discard all")
 """
 	hostname 1>&2
-	mkdir -p TMP/TMP TMP/LOGS
+	mkdir -p TMP/TMP LOGS
 	export TMPDIR=\${PWD}/TMP/TMP	
 
 	run_deeptrio \\
-		--logging_dir TMP/LOGS \\
+		--logging_dir LOGS \\
 		--model_type ${model_type} \\
 		--ref "${fasta}" \\
 		--reads_child "${C_bam}" \\

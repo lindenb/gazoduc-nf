@@ -38,6 +38,7 @@ workflow ANNOTATE_SV {
 		gtf
 		vcf_ch // channel containing [vcf,vcfidx]
 	main:
+                versions = Channel.empty()
 		gtf1_ch = PROCESS_GTF1(gtf)
 		gtf2_ch = PROCESS_GTF2(gtf)
 		gnomad_ch = DOWNLOAD_GNOMAD_SV(fasta,fai,dict)
@@ -64,6 +65,7 @@ workflow ANNOTATE_SV {
 			}
 	emit:
 		vcf
+                versions
 	}
 
 process PROCESS_GTF1 {
