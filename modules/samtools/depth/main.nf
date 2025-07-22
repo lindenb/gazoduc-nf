@@ -25,44 +25,37 @@ SOFTWARE.
 
 include {assertNotEmpty;getKeyValue;moduleLoad;isBlank} from '../../modules/utils/functions.nf'
 
-process SAMTOOLS_DEPTH_01 {
+process SAMTOOLS_DEPTH{
 tag "${row.bam}"
 afterScript "rm -rf TMP"
 cpus 1
 input:
-	val(meta)
-	val(row)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta3),path(optional_bed)
+	tuple val(meta ),path(bam),path(bai)
 output:
-	tuple val(row),path("${row.sample}.depth.tsv"),emit:output
-	path("version.xml"),emit:version
+	tuple val(meta),path("*.depth.tsv"),emit:depth
+	path("versions.yml"),emit:versions
 script:
-	def prefix = row.prefix?:""
+	def prefix = task.ext.prefix?:bam.baseName
 	def bed = row.bed==null || row.bed.name.equals("NO_FILE")?"":"-M -L \"${row.bed}\" "
-	def ref = row.reference?"--reference \"${row.reference}\" ":""
-	def has_bed = !isBlank(bed)
-	def mapq = row.mapq?:1
+	def ref = fasta?"--reference \"${fasta}\" ":""
+	def has_bed = optional_bed?true:false
+	def mapq = task.ext.mapq?:1
 
 """
 hostname 1>&2
 ${moduleLoad("samtools")}
 set -o pipefail
 
-${has_bed?"samtools view -F 3844 --min-MQ \"${mapq}\" --uncompressed -O BAM ${bed} ${ref} \"${row.bam}\" |\\":""}
+${has_bed?"samtools view -F 3844 --min-MQ \"${mapq}\" --uncompressed -O BAM ${optional_bed} ${ref} \"${row.bam}\" |\\":""}
 samtools depth -a -q "${mapq}" ${has_bed?" -b \"${row.bed}\" ":""} ${isBlank(row.interval)?"-":" -r \"${row.interval}\" \"${row.bam}\""}  |\
 awk -F '\t' 'BEGIN{N=0;T=0.0;} {T+=int(\$3);N++;} END {printf("#sample\tbam\treference\tinterval\tbed\tcoverage\\n");printf("${row.sample}\t${row.bam}\t${row.reference?:""}\t${row.interval?:"."}\t${row.bed?:"."}\t%f\\n",(N==0?0.0:T/N));}' > "${row.sample}.depth.tsv"
 
-##################
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="description">samtools depth</entry>
-	<entry key="sample">${row.sample}</entry>
-	<entry key="bam">${row.bam}</entry>
-	<entry key="interval">${row.interval?:"."}</entry>
-	<entry key="bed">${row.bed?:"."}</entry>
-	<entry key="mapq">${mapq}</entry>
-	<entry key="samtools.version">\$(samtools version | head -n1 )</entry>
-</properties>
-EOF
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	samtools: "\$(samtools version | awk '(NR==1) {print \$NF;}')"
+END_VERSIONS
 """
 }
