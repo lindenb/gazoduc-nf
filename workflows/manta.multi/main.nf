@@ -157,7 +157,7 @@ workflow {
         MANTA_CONVERT_INVERSION.out.vcf
             .map{[it[1],it[2]]}
             .collect()
-            .map{[[id:"truvari"],it.flattenn()]}
+            .map{[[id:"truvari"],it.flatten()]}
         )
     versions = versions.mix(TRUVARI_COLLAPSE.out.versions.first())
 	

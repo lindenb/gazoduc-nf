@@ -53,7 +53,7 @@ process JVARKIT_VCF_SET_DICTIONARY {
 	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfsetdict \\
 			${args2} \\
 			--reference '${dict_source}' |\\
-	${sort?"bcftools sort -T TMP/sort -O u -m \"${task.memory.giga}G\"  |":""} \\
+	${sort?"bcftools sort -T TMP/sort -O u --max-mem \"${task.memory.giga}G\"  |":""} \\
 	bcftools view ${args3} \\
 		-O ${is_bcf?"b":"z"} \\
 		-o TMP/${prefix}.${is_bcf?"bcf":"vcf.gz"}

@@ -44,7 +44,7 @@ process MANTA_CONVERT_INVERSION {
 	mkdir -p TMP
     
     convertInversion.py  `which samtools` "${fasta}" "${vcf}" |\\
-        bcftools sort -T TMP/sort -O z -o 
+        bcftools sort --max-mem ${task.memory.giga}G  -T TMP/sort -O z -o  TMP/jeter.vcf.gz
 
     bcftools index --threads ${task.cpus} -f -t TMP/jeter.vcf.gz
 

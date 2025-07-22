@@ -3,7 +3,7 @@ process TRUVARI_COLLAPSE {
     label "process_short"
 	tag "${meta.id}"
     afterScript "rm -rf TMP"
-    conda "${moduleDir}/../../conda/truvari.01.yml"
+    conda "${moduleDir}/../../../conda/truvari.01.yml"
     input:
 		tuple val(meta1),path(fasta)
 		tuple val(meta2),path(fai)
@@ -25,7 +25,7 @@ process TRUVARI_COLLAPSE {
 	find VCFS -type l \\( -name "*.vcf.gz" -o -name "*.bcf" \\) |\\
 		while read F
 		do
-			bctools query -l "\${F}" | head -n 1 | tr "\\n" "\t" >> TMP/jeter.txt
+			bcftools query -l "\${F}" | head -n 1 | tr "\\n" "\t" >> TMP/jeter.txt
 			echo "\${F}" >> TMP/jeter.txt
 		done
 	
