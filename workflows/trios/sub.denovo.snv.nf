@@ -47,20 +47,22 @@ main:
 
 
     REPORT(pedigree,vcf)
-
+    versions =  versions.mix(REPORT.out.versions)
 
     ch1 = REPORT.out.bed
         .map{it[1]}
         .splitCsv(sep:'\t',header:false)
         .combine(triosbams_ch)
-        .filter{it[3].equals(it[4])}
-        .map{it.remove(4);return it;}//remove returns deleted item
+        .filter{it[3].equals(it[5])}
+        .map{it.remove(5);return it;}//remove returns deleted item
         .map{it.add(0,[id:it[0]+"_"+it[1]+"_"+it[2]+"_"+it[3]]);return it;}
         //.view()
     
 
     DOWNLOAD_REFGENE(fasta,fai,dict)
+    versions =  versions.mix(DOWNLOAD_REFGENE.out.versions)
     DOWNLOAD_CYTOBAND(fasta,fai,dict)
+    versions =  versions.mix(DOWNLOAD_CYTOBAND.out.versions)
 
     IGV_REPORTS(
         DOWNLOAD_CYTOBAND.out.output,
@@ -68,6 +70,7 @@ main:
         REPORT.out.vcf,
         ch1
     )
+    versions =  versions.mix(IGV_REPORTS.out.versions)
 
     GATHER_IGV_REPORTS(
         IGV_REPORTS.out.html.map{it[1]}.collect().map{[[id:"igvregport"],it]},
@@ -93,7 +96,7 @@ process KEEP_DE_NOVO {
         tuple val(meta),path("*.bcf"),path("*.csi"),optional:true,emit:vcf
         path("versions.yml"),emit:versions
     script:
-        def prefix = task.ext.prefix?:vcf.baseName+".denovoonly"
+        def prefix = task.ext.prefix?:vcf.baseName.md5().substring(0,7) +".denovoonly"
     """
     mkdir -p TMP
     
@@ -108,7 +111,10 @@ process KEEP_DE_NOVO {
         mv TMP/jeter.bcf.csi ${prefix}.bcf.csi
     fi
 
-    touch versions.yml
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+    bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
+END_VERSIONS
     """
 }
 
@@ -125,6 +131,7 @@ process REPORT {
         tuple val(meta),path("*.table.txt")
         tuple val(meta),path("*.genes.tsv")
         tuple val(meta),path("*.bed"),emit:bed //used for igv reports
+        path("versions.yml"),emit:versions
     script:
         def prefix = task.ext.prefix?:"snv.denovo"
         def args1 = task.ext.args1?:""
@@ -136,8 +143,21 @@ process REPORT {
     bcftools view  ${args1} -Oz -o TMP/jeter.vcf.gz "${vcf}"
     bcftools index -f -t TMP/jeter.vcf.gz 
    
-    bcftools query -f '%CHROM\t%POS0\t%END\t%INFO/loConfDeNovo,%INFO/hiConfDeNovo\n' TMP/jeter.vcf.gz |\\
-        awk -F '\t' '{N=split(\$4,a,/[,]/); for(i=1;i<=N;i++) {if(a[i]=="." ||a[i]=="") next; printf("%s\t%s\t%s\t%s\\n",\$1,\$2,\$3,a[i]);}}' |\\
+cat << '_EOF_' > TMP/jeter.awk
+    {
+    for(x=4;x<=5;++x) {
+        N=split(\$x,a,/[,]/);
+        for(i=1;i<=N;i++) {
+            if(a[i]=="." || a[i]=="") continue;
+            printf("%s\t%s\t%s\t%s\t%s\\n",\$1,\$2,\$3,a[i],(x==4?"loConfDeNovo":"hiConfDeNovo"));
+            }
+        }
+    }
+_EOF_
+
+
+    bcftools query -f '%CHROM\t%POS0\t%END\t%INFO/loConfDeNovo\t%INFO/hiConfDeNovo\\n' TMP/jeter.vcf.gz |\\
+        awk -F '\t' -f TMP/jeter.awk |\\
         LC_ALL=C sort -T TMP -k1,1 -k2,2n |\\
         uniq > TMP/jeter.bed
     
@@ -154,6 +174,11 @@ process REPORT {
     mv TMP/jeter.table.txt ./${prefix}.table.txt
     mv TMP/jeter.genes.tsv ./${prefix}.genes.tsv
     mv TMP/jeter.bed  ./${prefix}.bed
+
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+    bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
+END_VERSIONS
     """
 }
 
@@ -169,7 +194,7 @@ input:
         tuple val(meta5),path(refgene),path(refgene_tbi)
         tuple val(meta6),path(vcf),path(vcfidx)
         tuple val(meta),val(contig),val(start0),val(end0),
-                val(child),val(father),val(mother),
+                val(child),val(quality),val(father),val(mother),
                 path(fasta),path(fai),path(dict),
                 path(bamC),path(baiC),
                 path(bamP),path(baiP),
@@ -232,16 +257,22 @@ mv -v "TMP/jeter.html" ./${prefix}.html
 
 cat << EOF > TMP/jeter.html
 <tr>
-    <td> ${contig}:${start}${end==start?"":"-"+end} (${fasta.baseName})</th>
+    <td>${contig}:${start}${end==start?"":"-"+end}</td>
+    <td>(${fasta.baseName})</th>
     <td><a href="${prefix}.html">${child}</a></td>
     <td>${father}</td>
     <td>${mother}</td>
+    <td>${quality}</td>
 </tr>
 EOF
 
 mv -v "TMP/jeter.html" ./${prefix}.index
 
-touch versions.yml
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+    bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
+    igvreport: todo
+END_VERSIONS
 """
 }
 
@@ -256,6 +287,7 @@ input:
 output:
     tuple val(meta),path("index.html"),emit:html
     tuple val(meta),path("*.zip"),emit:zip
+    path("versions.yml"),emit:versions
 script:
     def title = task.ext.title?:"De Novo"
     def prefix = task.ext.prefix?:"archive"
@@ -264,15 +296,23 @@ cat << EOF > index.html
 <html>
 <head>
     <title>${title}</title>
+<style>
+table, th, td {
+  border: 1px solid black;
+  border-collapse: collapse;
+}
+</style>
 </head>
 <body>
 <table>
 <thead>
     <tr>
         <th>Position</th>
+        <th>build</th>
         <th>Child</th>
         <th>Father</th>
         <th>Mother</th>
+        <th>Quality</th>
     </tr>
 </thead>
 <tbody>
@@ -294,5 +334,7 @@ cp index.html "${prefix}/"
 cp PAGES/*.html "${prefix}/"
 
 zip -r9 ${prefix}.zip  "${prefix}/"
+
+touch versions.yml
 """
 }

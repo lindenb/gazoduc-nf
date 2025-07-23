@@ -28,7 +28,8 @@ cat << 'EOF' > jeter.awk
 
 /^[^ \t]/ {
     STEP=\$0;
-    gsub(/[\t ]+\$/,"",STEP);
+    gsub(/^[:\\"]+/,"",STEP);
+    gsub(/[\t :\\"]+\$/,"",STEP);
     }
  
 EOF

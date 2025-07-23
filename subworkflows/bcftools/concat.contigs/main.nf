@@ -1,4 +1,5 @@
-def ALL_CONTIGS="ALL"
+include {VCF_TO_BED  }  from '../../modules/bcftools/vcf2bed'
+
 
 List makeSQRT(def L1) {
         def key = L1.get(0);
@@ -24,9 +25,18 @@ List makeSQRT(def L1) {
 
 workflow BCFTOOLS_CONCAT_CONTIGS {
 take:
-	vcfs // tuple [contig,vcf,idx]
+	meta
+	vcfs // tuple [meta,vcf,idx]
 	bed //optional bed file
 main:
+	versions = Channel.empty()
+
+	VCF_TO_BED(vcf)
+	versions  = versions.mix(VCF_TO_BED.out.versions)
+
+	VCF_TO_BED.out.output.
+		splitCsv(header:false,elem:1,sep:'\t')
+
 	ch2 = vcfs.
 		map{[it[0],[it[1],it[2]]]}.
 		groupTuple().

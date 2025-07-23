@@ -1,5 +1,32 @@
-include {BED_CLUSTER   } from '../../../modules/jvarkit/bedcluster'
-include {DEEP_TRIO3    } from '../../../modules/deepvariant/deep_trio3'
+/*
+
+Copyright (c) 2025 Pierre Lindenbaum
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+The MIT License (MIT)
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
+include {BED_CLUSTER          } from '../../../modules/jvarkit/bedcluster'
+include {DEEP_TRIO3           } from '../../../modules/deepvariant/deep_trio3'
+include {DEEP_VARIANT_CALL    } from '../../../modules/deepvariant/call'
+include {GLNEXUS_GENOTYPE     } from '../../../modules/glnexus/genotype'
+include {BCFTOOL_CONCAT       } from '../../../modules/bcftools/concat'
 
 
 workflow DEEPVARIANT_TRIOS {
@@ -29,7 +56,7 @@ main:
 
 	
 	trio3_ch=Channel.empty()
-	without_family_ch = bams
+	no_trio_ch = Channel.empty()
 
 	if(pedigree[1]) {
 		trios_ch = Channel.of(pedigree[1])
@@ -61,8 +88,11 @@ main:
 			.filter{it[1]==null} // ? a verifier
 			.view{"TODODOOOOOTO a ce jour pas de situation ou les echantillons ne sont pas utilises"}
 
-		without_family_ch = Channel.empty()//TODO a ce jour pas de situation ou les echantillons ne sont pas utilises
-	}
+		no_trio_ch = Channel.empty()//TODO a ce jour pas de situation ou les echantillons ne sont pas utilises
+		}
+	else	{
+		no_trio_ch = bams
+		}
 
 	DEEP_TRIO3(
 		fasta,
@@ -74,73 +104,57 @@ main:
 	
 	versions= versions.mix(DEEP_TRIO3.out.versions)
 
-/*
-	
-	DEEP_TRIO2(
-		fasta,
-		fai,
-		dict,
-		trio2ch.map{it.plus(bed[1)}
-		)
-	versions = versions.mix(DEEP_TRIO2.out.versions)
-	
-	gvcfs = gvcfs.mix(DEEP_TRIO2.out.gvcfs
-		.map{[
-			it[5].toRealPath(),//bed
-			[
-			it[1],it[2], //C.gvcf
-			it[3],it[4]  //P.gvcf
-			]
-			]})
-	
 
-
-	versions = versions.mix(DEEP_TRIO3.out.versions)
-	
-	gvcfs = gvcfs.mix(DEEP_TRIO3.out.gvcfs
-		.map{[
-			it[7].toRealPath(),//bed
-			[
-			it[1],it[2], //C.gvcf
-			it[3],it[4], //F.gvcf
-			it[5],it[6]  //M.gvcf
-			]
-			]})
-	
-	
 	DEEP_VARIANT_CALL(
 		fasta,
 		fai,
 		dict,
-		no_trio_ch.map{it.plus(bed[1)}
+		no_trio_ch.combine(bed)
+			.map{[it[0],it[1],it[2],it[4]]}.view() //meta,bam,bai,bed
 		)
-	versions = versions.mix(DEEP_TRIO3.out.versions)
-	
-	gvcfs = gvcfs.mix(DEEP_VARIANT_CALL.out.gvcfs
-		.map{[
-			it[7].toRealPath(),//bed
-			[
-			it[1],it[2] //C.gvcf
-			]})
-	
-	
-	ch1 = gvcfs.groupTuple()
-		.map{[it[0],it[1].flatten()} // [bed, gvcfs]
-		.map{[[id:it[0]],it[0],it[1]} // [meta,bed, gvcfs]
-		.multiMap{ 
-			bed: [it[0],it[1]]
-			gvcfs :  [it[0],it[2]]
+	versions= versions.mix(DEEP_VARIANT_CALL.out.versions)
+
+	to_genotype = Channel.empty()
+	//TODO add DEEP_VARIANT_CALL, TRIO2
+
+
+	to_genotype = to_genotype.mix(
+		DEEP_TRIO3.out.gvcf
+			.map{[
+				it[3].toRealPath(),/*bed*/
+				it[1].plus(it[2]) /* vcf and index */
+				]}
+		)
+	/** group by bed */
+	to_genotype  = to_genotype
+		.groupTuple()
+		.map{[it[0],it[1].flatten()]}
+		
+
+	ch1 = to_genotype.multiMap{
+			bed : [[itd:file(it[0]).baseName], it[0]]
+			gvcf :[[itd:file(it[0]).baseName], it[1]]
 		}
+	
 	
 	GLNEXUS_GENOTYPE(
 		ch1.bed,
 		[[id:"no_config"],[]],
-		ch1.gvcfs
+		ch1.gvcf
 		)
-	versions = versions.mix(GLNEXUS_GENOTYPE.out.versions)
+	versions= versions.mix(GLNEXUS_GENOTYPE.out.versions)
 	
-*/
-	
+
+	BCFTOOL_CONCAT(
+		GLNEXUS_GENOTYPE.out.vcf
+			.map{[it[1],it[2]]} //vcf, tbi
+			.collect()
+			.map{[[id:"deepvariant"],it]},
+		[[id:"no_bed"],[]]
+		)
+	versions= versions.mix(BCFTOOL_CONCAT.out.versions)
+
 emit:
+	vcf = BCFTOOL_CONCAT.out.vcf
 	versions
 }

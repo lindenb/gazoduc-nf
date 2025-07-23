@@ -22,10 +22,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-
-include {DEEPVARIANT_TRIOS} from '../../subworkflows/deepvariant/trios/main.nf'
-
-include {runOnComplete; dumpParams} from '../../modules/utils/functions.nf'
+include {MULTIQC                     } from '../../modules/multiqc'
+include {BCFTOOLS_STATS              } from '../../modules/bcftools/stats'
+include {DEEPVARIANT_TRIOS           } from '../../subworkflows/deepvariant/trios/main.nf'
+include {COMPILE_VERSIONS            } from '../../modules/versions/main.nf'
+include {runOnComplete; dumpParams   } from '../../modules/utils/functions.nf'
 
 
 Map assertKeyExists(final Map hash,final String key) {
@@ -70,6 +71,7 @@ workflow {
 	def fasta =    [ refhash, file(params.fasta) ]
 	def fai   =    [ refhash, file(params.fai)  ]
 	def dict  =    [ refhash, file(params.dict) ]
+	def gtf  =    [ refhash, file(params.gtf) ]
 	def bed   =    [ refhash, []]
 	def pedigree = [ refhash, []]
 
@@ -112,8 +114,28 @@ workflow {
 		pedigree,
 		bams_ch
 		)
+	versions = versions.mix(DEEPVARIANT_TRIOS.out.versions)
+	
+	to_multiqc = Channel.empty()
 
+	BCFTOOLS_STATS(
+		fasta,
+		fai,
+		[[id:"nobed"],[]],
+		gtf,
+		[[id:"no_samples"],[]],
+		DEEPVARIANT_TRIOS.out.vcf.map{[it[0],[it[1],it[2]]]}
+		)
+	versions = versions.mix(BCFTOOLS_STATS.out.versions)
+	to_multiqc = to_multiqc.mix(BCFTOOLS_STATS.out.stats.map{it[1]})
+	
 
+	COMPILE_VERSIONS(versions.collect())
+	to_multiqc = to_multiqc.mix(COMPILE_VERSIONS.out.multiqc)
+	
+	MULTIQC(to_multiqc.collect().map{[[id:"deepvariant"],it]})
+	
+	
 /*
 
 	versions = versions.mix(TRIOS.out.versions)

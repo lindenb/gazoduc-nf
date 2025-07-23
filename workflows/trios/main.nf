@@ -356,30 +356,34 @@ workflow HET_COMPOSITE {
                 FILTER_FOR_HET_COMPOSITE.out.vcf
                 )
         versions = versions.mix(APPPLY_HET_COMPOSITE.out.versions)
+        
     emit:
         vcf = APPPLY_HET_COMPOSITE.out.vcf
         versions
 }
 
 process FILTER_FOR_HET_COMPOSITE {
-    tag "${meta.id}"
-    label "process_single"
-    conda "${moduleDir}/../../conda/bioinfo.01.yml"
-    afterScript "rm -rf TMP"
-    input:
-        tuple val(meta),path(vcf),path(vcfix)
-    output:
-        tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
-        path("versions.yml"),emit:versions
+tag "${meta.id}"
+label "process_single"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
+input:
+    tuple val(meta),path(vcf),path(vcfix)
+output:
+    tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
+    path("versions.yml"),emit:versions
 
-    script:
-        def prefix = task.ext.prefix?:meta.id+".filterhetcomposite"
-        """
-        mkdir -p TMP
-        bcftools view ${vcf} |\\
-        	bcftools view --apply-filters '.,PASS' --write-index -O b -o ${prefix}.bcf
+script:
+    def prefix = task.ext.prefix?:meta.id+".filterhetcomposite"
+"""
+mkdir -p TMP
+bcftools view ${vcf} |\\
+    bcftools view --apply-filters '.,PASS' --write-index -O b -o ${prefix}.bcf
 
-        touch versions.yml
-        """
-    }
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+    bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
+END_VERSIONS
+"""
+}
 

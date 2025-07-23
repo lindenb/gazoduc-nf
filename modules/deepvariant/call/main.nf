@@ -28,6 +28,8 @@ label "process_single"
 tag "${meta.id} ${bam.name} ${optional_bed?optional_bed.name:""}"
 afterScript "rm -rf TMP  .keras  .parallel"
 conda "${moduleDir}/../../../conda/deepvariant.yml"
+when:
+    task.ext.when == null || task.ext.when
 input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)
@@ -45,11 +47,14 @@ script:
 	def prefix = task.ext.prefix?:sample+".deepvariant"
 	def keep_gvcf= (task.ext.keep_gvcf?:true) as boolean
 	def keep_vcf= (task.ext.keep_vcf?:true) as boolean
+	if(!keep_gvcf && !keep_vcf) throw new IllegalArgumentException("${task.process} discard all");
 """
 	hostname 1>&2
 	mkdir -p TMP
-	
+	mkdir -p TMP/TMP LOGS
+
 	run_deepvariant \\
+		--logging_dir LOGS \\
 		--model_type ${model_type} \\
 		--output_vcf TMP/jeter.vcf.gz \\
 		--output_gvcf TMP/jeter.g.vcf.gz \\\
@@ -69,8 +74,8 @@ fi
 
 if ${keep_vcf}
 then
-	mv TMP/jeter.g.vcf.gz "${prefix}.std.vcf.gz"
-	mv TMP/jeter.g.vcf.gz.tbi "${prefix}.std.vcf.gz.tbi"
+	mv TMP/jeter.vcf.gz "${prefix}.std.vcf.gz"
+	mv TMP/jeter.vcf.gz.tbi "${prefix}.std.vcf.gz.tbi"
 fi
 
 cat << EOF > versions.yml

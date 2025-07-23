@@ -70,6 +70,7 @@ script:
 		--threads ${task.cpus} \\
 		${with_samples?"--samples-file ${optional_samples}":""} \\
 		${with_gtf?"--exons TMP/exons.bed":""} \\
+		--samples - \\
 		-F ${fasta} > 'TMP/${prefix}.txt'
 
 mv TMP/${prefix}.txt ./

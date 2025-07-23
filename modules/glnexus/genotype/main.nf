@@ -23,11 +23,10 @@ SOFTWARE.
 
 */
 
-include {moduleLoad} from '../utils/functions.nf'
 
 
 process GLNEXUS_GENOTYPE {
-tag "${bed?bed.name:""} ${meta.id?:""}"
+tag "${optional_bed?optional_bed.name:""} ${meta.id?:""}"
 conda "${moduleDir}/../../../conda/glnexus.yml"
 afterScript  "rm -rf TMP GLnexus.DB"
 input:
@@ -35,13 +34,15 @@ input:
 	tuple val(meta2),path(optional_config)
 	tuple val(meta ),path("GVCF/*")
 output:
-	tuple val(meta ),path("*.bcf"),path("*.bcf.csi"),path(optional_bed),emit:output
+	tuple val(meta ),path("*.bcf"),path("*.bcf.csi"),path(optional_bed),emit:vcf
 	path("versions.yml"),emit:versions
+when:
+    task.ext.when == null || task.ext.when
 script:
 	def args1 = task.ext.args1?:""
 	def args2 = task.ext.args2?:""
 	def config = task.ext.config?:""
-	def prefix = task.ext.prefix?:meta.id+".glnexus"
+	def prefix = task.ext.prefix?:meta.id+(optional_bed?"."+optional_bed.baseName:"")+".glnexus"
 	if(!optional_config && config.trim().isEmpty()) throw new IllegalArgumentException("${task.process} task.ext.config missing. eg.DeepVariantWGS")
 """
 	hostname 1>&2
@@ -58,6 +59,7 @@ script:
 	# extract gvcf path
 	sort -T TMP -k1,1 -t, TMP/jeter.csv |\\
 		cut -d, -f2 > TMP/jeter.list
+	test -s TMP/jeter.list
 	
 	# check no dup sample
 	cut -f1 -d, TMP/jeter.csv | sort | uniq -d > TMP/jeter.dups
@@ -68,13 +70,13 @@ script:
 	glnexus_cli \\
 	 	${args1} \\
 		--config ${optional_config?"${optional_config}":"${config}"} \\
-        $[optional_bed?"--bed \"${optional_bed}\"":""} \\
+        ${optional_bed?"--bed \"${optional_bed}\"":""} \\
 		--threads ${task.cpus} \\
 		--mem-gbytes ${task.memory.giga} \\
-		--list TMP/vcf.list > TMP/jeter.vcf.gz
+		--list TMP/jeter.list > TMP/jeter.vcf.gz
 	
 	bcftools +fill-tags ${args2} --threads ${task.cpus} -O b -o TMP/jeter.bcf TMP/jeter.vcf.gz -- -t  AN,AC,AF,AC_Hom,AC_Het,AC_Hemi,NS
-	bcftools index --threads ${task.cpus} "TMP/jeter.bcf.csi"
+	bcftools index --threads ${task.cpus} "TMP/jeter.bcf"
 
 
 mv TMP/jeter.bcf ./${prefix}.bcf

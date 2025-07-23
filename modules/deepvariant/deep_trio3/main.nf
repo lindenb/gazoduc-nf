@@ -38,7 +38,6 @@ input:
 output:
 	tuple val(meta),path("*.g.vcf.gz"),  path("*.g.vcf.gz.tbi"),  path(optional_bed),optional:true,emit:gvcf
 	tuple val(meta),path("*.std.vcf.gz"),path("*.std.vcf.gz.tbi"),path(optional_bed),optional:true,emit:vcf
-		
 	path("versions.yml"),emit:versions
 script:
 	if(!meta.father) throw new IllegalArgumentException("${task.process} missing meta.father")
