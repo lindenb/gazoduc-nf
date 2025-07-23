@@ -23,44 +23,43 @@ SOFTWARE.
 
 */
 
-include {moduleLoad} from '../../modules/utils/functions.nf'
-
-process SAMTOOLS_BAM_TO_CRAM_01 {
-tag "${row.sample} ${file(row.bam).name}"
+process BAM_TO_CRAM {
+tag "${meta.id} ${bam.name}"
+label "process_single"
 afterScript "rm -rf TMP"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+when:
+    task.ext.when == null || task.ext.when
 input:
-	val(meta)
-	val(row)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta ),path(bam)
 output:
-	tuple val(row),path("${params.prefix?:""}${row.genomeId}.${row.sample}.cram"), path("${params.prefix?:""}${row.genomeId}.${row.sample}.cram.crai"),emit:output
-	path("version.xml"),emit:version
+	tuple val(meta),path("*.cram"), path("*.crai"),emit:bam
+	path("versions.yml"),emit:versions
 script:
-	def bam = row.bam
-	def sample = row.sample
-	def genome = params.genomes[row.genomeId]
-        def reference =	genome.fasta
+	def args1 = task.ext.args1?:""
 	def level = task.ext.compression_level?:9
+	def prefix = task.ext.prefix?:meta.id
 """
 hostname 1>&2
-${moduleLoad("samtools")}
 mkdir -p TMP
-samtools view -@ ${task.cpus} --write-index -O "CRAM,level=${level}" -o TMP/jeter.cram -T "${reference}" "${bam}"
+samtools view \\
+	${args1} \\
+	-@ ${task.cpus} \\
+	--write-index \\
+	-O "CRAM,level=${level}" \\
+	-o TMP/jeter.cram \\
+	-T "${fasta}" \\
+	"${bam}"
 
 
-mv TMP/jeter.cram "./${params.prefix?:""}${row.genomeId}.${sample}.cram"
-mv TMP/jeter.cram.crai "./${params.prefix?:""}${row.genomeId}.${sample}.cram.crai"
+mv TMP/jeter.cram "${prefix}.cram"
+mv TMP/jeter.cram.crai "${prefix}.cram.crai"
 
-##################
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="description">convert BAM to CRAM</entry>
-	<entry key="sample">${sample}</entry>
-	<entry key="bam">${bam}</entry>
-	<entry key="size.in">\$(ls -la "${bam}")</entry>
-	<entry key="size.out">\$(ls -la *.cram)</entry>
-        <entry key="samtools.version">\$(samtools  --version | head -n 1| cut -d ' ' -f2)</entry>
-</properties>
+cat << EOF > versions.yml
+"${task.process}":
+    samtools:\$(samtools  --version | head -n 1| cut -d ' ' -f2)
 EOF
 """
 }

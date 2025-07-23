@@ -13,7 +13,7 @@ input:
     tuple val(meta),path("BAMS/*")
 output:
     tuple val(meta),path ("*indexcov.zip"),emit: zip
-    tuple val(meta),tuple path("*.indexcov.bed.gz"), path("*.indexcov.bed.gz.tbi"),emit:bed
+    tuple val(meta),path("*.indexcov.bed.gz"), path("*.indexcov.bed.gz.tbi"),emit:bed
     path "versions.yml" , emit: versions
 script:
     def name = meta.id

@@ -6,14 +6,16 @@ afterScript "rm -rf TMP"
 when:
     task.ext.when == null || task.ext.when
 input:
-	tuple val(meta),path("BED/*")
+    tuple val(meta),path("BED/*")
 output:
-	tuple path("*.bed.gz"),path("*.bed.gz.tbi"),emit:bed
+    tuple val(meta),path("*.bed.gz"),path("*.bed.gz.tbi"),emit:bed
     path("versions.yml"),emit:versions
 script:
     def prefix = task.ext.prefix?:meta.id+".merge"
 """
 hostname 1>&2
+mkdir -p TMP
+set +o pipefail
 
 find BED/ -name "*.bed.gz" | while read F
 do
@@ -52,5 +54,7 @@ tabix -f -p bed "TMP/${prefix}.bed.gz"
 
 mv TMP/*.gz ./
 mv TMP/*.gz.tbi ./
+
+touch versions.yml
 """
 }

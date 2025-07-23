@@ -29,11 +29,13 @@ label "process_short"
 tag "${meta.id?:bam.name}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+when:
+    task.ext.when == null || task.ext.when
 input:
 	tuple val(meta),path(bam),path(bai)
 output:
-	tupe val(meta),path("*.idxstat.tsv"),emit:stats
-	tupe val(meta),path("*.bed"),emit:bed
+	tuple val(meta),path("*.idxstat.tsv"),emit:stats
+	tuple val(meta),path("*.bed"),emit:bed
 	path("version.yml"),emit:versions
 script:
 	def prefix = meta.id?:bam.baseName

@@ -29,6 +29,8 @@ label "process_medium"
 tag "${meta.id?:bam.name}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+when:
+    task.ext.when == null || task.ext.when
 input:
 	tuple val(meta),path(bam),path(bai),path(fasta),path(fai),path(optional_bed)
 output:
