@@ -25,7 +25,7 @@ SOFTWARE.
 include {INDEXCOV_REBUILD_BAI                } from '../../../modules/indexcov/rebuild.bai'
 include {APPLY_INDEXCOV                      } from '../../../modules/indexcov/apply'
 include {MERGE_BEDS                          } from '../../../modules/indexcov/merge.beds'
-
+include {JVARKIT_INDEXCOV2VCF                } from '../../../modules/jvarkit/indexcov2vcf'
 
 workflow INDEXCOV {
      take:
@@ -33,6 +33,7 @@ workflow INDEXCOV {
         fasta
 		fai
 		dict
+		pedigree
 		bams /* 		meta,bam,(bai)*/
 
      main:
@@ -46,7 +47,7 @@ workflow INDEXCOV {
 		INDEXCOV_REBUILD_BAI(
 			fasta,
 			fai,
-			ch1.rebuild
+			ch1.rebuild.map{[it[0],it[1]]} //remove bai, if any
 			)
 		versions = versions.mix(INDEXCOV_REBUILD_BAI.out.versions)
 
@@ -85,9 +86,17 @@ workflow INDEXCOV {
 		)
 	versions = versions.mix(MERGE_BEDS.out.versions)
 
+	JVARKIT_INDEXCOV2VCF(
+		fasta,fai,dict,
+		pedigree,
+		MERGE_BEDS.out.bed.map{[it[0],it[1]]}
+		)
+	versions = versions.mix(JVARKIT_INDEXCOV2VCF.out.versions)
+
 
 	emit:
 		bed  = MERGE_BEDS.out.bed
 		zip = APPLY_INDEXCOV.out.zip
+		vcf  = JVARKIT_INDEXCOV2VCF.out.vcf
 		versions
 	}

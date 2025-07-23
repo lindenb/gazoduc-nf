@@ -33,7 +33,7 @@ cat << 'EOF' > jeter.awk
  
 EOF
 
-find . -type f -name "versions*.yml" -printf  "%T@\t%p\\n" |\\
+find . -name "versions*.yml" -printf  "%T@\t%p\\n" |\\
 while read TIME YAML
 do
     awk -v TIME=\${TIME} -f jeter.awk "\${YAML}" 

@@ -67,6 +67,10 @@ workflow {
 	def fasta  = [ref_hash, file(params.fasta) ]
 	def fai    = [ref_hash, file(params.fai) ]
 	def dict   = [ref_hash, file(params.dict) ]
+	def pedigree =  [ref_hash,[] ]
+	if(params.pedigree!=null) {
+		pedigree = [ref_hash, file(params.pedigree)];
+		}
 
   	bams = Channel.fromPath(params.samplesheet)
 			.splitCsv(header:true,sep:',')
@@ -107,20 +111,17 @@ workflow {
 	def collate_size = (params.batch_size as int)
 
 	INDEXCOV(
-		ref_hash.plus(batch_size: collate_size),
+		ref_hash.plus([batch_size: collate_size, id:"indexcov"]),
 		fasta,
 		fai,
 		dict,
+		pedigree,
 		bams.ok_ref.map{[[id:it.sample],file(it.bam),file(it.bai)]}
 			.mix(JVARKIT_BAM_RENAME_CONTIGS.out.bam.map{[it[0].plus([force_rebuild:false]),it[1],it[2]]})
 		)
 	versions = versions.mix(INDEXCOV.out.versions)
 
 	COMPILE_VERSIONS(versions.collect())
-/*
-	to_zip = Channel.empty().mix(indexcov_ch.zip).mix(indexcov_ch.version).mix(html.html)
-	zip_ch = SIMPLE_ZIP_01([compression_level:9],to_zip.collect())
-*/
 	}
 
 
