@@ -51,7 +51,7 @@ comm -12 TMP/jeter1.txt  TMP/jeter2.txt > TMP/jeter.ctrls.txt
 
 
 
-if [ ! -s "TMP/jeter.cases.txt" ] && [ ! -s "TMP/jeter.ctrls.txt"	]
+if [  -s "TMP/jeter.cases.txt" ] && [  -s "TMP/jeter.ctrls.txt"	]
 then
 
 	bcftools +contrast \

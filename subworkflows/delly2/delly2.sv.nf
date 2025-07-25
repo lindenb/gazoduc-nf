@@ -410,7 +410,7 @@ cat << EOF > jeter.ctrls.txt
 ${cases_ctrl_list.findAll{T->T[2].equals("control")}.collect{T->T[1]}.join("\n")}
 EOF
 
-    if [ ! -s "jeter.cases.txt" ] && [ ! -s "jeter.ctrls.txt"	] ; then
+    if [  -s "jeter.cases.txt" ] && [  -s "jeter.ctrls.txt"	] ; then
 	# rajoute mais pas teste
 	bcftools +contrast \
 		-0 jeter.ctrls.txt \

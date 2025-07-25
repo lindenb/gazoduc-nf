@@ -33,6 +33,12 @@ include {SNPEFF_DOWNLOAD           } from '../../modules/snpeff/download/main.nf
 include {BHFUCL_DOWNLOAD           } from '../../modules/bhfucl/download/main.nf'
 include {RMSK_DOWNLOAD             } from '../../modules/ucsc/rmsk/download/main.nf'
 include {VISTA_DOWNLOAD            } from '../../modules/ucsc/vista/download/main.nf'
+include {VEP_INSTALL_PLUGINS       } from '../../modules/vep/install.plugins'
+
+String countVariants(def f) {
+        return "\necho  \${LINENO} && bcftools query -f '.\\n' \""+f+"\" | wc -l 1>&2" +"\n"
+        }
+
 
 workflow ANNOT_SNV {
 take:
@@ -69,6 +75,16 @@ main:
     {
         avada_vcf = [ [id:"no_avada"],[],[]]
     }
+    
+    if(pedigree[1]) {
+        valid_trios = VALID_TRIOS(pedigree).pedigree
+       
+        versions = versions.mix(VALID_TRIOS.out.versions)
+    }  
+    else {
+        valid_trios =[[id:"no_valid_trio"],[]]
+    }
+ 
 
     CLINVAR_DOWNLOAD( fasta,fai, dict, [[id:"nobed"],[]]  )
     versions = versions.mix(CLINVAR_DOWNLOAD.out.versions)
@@ -94,6 +110,8 @@ main:
     VISTA_DOWNLOAD(fasta,fai, dict)
     versions = versions.mix(VISTA_DOWNLOAD.out.versions)
 
+    VEP_INSTALL_PLUGINS(meta)
+    versions = versions.mix(VEP_INSTALL_PLUGINS.out.versions)
 
     ANNOTATE(
         fasta,
@@ -115,9 +133,12 @@ main:
         BHFUCL_DOWNLOAD.out.bed_extended,
         RMSK_DOWNLOAD.out.bed,
         VISTA_DOWNLOAD.out.bed,
+        VEP_INSTALL_PLUGINS.out.directory,
+        valid_trios,
         vcf
     )
 
+    versions = versions.mix(ANNOTATE.out.versions)
 emit:
     versions
     vcf = ANNOTATE.out.vcf
@@ -127,7 +148,7 @@ process ANNOTATE {
 errorStrategy "terminate"
 tag "${vcf.name} ${optional_bed?optional_bed.name:""}"
 label "process_single"
-afterScript "rm -rf TMP"
+afterScript "rm -rf TMP snpEff_genes.txt snpEff_summary.html"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
     tuple val(meta1 ),path(fasta)
@@ -158,8 +179,12 @@ input:
     tuple val(meta16 ),path(bhfuclx),path(bhfuclx_idx),path(bhfuclx_hdr)
     /** rmsk */
     tuple val(meta17 ),path(rmsk),path(rmsk_idx),path(rmsk_hdr)  
-    /** rmvistask */
+    /** vista */
     tuple val(meta18 ),path(vista),path(vista_idx),path(vista_hdr)  
+    /** VEP */
+    tuple val(meta19 ),path(vep_plugin_dir) 
+    /** valid trios */
+    tuple val(meta20 ),path(valid_trios)  
 
 
     tuple val(meta  ),path(vcf),path(vcf_idx),path(optional_bed)
@@ -167,20 +192,31 @@ output:
     tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
     path("versions.yml"),emit:versions
 script:
-    def view_args1 = task.ext.args1?:""
+    def view_args1 = task.ext.view_args1?:""
     def has_bed = optional_bed?true:false
     def bcftools_norm_args = task.ext.bcftools_norm_args?:""
     def set_id = task.ext.set_id?:""
     def snpeff_args = task.ext.snpeff_args?:""
-    def prefix = task.ext.prefix?:vcf.baseName+".annot"
+    def prefix = task.ext.prefix?:vcf.baseName.md5().substring(0,9)+".annot"
     def vcffilerso_accessions = task.ext.vcffilerso_accessions?:""
     def vcffilerso_args = task.ext.vcffilerso_args?:""
     def gnomadvcf = task.ext.gnomadvcf?:""
     def vcf_gnomad_args = task.ext.vcfgnomad_args?:""
     def gnomad_filterjdk = task.ext.gnomad_filterjdk?:""
+    def vep_args = task.ext.vep_args?:""
+    def vep_spliceai_snv = task.ext.vep_spliceai_snv?:""
+    def vep_spliceai_indel = task.ext.vep_spliceai_indel?:""
+    def with_vep_spliceai = (task.ext.with_vep_spliceai?true:false) && !vep_spliceai_indel.isEmpty() && !vep_spliceai_snv.isEmpty()
+    def vep_loeuf = task.ext.vep_loeuf?:""
+    def with_vep_loeuf = (task.ext.with_vep_loeuf?true:false) && !vep_loeuf.isEmpty()
+    def vep_gnomad_fields  = task.ext.vep_gnomad_fields?:""
+    def with_vep_gnomad = (task.ext.gnomadvcf?true:false) && task.ext.with_vep_gnomad?true:false && !vep_gnomad_fields.isEmpty()
+    def cadd = task.ext.cadd?:""
+    def with_cadd = (task.ext.with_cadd?true:false) && !cadd.isEmpty()
 """
 mkdir -p TMP
 set -x
+
 
 bcftools query -l ${vcf} | sort | uniq > TMP/samples.txt
 
@@ -202,6 +238,7 @@ fi
 
 bcftools view \\
     --threads ${task.cpus} \\
+    --write-index \\
     ${view_args1}  \\
     ${has_bed?"--regions-file \"${optional_bed}\"":""} \\
     -O b \\
@@ -209,8 +246,7 @@ bcftools view \\
     "${vcf}"
 
 mv  TMP/jeter2.bcf  TMP/jeter1.bcf
-
-bcftools index -f --threads ${task.cpus}  TMP/jeter1.bcf
+mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
 
 ################################################################################
 if ${!bcftools_norm_args.trim().isEmpty()}
@@ -227,6 +263,7 @@ then
 
     mv  TMP/jeter2.bcf  TMP/jeter1.bcf
     mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
+    ${countVariants("TMP/jeter1.bcf")}
 fi
 
 ################################################################################
@@ -242,6 +279,7 @@ then
 
     mv  TMP/jeter2.bcf  TMP/jeter1.bcf
     mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
+    ${countVariants("TMP/jeter1.bcf")}
 fi
 
 
@@ -263,12 +301,13 @@ then
 
     mv  TMP/jeter2.bcf  TMP/jeter1.bcf
     mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
+    ${countVariants("TMP/jeter1.bcf")}
 
 fi
 
 ################################################################################
 
-if ${rmsk}
+if ${rmsk?true:false}
 then
 
     bcftools annotate \\
@@ -284,12 +323,12 @@ then
 
     mv  TMP/jeter2.bcf  TMP/jeter1.bcf
     mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
-
+    ${countVariants("TMP/jeter1.bcf")}
 fi
 
 ################################################################################
 
-if ${vista}
+if ${vista?true:false}
 then
 
     bcftools annotate \\
@@ -298,14 +337,14 @@ then
         -a "${vista}" \\
         -h "${vista_hdr}" \\
         -c "CHROM,FROM,TO,VISTA" \\
-        --merge-logic 'VISTA:unique' 
+        --merge-logic 'VISTA:unique' \\
         -O b \\
         -o TMP/jeter2.bcf \\
         TMP/jeter1.bcf
 
     mv  TMP/jeter2.bcf  TMP/jeter1.bcf
     mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
-
+    ${countVariants("TMP/jeter1.bcf")}
 fi
 
 
@@ -327,12 +366,13 @@ then
 
     mv  TMP/jeter2.bcf  TMP/jeter1.bcf
     bcftools index -f --threads ${task.cpus}  TMP/jeter1.bcf
+    ${countVariants("TMP/jeter1.bcf")}
 fi
 
 
 ################################################################################
 
-if [ ! -s "TMP/jeter.cases.txt" ] && [ ! -s "TMP/jeter.ctrls.txt"	]
+if [  -s "TMP/jeter.cases.txt" ] && [  -s "TMP/jeter.ctrls.txt"	]
 then
 
 	bcftools +contrast \\
@@ -345,7 +385,7 @@ then
 
     mv  TMP/jeter2.bcf  TMP/jeter1.bcf
     bcftools index -f --threads ${task.cpus}  TMP/jeter1.bcf
-
+    ${countVariants("TMP/jeter1.bcf")}
 fi
 
 ################################################################################
@@ -365,6 +405,7 @@ then
 
     mv  TMP/jeter2.bcf  TMP/jeter1.bcf
     bcftools index -f --threads ${task.cpus}  TMP/jeter1.bcf
+    ${countVariants("TMP/jeter1.bcf")}
 
     bcftools annotate \\
         --threads ${task.cpus} \\
@@ -380,7 +421,7 @@ then
 
     mv  TMP/jeter2.bcf  TMP/jeter1.bcf
     bcftools index -f --threads ${task.cpus}  TMP/jeter1.bcf
-
+    ${countVariants("TMP/jeter1.bcf")}
 fi
 
 ################################################################################
@@ -401,6 +442,7 @@ then
     
     mv  TMP/jeter2.bcf  TMP/jeter1.bcf
     mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
+    ${countVariants("TMP/jeter1.bcf")}
 
     bcftools annotate \\
         --threads ${task.cpus} \\
@@ -416,10 +458,43 @@ then
 
     mv  TMP/jeter2.bcf  TMP/jeter1.bcf
     mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
+    ${countVariants("TMP/jeter1.bcf")}
 
 fi
 
 ################################################################################
+if ${valid_trios?true:false} && test -s "${valid_trios}"
+then
+
+    awk '{SEX=1;if(\$5=="female") SEX=2;printf("%s\t%s\t%s\t%s\t%s\\n",\$1,\$2,\$3,\$4,SEX);}' "${valid_trios}" > TMP/jeter.trio.ped
+
+    bcftools +mendelian2 \\
+        -O z \\
+        ${meta1.ucsc_name?(meta1.ucsc_name.equals("hg19")?"--rules GRCh37":meta1.ucsc_name.equals("hg38")?"--rules GRCh38":""):""} \\
+        -o TMP/jeter1.vcf.gz \\
+        -m a -P TMP/jeter.trio.ped \\
+        TMP/jeter1.bcf
+    
+    bcftools index --threads ${task.cpus} -f -t  TMP/jeter1.vcf.gz
+    ${countVariants("TMP/jeter1.vcf.gz")}
+
+    awk -f "${moduleDir}/../../modules/gatk/possibledenovo/pedigree4gatk.awk" "${valid_trios}" > TMP/jeter.trio.ped
+
+
+    gatk --java-options "-XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" VariantAnnotator \\
+        -R "${fasta}" \\
+        --annotation PossibleDeNovo \\
+        --pedigree  TMP/jeter.trio.ped \\
+        -V TMP/jeter1.vcf.gz \\
+        -O "TMP/jeter2.vcf.gz"
+    
+    bcftools view --threads ${task.cpus} --write-index -O b -o TMP/jeter1.bcf TMP/jeter2.vcf.gz
+    ${countVariants("TMP/jeter1.bcf")}
+    rm -f TMP/jeter1.vcf.gz  TMP/jeter1.vcf.gz.tbi TMP/jeter2.vcf.gz TMP/jeter2.vcf.gz.tbi
+fi
+
+################################################################################
+
 
 if ${avada?true:false}
 then
@@ -436,6 +511,7 @@ then
 
     mv  TMP/jeter2.bcf  TMP/jeter1.bcf
     mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
+    ${countVariants("TMP/jeter1.bcf")}
 fi
 
 ################################################################################
@@ -453,6 +529,7 @@ bcftools annotate \\
 
     mv  TMP/jeter2.bcf  TMP/jeter1.bcf
     mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
+    ${countVariants("TMP/jeter1.bcf")}
 fi
 
 ################################################################################
@@ -473,6 +550,7 @@ then
 
     mv  TMP/jeter2.bcf  TMP/jeter1.bcf
     mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
+    ${countVariants("TMP/jeter1.bcf")}
 fi
 ################################################################################
 
@@ -492,6 +570,7 @@ then
 
     mv  TMP/jeter2.bcf  TMP/jeter1.bcf
     mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
+    ${countVariants("TMP/jeter1.bcf")}
 fi
 
 ################################################################################
@@ -504,7 +583,7 @@ then
             -a "${diseases}" \\
             -h "${diseases_hdr}" \\
             --write-index \\
-            -c "CHROM,POS,END,DISEASES_DOID,DISEASES" \\
+            -c "CHROM,POS,END,DISEASES,DISEASES_DOID" \\
             -O b \\
             --merge-logic 'DISEASES_DOID:unique,DISEASES:unique' \\
             -o TMP/jeter2.bcf \\
@@ -512,6 +591,7 @@ then
 
     mv  TMP/jeter2.bcf  TMP/jeter1.bcf
     mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
+    ${countVariants("TMP/jeter1.bcf")}
 fi
 
 
@@ -530,9 +610,46 @@ then
         `cat ${snpeff_dbname}` > TMP/jeter1.vcf
     
     bcftools sort --max-mem '${task.memory.giga}G' -T TMP/tmp -O b -o TMP/jeter1.bcf TMP/jeter1.vcf
-    bcftools index --threads ${task.cpus} TMP/jeter1.bcf
+    bcftools index  -f --threads ${task.cpus} TMP/jeter1.bcf
+    ${countVariants("TMP/jeter1.bcf")}
 fi
 ################################################################################
+if ${!vep_args.isEmpty()}
+then
+
+
+    awk 'END{N=NR;if(N==0) N=1;B=5000.0/N;if(B<1000.0) B=1000;printf("%d\\n",int(B));}' TMP/samples.txt > TMP/jeter.buffer_size
+
+
+    bcftools view TMP/jeter1.bcf |\\
+    vep \\
+        ${task.cpus>1?"--fork ${task.cpus}":""} \\
+        --buffer_size `cat TMP/jeter.buffer_size` \\
+        ${vep_args} \\
+        --fasta "${fasta.toRealPath()}" \\
+        --dir_plugins "${vep_plugin_dir}/" \\
+        --offline \\
+        --symbol \\
+        --format vcf \\
+        --force_overwrite \\
+        --sift=b \\
+        --polyphen=b \\
+        -o TMP/jeter1.vcf \\
+        --quiet \\
+        --vcf \\
+        --no_stats \\
+        ${with_vep_gnomad?"--custom ${gnomadvcf},gnomADg,vcf,exact,0,${vep_gnomad_fields}":""} \\
+        ${with_vep_spliceai?"--plugin SpliceAI,snv=${vep_spliceai_snv},indel=${vep_spliceai_indel}":""} \\
+        ${with_vep_loeuf?"--plugin LOEUF,file=${vep_loeuf},match_by=gene":""}
+
+    
+    bcftools view --write-index --threads ${task.cpus} -O b -o TMP/jeter1.bcf  TMP/jeter1.vcf
+    rm TMP/jeter1.vcf
+    ${countVariants("TMP/jeter1.bcf")}
+fi
+
+
+#############################################################################################################
 
 if ${!vcffilerso_accessions.trim().isEmpty()}
 then
@@ -543,8 +660,8 @@ then
         ${vcffilerso_args} \\
         --acn "${vcffilerso_accessions}"   >  TMP/jeter1.vcf
     
-    bcftools view --threads ${task.cpus} -O b -o TMP/jeter1.bcf  TMP/jeter1.vcf
-    bcftools index --threads ${task.cpus} TMP/jeter1.bcf
+    bcftools view --write-index --threads ${task.cpus} -O b -o TMP/jeter1.bcf  TMP/jeter1.vcf
+    ${countVariants("TMP/jeter1.bcf")}
 fi
 
 ################################################################################
@@ -556,7 +673,7 @@ then
         jvarkit -XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfgnomad \\
                ${vcf_gnomad_args} \\
                --gnomad "${gnomadvcf}"  >  TMP/jeter2.vcf
-    
+        ${countVariants("TMP/jeter2.vcf")}
 
     if ${!gnomad_filterjdk.isEmpty()}
     then
@@ -564,14 +681,28 @@ then
 
         jvarkit -XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcffilterjdk \\
                 ${gnomad_filterjdk} < TMP/jeter1.vcf > TMP/jeter2.vcf 
-
+        ${countVariants("TMP/jeter2.vcf")}
     fi
 
     mv  TMP/jeter2.vcf TMP/jeter1.vcf
 
-    bcftools view --threads ${task.cpus} -O b -o TMP/jeter1.bcf TMP/jeter1.vcf
-    bcftools index --threads ${task.cpus} TMP/jeter1.bcf
+    bcftools view --write-index --threads ${task.cpus} -O b -o TMP/jeter1.bcf TMP/jeter1.vcf
     rm TMP/jeter1.vcf
+    ${countVariants("TMP/jeter1.bcf")}
+fi
+
+################################################################################
+
+if ${with_cadd}
+then
+
+    bcftools view   TMP/jeter1.bcf |\\
+        jvarkit -XX:-UsePerfData  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfcadd \\
+            --tabix '${cadd}' > TMP/jeter1.vcf
+    
+    bcftools view --write-index --threads ${task.cpus} -O b -o TMP/jeter1.bcf TMP/jeter1.vcf
+    rm TMP/jeter1.vcf
+    ${countVariants("TMP/jeter1.bcf")}
 fi
 
 ################################################################################
@@ -582,6 +713,37 @@ mv TMP/jeter1.bcf.csi ${prefix}.bcf.csi
 cat << END_VERSIONS > versions.yml
 "${task.process}":
 	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
+END_VERSIONS
+"""
+}
+
+
+process VALID_TRIOS {
+executor "local"
+afterScript "rm -rf TMP"
+input:
+    tuple val(meta),path(ped)
+output:
+    tuple val(meta),path("trios.ped.tsv"),emit:pedigree
+    path("versions.yml"),emit:versions
+script:
+"""
+mkdir -p TMP
+tr " " "\t" < "${ped}" | tr -s "\t" |sort -t '\t' -k2,2 | uniq > TMP/samples.tsv
+
+awk '(\$3!="0" && \$4!="0")'  TMP/samples.tsv  > TMP/trios.tsv
+cut -f3 TMP/trios.tsv | sort | uniq > TMP/father.txt
+cut -f4 TMP/trios.tsv | sort | uniq > TMP/mother.txt
+
+join -t '\t' -1 2 -2 1 -o '1.1,1.2,1.3,1.4,1.5' TMP/samples.tsv TMP/father.txt >> TMP/trios.tsv
+join -t '\t' -1 2 -2 1 -o '1.1,1.2,1.3,1.4,1.5' TMP/samples.tsv TMP/mother.txt >> TMP/trios.tsv
+
+sort -t '\t' -k2,2  TMP/trios.tsv | uniq > trios.ped.tsv
+
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	join: todo
+    awk: todo
 END_VERSIONS
 """
 }

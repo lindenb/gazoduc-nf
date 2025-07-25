@@ -58,7 +58,7 @@ wget -O - "${URL}" |\\
 	LC_ALL=C sort -T TMP -t '\t' -k1,1 |\\
     uniq > TMP/genes.txt
 
-LC_ALL=C  join -t '\t' -1 4 -2 1 -o '1.1,1.2,1.3,1.2,1.3' TMP/genes.bed TMP/genes.txt |\\
+LC_ALL=C  join -t '\t' -1 4 -2 1 -o '1.1,1.2,1.3,2.2,2.3' TMP/genes.bed TMP/genes.txt |\\
 	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\\
 	uniq |\\
 	bgzip > TMP/${TAG}.bed.gz
