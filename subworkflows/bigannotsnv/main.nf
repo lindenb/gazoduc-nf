@@ -33,7 +33,11 @@ include {SNPEFF_DOWNLOAD           } from '../../modules/snpeff/download/main.nf
 include {BHFUCL_DOWNLOAD           } from '../../modules/bhfucl/download/main.nf'
 include {RMSK_DOWNLOAD             } from '../../modules/ucsc/rmsk/download/main.nf'
 include {VISTA_DOWNLOAD            } from '../../modules/ucsc/vista/download/main.nf'
+include {SIMPLE_REPEATS_DOWNLOAD   } from '../../modules/ucsc/simplerepeats/download/main.nf'
 include {VEP_INSTALL_PLUGINS       } from '../../modules/vep/install.plugins'
+include {DOWNLOAD_UTR_ANNOTATOR    } from '../../modules/vep/utr.annotator.download'
+include {REMAP_DOWNLOAD            } from '../../modules/remap/download'
+
 
 String countVariants(def f) {
         return "\necho  \${LINENO} && bcftools query -f '.\\n' \""+f+"\" | wc -l 1>&2" +"\n"
@@ -109,9 +113,19 @@ main:
 
     VISTA_DOWNLOAD(fasta,fai, dict)
     versions = versions.mix(VISTA_DOWNLOAD.out.versions)
+   
+    SIMPLE_REPEATS_DOWNLOAD(fasta,fai, dict)
+    versions = versions.mix(SIMPLE_REPEATS_DOWNLOAD.out.versions)
 
     VEP_INSTALL_PLUGINS(meta)
     versions = versions.mix(VEP_INSTALL_PLUGINS.out.versions)
+
+    DOWNLOAD_UTR_ANNOTATOR(fasta)
+    versions = versions.mix(DOWNLOAD_UTR_ANNOTATOR.out.versions)
+
+    REMAP_DOWNLOAD(fasta,fai, dict)
+    versions = versions.mix(REMAP_DOWNLOAD.out.versions)
+
 
     ANNOTATE(
         fasta,
@@ -135,6 +149,9 @@ main:
         VISTA_DOWNLOAD.out.bed,
         VEP_INSTALL_PLUGINS.out.directory,
         valid_trios,
+        SIMPLE_REPEATS_DOWNLOAD.out.bed,
+        DOWNLOAD_UTR_ANNOTATOR.out.output,
+        REMAP_DOWNLOAD.out.bed,
         vcf
     )
 
@@ -185,6 +202,12 @@ input:
     tuple val(meta19 ),path(vep_plugin_dir) 
     /** valid trios */
     tuple val(meta20 ),path(valid_trios)  
+    /** simple repeats */
+    tuple val(meta21 ),path(srepeats),path(srepeats_idx),path(srepeats_hdr)  
+    /** utr_annotator_file */
+    tuple val(meta22 ),path(vep_utr_annotator) 
+    /** remap */
+    tuple val(meta23 ),path(remap),path(remap_idx),path(remap_hdr)  
 
 
     tuple val(meta  ),path(vcf),path(vcf_idx),path(optional_bed)
@@ -318,7 +341,30 @@ then
             -h "${rmsk_hdr}" \\
             -c "CHROM,FROM,TO,RMSK"  \\
              -O b \\
-        -o TMP/jeter2.bcf \\
+            -o TMP/jeter2.bcf \\
+        TMP/jeter1.bcf
+
+    mv  TMP/jeter2.bcf  TMP/jeter1.bcf
+    mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
+    ${countVariants("TMP/jeter1.bcf")}
+fi
+
+
+################################################################################
+
+if ${srepeats?true:false}
+then
+
+    bcftools annotate \\
+            --write-index \\
+            --threads ${task.cpus} \\
+            --write-index \\
+            -a "${srepeats}" \\
+            -h "${srepeats_hdr}" \\
+            -c "CHROM,FROM,TO,SREPEAT"  \\
+            --merge-logic 'SREPEAT:unique' \\
+             -O b \\
+            -o TMP/jeter2.bcf \\
         TMP/jeter1.bcf
 
     mv  TMP/jeter2.bcf  TMP/jeter1.bcf
@@ -554,6 +600,25 @@ then
 fi
 ################################################################################
 
+if ${remap?true:false}
+then
+    bcftools annotate \\
+        --write-index \\
+        --threads ${task.cpus} \\
+        -a "${remap}" \\
+        -h "${remap_hdr}" \\
+        -c "CHROM,FROM,TO,REMAP" \\
+        -o TMP/jeter2.bcf \\
+        TMP/jeter1.bcf
+
+    mv  TMP/jeter2.bcf  TMP/jeter1.bcf
+    mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
+    ${countVariants("TMP/jeter1.bcf")}
+fi
+
+################################################################################
+
+
 if ${tissues?true:false}
 then
 
@@ -640,7 +705,8 @@ then
         --no_stats \\
         ${with_vep_gnomad?"--custom ${gnomadvcf},gnomADg,vcf,exact,0,${vep_gnomad_fields}":""} \\
         ${with_vep_spliceai?"--plugin SpliceAI,snv=${vep_spliceai_snv},indel=${vep_spliceai_indel}":""} \\
-        ${with_vep_loeuf?"--plugin LOEUF,file=${vep_loeuf},match_by=gene":""}
+        ${with_vep_loeuf?"--plugin LOEUF,file=${vep_loeuf},match_by=gene":""} \\
+        ${vep_utr_annotator?"--plugin UTRAnnotator,file=${vep_utr_annotator}":""}
 
     
     bcftools view --write-index --threads ${task.cpus} -O b -o TMP/jeter1.bcf  TMP/jeter1.vcf
@@ -655,7 +721,7 @@ if ${!vcffilerso_accessions.trim().isEmpty()}
 then
 
     bcftools view TMP/jeter1.bcf -O v |\\
-    jvarkit -Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP \\
+    java -Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP -jar \${HOME}/jvarkit.jar \\
         vcffilterso \\
         ${vcffilerso_args} \\
         --acn "${vcffilerso_accessions}"   >  TMP/jeter1.vcf

@@ -1,4 +1,3 @@
-include {TRIOS  as TRIO_SNV                       } from '../../subworkflows/trios/main.nf'
 include {BCFTOOL_CONCAT                           } from '../../modules/bcftools/concat/main.nf'
 include {DOWNLOAD_CYTOBAND                        } from '../../modules/ucsc/download.cytobands/main.nf'
 include {DOWNLOAD_REFGENE                         } from '../../modules/ucsc/download.refgene/main.nf'
@@ -17,19 +16,6 @@ take:
     vcf
 main:
     versions = Channel.empty()
-
-
-    /** get trio data */
-    TRIO_SNV(
-        meta,
-        fasta,
-        fai,
-        dict,
-        pedigree,
-        vcf
-        )
-    vcf = TRIO_SNV.out.vcf
-    versions =  versions.mix(TRIO_SNV.out.versions)
     
     KEEP_DE_NOVO(pedigree,vcf)
     versions =  versions.mix(KEEP_DE_NOVO.out.versions)
@@ -103,7 +89,25 @@ process KEEP_DE_NOVO {
     bcftools view ${vcf} |\\
         jvarkit -Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP vcffilterjdk \\
             -e 'return variant.hasAttribute(\\"loConfDeNovo\\")|| variant.hasAttribute(\\"hiConfDeNovo\\") || variant.getAttributeAsInt(\\"MERR\\",0)>0;' |\\
-            bcftools view --write-index -O b -o TMP/jeter.bcf
+            awk '/#CHROM/ {printf("##INFO=<ID=CONTROL_HAVE_ALT,Number=0,Type=Flag,Description=\\"In the pedigree, control or pedigree have ALT allele.\\">\\n");} {print}' |\\
+            bcftools view  -O z -o TMP/jeter.jeter.vcf.gz
+    
+    echo "Genotype g=null; boolean setflag=false;" > TMP/jeter.code
+    awk '(\$6=="control" || (\$3=="0" && \$4=="0")) {printf("%s\\n",\$2);} ' '${pedigree}'  |\\
+        sort | uniq |\\
+        awk '{printf("if(!setflag) {g=variant.getGenotype(\\"%s\\"); if(g!=null && g.hasAltAllele()) setflag=true;}\\n",\$1);}' >> TMP/jeter.code
+        echo 'if(setflag) return new GenotypeBuilder(variant).attribute("CONTROL_HAVE_ALT",true).make();' >>  TMP/jeter.code
+        echo 'return variant;' >>  TMP/jeter.code
+    
+    bcftools view TMP/jeter.jeter.vcf.gz |\\
+        jvarkit -Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP vcffilterjdk \\
+            -f  TMP/jeter.code |\\
+            bcftools view  -O z -o TMP/jeter.jeter2.vcf.gz
+    
+    bcftools view --write-index -O b -o TMP/jeter.bcf TMP/jeter.jeter2.vcf.gz
+
+    rm TMP/jeter.jeter.vcf.gz
+    rm TMP/jeter.jeter2.vcf.gz
 
     if test \$(bcftools index -s TMP/jeter.bcf |wc -l) -gt 0
     then

@@ -64,7 +64,7 @@ mkdir -p TMP/CACHE
 
 cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
 1:${k1.hg38}\thttps://ftp.ensembl.org/pub/release-114/regulation/homo_sapiens/GRCh38/annotation/Homo_sapiens.GRCh38.regulatory_features.v114.gff3.gz
-1:${k1.hg19}\thttps://ftp.ensembl.org/pub/release-114/regulation/homo_sapiens/GRCh38/annotation/Homo_sapiens.GRCh37.regulatory_features.v114.gff3.gz
+1:${k1.hg19}\thttps://ftp.ensembl.org/pub/release-114/regulation/homo_sapiens/GRCh37/annotation/Homo_sapiens.GRCh37.regulatory_features.v114.gff3.gz
 EOF
 
 awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
