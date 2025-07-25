@@ -43,15 +43,15 @@ process BCTOOLS_CONTRAST {
 
 bcftools query -l '${vcf}' | sort | uniq > TMP/jeter1.txt
 
-awk '(\$6=="case" || \$6=="affected") {print \$2;}' '${pedigree}' sort | uniq > TMP/jeter2.txt
+awk '(\$6=="case" || \$6=="affected") {print \$2;}' '${pedigree}' | sort | uniq > TMP/jeter2.txt
 comm -12 TMP/jeter1.txt  TMP/jeter2.txt > TMP/jeter.cases.txt
 
-awk '(\$6=="control" || \$6=="unaffected") {print \$2;}' '${pedigree}' sort | uniq > TMP/jeter2.txt
+awk '(\$6=="control" || \$6=="unaffected") {print \$2;}' '${pedigree}' | sort | uniq > TMP/jeter2.txt
 comm -12 TMP/jeter1.txt  TMP/jeter2.txt > TMP/jeter.ctrls.txt
 
 
 
-if [ ! -s "TMP/jeter.cases.txt" ] && [ ! -s "jeter.ctrls.txt"	]
+if [ ! -s "TMP/jeter.cases.txt" ] && [ ! -s "TMP/jeter.ctrls.txt"	]
 then
 
 	bcftools +contrast \

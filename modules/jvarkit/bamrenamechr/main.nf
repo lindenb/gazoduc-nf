@@ -42,6 +42,7 @@ script:
 	def args2 = task.ext.args2?:"-i"
 	def prefix  = task.ext.prefix?:bam.baseName+".setdict"
 	def has_bed = optional_bed?true:false
+	def slop = task.ext.slop?:200
 """
 	hostname 1>&2
 	set -o pipefail
@@ -53,6 +54,7 @@ script:
 		jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedrenamechr \\
 					-R ${fasta} -c 1 --convert SKIP  ${optional_bed}  |\\
 				cut -f1,2,3 |\\
+				bedtools slop -i -  -g "${fai}" -b ${slop} |\\
 				sort -T TMP -t '\t' -k1,1 -k2,2n |\\
 				bedtools merge > TMP/jeter.bed
 	fi

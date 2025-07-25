@@ -1,3 +1,27 @@
+/*
+
+Copyright (c) 2025 Pierre Lindenbaum
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+The MIT License (MIT)
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
 import java.io.InputStreamReader;
 import java.util.zip.GZIPInputStream;
 
@@ -11,6 +35,8 @@ include {BCFTOOL_CONCAT as CONCAT1                } from '../../modules/bcftools
 include {WORKFLOW_SNV                             } from './sub.snv.nf'
 include {WORKFLOW_SV                              } from './sub.sv.nf'
 include {SOMALIER_BAMS                            } from '../../subworkflows/somalier/bams/main.nf'
+include {MULTIQC                                  } from '../../modules/multiqc'
+include {COMPILE_VERSIONS                         } from '../../modules/versions/main.nf'
 
 Map assertKeyExists(final Map hash,final String key) {
     if(!hash.containsKey(key)) throw new IllegalArgumentException("no key ${key}'in ${hash}");
@@ -67,6 +93,8 @@ workflow {
         def bed    = params.bed!=null ? [ref_hash,file(params.bed)] : [ref_hash, [] ]
         def pedigree = [[id:"pedigree"],file(params.pedigree)]
         
+        def versions = Channel.empty()
+        to_multiqc = Channel.empty()
 
         vcfs = Channel.fromPath(params.samplesheet)
             .splitCsv(header:true,sep:',')
@@ -120,8 +148,8 @@ workflow {
 		        triosbams_ch, // sample,bam,bai
 		        pedigree, // pedigree for somalier
 		        [[id:"no_sites"],[]]
-            )
-
+                )
+            versions = versions.mix(SOMALIER_BAMS.out.versions)
 
             triosbams_ch = Channel.fromPath(params.pedigree)
                 .splitCsv(header:false,sep:'\t')
@@ -154,8 +182,10 @@ workflow {
          }
 
         DOWNLOAD_GFF3(fasta,fai,dict)
-        DOWNLOAD_GTF(fasta,fai,dict)
+        versions = versions.mix(DOWNLOAD_GFF3.out.versions)
 
+        DOWNLOAD_GTF(fasta,fai,dict)
+        versions = versions.mix(DOWNLOAD_GTF.out.versions)
     /*
         STRUCTURAL_VARIANTS(
             [id:"sv"],
@@ -182,7 +212,8 @@ workflow {
             triosbams_ch,
             vcfs.snv
             )
-        
+        versions = versions.mix(WORKFLOW_SNV.out.versions)
+
         WORKFLOW_SV(
             [id:"snv"],
             fasta,
@@ -195,8 +226,14 @@ workflow {
             triosbams_ch,
             vcfs.sv
             )
+            
+       versions = versions.mix(WORKFLOW_SV.out.versions)
 
-       
+
+	    COMPILE_VERSIONS(versions.collect())
+	    to_multiqc = to_multiqc.mix(COMPILE_VERSIONS.out.multiqc)
+
+       MULTIQC(to_multiqc.collect().map{[[id:"trios"],it]})
 }
 
 

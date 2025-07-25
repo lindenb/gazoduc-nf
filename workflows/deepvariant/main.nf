@@ -27,6 +27,7 @@ include {BCFTOOLS_STATS              } from '../../modules/bcftools/stats'
 include {DEEPVARIANT_TRIOS           } from '../../subworkflows/deepvariant/trios/main.nf'
 include {COMPILE_VERSIONS            } from '../../modules/versions/main.nf'
 include {runOnComplete; dumpParams   } from '../../modules/utils/functions.nf'
+include {JVARKIT_BAM_RENAME_CONTIGS  } from '../../modules/jvarkit/bamrenamechr'
 
 
 Map assertKeyExists(final Map hash,final String key) {
@@ -102,7 +103,32 @@ workflow {
             return it.plus(bai:it.bam+".bai");
         	}
 		.map{assertKeyMatchRegex(it,"bai","^\\S+\\.(bai|crai)\$")}
-		.map{[[id:it.sample],file(it.bam),file(it.bai)]}
+		.map{
+				if(it.containsKey("fasta")) return it;
+				return it.plus(fasta:params.fasta);
+			}
+			.map{
+				if(it.containsKey("fai")) return it;
+				return it.plus(fai:it.fasta+".fai");
+			}
+			.map{
+				if(it.containsKey("dict")) return it;
+				return it.plus(dict: it.fasta.replaceAll("\\.(fasta|fa|fna)\$",".dict"));
+			}
+		.branch {
+				ok_ref: it.fasta.equals(params.fasta)
+				bad_ref: true
+				}
+
+
+	JVARKIT_BAM_RENAME_CONTIGS(
+		dict,
+		bed,
+		bams_ch.bad_ref.map{[[id:it.sample],file(it.bam),file(it.bai),file(it.fasta),file(it.fai),file(it.dict)]}
+		)
+
+	versions =versions.mix(JVARKIT_BAM_RENAME_CONTIGS.out.versions)
+		
 
 
 	DEEPVARIANT_TRIOS(
@@ -112,7 +138,8 @@ workflow {
 		dict,
 		bed,
 		pedigree,
-		bams_ch
+		bams_ch.ok_ref.map{[[id:it.sample],file(it.bam),file(it.bai)]}
+			.mix(JVARKIT_BAM_RENAME_CONTIGS.out.bam.map{[it[0],it[1],it[2]]})
 		)
 	versions = versions.mix(DEEPVARIANT_TRIOS.out.versions)
 	

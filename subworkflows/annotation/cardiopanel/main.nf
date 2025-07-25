@@ -55,7 +55,7 @@ tag "${meta1?:fasta.name}"
 afterScript "rm -rf TMP"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-input:
+input:path("versions.yml"),emit:versions
     tuple val(meta1),path(fasta)
     tuple val(meta2),path(fai)
     tuple val(meta3),path(dict)

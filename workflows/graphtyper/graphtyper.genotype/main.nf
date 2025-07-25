@@ -32,6 +32,7 @@ include {DIVIDE_AND_CONQUER as DIVIDE_AND_CONQUER3} from "./sub.nf"
 include {DIVIDE_AND_CONQUER as DIVIDE_AND_CONQUER4} from "./sub.nf"
 include {DIVIDE_AND_CONQUER as DIVIDE_AND_CONQUER5} from "./sub.nf"
 include {DIVIDE_AND_CONQUER as DIVIDE_AND_CONQUER6} from "./sub.nf"
+include {JVARKIT_BAM_RENAME_CONTIGS               } from '../../../modules/jvarkit/bamrenamechr'
 
 
 if(params.help) {
@@ -42,25 +43,90 @@ if(params.help) {
 }
 
 
+Map assertKeyExists(final Map hash,final String key) {
+    if(!hash.containsKey(key)) throw new IllegalArgumentException("no key ${key}'in ${hash}");
+    return hash;
+}
+
+Map assertKeyExistsAndNotEmpty(final Map hash,final String key) {
+    assertKeyExists(hash,key);
+    def value = hash.get(key);
+    if(value.isEmpty()) throw new IllegalArgumentException("empty ${key}'in ${hash}");
+    return hash;
+}
+
+Map assertKeyMatchRegex(final Map hash,final String key,final String regex) {
+    assertKeyExists(hash,key);
+    def value = hash.get(key);
+    if(!value.matches(regex)) throw new IllegalArgumentException(" ${key}'in ${hash} doesn't match regex '${regex}'.");
+    return hash;
+}
+
 workflow {
 
-
+	versions = Channel.empty()
 	def genome = Channel.of( file(params.fasta), file(params.fai), file(params.dict) ).collect()	
 
-	bams_ch = Channel.fromPath(params.samplesheet).
-		splitCsv(header:true,sep:'\t').
-		branch{v->
-			has_depth : v.containsKey("depth") && !v.depth.isEmpty() && !v.depth.equals(".")
+  	bams = Channel.fromPath(params.samplesheet)
+			.splitCsv(header:true,sep:',')
+			.map{assertKeyMatchRegex(it,"sample","^[A-Za-z_0-9\\.\\-]+\$")}
+			.map{assertKeyMatchRegex(it,"bam","^\\S+\\.(bam|cram)\$")}
+			.map{
+				if(it.containsKey("bai")) return it;
+				if(it.bam.endsWith(".cram")) return it.plus(bai : it.bam+".crai");
+				return it.plus(bai:it.bam+".bai");
+			}
+			.map{
+				if(it.containsKey("fasta")) return it;
+				return it.plus(fasta:params.fasta);
+			}
+			.map{
+				if(it.containsKey("fai")) return it;
+				return it.plus(fai:it.fasta+".fai");
+			}
+			.map{
+				if(it.containsKey("dict")) return it;
+				return it.plus(dict: it.fasta.replaceAll("\\.(fasta|fa|fna)\$",".dict"));
+			}
+			.map{
+				if(it.containsKey("depth")) return it;
+				return it.plus(depth:"-1");
+			}
+			.branch {
+				ok_ref: it.fasta.equals(params.fasta)
+				bad_ref: true
+				}
+
+	def bed_in= [];
+	if(params.bed!=null) bed_in=file(params.bed)
+
+	intervals_ch = MAKE_INTERVALS(genome,  bed_in)
+
+
+	JVARKIT_BAM_RENAME_CONTIGS(
+		[[id:"ref"],file(params.dict)],
+		MAKE_INTERVALS.out.bed.map{[[id:"bed"],it]},
+		bams.bad_ref.map{[[id:it.sample],file(it.bam),file(it.bai),file(it.fasta),file(it.fai),file(it.dict)]}
+		)
+	versions =versions.mix(JVARKIT_BAM_RENAME_CONTIGS.out.versions)
+
+	bams_renamed = JVARKIT_BAM_RENAME_CONTIGS.out.bam
+		.map{[it[0].id,it[1],it[2]]}
+	
+
+
+
+	bams2 = bams.ok_ref.branch{v->
+			has_depth : v.containsKey("depth") && !v.depth.isEmpty() && !v.depth.equals(".") && (v.depth as int)>0
 			no_depth : true
 		}
 
 
-	intervals_ch = MAKE_INTERVALS(genome, file(params.bed))
-	mosdepth_ch = MOSDEPTH(genome, intervals_ch.bed, bams_ch.no_depth.map{[it.sample,it.bam,it.bai]} )
+	mosdepth_ch = MOSDEPTH(genome, intervals_ch.bed, bams2.no_depth.map{[it.sample,it.bam,it.bai]}.mix(bams_renamed) )
 
 	ch1 = mosdepth_ch.output.splitText().
                 map{[it[1],it[2],it[3],it[0].trim()]}.
-		mix(bams_ch.has_depth.map{[it.sample,it.bam,it.bai,it.depth]})
+		mix(bams2.has_depth.map{[it.sample,it.bam,it.bai,it.depth]})
 
 	readlen_ch = READ_LENGTH( genome, ch1.map{[it[0],it[1]]} )
 
@@ -148,7 +214,7 @@ cut -f1,2,3 TMP/jeter.bed |\\
 mv TMP/jeter2.bed TMP/jeter.bed
 
 
-if ${bed.name.contains(".")}
+if ${bed?true:false}
 then
 	cut -f1,2,3 "${bed}" | sort -T TMP -t '\t' -k1,1 -k2,2n | bedtools merge > TMP/jeter2.bed
 	bedtools intersect -a TMP/jeter.bed -b TMP/jeter2.bed > TMP/jeter3.bed

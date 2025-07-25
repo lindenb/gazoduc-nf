@@ -48,14 +48,16 @@ process SPADES_ASSEMBLY {
         ${has_fq2 ? "-1 \"${fastq_1}\" -2 \"${optional_fastq_2}\" ":"-s \"${fastq_1}\""}
 
 
+    find TMP 1>&2
+
     if test -s TMP/jeter_assembly/misc/assembled_contigs.fasta
     then
         
 
         awk '/^>/ {printf("%s%s\t%s\t",(N>0?"\\n":""),substr(\$0,2),"${meta.id}");N++;next;} {printf("%s",\$0);} END {printf("\\n");}' TMP/jeter_assembly/misc/assembled_contigs.fasta |\\
-        awk -F '\t' '{printf("%d\t%s",length(\$3),\$0);}' |\\
-        gzip --best >  TMP/jeter_assembly/misc/assembled_contigs.tsv
-
+        awk -F '\t' '{printf("%d\t%s\\n",length(\$3),\$0);}' >  TMP/jeter_assembly/misc/assembled_contigs.tsv
+        
+        gzip --best TMP/jeter_assembly/misc/assembled_contigs.tsv
         gzip --best TMP/jeter_assembly/misc/assembled_contigs.fasta
 
         mv "TMP/jeter_assembly/misc/assembled_contigs.fasta.gz" "${prefix}.assembled_contigs.fa.gz"

@@ -1,15 +1,43 @@
+/*
+
+Copyright (c) 2025 Pierre Lindenbaum
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+The MIT License (MIT)
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
 include { BWA_INDEX       } from '../../modules/bwa/index/main.nf'
 include { SPADES_ASSEMBLY } from '../../modules/spades/assembly'
-workflow CONTAMINATIONS {
+
+workflow UNMAPPED {
 take:
     meta
     acn_file
-    bams // tuple (meta,bam,fasta,fai)
+    bams // tuple (meta,bam,bai,fasta,fai)
 main:
     versions  = Channel.empty()
     multiqc  = Channel.empty()
     FETCH_ACNS(acn_file)
     versions  = versions.mix(FETCH_ACNS.out.versions)
+
+    
+
 
     BWA_INDEX(FETCH_ACNS.out.fasta)
     //versions  = versions.mix(BWA_INDEX.out.versions)
@@ -23,7 +51,7 @@ main:
     SPADES_ASSEMBLY(
         MAP_UNMAPPED.out.fastq.map{[it[0],it[1],[]/* no fastq_2 */]}
         )
-    ersions  = versions.mix(SPADES_ASSEMBLY.out.versions)
+    versions  = versions.mix(SPADES_ASSEMBLY.out.versions)
 
     MERGE(
         FETCH_ACNS.out.database,
@@ -74,7 +102,6 @@ cat "${acns_file}"|\\
     tr -s " " | tr " " "\n" | sort | uniq |\\
     grep -v '^\$'  > TMP/jeter.txt
 
-
 test -s TMP/jeter.txt
 
 cat TMP/jeter.txt |\\
@@ -114,20 +141,23 @@ END_VERSIONS
 
 process MAP_UNMAPPED {
     tag "${meta.id}"
-    label "label_single"
+    label "label_short"
     conda "${moduleDir}/../../conda/bwa.yml"
     afterScript "rm -rf TMP"
     input:
         tuple val(meta5),path(bwaDir)
-        tuple val(meta),path(bam),path(fasta),path(fai)
+        tuple val(meta),path(bam),path(bai),path(fasta),path(fai)
     output:
         tuple val(meta), path("*.contaminations.tsv"),emit:tsv
-        tuple val(meta), path("*.fastq.gz"),emit:fastq // still unmapped, for spades
+        tuple val(meta), path("*.fastq.gz"),optional:true,emit:fastq // still unmapped, for spades
         path("versions.yml"),emit:versions
     script:
         def prefix=task.ext.prefix?:meta.id
-        def tresholdN = 0.5
+        def cpusargs1 = task.cpus > 5? "--threads ${task.cpus -5 }":""
+        def tresholdN = 0.3
         def repeats=6
+	def min_size  = task.ext.min_size?:50
+        def fast = task.ext.fast?:false /*      Output the unmapped reads at the end of the file */
 """
 mkdir -p TMP
 set -x
@@ -137,17 +167,17 @@ cat << 'EOF' > TMP/jeter.awk
     OFS="\t";
     S=\$2;
     L1=length(S)*1.0;
-    if(L1<50) next;
+    if(L1< ${min_size} ) next;
     
     S=\$2;
     gsub(/[ATat]/,"",S);
     L2=length(S)*1.0;
-    if(L2/L1 <= 0.2 || L2/L1>=0.8 ) next; 
+    if(L2/L1 <= 0.3 || L2/L1>=0.7 ) next; 
 
     S=\$2; 
-    gsub(/[^ATGCatgc]/,"",S);
+    gsub(/[ATGCatgc]/,"",S);
     L2=length(S)*1.0;
-    if(L2/L1 <= ${tresholdN} ) next;  
+    if(L2/L1 >= ${tresholdN} ) next;  
     
     S=\$2; 
     gsub(/A{${repeats},}/,"",S);
@@ -184,7 +214,7 @@ cat << 'EOF' > TMP/jeter.awk
 
 EOF
 
-samtools view --uncompressed --reference ${fasta} -f 4 -F 3840 "${bam}" |\\
+samtools view ${cpusargs1} --uncompressed --reference ${fasta} -f 4 -F 3840 "${bam}" ${fast?"\"*\"":""} |\\
     samtools fastq -n - |\\
     paste - - - - |\\
     awk -F '\t' -f TMP/jeter.awk |\\
@@ -196,7 +226,7 @@ bwa mem \\
     -t ${task.cpus} \\
     `find ${bwaDir}/ -name "*.amb" | sed 's/\\.amb\$//'` \\
     TMP/unmapped.fastq.gz |\\
-    samtools view --uncompressed -o TMP/jeter.bam -
+    samtools view  -o TMP/jeter.bam -
 
 # still unmapped
 samtools view --uncompressed --reference ${fasta} -f 4 -F 3840 TMP/jeter.bam |\\
@@ -213,7 +243,10 @@ samtools idxstat TMP/jeter2.bam |\\
 
 mv TMP/jeter.tsv ${prefix}.contaminations.tsv
 
-mv TMP/unmapped2.fastq.gz ${prefix}.unmapped.fastq.gz
+if [[ \$(gunzip -c TMP/unmapped2.fastq.gz | wc -l ) -gt 3 ]]
+then
+    mv TMP/unmapped2.fastq.gz ${prefix}.unmapped.fastq.gz
+fi
 
 cat << END_VERSIONS > versions.yml
 ${task.process}:
