@@ -45,6 +45,7 @@ script:
     def prefix = task.ext.prefix?:vcf.baseName+".hetcomposite"
 	def extractors = task.ext.extractors?:"ANN/GeneId"
 	def max_variants = task.ext.max_variants?:30
+	def accession="SO:0001818,SO:0001629"
 """
 hostname 1>&2
 
@@ -69,6 +70,9 @@ m4 -P -I TMP < "${moduleDir}/select.m4"  > TMP/jeter.code
 
 bcftools view "${vcf}"  |\\
 	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcffilterjdk --body -f TMP/jeter.code > TMP/jeter2.vcf
+mv TMP/jeter2.vcf TMP/jeter1.vcf
+
+java -jar \${HOME}/jvarkit.jar vcffilterso  -A '${accession}' -r -R <  TMP/jeter1.vcf  > TMP/jeter2.vcf
 mv TMP/jeter2.vcf TMP/jeter1.vcf
 
 

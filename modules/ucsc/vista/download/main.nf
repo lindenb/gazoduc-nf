@@ -35,7 +35,7 @@ input:
 output:
 	tuple val(meta1),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.header"),emit:bed
 	tuple val(meta1),path("*.md"),emit:doc
-	tuple val(meta1),path("versions.yml"),emit:versions
+	tuple path("versions.yml"),emit:versions
 script:
    	def TAG = "VISTA"
 	def whatis="VISTA enhancers"

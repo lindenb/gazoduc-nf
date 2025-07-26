@@ -89,15 +89,14 @@ process KEEP_DE_NOVO {
     bcftools view ${vcf} |\\
         jvarkit -Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP vcffilterjdk \\
             -e 'return variant.hasAttribute(\\"loConfDeNovo\\")|| variant.hasAttribute(\\"hiConfDeNovo\\") || variant.getAttributeAsInt(\\"MERR\\",0)>0;' |\\
-            awk '/#CHROM/ {printf("##INFO=<ID=CONTROL_HAVE_ALT,Number=0,Type=Flag,Description=\\"In the pedigree, control or pedigree have ALT allele.\\">\\n");} {print}' |\\
+            awk '/#CHROM/ {printf("##INFO=<ID=CONTROLS_HAVING_ALT,Number=1,Type=Integer,Description=\\"In the pedigree, number of control or parent that have ALT allele.\\">\\n");} {print}' |\\
             bcftools view  -O z -o TMP/jeter.jeter.vcf.gz
     
-    echo "Genotype g=null; boolean setflag=false;" > TMP/jeter.code
+    echo "Genotype g=null; int count=0;" > TMP/jeter.code
     awk '(\$6=="control" || (\$3=="0" && \$4=="0")) {printf("%s\\n",\$2);} ' '${pedigree}'  |\\
         sort | uniq |\\
-        awk '{printf("if(!setflag) {g=variant.getGenotype(\\"%s\\"); if(g!=null && g.hasAltAllele()) setflag=true;}\\n",\$1);}' >> TMP/jeter.code
-        echo 'if(setflag) return new GenotypeBuilder(variant).attribute("CONTROL_HAVE_ALT",true).make();' >>  TMP/jeter.code
-        echo 'return variant;' >>  TMP/jeter.code
+        awk '{printf("g=variant.getGenotype(\\"%s\\"); if(g!=null && g.hasAltAllele()) count++;\\n",\$1);}' >> TMP/jeter.code
+        echo 'return new VariantContextBuilder(variant).attribute("CONTROLS_HAVING_ALT",count).make();' >>  TMP/jeter.code
     
     bcftools view TMP/jeter.jeter.vcf.gz |\\
         jvarkit -Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP vcffilterjdk \\
@@ -134,11 +133,13 @@ process REPORT {
         tuple val(meta),path("*.vcf.gz"),path("*.tbi"),emit:vcf
         tuple val(meta),path("*.table.txt")
         tuple val(meta),path("*.genes.tsv")
-        tuple val(meta),path("*.bed"),emit:bed //used for igv reports
+        tuple val(meta),path("*.bed"),optional:true,emit:bed //used for igv reports
         path("versions.yml"),emit:versions
     script:
         def prefix = task.ext.prefix?:"snv.denovo"
         def args1 = task.ext.args1?:""
+	// do not create IGV report for more than XX variants
+	def max_igv_reports= task.ext.max_igv_reports?:1000
     """
     mkdir -p TMP
     set -o pipefail
@@ -177,7 +178,12 @@ _EOF_
     mv TMP/jeter.vcf.gz.tbi ./${prefix}.vcf.gz.tbi
     mv TMP/jeter.table.txt ./${prefix}.table.txt
     mv TMP/jeter.genes.tsv ./${prefix}.genes.tsv
-    mv TMP/jeter.bed  ./${prefix}.bed
+
+    if test \$(cat TMP/jeter.bed |wc -l) -lt ${max_igv_reports}
+    then
+        mv TMP/jeter.bed  ./${prefix}.bed
+    fi
+
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":

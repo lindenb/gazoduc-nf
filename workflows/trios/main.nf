@@ -230,6 +230,8 @@ workflow {
        versions = versions.mix(WORKFLOW_SV.out.versions)
 
 
+
+
 	    COMPILE_VERSIONS(versions.collect())
 	    to_multiqc = to_multiqc.mix(COMPILE_VERSIONS.out.multiqc)
 
