@@ -179,6 +179,14 @@ _EOF_
     mv TMP/jeter.table.txt ./${prefix}.table.txt
     mv TMP/jeter.genes.tsv ./${prefix}.genes.tsv
 
+
+    if test \$(cat TMP/jeter.bed |wc -l) -lt ${max_igv_reports}
+    then
+        grep -vFw loConfDeNovo  TMP/jeter.bed  > TMP/jeter2.bed
+	mv TMP/jeter2.bed TMP/jeter.bed
+    fi
+
+
     if test \$(cat TMP/jeter.bed |wc -l) -lt ${max_igv_reports}
     then
         mv TMP/jeter.bed  ./${prefix}.bed
@@ -266,13 +274,13 @@ create_report TMP/jeter.bed  \\
 mv -v "TMP/jeter.html" ./${prefix}.html
 
 cat << EOF > TMP/jeter.html
-<tr>
-    <td>${contig}:${start}${end==start?"":"-"+end}</td>
+<tr class="${quality}">
+    <td><code>${contig}:${start}${end==start?"":"-"+end}</code></td>
     <td>(${fasta.baseName})</th>
     <td><a href="${prefix}.html">${child}</a></td>
     <td>${father}</td>
     <td>${mother}</td>
-    <td>${quality}</td>
+    <td><span class="${quality}">${quality}</span></td>
 </tr>
 EOF
 
@@ -311,6 +319,15 @@ table, th, td {
   border: 1px solid black;
   border-collapse: collapse;
 }
+
+tr.hiConfDeNovo {
+  background-color:#C7DBF0;
+}
+
+tr.loConfDeNovo {
+  background-color:yellow;
+}
+
 </style>
 </head>
 <body>
