@@ -1,4 +1,4 @@
-include {BCFTOOL_CONCAT                           } from '../../modules/bcftools/concat/main.nf'
+include {BCFTOOLS_CONCAT                           } from '../../modules/bcftools/concat/main.nf'
 include {DOWNLOAD_CYTOBAND                        } from '../../modules/ucsc/download.cytobands/main.nf'
 include {DOWNLOAD_REFGENE                         } from '../../modules/ucsc/download.refgene/main.nf'
 
@@ -20,7 +20,7 @@ main:
     KEEP_DE_NOVO(pedigree,vcf)
     versions =  versions.mix(KEEP_DE_NOVO.out.versions)
 
-    BCFTOOL_CONCAT(
+    BCFTOOLS_CONCAT(
         KEEP_DE_NOVO.out.vcf
             .map{[it[1],it[2]]}
             .collect()
@@ -28,7 +28,7 @@ main:
         [[id:"nobed"],[]
         ])
     versions =  versions.mix(KEEP_DE_NOVO.out.versions)
-    vcf = BCFTOOL_CONCAT.out.vcf
+    vcf = BCFTOOLS_CONCAT.out.vcf
 
 
 

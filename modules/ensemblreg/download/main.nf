@@ -38,7 +38,7 @@ output:
 script:
    	def TAG = "ENSEMBL_REG"
 	def whatis="Ensembl regulatory Features"
-    f(!meta1.ucsc_name) throw new IllegalArgumentException("${task.process} undefined ucsc_name");
+    if(!meta1.ucsc_name) throw new IllegalArgumentException("${task.process} undefined ucsc_name");
     def url="";
     if(meta1.ucsc_name.equals("hg38")) {
         url = "https://ftp.ensembl.org/pub/release-114/regulation/homo_sapiens/GRCh38/annotation/Homo_sapiens.GRCh38.regulatory_features.v114.gff3.gz"

@@ -26,7 +26,7 @@ include {BED_CLUSTER          } from '../../../modules/jvarkit/bedcluster'
 include {DEEP_TRIO3           } from '../../../modules/deepvariant/deep_trio3'
 include {DEEP_VARIANT_CALL    } from '../../../modules/deepvariant/call'
 include {GLNEXUS_GENOTYPE     } from '../../../modules/glnexus/genotype'
-include {BCFTOOL_CONCAT       } from '../../../modules/bcftools/concat'
+include {BCFTOOLS_CONCAT       } from '../../../modules/bcftools/concat'
 
 
 workflow DEEPVARIANT_TRIOS {
@@ -145,16 +145,16 @@ main:
 	versions= versions.mix(GLNEXUS_GENOTYPE.out.versions)
 	
 
-	BCFTOOL_CONCAT(
+	BCFTOOLS_CONCAT(
 		GLNEXUS_GENOTYPE.out.vcf
 			.map{[it[1],it[2]]} //vcf, tbi
 			.collect()
 			.map{[[id:"deepvariant"],it]},
 		[[id:"no_bed"],[]]
 		)
-	versions= versions.mix(BCFTOOL_CONCAT.out.versions)
+	versions= versions.mix(BCFTOOLS_CONCAT.out.versions)
 
 emit:
-	vcf = BCFTOOL_CONCAT.out.vcf
+	vcf = BCFTOOLS_CONCAT.out.vcf
 	versions
 }

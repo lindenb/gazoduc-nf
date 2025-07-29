@@ -30,8 +30,8 @@ include {hasFeature;isBlank;backDelete;isHg19;isHg38} from './annot.functions.nf
 def TAG="GREENDB"
 
 String getURL(genomeId) {
-	if(isHg19(genomeId)) return "https://zenodo.org/record/5636209/files/GRCh37_GREEN-DB.bed.gz?download=1";
-	if(isHg38(genomeId)) return "https://zenodo.org/record/5636209/files/GRCh38_GREEN-DB.bed.gz?download=1";
+	if(isHg19(genomeId)) return ;
+	if(isHg38(genomeId)) return ;
 	return "";
 	}
 

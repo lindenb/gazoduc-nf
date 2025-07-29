@@ -31,7 +31,7 @@ include {DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GTF     } from '../../modules/gtf/down
 include {BCFTOOLS_BCSQ                            } from '../../modules/bcftools/bcsq/main.nf'
 include {BCTOOLS_MENDELIAN2                       } from '../../modules/bcftools/mendelian2/main.nf'
 include {HET_COMPOSITE  as APPPLY_HET_COMPOSITE   } from '../../modules/jvarkit/hetcomposite/main.nf'
-include {BCFTOOL_CONCAT as CONCAT1                } from '../../modules/bcftools/concat/main.nf'
+include {BCFTOOLS_CONCAT as CONCAT1                } from '../../modules/bcftools/concat/main.nf'
 include {WORKFLOW_SNV                             } from './sub.snv.nf'
 include {WORKFLOW_SV                              } from './sub.sv.nf'
 include {SOMALIER_BAMS                            } from '../../subworkflows/somalier/bams/main.nf'
@@ -186,6 +186,14 @@ workflow {
 
         DOWNLOAD_GTF(fasta,fai,dict)
         versions = versions.mix(DOWNLOAD_GTF.out.versions)
+
+        if(params.bed==null) {
+         SCATTER_TO_BED(refhash,fasta,fai,dict)
+         versions = versions.mix(SCATTER_TO_BED.out.versions)
+         bed = SCATTER_TO_BED.out.bed
+         }
+
+
     /*
         STRUCTURAL_VARIANTS(
             [id:"sv"],
@@ -426,3 +434,43 @@ END_VERSIONS
 """
 }
 
+process README {
+tag "${meta.id?:""}"
+input:
+    val(meta)
+output:
+    path("*.md"),emit:readme
+script:
+"""
+cat << _EOF_ > README.md
+
+The directory SNV_DENOVO contains
+
+- a VCF file *.denovo.vcf.gz  containing all the "protein-altering variants" variants containing the de-novo variants (including low and high quality). The VCF was annotated with SNPEFF, VEP, BCFTOOLS_CSQ, CADD, CLINVAR, ALPHAMISSENSE, REVEL, the CARDIOPANEL list,  REPEATMASKER, GNOMAD, etc... The "INFO/CONTROLS_HAVING_ALT" is a count of parents from other trios carrying a ALT allele and could be used to remove false positives. The de-novo variants have been extracted using "GATK possibledeNovo" (INFO/hiConfDeNovo and loConfDeNovo).
+
+- *.denovo.table.txt is a "vertical" user-friendly, view of the variant.
+- *.denovo.genes.tsv is a summary by gene
+
+The  directory 'results/IGV' contains the IGV profiles of the "hiConfidence de novo variant". Some of them are nevertheless obviously **FALSE POSITIVES**
+
+The directory results/HETCOMPOSITE contains the  protein-altering variants, ( fitered on gnomad AF_NFE=1%) that could be used as pairs of het-composites variants.
+
+```
+results/
+|-- HETCOMPOSITE
+|   |-- *.concat.hetcomposite.vcf.gz
+|   |-- *.concat.hetcomposite.vcf.gz.tbi
+|   |-- *.concat.hetcomposite.genes.report.bed
+|   `-- *.concat.hetcomposite.variants.report.txt
+|-- IGV
+|   |-- ****-C.html
+|   `-- index.html
+`-- SNV_DENOVO
+    |-- *.denovo.genes.tsv
+    |-- *.denovo.table.txt
+    |-- *.denovo.vcf.gz
+    `-- *.denovo.vcf.gz.tbi
+```
+_EOF_
+"""
+}

@@ -1,4 +1,4 @@
-include {BCFTOOL_CONCAT                           } from '../../modules/bcftools/concat/main.nf'
+include {BCFTOOLS_CONCAT                           } from '../../modules/bcftools/concat/main.nf'
 include {HET_COMPOSITE                            } from '../../modules/jvarkit/hetcomposite/main.nf'
 
 workflow WORKFLOW_COMPOSITE_SNV {
@@ -15,15 +15,15 @@ take:
 main:
     versions = Channel.empty()
 
-     BCFTOOL_CONCAT(
+     BCFTOOLS_CONCAT(
         vcf
             .map{[it[1],it[2]]}
             .collect()
             .map{[meta,it.flatten()]},
         [[id:"nobed"],[]
         ])
-    versions =  versions.mix(BCFTOOL_CONCAT.out.versions)
-    vcf = BCFTOOL_CONCAT.out.vcf
+    versions =  versions.mix(BCFTOOLS_CONCAT.out.versions)
+    vcf = BCFTOOLS_CONCAT.out.vcf
 
     HET_COMPOSITE(
         fasta,fai,dict,

@@ -37,7 +37,7 @@ process BED_CLUSTER {
 		tuple val(meta3),path(dict)
 		tuple val(meta ),path(bed)
 	output:
-		tuple val(meta), path("BEDS/*",arity:"0..*"),emit:bed
+		tuple val(meta), path("BEDS/*.bed",arity:"0..*"),emit:bed
 		path("versions.yml"),emit:versions
 	script:
 		def args = task.ext.args?:""

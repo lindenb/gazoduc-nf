@@ -24,8 +24,8 @@ SOFTWARE.
 */
 
 
-process BCFTOOL_CONCAT {
-label "process_single"
+process BCFTOOLS_CONCAT {
+label "process_short"
 tag "${meta.id?:""}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
@@ -33,67 +33,186 @@ input:
 	tuple val(meta ),path("VCFS/*") 
 	tuple val(meta1),path(optional_bed)
 output:
-    tuple val(meta),path("*.{bcf,vcf.gz}"),path("*.{csi,tbi}"),emit:vcf
+    tuple val(meta),path("*.{bcf,vcf.gz}"),path("*.{csi,tbi}"),optional:true,emit:vcf
 	path("versions.yml"),emit:versions
 script:
 	def args1 = task.ext.args1?:""
 	def args2 = task.ext.args2?:"--no-version --allow-overlaps --remove-duplicates "
 	def args3 = optional_bed?"--regions-file \"${optional_bed}\"":""
 	def limit = task.ext.limit?:10
-	def prefix = task.ext.prefix?:meta.id+".concat"
+	def prefix = task.ext.prefix?:(meta.id?:"variants")+".concat"
+	def suffix = task.ext.suffix?:".bcf"
+	def suffix2 = (suffix.endsWith("bcf")?"bcf":"vcf.gz")
+	def suffix3 = (suffix.endsWith("bcf")?"bcf.csi":"vcf.gz.tbi")
+	def by_contig = (task.ext.by_chromosome?:false) as boolean
 """	
 	hostname 1>&2
 	mkdir -p TMP
 	find VCFS/ -name "*.vcf.gz" -o -name "*.bcf" > TMP/jeter.list
+	set -x
 
-
-	if test  `wc -l < TMP/jeter.list` -le ${limit}
+	if ${by_contig}
 	then
+		cat TMP/jeter.list | while read F
+		do
+			bcftools index --threads ${task.cpus}  -s "\${F}" |\\
+				awk -F '\t' -vF="\$F" '(printf("%s\t0\t%s\t%s\\n",\$1,\$2,F);}' |\\
+				sort -T TMP -k1,1 -k2,2n >> TMP/contigs.bed
+		done
 
-		bcftools concat \\
-			--write-index \\
-			--threads ${task.cpus} \\
-			${args1} \\
-			${args2} \\
-			${args3} \\
-			-O b9 \\
-			--file-list TMP/jeter.list \\
-			-o "TMP/jeter.bcf" 
+		# each distinct contig
+		cut -f1 TMP/contigs.bed | sort | uniq | while read CONTIG
+		do
+			# build a BED for this CONTIG
+			awk -F '\t' -vC="\${CONTIG}" '(\$1==C)' TMP/contigs.bed |\\
+				cut -f1,2,3 |\\
+				sort -T TMP -k1,1 -k2,2n |\\
+				bedtools merge > "TMP/\${CONTIG}.ctg.bed"
+
+			# intersect with optional bed, if any
+			if ${optional_bed?true:false}
+			then
+				bedtools intersect -a "${optional_bed}" -b "TMP/\${CONTIG}.ctg.bed" |\\
+				sort -T TMP -k1,1 -k2,2n |\\
+				bedtools merge > "TMP/\${CONTIG}.ctg.bed.new"
+
+				mv "TMP/\${CONTIG}.ctg.bed.new"  "TMP/\${CONTIG}.ctg.bed"
+			fi
+
+			# no overlap with optional bed
+			if test ! -s "TMP/\${CONTIG}.ctg.bed"
+			then
+				continue
+			fi
+
+			#vcf overlaping this contigs
+			awk -F '\t' -vC="\${CONTIG}" '(\$1==C)' TMP/contigs.bed |\\
+				cut -f4 | sort | uniq > TMP/jeter2.vcf.list
+
+			test -s TMP/jeter2.vcf.list
+
+			# too many files or not ?
+			if test  `wc -l < TMP/jeter2.vcf.list` -le ${limit}
+					then
+
+						bcftools concat \\
+							${suffix.endsWith("bcf")?"--write-index":""} \\
+							--threads ${task.cpus} \\
+							${args1} \\
+							${args2} \\
+							--regions-file "TMP/\${CONTIG}.ctg.bed" \\
+							-O ${suffix.endsWith("bcf")?"b9":"z9"} \\
+							--file-list TMP/jeter2.vcf.list \\
+							-o "TMP/jeter.${suffix2}" 
+
+					else
+						
+						SQRT=`awk 'END{X=NR;if(X<10){print(X);} else {z=sqrt(X); print (z==int(z)?z:int(z)+1);}}' TMP/jeter2.vcf.list`
+						rm -fv TMP/chunck*
+						rm -fv TMP/jeter3.list
+						split -a 9 --additional-suffix=.list --lines=\${SQRT} TMP/jeter2.vcf.list TMP/chunck.
+
+
+						find TMP/ -type f -name "chunck*.list" | while read F
+						do
+							bcftools concat \\
+								--write-index \\
+								--threads ${task.cpus} \\
+								${args1} \\
+								${args2} \\
+								--regions-file "TMP/\${CONTIG}.ctg.bed" \\
+								-O b \\
+								--file-list "\${F}" \\
+								-o "\${F}.delete.me.bcf" 
+							echo "\${F}.delete.me.bcf" >> TMP/jeter3.list
+						done
+
+						bcftools concat \\
+							${suffix.endsWith("bcf")?"--write-index":""} \\
+							--threads ${task.cpus} \\
+							${args1} \\
+							${args2} \\
+							--regions-file "TMP/\${CONTIG}.ctg.bed" \\
+							-O ${suffix.endsWith("bcf")?"b9":"z9"} \\
+							--file-list TMP/jeter3.list \\
+							-o "TMP/jeter.${suffix2}" 
+
+						rm -vf "TMP/*.delete.me.bcf"
+						rm -vf "TMP/*.delete.me.bcf.csi"
+					fi
+
+					# default write index is CSI, not TBI for vcf.gz
+					if ${!suffix.endsWith("bcf")}
+					then
+						bcftools index -f -t --threads ${task.cpus} TMP/jeter.${suffix2}
+					fi
+
+					mv -v TMP/jeter.${suffix2} "${prefix}.\${CONTIG}.${suffix2}"
+					mv -v TMP/jeter.${suffix3} "${prefix}.\${CONTIG}.${suffix3}"
+
+		done
+		# end of loop over each chromosome
+
 
 	else
-	
-		SQRT=`awk 'END{X=NR;if(X<10){print(X);} else {z=sqrt(X); print (z==int(z)?z:int(z)+1);}}' TMP/jeter.list`
-		split -a 9 --additional-suffix=.list --lines=\${SQRT} TMP/jeter.list TMP/chunck.
+		# do NOT group by chromosome
+		
+		if test  `wc -l < TMP/jeter.list` -le ${limit}
+		then
 
-
-		find TMP/ -type f -name "chunck*.list" | while read F
-		do
 			bcftools concat \\
-				--write-index \\
+				${suffix.endsWith("bcf")?"--write-index":""} \\
 				--threads ${task.cpus} \\
 				${args1} \\
 				${args2} \\
 				${args3} \\
-				-O b \\
-				--file-list "\${F}" \\
-				-o "\${F}.bcf" 
-			echo "\${F}.bcf" >> TMP/jeter2.list
-		done
+				-O ${suffix.endsWith("bcf")?"b9":"z9"} \\
+				--file-list TMP/jeter.list \\
+				-o "TMP/jeter.${suffix2}" 
 
-		bcftools concat \\
-			--write-index \\
-			--threads ${task.cpus} \\
-			${args1} \\
-			${args2} \\
-			${args3} \\
-			-O b9 \\
-			--file-list TMP/jeter2.list \\
-			-o "TMP/jeter.bcf" 
+		else
+		
+			SQRT=`awk 'END{X=NR;if(X<10){print(X);} else {z=sqrt(X); print (z==int(z)?z:int(z)+1);}}' TMP/jeter.list`
+			split -a 9 --additional-suffix=.list --lines=\${SQRT} TMP/jeter.list TMP/chunck.
 
+
+			find TMP/ -type f -name "chunck*.list" | while read F
+			do
+				
+				bcftools concat \\
+					--write-index \\
+					--threads ${task.cpus} \\
+					${args1} \\
+					${args2} \\
+					${args3} \\
+					-O b \\
+					--file-list "\${F}" \\
+					-o "\${F}.bcf"
+				
+				echo "\${F}.bcf" >> TMP/jeter2.list
+			done
+
+			bcftools concat \\
+				${suffix.endsWith("bcf")?"--write-index":""} \\
+				--threads ${task.cpus} \\
+				${args1} \\
+				${args2} \\
+				${args3} \\
+				-O ${suffix.endsWith("bcf")?"b9":"z9"} \\
+				--file-list TMP/jeter2.list \\
+				-o "TMP/jeter.${suffix2}" 
+
+		fi
+
+		# default write index is CSI, not TBI for vcf.gz
+		if ${!suffix.endsWith("bcf")}
+		then
+			bcftools index -f -t --threads ${task.cpus} TMP/jeter.${suffix2}
+		fi
+
+		mv TMP/jeter.${suffix2} ${prefix}.${suffix2}
+		mv TMP/jeter.${suffix3} ${prefix}.${suffix3}
 	fi
-
-	mv TMP/jeter.bcf ${prefix}.bcf
-	mv TMP/jeter.bcf.csi ${prefix}.bcf.csi
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":

@@ -37,7 +37,10 @@ include {SIMPLE_REPEATS_DOWNLOAD   } from '../../modules/ucsc/simplerepeats/down
 include {VEP_INSTALL_PLUGINS       } from '../../modules/vep/install.plugins'
 include {DOWNLOAD_UTR_ANNOTATOR    } from '../../modules/vep/utr.annotator.download'
 include {REMAP_DOWNLOAD            } from '../../modules/remap/download'
-
+include {GENCC_DOWNLOAD            } from '../../modules/gencc/download'
+include {ENSEMBL_REG_DOWNLOAD      } from '../../modules/ensemblreg/download'
+include {HMC_DOWNLOAD              } from '../../modules/hmc/download'
+include {GREENDB_DOWNLOAD          } from '../../modules/greendb/download'
 
 String countVariants(def f) {
         return "\necho  \${LINENO} && bcftools query -f '.\\n' \""+f+"\" | wc -l 1>&2" +"\n"
@@ -99,8 +102,12 @@ main:
     TISSUES_DOWNLOAD(fasta,fai, dict,gtf)
     versions = versions.mix(TISSUES_DOWNLOAD.out.versions)
     
+    
     DISEASES_DOWNLOAD(fasta,fai, dict,gtf)
     versions = versions.mix(DISEASES_DOWNLOAD.out.versions)
+
+    GENCC_DOWNLOAD(fasta,fai, dict,gtf)
+    versions = versions.mix(GENCC_DOWNLOAD.out.versions)
 
     SNPEFF_DOWNLOAD(fai)
     versions = versions.mix(SNPEFF_DOWNLOAD.out.versions)
@@ -125,6 +132,15 @@ main:
 
     REMAP_DOWNLOAD(fasta,fai, dict)
     versions = versions.mix(REMAP_DOWNLOAD.out.versions)
+
+    ENSEMBL_REG_DOWNLOAD(fasta,fai, dict)
+    versions = versions.mix(ENSEMBL_REG_DOWNLOAD.out.versions)
+
+    HMC_DOWNLOAD(fasta,fai, dict)
+    versions = versions.mix(HMC_DOWNLOAD.out.versions)   
+
+    GREENDB_DOWNLOAD(fasta,fai, dict)
+    versions = versions.mix(GREENDB_DOWNLOAD.out.versions)   
 
 
     ANNOTATE(
@@ -152,6 +168,10 @@ main:
         SIMPLE_REPEATS_DOWNLOAD.out.bed,
         DOWNLOAD_UTR_ANNOTATOR.out.output,
         REMAP_DOWNLOAD.out.bed,
+        GENCC_DOWNLOAD.out.bed,
+        ENSEMBL_REG_DOWNLOAD.out.bed,
+        HMC_DOWNLOAD.out.bed,
+        GREENDB_DOWNLOAD.out.bed,
         vcf
     )
 
@@ -208,6 +228,14 @@ input:
     tuple val(meta22 ),path(vep_utr_annotator) 
     /** remap */
     tuple val(meta23 ),path(remap),path(remap_idx),path(remap_hdr)  
+    /** gencc */
+    tuple val(meta24 ),path(gencc),path(gencc_idx),path(gencc_hdr)
+     /** ensemblreg */
+    tuple val(meta25 ),path(ensemblreg),path(ensemblreg_idx),path(ensemblreg_hdr)  
+    /** HMC */
+    tuple val(meta26 ),path(hmc),path(hmc_idx),path(hmc_hdr) 
+    /** GREENDB */
+    tuple val(meta27 ),path(greendb),path(greendb_idx),path(greendb_hdr)  
 
 
     tuple val(meta  ),path(vcf),path(vcf_idx),path(optional_bed)
@@ -236,6 +264,7 @@ script:
     def with_vep_gnomad = (task.ext.gnomadvcf?true:false) && task.ext.with_vep_gnomad?true:false && !vep_gnomad_fields.isEmpty()
     def cadd = task.ext.cadd?:""
     def with_cadd = (task.ext.with_cadd?true:false) && !cadd.isEmpty()
+    def vcfpolyx_size = (task.ext.vcfpolyx_size?10) 
 """
 mkdir -p TMP
 set -x
@@ -326,6 +355,53 @@ then
     mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
     ${countVariants("TMP/jeter1.bcf")}
 
+fi
+
+
+
+################################################################################
+
+if ${hmc?true:false}
+then
+
+    bcftools annotate \\
+            --write-index \\
+            --threads ${task.cpus} \\
+            --write-index \\
+            -a "${hmc}" \\
+            -h "${hmc_hdr}" \\
+            -c "CHROM,FROM,TO,HMC"  \\
+            --merge-logic 'HMC:min' \\
+             -O b \\
+            -o TMP/jeter2.bcf \\
+        TMP/jeter1.bcf
+
+    mv  TMP/jeter2.bcf  TMP/jeter1.bcf
+    mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
+    ${countVariants("TMP/jeter1.bcf")}
+fi
+
+
+################################################################################
+
+if ${greendb?true:false}
+then
+
+    bcftools annotate \\
+            --write-index \\
+            --threads ${task.cpus} \\
+            --write-index \\
+            -a "${greendb}" \\
+            -h "${greendb_hdr}" \\
+            -c "CHROM,FROM,TO,GREENDB"  \\
+            --merge-logic 'GREENDB:unique' \\
+             -O b \\
+            -o TMP/jeter2.bcf \\
+        TMP/jeter1.bcf
+
+    mv  TMP/jeter2.bcf  TMP/jeter1.bcf
+    mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
+    ${countVariants("TMP/jeter1.bcf")}
 fi
 
 ################################################################################
@@ -637,6 +713,66 @@ then
     mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
     ${countVariants("TMP/jeter1.bcf")}
 fi
+
+
+################################################################################
+
+
+if ${gencc?true:false}
+then
+
+    bcftools annotate \\
+            --threads ${task.cpus} \\
+            -a "${gencc}" \\
+            -h "${gencc_hdr}" \\
+            --write-index \\
+            -c "CHROM,POS,END,GENCC_MONDO,GENCC_DISEASE,GENCC_HPO" \\
+            -O b \\
+            --merge-logic 'GENCC_MONDO:unique,GENCC_DISEASE:unique,GENCC_HPO:unique' \\
+            -o TMP/jeter2.bcf \\
+            TMP/jeter1.bcf
+
+    mv  TMP/jeter2.bcf  TMP/jeter1.bcf
+    mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
+    ${countVariants("TMP/jeter1.bcf")}
+fi
+
+
+
+################################################################################
+
+
+if ${ensemblreg?true:false}
+then
+
+    bcftools annotate \\
+            --threads ${task.cpus} \\
+            -a "${ensemblreg}" \\
+            -h "${ensemblreg_hdr}" \\
+            --write-index \\
+            -c "CHROM,POS,END,ENSEMBL_REG" \\
+            -O b \\
+            --merge-logic 'ENSEMBL_REG:unique' \\
+            -o TMP/jeter2.bcf \\
+            TMP/jeter1.bcf
+
+    mv  TMP/jeter2.bcf  TMP/jeter1.bcf
+    mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
+    ${countVariants("TMP/jeter1.bcf")}
+fi
+
+################################################################################
+
+    bcftools view  TMP/jeter1.bcf |\\
+        jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfpolyx \\
+                -n '${vcfpolyx_size}' \\
+                --reference '${fasta}' \\
+                --tag "POLYX"   |\\
+        bcftools view --write-index -O b -o TMP/jeter2.bcf
+    
+    mv  TMP/jeter2.bcf  TMP/jeter1.bcf
+    mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
+    ${countVariants("TMP/jeter1.bcf")}
 
 ################################################################################
 
