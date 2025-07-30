@@ -55,12 +55,12 @@ process GENCC_DOWNLOAD {
 		tr -d '"' |\\
         awk -F '\t' '{D=\$4;gsub(/[^A-Za-z0-9:]+/,"_",D);M=\$5;gsub(/[^A-Za-z0-9:]+/,"_",M); if(M=="-") M="."; N=\$5;gsub(/[^A-Za-z0-9:]+/,"_",N); if(N=="-") N=".";printf("%s\t%s\t%s\t%s\\n",\$3,D,M,N);}' |\
 		LC_ALL=C sort -T TMP -t '\t' -k1,1 |\\
-        uniq > TMP/jeter.b
+                uniq > TMP/jeter.b
 
 	test -s TMP/jeter.b
 
 
-	join -t '\t' -1 4 -2 3 -o '1.1,1.2,1.3,1.4,2.2,2.3,2.4' TMP/genes.bed TMP/jeter.b |\
+	join -t '\t' -1 4 -2 1 -o '1.1,1.2,1.3,1.4,2.2,2.3,2.4' TMP/genes.bed TMP/jeter.b |\
 		LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n | uniq > TMP/jeter.bed
 
 	bgzip TMP/jeter.bed

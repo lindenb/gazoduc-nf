@@ -28,7 +28,7 @@ import java.util.zip.GZIPInputStream;
 include {VEP                                      } from '../../subworkflows/annotation/vep/main.nf'
 include {DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GFF3    } from '../../modules/gtf/download/main.nf'
 include {DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GTF     } from '../../modules/gtf/download/main.nf'
-include {BCFTOOLS_BCSQ                            } from '../../modules/bcftools/bcsq/main.nf'
+include {SCATTER_TO_BED                           } from '../../subworkflows/gatk/scatterintervals2bed'
 include {BCTOOLS_MENDELIAN2                       } from '../../modules/bcftools/mendelian2/main.nf'
 include {HET_COMPOSITE  as APPPLY_HET_COMPOSITE   } from '../../modules/jvarkit/hetcomposite/main.nf'
 include {BCFTOOLS_CONCAT as CONCAT1                } from '../../modules/bcftools/concat/main.nf'
@@ -188,7 +188,7 @@ workflow {
         versions = versions.mix(DOWNLOAD_GTF.out.versions)
 
         if(params.bed==null) {
-         SCATTER_TO_BED(refhash,fasta,fai,dict)
+         SCATTER_TO_BED(ref_hash,fasta,fai,dict)
          versions = versions.mix(SCATTER_TO_BED.out.versions)
          bed = SCATTER_TO_BED.out.bed
          }

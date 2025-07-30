@@ -9,11 +9,10 @@ input:
     tuple val(meta2),path(fai)
     tuple val(meta3),path(dict)
 output:
-	tuple val(meta1),path("*.bed.gz"),("*.bed.gz.tbi"),path("*.header"),emit:bed
+	tuple val(meta1),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.header"),emit:bed
     path("versions.yml"),emit:versions
 script:
     def TAG = "GREENDB"
-    def whatis = "GREEN-DB is a comprehensive collection of 2.4 million regulatory elements in the human genome collected from previously published databases, high-throughput screenings and functional studies. ${url}"
     if(!meta1.ucsc_name) throw new IllegalArgumentException("${task.process} undefined ucsc_name");
     def url="";
     if(meta1.ucsc_name.equals("hg38")) {
@@ -24,16 +23,21 @@ script:
         throw new IllegalArgumentException("${task.process} unknown ucsc_name");
         }
 
+    def whatis = "GREEN-DB is a comprehensive collection of 2.4 million regulatory elements in the human genome collected from previously published databases, high-throughput screenings and functional studies. ${url}"
+
 """
 
 hostname 1>&2
 mkdir -p TMP
+env | grep -i proxy 1>&2
 
-curl -L "${url}" |\\
-	gunzip -c |\\
+
+curl -o TMP/jeter.bed.gz -L "${url}"
+
+gunzip -c TMP/jeter.bed.gz |\\
 	grep -v '^chromosome' |\\
 	cut -f1-3,5 |\\
-	java -jar \${JVARKIT_DIST}/jvarkit.jar bedrenamechr -f "${reference}" --column 1 --convert SKIP  |\\
+	jvarkit bedrenamechr -f "${fasta}" --column 1 --convert SKIP  |\\
 	LC_ALL=C sort  --buffer-size=${task.memory.mega}M  -T . -t '\t' -k1,1 -k2,2n |\\
 	uniq |\\
 	bgzip > TMP/${TAG}.bed.gz

@@ -264,7 +264,7 @@ script:
     def with_vep_gnomad = (task.ext.gnomadvcf?true:false) && task.ext.with_vep_gnomad?true:false && !vep_gnomad_fields.isEmpty()
     def cadd = task.ext.cadd?:""
     def with_cadd = (task.ext.with_cadd?true:false) && !cadd.isEmpty()
-    def vcfpolyx_size = (task.ext.vcfpolyx_size?10) 
+    def vcfpolyx_size = (task.ext.vcfpolyx_size?:10) 
 """
 mkdir -p TMP
 set -x
@@ -602,17 +602,25 @@ then
 
     awk -f "${moduleDir}/../../modules/gatk/possibledenovo/pedigree4gatk.awk" "${valid_trios}" > TMP/jeter.trio.ped
 
+    # bug in gatk, it expects that variants are diploids https://github.com/broadinstitute/gatk/blob/342c5ca3adc78e50ab2cc948c71a5ae64574b4ce/src/main/java/org/broadinstitute/hellbender/utils/samples/MendelianViolation.java#L180
+    # split haploid, diploid
+    bcftools view --threads ${task.cpus} -i 'COUNT(GT="R")==0 && COUNT(GT="A")==0' -O z -o  TMP/jeter1.diploids.vcf.gz TMP/jeter1.vcf.gz
+    bcftools index --threads ${task.cpus} -f -t TMP/jeter1.diploids.vcf.gz
+    bcftools view --threads ${task.cpus} -e 'COUNT(GT="R")==0 && COUNT(GT="A")==0' -O b -o  TMP/jeter1.haploid.bcf TMP/jeter1.vcf.gz
+    bcftools index --threads ${task.cpus} -f  TMP/jeter1.haploid.bcf
 
     gatk --java-options "-XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" VariantAnnotator \\
         -R "${fasta}" \\
         --annotation PossibleDeNovo \\
         --pedigree  TMP/jeter.trio.ped \\
-        -V TMP/jeter1.vcf.gz \\
+        -V TMP/jeter1.diploids.vcf.gz \\
         -O "TMP/jeter2.vcf.gz"
     
-    bcftools view --threads ${task.cpus} --write-index -O b -o TMP/jeter1.bcf TMP/jeter2.vcf.gz
+    bcftools concat -a --threads ${task.cpus} --write-index -O b -o TMP/jeter1.bcf TMP/jeter2.vcf.gz TMP/jeter1.haploid.bcf
     ${countVariants("TMP/jeter1.bcf")}
     rm -f TMP/jeter1.vcf.gz  TMP/jeter1.vcf.gz.tbi TMP/jeter2.vcf.gz TMP/jeter2.vcf.gz.tbi
+    rm -f TMP/jeter1.diploids.vcf.gz TMP/jeter1.diploids.vcf.gz.tbi
+    rm -f TMP/jeter1.haploid.bcf TMP/jeter1.haploid.bcf.csi
 fi
 
 ################################################################################

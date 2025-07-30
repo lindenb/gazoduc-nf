@@ -65,7 +65,7 @@ echo '##INFO=<ID=${TAG},Number=1,Type=Float,Description="Homologous Missense Con
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	url: "\${URL}"
+	url: "${url}"
 END_VERSIONS
 """
 }
