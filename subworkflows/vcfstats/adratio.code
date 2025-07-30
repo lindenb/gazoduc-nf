@@ -1,0 +1,61 @@
+
+class ADArray {
+    long[] count=new long[10];
+    void visit(final int[] ad) {
+        double total = ad[0]+ad[1];
+        int  idx  = (int)((Math.min(ad[0],ad[1])/total)*count.length);
+        count[idx]++;
+        }
+     void print(java.io.PrintStream out,final String prefix) {
+    	double dx= 1.0/count.length;
+    	for(int i=0;i< count.length;i++) {
+    		out.println(prefix+"\t        "+(int)(i*dx*100)+"-"+(int)((i+1)*dx*100)+": " + count[i]);
+    		}
+    	}
+    }
+
+class SampleInfo {
+    final String sn;
+    final ADArray hom_var = new ADArray();
+    final ADArray het = new ADArray();
+    final ADArray hom_ref = new ADArray();
+    
+    SampleInfo(final String sn) {
+        this.sn=sn;
+        }
+    void visit(final Genotype gt) {
+    	if(gt.isFiltered()) return;
+        if(!gt.hasAD()) return;
+        final int[] ad = gt.getAD();
+        if(ad.length!=2) return;
+        if(gt.isHomVar()) hom_var.visit(ad);
+        else if(gt.isHet()) het.visit(ad);
+        else if(gt.isHomRef()) hom_ref.visit(ad);
+        }
+   	 void print(java.io.PrintStream out,final String prefix, final ADArray what) {
+   	 	out.println(prefix+"\t    "+sn+":");
+   	 	what.print(out,prefix);
+   	 	}
+   	 void print(java.io.PrintStream out) {
+   	 	this.print(out,"HOM_VAR",hom_var);
+   	 	this.print(out,"HOM_REF",hom_ref);
+   	 	this.print(out,"HET",het);
+   	 	}
+    }
+
+final Map<String,SampleInfo> sn2info = new HashMap<>(header.getNGenotypeSamples());
+
+for(String sn:header.getSampleNamesInOrder() ) {
+	sn2info.put(sn,new SampleInfo(sn));
+	}
+
+stream().
+	flatMap(V->V.getGenotypes().stream()).
+    forEach(G->sn2info.get(G.getSampleName()).visit(G))
+	;
+	
+
+
+for(SampleInfo si: sn2info.values()) {
+    si.print(System.out);
+    }
