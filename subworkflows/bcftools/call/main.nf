@@ -69,8 +69,12 @@ workflow BCFTOOLS_CALL {
 			)
 		versions = versions.mix(BCFTOOLS_MERGE.out.versions)
 
+		SET_GQ(BCFTOOLS_MERGE.out.vcf)
+		versions = versions.mix(SET_GQ.out.versions)
+
+
 		BCFTOOLS_CONCAT(
-			BCFTOOLS_MERGE.out.vcf
+			SET_GQ.out.vcf
 				.map{[[id:"call"],[it[1],it[2]]]}
 				.groupTuple()
 				.map{[it[0],it[1].flatten()]},
@@ -83,3 +87,70 @@ workflow BCFTOOLS_CALL {
 		vcf = BCFTOOLS_CONCAT.out.vcf
 	}
 
+
+
+
+process SET_GQ {
+tag "${meta.id?:""}"
+label "process_single"
+afterScript "rm -rf TMP"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+input:
+   tuple val(meta),path(vcf),path(vcfidx)
+output:
+    tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
+    path("versions.yml"),emit:versions
+script:
+    def prefix = task.ext.prefix?:"\${MD5}"+".gq"
+"""
+set -x
+mkdir -p TMP
+MD5=`cat "${vcf}" | md5sum | cut -d ' ' -f1`
+
+cat << __EOF__ > TMP/jeter.code
+final VariantContextBuilder vcb = new VariantContextBuilder(variant);
+vcb.genotypes(
+  variant.getGenotypes().stream().map(G->{
+	if(G.hasGQ()) return G;
+        final GenotypeBuilder gb=new GenotypeBuilder(G);
+        final int dp= (G.hasDP()?G.getDP():30);
+        double gq = 99;
+        if(dp<25) gq = gq * (dp/25.0);
+        if(G.isNoCall()) {
+                gq=0;
+                }
+        else if(G.hasAD() && G.getAD().length==2) {
+                final int[] ad=G.getAD();
+                double dp2 = ad[0]+ad[1];
+                if((G.isHomRef() || G.isHomVar()) && dp2>0) {
+                        gq = gq * Math.max(ad[0],ad[1])/dp2;
+                        }
+                else if(G.isHet() && dp2>0) {
+                        gq = gq * ((Math.min(ad[0],ad[1])/dp2) / 0.5 );
+                        }
+                }
+        gb.GQ((int)gq);
+        return gb.make();
+        }).collect(Collectors.toList())
+  );
+return vcb.make();
+__EOF__
+
+
+bcftools view "${vcf}" |\\
+	awk '/^#CHROM/ {printf("##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\\"Genotype Quality for bcftools\\">\\n");} {print;}' |\\
+	jvarkit  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcffilterjdk -f ~/jeter.code |\\
+	bcftools view -O b -o TMP/jeter.bcf
+
+bcftools index --threads ${task.cpus} -f TMP/jeter.bcf
+
+mv TMP/jeter.bcf     ${prefix}.bcf
+mv TMP/jeter.bcf.csi ${prefix}.bcf.csi
+
+cat << END_VERSIONS > versions.yml
+${task.process}:
+    bcftools: \$(bcftools version | awk '(NR==1)  {print \$NF}')
+    jvarkit: todo
+END_VERSIONS
+"""
+}
