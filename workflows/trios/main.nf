@@ -31,12 +31,22 @@ include {DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GTF     } from '../../modules/gtf/down
 include {SCATTER_TO_BED                           } from '../../subworkflows/gatk/scatterintervals2bed'
 include {BCTOOLS_MENDELIAN2                       } from '../../modules/bcftools/mendelian2/main.nf'
 include {HET_COMPOSITE  as APPPLY_HET_COMPOSITE   } from '../../modules/jvarkit/hetcomposite/main.nf'
-include {BCFTOOLS_CONCAT as CONCAT1                } from '../../modules/bcftools/concat/main.nf'
+include {BCFTOOLS_CONCAT as CONCAT1               } from '../../modules/bcftools/concat/main.nf'
 include {WORKFLOW_SNV                             } from './sub.snv.nf'
 include {WORKFLOW_SV                              } from './sub.sv.nf'
 include {SOMALIER_BAMS                            } from '../../subworkflows/somalier/bams/main.nf'
 include {MULTIQC                                  } from '../../modules/multiqc'
 include {COMPILE_VERSIONS                         } from '../../modules/versions/main.nf'
+include {runOnComplete; dumpParams                } from '../../modules/utils/functions.nf'
+
+
+
+if( params.help ) {
+    dumpParams(params);
+    exit 0
+}  else {
+    dumpParams(params);
+}
 
 Map assertKeyExists(final Map hash,final String key) {
     if(!hash.containsKey(key)) throw new IllegalArgumentException("no key ${key}'in ${hash}");
@@ -90,11 +100,12 @@ workflow {
         def fasta  = [ref_hash, file(params.fasta) ]
         def fai    = [ref_hash, file(params.fai) ]
         def dict   = [ref_hash, file(params.dict) ]
-        def bed    = params.bed!=null ? [ref_hash,file(params.bed)] : [ref_hash, [] ]
+        def bed    = [ref_hash,[]]
         def pedigree = [[id:"pedigree"],file(params.pedigree)]
-        
+
         def versions = Channel.empty()
         to_multiqc = Channel.empty()
+
 
         vcfs = Channel.fromPath(params.samplesheet)
             .splitCsv(header:true,sep:',')
@@ -194,19 +205,6 @@ workflow {
          }
 
 
-    /*
-        STRUCTURAL_VARIANTS(
-            [id:"sv"],
-            fasta,
-            fai,
-            dict,
-            DOWNLOAD_GTF.out.output,
-            pedigree,
-            vcfs.sv.take(10)//TODO
-        )*/
-
-
-
         WORKFLOW_SNV(
             [id:"snv"],
             fasta,
@@ -220,7 +218,10 @@ workflow {
             triosbams_ch,
             vcfs.snv
             )
+        
+        
         versions = versions.mix(WORKFLOW_SNV.out.versions)
+        to_multiqc =  to_multiqc.mix(WORKFLOW_SNV.out.multiqc)
 
         WORKFLOW_SV(
             [id:"snv"],
@@ -240,199 +241,15 @@ workflow {
 
 
 
-	    COMPILE_VERSIONS(versions.collect())
-	    to_multiqc = to_multiqc.mix(COMPILE_VERSIONS.out.multiqc)
+        COMPILE_VERSIONS(versions.collect())
+        to_multiqc = to_multiqc.mix(COMPILE_VERSIONS.out.multiqc)
 
        MULTIQC(to_multiqc.collect().map{[[id:"trios"],it]})
+       
 }
 
+runOnComplete(workflow)
 
-process FILTER_MENDELIAN {
-    tag "${meta.id?:vcf.name}"
-    label "process_single"
-    conda "${moduleDir}/../../conda/bioinfo.01.yml"
-    afterScript "rm -rf TMP"
-    input:
-        tuple val(meta1 ),path(pedigree)
-        tuple val(meta ),path(vcf),path(idx)
-    output:
-        tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
-    script:
-        def prefix = task.ext.prefix?:vcf.baseName+".merr"
-    """
-    mkdir -p TMP
-cat << EOF > TMP/jeter.code
-final Set<String> controls = new HashSet<>(Arrays.asList(
-EOF
-
-awk '(\$3=="0" && \$4=="0") {print \$2;}' "${pedigree}" | sort| uniq > TMP/jeter.controls
-
-comm -13 <(cut -f2  "${pedigree}" | sort | uniq) \\
-     <(bcftools query -l "${vcf}"| sort | uniq)  >> TMP/jeter.controls
-
-
- awk '{printf("\"%s\"\\n",\$2);}' TMP/jeter.controls | paste -s -d, >> TMP/jeter.code
-
-cat << EOF >> TMP/jeter.code
-));
-return variant
-    .getGenotypes()
-    .stream()
-    .filter(G->controls.contains(G.getSampleName()))
-    .noneMatch(G->G.hasAltAllele())
-    ;
-EOF
-
-
-    bcftools view -i 'INFO/loConfDeNovo!="" || INFO/hiConfDeNovo!="" || INFO/MERR>0' '${vcf}' |\\
-        jvarkit -XX:-UsePerfData -Djava.io.tmpdir=TMP vcffilterjdk --filter 'CONTROL_WITH_ALT' -f TMP/jeter.code |\\
-        bcftools view -O b -o ${prefix}.bcf
-    bcftools index --threads "${task.cpus}"  -f "${prefix}.bcf"
-    """
-}
-
-process MERGE_AND_FILTER {
-    tag "${meta.id} ${meta.contig?:""}"
-    label "process_single"
-    conda "${moduleDir}/../../conda/bioinfo.01.yml"
-    afterScript "rm -rf TMP"
-    input:
-        tuple val(met1),path(pedigree)
-        tuple val(meta),path("VCFS/*")
-    output:
-        tuple val(meta),path("*.vcf.gz"),path("*.tbi"),emit:vcf
-        tuple val(meta),path("*.table.txt")
-        tuple val(meta),path("*.genes.tsv")
-        tuple val(meta),path("*.bed"),emit:bed //used for igv reports
-    script:
-        def prefix = task.ext.prefix?:"snv"
-    """
-    mkdir -p TMP
-    find VCFS/  -name "*.vcf.gz" -o -name "*.bcf" | sort > TMP/jeter.list
-    
-    bcftools concat --allow-overlaps --file-list TMP/jeter.list -O z -o TMP/jeter.vcf.gz
-    bcftools index -t -f TMP/jeter.vcf.gz
-
-    bcftools view --apply-filters '.,PASS' TMP/jeter.vcf.gz |\\
-        jvarkit -Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP vcf2table \\
-            --hide 'HOM_REF,NO_CALL' --pedigree ${pedigree} > TMP/jeter.table.txt
-
-    bcftools view --apply-filters '.,PASS' TMP/jeter.vcf.gz |\\
-        jvarkit -Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP groupbygene > TMP/jeter.genes.tsv
-
-    bcftools view --apply-filters '.,PASS' TMP/jeter.vcf.gz |\\
-        jvarkit -Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP bioalcidaejdk \\
-            -e 'stream().forEach{
-                final Set<String> set = new HashSet<>();
-                for(int side=0;side<2;side++) {
-                    final String tag=(i==0?"hiConfDeNovo":"loConfDeNovo");
-                    if(!variant.hasAttribute(tag)) continue; 
-                    set.addAll(variant.getAttributeAsStringList(tag,""));
-                    }
-                for(String s : set) {
-                    println(variant.getContig()+"\t"+(variant.getStart()-1)+"\t"+variant.getEnd()+"\t"+s);
-                    }
-                }' |\\
-        LC_ALL=C sort -T TMP -k1,1 -k2,2n |\\
-        uniq > TMP/jeter.bed
-
-    mv TMP/jeter.vcf.gz ./${prefix}.vcf.gz
-    mv TMP/jeter.vcf.gz.tbi ./${prefix}.vcf.gz.tbi
-    mv TMP/jeter.table.txt ./${prefix}.table.txt
-    mv TMP/jeter.genes.tsv ./${prefix}.genes.tsv
-    mv TMP/jeter.bed  ./${prefix}.bed
-    """
-}
-
-/********************************************************************************************
- * STRUCTURAL_VARIANTS
- */
-workflow STRUCTURAL_VARIANTS {
-    take:
-        meta
-        fasta
-        fai
-        dict
-        gtf
-        pedigree
-        vcfsv
-    main:
-        versions = Channel.empty()
-      
-      
-      
-        //BCTOOLS_MENDELIAN2(fai, pedigree, NO_CALL_TO_HOM_REF.out.vcf)
-	vcf = Channel.empty()
-    emit:
-	vcf
-        //vcf = BCTOOLS_MENDELIAN2.out.vcf
-        versions
-}
-
-/********************************************************************************************
- * HET_COMPOSITE
- */
-workflow HET_COMPOSITE {
-    take:
-        meta
-        fasta
-        fai
-        dict
-        pedigree
-        vcfs
-    main:
-        versions = Channel.empty()
-        /** merge VCFS */
-        CONCAT1(
-            vcfs
-                .map{[it[1],it[2]]}
-                .collect()
-                .map{[meta,it.flatten()]},
-            [[:],[]]//NO BED
-            )
-        versions = versions.mix(CONCAT1.out.versions)
-
-        FILTER_FOR_HET_COMPOSITE(CONCAT1.out.vcf)
-        versions = versions.mix(FILTER_FOR_HET_COMPOSITE.out.versions)
-        
-        APPPLY_HET_COMPOSITE(
-                fasta,
-                fai,
-                dict,
-                pedigree,
-                FILTER_FOR_HET_COMPOSITE.out.vcf
-                )
-        versions = versions.mix(APPPLY_HET_COMPOSITE.out.versions)
-        
-    emit:
-        vcf = APPPLY_HET_COMPOSITE.out.vcf
-        versions
-}
-
-process FILTER_FOR_HET_COMPOSITE {
-tag "${meta.id}"
-label "process_single"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-afterScript "rm -rf TMP"
-input:
-    tuple val(meta),path(vcf),path(vcfix)
-output:
-    tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
-    path("versions.yml"),emit:versions
-
-script:
-    def prefix = task.ext.prefix?:meta.id+".filterhetcomposite"
-"""
-mkdir -p TMP
-bcftools view ${vcf} |\\
-    bcftools view --apply-filters '.,PASS' --write-index -O b -o ${prefix}.bcf
-
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-    bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
-END_VERSIONS
-"""
-}
 
 process README {
 tag "${meta.id?:""}"

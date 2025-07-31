@@ -24,34 +24,29 @@ SOFTWARE.
 */
 
 
-process BEDTOOLS_INTERSECT {
+process BEDTOOLS_SUMMARY {
 label "process_single"
 tag "${meta.id?:""}"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-afterScript "rm -rf TMP"
 input:
-    tuple val(meta1),path(optional_fai)
-	tuple val(meta),path(file1),path(file2)    
+    tuple val(meta1),path(fai)
+	tuple val(meta),path(bed)    
 output:
-	tuple val(meta),path("*.bed"),emit:output
+	tuple val(meta),path("*.tsv"),emit:summary
 	path("versions.yml"),emit:versions
 script:	
-    def sizes = optional_fai?"-g ${optional_fai}":''
-    def prefix = task.ext.prefix?:"\${MD5}.intersect"
+    def prefix = task.ext.prefix?:bed.baseName+".summary"
+    def awk_expr = task.ext.awk_expr:?""
 """
 hostname 1>&2
+set -o pipefail
 mkdir -p TMP
 
-bedtools intersect \\
-    ${sizes} \\
-    -a ${file1} \\
-    -b ${file2} > "TMP/jeter.bed"
+awk '${awk_expr}{printf("%s\t%s\\n",\$1,\$2);}' > TMP/genome.tsv
 
-sort -T TMP -k1,1 -k2,2n -t '\t' TMP/jeter.bed > TMP/jeter2.bed
-
-MD5=`cat TMP/jeter2.bed | md5sum | cut -d ' ' -f1`
-
-mv TMP/jeter2.bed "${prefix}.bed"
+bedtools summary \\
+    -i ${bed} \\
+    -g TMP/genome.tsv > "${prefix}.tsv"
 
 
 cat << EOF > versions.yml

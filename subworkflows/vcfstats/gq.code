@@ -1,0 +1,47 @@
+
+
+class SampleInfo {
+    final String sn;
+    final long[] count=new long[10];
+    
+    
+    SampleInfo(final String sn) {
+        this.sn=sn;
+        }
+    void visit(final Genotype gt) {
+    	if(gt.isFiltered()) return;
+        if(!gt.hasGQ()) return;
+        final int gq= Math.min(100,gt.getGQ());
+        if(gq<0) return;
+        final int  idx  = (int)((gq/100.0)*(count.length-1));
+        count[idx]++;
+        }
+    
+   	 void print(java.io.PrintStream out) {
+   	 	out.println("    "+sn+":");
+   	 	double dx= 100.0/count.length;
+    	for(int i=0;i< count.length;i++) {
+    		out.println("        "+(int)(i*dx)+"-"+(int)((i+1)*dx)+": " + count[i]);
+    		}
+   	 	}
+    }
+
+final Map<String,SampleInfo> sn2info = new HashMap<>(header.getNGenotypeSamples());
+
+for(String sn:header.getSampleNamesInOrder() ) {
+	sn2info.put(sn,new SampleInfo(sn));
+	}
+
+stream()
+    __FILTER1__
+	.flatMap(V->V.getGenotypes().stream())
+    __FILTER2__
+    .forEach(G->sn2info.get(G.getSampleName()).visit(G))
+	;
+
+
+if(sn2info.values().stream().anyMatch(S->Arrays.stream(S.count).max().orElse(0L)>0L)) {
+for(SampleInfo si: sn2info.values()) {
+    si.print(System.out);
+    }
+}

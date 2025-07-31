@@ -18,8 +18,10 @@ take:
     vcf
 main:
     versions = Channel.empty()
+    multiqc = Channel.empty()
 
     /** break the VCF into parts */
+    
     SPLIT_VCF(
         meta,
         fasta,
@@ -30,7 +32,7 @@ main:
         )
     vcf = SPLIT_VCF.output.vcf
 
-
+    
     ANNOT_SNV(
         meta,
         fasta,
@@ -56,7 +58,7 @@ main:
         vcf
         )
     versions = versions.mix(WORKFLOW_DENOVO_SNV.out.versions)
-    
+    multiqc = multiqc.mix(WORKFLOW_DENOVO_SNV.out.multiqc)
 
     WORKFLOW_COMPOSITE_SNV(
         meta,
@@ -70,6 +72,8 @@ main:
         vcf
     )
      versions = versions.mix(WORKFLOW_COMPOSITE_SNV.out.versions)
+     
 emit:
     versions
+    multiqc
 }

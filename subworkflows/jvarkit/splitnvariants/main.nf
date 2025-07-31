@@ -18,24 +18,18 @@ take:
     fasta
     fai
     dict
-    bed
+    bed //must be defined, use SCATTER to bed if needed
     vcfs
 main:
     versions = Channel.empty()
     
-	if(!bed[1]) {
-		SCATTER_TO_BED(meta,fasta,fai,dict)
-		bed = SCATTER_TO_BED.out.bed
-		versions= versions.mix(SCATTER_TO_BED.out.versions)
-    	} 
-
 	BED_CLUSTER(fasta,fai,dict,bed)
 	versions= versions.mix(BED_CLUSTER.out.versions)
 	bed = BED_CLUSTER.out.bed.flatMap{toFlatMap(it)}
 
 
 	SPLIT_N_VARIANTS(
-		vcfs.combine(bed).map{[it[0],it[1],it[2],it[4]]}.view()
+		vcfs.combine(bed).map{[it[0],it[1],it[2],it[4]]}
 		)
 	versions= versions.mix(SPLIT_N_VARIANTS.out.versions)
 

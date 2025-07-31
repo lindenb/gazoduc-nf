@@ -30,7 +30,10 @@ include { HC_COMBINE2 } from '../../../modules/gatk/gatk4.combine.gvcfs.02.nf'
 include { HC_GENOTYPE } from '../../../modules/gatk/gatk4.genotype.gvcfs.01.nf'
 include { HC_GENOMICDB_IMPORT} from '../../../modules/gatk/gatk4.genomicdb.import.01.nf'
 include { HC_GENOMICDB_GENOTYPE} from '../../../modules/gatk/gatk4.genomicdb.genotype.01.nf'
-include { SPLIT_BED; SPLIT_BED as SPLIT_BED2} from './part.split.bed.nf'
+include { SPLIT_BED; SPLIT_BED as SPLIT_BED2 } from './part.split.bed.nf'
+include {VCF_STATS                           } from '../../../subworkflows/vcfstats'
+include {COMPILE_VERSIONS                    } from '../../../modules/versions/main.nf'
+include {MULTIQC                             } from '../../../modules/multiqc'
 
 // Print help message, supply typical command line usage for the pipeline
 if (params.help) {
@@ -72,27 +75,31 @@ workflow {
 		map{file(it.trim())}
 
 	bams_ch = Channel.empty()
-	
+	versions = Channel.empty()
+	multiqc = Channel.empty()
 
-         ref_hash = [
-                id:   file(params.fasta).simpleName,
-                name: file(params.fasta).simpleName
-                ]
+	ref_hash = [
+		id:   file(params.fasta).simpleName,
+		name: file(params.fasta).simpleName,
+		ucsc_name : params.ucsc_name?:"undefined"
+		]
 
-        fasta = [ref_hash,file(params.fasta)]
-        fai   = [ref_hash,file(params.fai)]
-        dict  = [ref_hash,file(params.dict)]
-	
+	fasta = [ref_hash,file(params.fasta)]
+	fai   = [ref_hash,file(params.fai)]
+	dict  = [ref_hash,file(params.dict)]
+	def gtf    = [ref_hash, file(params.gtf), file(params.gtf+".tbi") ]
+	def gff3    = [ref_hash, file(params.gff3), file(params.gff3+".tbi") ]
 
-        if(!params.dbsnp.contains("."))
+
+        if(params.dbsnp!=null)
                 {
-                dbsnp =     [ [:], [] ]
-                dbsnp_tbi = [ [:], [] ]
+                dbsnp =     [ref_hash, [] ]
+                dbsnp_tbi = [ref_hash, [] ]
                 }
         else
                 {
-                dbsnp =     [ [:], file(params.dbsnp)]
-                dbsnp_tbi = [ [:], file(params.dbsnp+".tbi") ]
+                dbsnp =     [ ref_hash, file(params.dbsnp)]
+                dbsnp_tbi = [ ref_hash, file(params.dbsnp+".tbi") ]
                 }
 
 	hc_ch = Channel.empty()
@@ -141,9 +148,9 @@ workflow {
 		dbsnp_tbi,
 		bams_ch.combine(beds_ch)
 		)
-
+	versions = versions.mix(HC_BAM_BED.out.versions )
 		
-	hc_ch = hc_ch.mix( HC_BAM_BED.out.output)
+	hc_ch = hc_ch.mix( HC_BAM_BED.out.gvcf)
 		
 
     if(params.combine_method.equalsIgnoreCase("combinegvcf")) {
@@ -180,12 +187,14 @@ workflow {
 		beds2_ch = SPLIT_BED2(bed_gvcfs).output.
 			flatMap{L1->{
 			def key = (L1.get(0) instanceof List? L1.get(0):[L1.get(0)]);
-			L = []
+			def L = []
 			for(i=0;i< key.size();i++) {
 				L.add([key.get(i),L1.get(1)])
 				}
 			return L;
 			}}
+		beds2_ch.view{"beds2_ch $it"}
+
 		if( params.combine_method.equalsIgnoreCase("genomicsDB")) {
 			genomiddb_ch = HC_GENOMICDB_IMPORT(fasta,fai,dict,beds2_ch)
 			hg = HC_GENOMICDB_GENOTYPE(fasta,fai,dict, dbsnp, dbsnp_tbi, genomiddb_ch.output)
@@ -216,8 +225,26 @@ workflow {
 	concat_ch  = VCF_CONCAT2(concat0_ch.output.flatten().collect())
 
 	if(params.with_multiqc==true) {
-		stats_ch = BCFTOOLS_STATS(fasta,fai,dict,concat_ch.output)
-		mqc_ch = MULTIQC(file(params.sample2population), stats_ch.output)
+		VCF_STATS(
+			ref_hash,
+			fasta,
+			fai,
+			dict,
+			Channel.of(gtf),
+			Channel.of(gff3),
+			[[id:"noped"],[]],
+			[[id:"nogroup2sample"],[]],
+			[[id:"nobed"],[]],
+			concat_ch.output
+			)
+		versions = versions.mix(VCF_STATS.out.versions)
+		multiqc = versions.mix(VCF_STATS.out.multiqc)
+
+
+        COMPILE_VERSIONS(versions.collect())
+        multiqc = multiqc.mix(COMPILE_VERSIONS.out.multiqc)
+
+		MULTIQC(multiqc.collect().map{[[id:"gatk4"],it]})
 		}
 
 	}
@@ -251,6 +278,11 @@ done
 
 LC_ALL=C sort -t '\t' -k1,1 -T TMP TMP/sample.map > "sample.\${MD5}.map"
 test -s "sample.\${MD5}.map"
+
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	sort: todo
+END_VERSIONS
 """
 }
 
@@ -260,9 +292,6 @@ tag "${bed.name} ${bam.name}"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 label "process_single"
 afterScript "rm -rf TMP"
-errorStrategy "retry"
-maxRetries 2
-cpus 2
 input:
 	tuple val(meta1), path("_reference.fa")
 	tuple val(meta2), path("_reference.fa.fai")
@@ -271,9 +300,12 @@ input:
 	tuple val(meta5), path(dbsnp_tbi)
 	tuple val(meta),path(bam),path(bai),path(fasta2),path(fai2),path(dict2),path(bed)
 output:
-	tuple path(bed),path("${bam.getBaseName()}.g.vcf.gz"),path("${bam.getBaseName()}.g.vcf.gz.tbi"),emit:output
+	tuple path(bed),path("*g.vcf.gz"),path("*.g.vcf.gz.tbi"),emit:gvcf
+	path("versions.yml"),emit:versions
 script:
 	def reference="_reference"
+	def prefix = task.ext.prefix?:bam.getBaseName()
+	def mapq = ((task.ext.mapq?:-1) as int)
 """
 hostname 1>&2
 mkdir -p TMP
@@ -297,7 +329,7 @@ test -s TMP/jeter.bed
      -R "${fasta2}" \\
      -I "${bam}" \\
      -ERC GVCF \\
-     ${(params.mapq as Integer)<1?"":" --minimum-mapping-quality "+params.mapq} \\
+     ${mapq <1?"":" --minimum-mapping-quality ${mapq}"}\\
      -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \\
      -O "TMP/jeter.g.vcf.gz"
 
@@ -309,11 +341,18 @@ then
 		TMP/jeter.g.vcf.gz > TMP/jeter2.vcf
 	
 	bcftools sort  -T TMP/sort  --max-mem "${task.memory.giga}G" -O z -o TMP/jeter.g.vcf.gz TMP/jeter2.vcf
-	bcftools index --force --tbi TMP/jeter.g.vcf.gz
+	bcftools index --threads ${task.cpus} --force --tbi TMP/jeter.g.vcf.gz
 fi
 
-mv TMP/jeter.g.vcf.gz "${bam.getBaseName()}.g.vcf.gz"
-mv TMP/jeter.g.vcf.gz.tbi "${bam.getBaseName()}.g.vcf.gz.tbi"
+mv TMP/jeter.g.vcf.gz "${prefix}.g.vcf.gz"
+mv TMP/jeter.g.vcf.gz.tbi "${prefix}.g.vcf.gz.tbi"
+
+
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	gatk: todo
+	bcftools: todo
+END_VERSIONS
 """
 }
 
@@ -342,6 +381,11 @@ bcftools concat --threads ${task.cpus} --allow-overlaps --rm-dups exact --file-l
 bcftools index --threads ${task.cpus} -f TMP/output.\${MD5}.bcf
 mv -v TMP/output.\${MD5}.bcf ./
 mv -v TMP/output.\${MD5}.bcf.csi ./
+
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+    bcftools: \$(bcftools version | awk '(NR==1)  {print \$NF}')
+END_VERSIONS
 """
 }
 
@@ -374,76 +418,14 @@ fi
 
 mv -v TMP/output.bcf ./
 mv -v TMP/output.bcf.csi ./
+
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+    bcftools: \$(bcftools version | awk '(NR==1)  {print \$NF}')
+END_VERSIONS
 """
 }
 
-
-process BCFTOOLS_STATS {
-label "process_single"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-cpus 10
-input:
-	tuple val(meta1), path(fasta)
-	tuple val(meta2), path(fai)
-	tuple val(meta3), path(dict)
-	tuple path(vcf),path(vcfidx)
-output:
-	path("stats.txt"),emit:output	
-script:
-	
-"""
-hostname 1>&2
-mkdir -p TMP
-
-bcftools stats --threads ${task.cpus} --samples - --fasta-ref "${fasta}" "${vcf}" > "stats.txt"
-
-"""
-}
-
-process MULTIQC {
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-label "process_single"
-input:
-	path(sample2pop)
-	path(stats)
-output:
-	path("multiqc.zip"),emit:output
-script:
-	def prefix = params.prefix
-"""
-hostname 1>&2
-mkdir -p TMP
-echo "${stats}" > TMP/jeter.list
-
-export LC_ALL=en_US.utf8
-
-if ${!sample2pop.name.equals("NO_FILE")}
-then
-
-mkdir -p TMP/OUT2 TMP/multiqc
-
-multiqc --outdir "TMP/multiqc" --force --file-list TMP/jeter.list --no-ansi
-
-java -jar jvarkit.jar multiqcpostproc --sample2collection "${sample2pop}" -o TMP/OUT2 TMP/multiqc/multiqc_data
-
-find TMP/OUT2 -type f -name "*.json" >> TMP/jeter.list
-
-fi
-
-		
-	mkdir -p "${prefix}multiqc"
-	multiqc  --filename  "${prefix}multiqc_report.html" --no-ansi \
-			--title "${prefix}GATK4 Calling"  \
-			--comment "calling with gatk4 ${prefix}.gatk"  \
-			--force \
-			--outdir "${prefix}multiqc" \
-			--file-list TMP/jeter.list
-		
-	rm -f multiqc.zip
-	zip -9 -r "multiqc.zip" "${prefix}multiqc"
-
-"""
-}
 
 
 process HC_GENOMICDB_IMPORT_AND_GENOTYPE {

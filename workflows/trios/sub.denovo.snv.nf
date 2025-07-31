@@ -1,6 +1,7 @@
-include {BCFTOOLS_CONCAT                           } from '../../modules/bcftools/concat/main.nf'
+include {BCFTOOLS_CONCAT                          } from '../../modules/bcftools/concat/main.nf'
 include {DOWNLOAD_CYTOBAND                        } from '../../modules/ucsc/download.cytobands/main.nf'
 include {DOWNLOAD_REFGENE                         } from '../../modules/ucsc/download.refgene/main.nf'
+include {VCF_STATS                                } from '../../subworkflows/vcfstats'
 
 
 workflow WORKFLOW_DENOVO_SNV {
@@ -16,7 +17,7 @@ take:
     vcf
 main:
     versions = Channel.empty()
-    
+    multiqc = Channel.empty()
     KEEP_DE_NOVO(pedigree,vcf)
     versions =  versions.mix(KEEP_DE_NOVO.out.versions)
 
@@ -30,7 +31,20 @@ main:
     versions =  versions.mix(KEEP_DE_NOVO.out.versions)
     vcf = BCFTOOLS_CONCAT.out.vcf
 
-
+    VCF_STATS(
+        meta,
+        fasta,
+        fai,
+        dict,
+        gtf,
+        gff3,
+        pedigree,
+        [[id:"nosample2group"],[]],
+        [[id:"nobed"],[]],
+        vcf
+        )
+   versions =  versions.mix(VCF_STATS.out.versions)
+    multiqc = multiqc.mix(VCF_STATS.out.multiqc)
 
     REPORT(pedigree,vcf)
     versions =  versions.mix(REPORT.out.versions)
@@ -66,6 +80,7 @@ main:
 emit:
     vcf = REPORT.out.vcf
     versions
+    multiqc
 }
 
 
@@ -230,6 +245,7 @@ script:
 """
 hostname 1>&2
 mkdir -p TMP
+set -x
 
 bcftools view \\
     --samples "${child},${father},${mother}" \\
@@ -247,6 +263,9 @@ echo -e "${contig}\t${start0}\t${end0}" > TMP/jeter.bed
 
 ##gunzip -c "${refgene}" > TMP/${refgene.baseName}
 
+
+
+
 cat << EOF >  TMP/header.html
 <div>
 De novo variant at ${contig}:${start}${end==start?"":"-"+end} for <b>child</b>:<i>${child}</i> , <b>father</b>:<i>${father}</i> , <b>mother</b>:<i>${mother}</i>
@@ -254,7 +273,11 @@ De novo variant at ${contig}:${start}${end==start?"":"-"+end} for <b>child</b>:<
 EOF
 
 
-cat << EOF >  TMP/footer.html
+
+bcftools view -i 'POS=${start}'  --regions "${contig}:${start}-${end}" "${vcf}" |\\
+        jvarkit  -Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP vcf2table --format html --no-html-header  > TMP/footer.html
+
+cat << EOF >> TMP/footer.html
 <div>
 Bam files: <code>${bamC}</code>, <code>${bamP}</code> , <code>${bamM}</code>.<br/>
 Generated on \$(date) by \${USER}.
@@ -263,13 +286,71 @@ EOF
 
 create_report TMP/jeter.bed  \\
     ${fasta} \\
-    --header TMP/header.html \\
-    --header TMP/footer.html \\
 	--ideogram "${cytoband}" \\
 	--flanking ${flanking} \\
 	${info_columns.isEmpty()?"":"--info-columns \"${info_columns}\""} \\
-	--tracks  TMP/jeter.vcf.gz ${bamC} ${bamP} ${bamM} ${refgene} \\
+	--tracks  ${refgene} TMP/jeter.vcf.gz ${bamC} ${bamP} ${bamM}  \\
 	--output TMP/jeter.html
+
+
+cat << '__EOF__' > TMP/jeter.xsl
+<?xml version="1.0" encoding="UTF-8" ?>
+<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="1.0">
+  <xsl:output method="html" encoding="UTF-8"/>
+  
+  <xsl:template match="/">
+    <xsl:apply-templates/>
+  </xsl:template>
+
+  <xsl:template match="title[name(..)='head']">
+	${contig}:${start}-${end} (${child})
+  </xsl:template>
+   
+  <xsl:template match="body[name(..)='html']">
+  <body>
+  <h1>${contig}:${start} (${child})</h1>
+  <div>
+  m4_sinclude(TMP/header.html)m4_dnl
+  </div>
+  <xsl:apply-templates/>
+  <div id="vcf2table">
+  m4_sinclude(TMP/footer.html)m4_dnl
+  </div>
+  </body>
+  </xsl:template>
+  
+  <xsl:template match="style[name(..)='head']">
+        <xsl:copy>
+          <xsl:copy-of select="@*"/>
+          <xsl:apply-templates/>
+	  <xsl:text>
+table.minimalistBlack { border: 1px solid #1F1F1F; text-align: left; border-collapse: collapse; }
+table.minimalistBlack td, table.minimalistBlack th { border: 1px solid #1F1F1F; padding: 5px 2px; }
+table.minimalistBlack tbody td { font-size: 13px; }
+table.minimalistBlack thead { background: #CFCFCF; background: -moz-linear-gradient(top, #dbdbdb 0%, #d3d3d3 66%, #CFCFCF 100%);background: -webkit-linear-gradient(top, #dbdbdb 0%, #d3d3d3 66%, #CFCFCF 100%); background: linear-gradient(to bottom, #dbdbdb 0%, #d3d3d3 66%, #CFCFCF 100%); border-bottom: 2px solid #000000; }
+table.minimalistBlack thead th { font-size: 15px; font-weight: bold; color: #000000; text-align: left; }
+table.minimalistBlack tfoot td { font-size: 14px; } 
+</xsl:text>
+        </xsl:copy>
+  </xsl:template>
+
+
+  <xsl:template match="@*|node()">
+        <xsl:copy>
+          <xsl:copy-of select="@*"/>
+          <xsl:apply-templates/>
+        </xsl:copy>
+  </xsl:template>
+
+</xsl:stylesheet>
+__EOF__
+
+xsltproc --html  TMP/jeter.xsl TMP/jeter.html | m4 -P > TMP/jeter2.html
+mv TMP/jeter2.html TMP/jeter.html
+
+
+
+
 
 mv -v "TMP/jeter.html" ./${prefix}.html
 
@@ -281,8 +362,15 @@ cat << EOF > TMP/jeter.html
     <td>${father}</td>
     <td>${mother}</td>
     <td><span class="${quality}">${quality}</span></td>
-</tr>
 EOF
+
+for S in ${child} ${father} ${mother}
+do
+	bcftools view -Ob --samples "\${S}" -i 'POS==${start}'  TMP/jeter.vcf.gz "${contig}:${start}" |\\
+		bcftools query --allow-undef-tags -f '<td>[<code>gt:%GT</code> <code>gq:%GQ</code> <code>ad:%AD</code> <code>dp:%DP</code>]</td>' >> TMP/jeter.html
+done
+	
+echo "</tr>" >> TMP/jeter.html
 
 mv -v "TMP/jeter.html" ./${prefix}.index
 
@@ -340,6 +428,9 @@ tr.loConfDeNovo {
         <th>Father</th>
         <th>Mother</th>
         <th>Quality</th>
+	<th>Child FORMAT</th>
+	<th>Father FORMAT</th>
+	<th>Mother FORMAT</th>
     </tr>
 </thead>
 <tbody>

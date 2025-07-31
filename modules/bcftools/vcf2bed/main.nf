@@ -37,18 +37,27 @@ output:
 	path("versions.yml"),emit:versions
 script:	
 	def prefix= task.ext.prefix?:vcf.baseName+".interval"
+	def awk_expr = task.ext.awk_expr?:""
+	if(task.ext.split==null) throw new IllegalArgumentException("ext.split not defined for ${task.process}");
+	// if TRUE : split the final file of N bed records to N files with one bed record
+	def split = (task.ext.split?:false) as boolean
 """
 hostname 1>&2
 set -o pipefail
-mkdir -p OUT TMP
+mkdir -p TMP
 
 bcftools index -s "${vcf}" |\\
-	awk -F '\t' '{printf("%s\t0\t%s\\n",\$1,\$2);}' |\\
+	awk -F '\t' '${awk_expr}{printf("%s\t0\t%s\\n",\$1,\$2);}' |\\
 	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter.bed
 	
 if test -s TMP/jeter.bed
 then
-	mv TMP/jeter.bed "${prefix}.bed"
+	if ${split}
+	then
+		split --lines=1 --additional-suffix=.bed -a 9 TMP/jeter.bed "${prefix}."
+	else
+		mv TMP/jeter.bed "${prefix}.bed"
+	fi
 fi
 
 

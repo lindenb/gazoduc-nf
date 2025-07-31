@@ -1,0 +1,15 @@
+
+final java.util.concurrent.atomic.AtomicLong num_variants = new java.util.concurrent.atomic.AtomicLong();
+final Counter<String> count=new Counter<>();
+final List<String> PASS_LIST = java.util.Collections.singletonList("PASS");
+
+stream()
+	.map(V->{ num_variants.incrementAndGet(); return V;})
+    .map(V->V.isFiltered() ? V.getFilters() : PASS_LIST )
+    .flatMap(L->L.stream())
+    .forEach(F->count.incr(F))
+	;
+
+for(String key: count.keySetDecreasing()) {
+    println(key+"\t"+count.count(key));
+    }

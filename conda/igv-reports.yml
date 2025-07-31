@@ -4,3 +4,5 @@ channels:
 dependencies:
   - bioconda::igv-reports=1.15.1
   - bioconda::bcftools
+  - bioconda::jvarkit
+  - anaconda::libxslt

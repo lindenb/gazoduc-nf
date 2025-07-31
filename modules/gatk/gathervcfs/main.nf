@@ -22,41 +22,39 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-
-
-process BEDTOOLS_INTERSECT {
-label "process_single"
+process GATHER_VCFS {
 tag "${meta.id?:""}"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+label "process_short"
 afterScript "rm -rf TMP"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
-    tuple val(meta1),path(optional_fai)
-	tuple val(meta),path(file1),path(file2)    
+	tuple val(meta),path("VCFS/*")
 output:
-	tuple val(meta),path("*.bed"),emit:output
-	path("versions.yml"),emit:versions
-script:	
-    def sizes = optional_fai?"-g ${optional_fai}":''
-    def prefix = task.ext.prefix?:"\${MD5}.intersect"
+	tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:vcf
+    path("versions.yml"),emit:versions
+script:
+    def prefix = task.ext.prefix?:"\${MD5}.gathervcfs"
 """
 hostname 1>&2
 mkdir -p TMP
+# gonna fail if there is a BCF, paranoid
+find VCFS/ \\( -name "*.vcf.gz" -o -name "*.bcf" \\) > TMP/jeter.list
+MD5=`cat TMP/jeter.list | md5sum | cut -d ' ' -f1`
 
-bedtools intersect \\
-    ${sizes} \\
-    -a ${file1} \\
-    -b ${file2} > "TMP/jeter.bed"
+gatk  --java-options "-Xmx${task.memory.giga}g -XX:-UsePerfData -Djava.io.tmpdir=TMP" GatherVcfs  \\
+	--INPUT TMP/jeter.list \\
+	--REORDER_INPUT_BY_FIRST_VARIANT \\
+	--OUTPUT TMP/jeter.vcf.gz	
 
-sort -T TMP -k1,1 -k2,2n -t '\t' TMP/jeter.bed > TMP/jeter2.bed
+bcftools index --force --threads "${task.cpus}" TMP/jeter.vcf.gz
 
-MD5=`cat TMP/jeter2.bed | md5sum | cut -d ' ' -f1`
+mv TMP/jeter.vcf.gz "${prefix}.vcf.gz"
+mv TMP/jeter.vcf.gz.tbi "${prefix}.vcf.gz.tbi"
 
-mv TMP/jeter2.bed "${prefix}.bed"
-
-
-cat << EOF > versions.yml
-${task.process}:
-	bedtools: "\$(bedtools --version | awk '{print \$NF}')"
-EOF
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	gatk: todo
+	bcftools: todo
+END_VERSIONS
 """
 }
