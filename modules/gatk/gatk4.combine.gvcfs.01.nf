@@ -26,8 +26,7 @@ process HC_COMBINE1 {
 tag "${bed.name}"
 label "process_single"
 afterScript "rm -rf TMP"
-errorStrategy "retry"
-maxRetries 2
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
         tuple val(meta1),path(fasta)
         tuple val(meta2),path(fai)
@@ -37,10 +36,10 @@ input:
         tuple path(bed),path("VCFS/*")
 output:
         tuple path(bed),path("*.g.vcf.gz"),path("*.g.vcf.gz.tbi"),emit:output
+	path("versions.yml"),emit:versions
 script:
 """
 hostname 1>&2
-module load gatk/0.0.0
 mkdir -p TMP
 set -x
 
@@ -60,5 +59,7 @@ MD5=`md5sum TMP/jeter.list | awk '{print \$1}'`
 
 mv TMP/combine1.g.vcf.gz "\${MD5}.g.vcf.gz"
 mv TMP/combine1.g.vcf.gz.tbi "\${MD5}.g.vcf.gz.tbi"
+
+touch versions.yml
 """
 }
