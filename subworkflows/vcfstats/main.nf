@@ -54,6 +54,21 @@ main:
         ]
     )
 
+    conditions_filter_ch = Channel.of(
+        [
+        id: "pass",
+        label: "PASS",
+        filter1: ".filter(V->V.isNotFiltered())",
+        filter2: ""
+        ],
+        [
+        id: "filtered",
+        label: "FILTERed",
+        filter1: ".filter(V->V.isFiltered())",
+        filter2: ""
+        ]
+    )
+
 
     GATK_DE_NOVO(vcf2,bed)
     versions= versions.mix(GATK_DE_NOVO.out.versions)
@@ -68,10 +83,28 @@ main:
     versions= versions.mix(GENOTYPE_QUALITY.out.versions)
     multiqc = multiqc.mix(GENOTYPE_QUALITY.out.multiqc.map{it instanceof List?it:[it]}.flatMap())
     
-     FILTERS(vcf2,bed)
+    FILTERS(vcf2,bed)
     versions= versions.mix(FILTERS.out.versions)
     multiqc = multiqc.mix(FILTERS.out.multiqc)
     
+
+    DEPTH(vcf2.combine(conditions_filter_ch) ,bed)
+    versions= versions.mix(DEPTH.out.versions)
+    multiqc = multiqc.mix(DEPTH.out.multiqc)
+
+
+    gatk_field_ch = Channel.of(
+        [tag:"FS", range:"0,10,20,40,60,80,100,120,140,160,180,200,220,240,260,280,300,320,340,360,380,400"],
+        [tag:"MQ", range:"0,10,20,30,40,50,60,70,80,90,100"],
+        [tag:"MQRankSum", range:"-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1,0,1,2,3,4,5,6,7,8,9,10,11,12"],
+        [tag:"QD", range:"0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30"],
+        [tag:"ReadPosRankSum", range:"-5,-4,-3,-2,-1,0,1,2,3,4,5"],
+        [tag:"SOR", range:"0,1,2,3,4,5,6,7,8,9,10"]
+    )
+
+    TAG_DISTRIBUTION(vcf2.combine(gatk_field_ch) ,bed)
+    versions= versions.mix(TAG_DISTRIBUTION.out.versions)
+    multiqc = multiqc.mix(TAG_DISTRIBUTION.out.multiqc)
 emit:
     versions
     multiqc
@@ -438,3 +471,173 @@ ${task.process}:
 END_VERSIONS
 """
 }
+
+
+
+
+process DEPTH {
+tag "${meta.id?:""} ${condition.id}"
+label "process_single"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
+when:
+    task.ext.when == null || task.ext.when
+input:
+    tuple val(meta ),path("VCFS/*"),val(condition)
+    tuple val(meta2),path(optional_bed)
+output:
+    path("*_mqc.yml"),optional:true, emit:multiqc
+    path("versions.yml"),emit:versions
+script:
+    def section_id = task.ext.section_id?:"dp_id"+condition.id;
+    def section_name = task.ext.section_name?:"VCF stats";
+    def prefix  = task.ext.prefix?:"dp"
+"""
+mkdir -p TMP
+set -x
+set +o pipefail
+
+find VCFS/ \\( -name "*.bcf" -o -name "*.vcf.gz" \\) | sort > TMP/jeter.list
+
+
+bcftools concat -O u --file-list TMP/jeter.list |\\
+    bcftools view --header-only > TMP/header.vcf
+
+bcftools query -l TMP/header.vcf > TMP/jeter.samples
+
+
+if grep -F '##FORMAT=<ID=DP,' TMP/header.vcf && test -s TMP/jeter.samples
+then
+
+cat "${moduleDir}/dp.code" |\\
+    m4 -P \\
+        -D__FILTER1__='${condition.filter1}' \\
+        -D__FILTER2__='${condition.filter2}' > TMP/jeter.code
+
+
+bcftools concat \\
+    ${optional_bed?"--regions-file \"${optional_bed}\"":""} \\
+    --file-list TMP/jeter.list \\
+    -Ov |\\
+    jvarkit -Djava.io.tmpdir=TMP bioalcidaejdk -F VCF -f TMP/jeter.code |\\
+    sed 's/\\[-Inf/[0/' > TMP/jeter.tsv
+
+
+if test -s TMP/jeter.tsv
+then
+
+cat << EOF > TMP/jeter_mqc.tsv
+id: "${section_id}"
+section_name: "${section_name} "
+description: "DP"
+plot_type: "bargraph"
+pconfig:
+    id : "${section_id}_plot"
+    title: "DEPTH ${condition.label}"
+    xlab: "Sample"
+    ylab: "Count(DP)"
+data:
+EOF
+
+cat TMP/jeter.tsv >> TMP/jeter_mqc.tsv
+
+mv TMP/jeter_mqc.tsv ${prefix}_mqc.yml
+
+
+fi
+
+fi
+
+
+cat << END_VERSIONS > versions.yml
+${task.process}:
+    bcftools: \$(bcftools version | awk '(NR==1)  {print \$NF}')
+    jvarkit : todo
+END_VERSIONS
+"""
+}
+
+
+
+
+process TAG_DISTRIBUTION {
+tag "${meta.id?:""} ${condition.tag}"
+label "process_single"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
+when:
+    task.ext.when == null || task.ext.when
+input:
+    tuple val(meta ),path("VCFS/*"),val(condition)
+    tuple val(meta2),path(optional_bed)
+output:
+    path("*_mqc.yml"),optional:true, emit:multiqc
+    path("versions.yml"),emit:versions
+script:
+    def section_id = task.ext.section_id?:"dist${condition.tag}";
+    def section_name = task.ext.section_name?:"VCF stats";
+    def prefix  = task.ext.prefix?:"dist${condition.tag}"
+"""
+mkdir -p TMP
+set -x
+set +o pipefail
+
+find VCFS/ \\( -name "*.bcf" -o -name "*.vcf.gz" \\) | sort > TMP/jeter.list
+
+
+bcftools concat --drop-genotypes -O u --file-list TMP/jeter.list |\\
+    bcftools view --header-only > TMP/header.vcf
+
+
+
+if grep -m1 -F '##INFO=<ID=${condition.tag},' TMP/header.vcf
+then
+
+cat "${moduleDir}/filter.code" |\\
+    m4 -P \\
+        -D__RANGE__="${condition.range}" \\
+        -D__TAG__=${condition.tag} \\
+        > TMP/jeter.code
+
+
+bcftools concat \\
+    --drop-genotypes \\
+    ${optional_bed?"--regions-file \"${optional_bed}\"":""} \\
+    --file-list TMP/jeter.list \\
+    -Ov |\\
+    jvarkit -Djava.io.tmpdir=TMP bioalcidaejdk -F VCF -f TMP/jeter.code |\\
+    sed 's/\\[-Inf/[-/' > TMP/jeter.tsv
+
+if test -s TMP/jeter.tsv
+then
+
+cat << EOF > TMP/jeter_mqc.tsv
+id: "${section_id}"
+section_name: "${section_name} "
+description: "${condition.tag}"
+plot_type: "bargraph"
+pconfig:
+    id : "${condition.tag}_plot"
+    title: "${condition.tag}"
+    xlab: "${condition.tag}"
+    ylab: "Count"
+data:
+EOF
+
+cat TMP/jeter.tsv >> TMP/jeter_mqc.tsv
+
+mv TMP/jeter_mqc.tsv ${prefix}_mqc.yml
+
+fi
+
+fi
+
+
+cat << END_VERSIONS > versions.yml
+${task.process}:
+    bcftools: \$(bcftools version | awk '(NR==1)  {print \$NF}')
+    jvarkit : todo
+END_VERSIONS
+"""
+}
+

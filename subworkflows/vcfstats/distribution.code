@@ -1,0 +1,49 @@
+
+
+final RangeOfDoubles ri = new RangeOfDoubles(new double[]{__RANGE__});
+final Counter<RangeOfDoubles.Range> all = new Counter<>();
+final Counter<RangeOfDoubles.Range> filtered = new Counter<>();
+final Counter<RangeOfDoubles.Range> pass = new Counter<>();
+
+
+
+stream()
+    .filter(V->V.hasAttribute("__TAG__"))
+    .forEach(V->{
+            final double value;
+            try {
+                value = V.getAttributeAsDouble("__TAG__",0.0);
+            } catch(Throwable err) {
+                return;
+            }
+            final RangeOfDoubles.Range r= ri.getRange(value);
+            all.incr(r);
+            if(V.isFiltered()) {
+                filtered.incr(r);
+                }
+            else {
+                pass.incr(r);
+                }
+        });
+	
+
+if(all.getMaxCount().orElse(0L)>0L)) {
+    println("    ALL:");
+    for(final RangeOfDoubles.Range n: ri.getRanges()) {
+        out.println("        \""+ String.valueOf(n) +"\": " + all.count(n));
+        }
+}
+if(pass.getMaxCount().orElse(0L)>0L)) {
+    println("    PASS:");
+    for(final RangeOfDoubles.Range n: ri.getRanges()) {
+        out.println("        \""+ String.valueOf(n) +"\": " + pass.count(n));
+        }
+}
+if(filtered.getMaxCount().orElse(0L)>0L)) {
+    println("    FILTERed:");
+    for(final RangeOfDoubles.Range n: ri.getRanges()) {
+        out.println("        \""+ String.valueOf(n) +"\": " + filtered.count(n));
+        }
+}
+
+
