@@ -1,0 +1,47 @@
+
+
+final RangeOfIntegers ri = new RangeOfIntegers(1,5,10,20,30,40,50,100,200,1000);
+
+class SampleInfo {
+    final String sn;
+    Counter<RangeOfIntegers> counter = new Counter<>();
+    
+    
+    SampleInfo(final String sn) {
+        this.sn=sn;
+        }
+    
+    void visit(final Genotype gt) {
+    	if(gt.isFiltered()) return;
+        if(!gt.hasDP()) return;
+        final int dp =  gt.getDP();
+        if(dp<0) return;
+        this.counter.incr(ri.getRange(dp));
+        }
+    
+   	 void print(java.io.PrintStream out) {
+   	 	out.println("    "+sn+":");
+    	for(final RangeOfIntegers.Range n: ri.getRanges()) {
+    		out.println("        \""+ String.valueOf(n) +"\": " + counter.count(n));
+    		}
+   	 	}
+    }
+
+final Map<String,SampleInfo> sn2info = new TreeMap<>(header.getNGenotypeSamples());
+
+for(String sn:header.getSampleNamesInOrder() ) {
+	sn2info.put(sn,new SampleInfo(sn));
+	}
+
+stream()
+    __FILTER1__
+	.flatMap(V->V.getGenotypes().stream())
+    __FILTER2__
+    forEach(G->sn2info.get(G.getSampleName()).visit(G));
+	;
+
+
+for(SampleInfo si: sn2info.values()) {
+    si.print(System.out);
+    }
+

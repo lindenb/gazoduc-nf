@@ -68,6 +68,7 @@ main:
         DOWNLOAD_CYTOBAND.out.output,
         DOWNLOAD_REFGENE.out.output,
         REPORT.out.vcf,
+        pedigree,
         ch1
     )
     versions =  versions.mix(IGV_REPORTS.out.versions)
@@ -226,12 +227,14 @@ input:
         tuple val(meta4),path(cytoband)
         tuple val(meta5),path(refgene),path(refgene_tbi)
         tuple val(meta6),path(vcf),path(vcfidx)
+        tuple val(meta7),path(pedigree)
         tuple val(meta),val(contig),val(start0),val(end0),
                 val(child),val(quality),val(father),val(mother),
                 path(fasta),path(fai),path(dict),
                 path(bamC),path(baiC),
                 path(bamP),path(baiP),
                 path(bamM),path(baiM)
+       
 output:
         tuple val(meta),path("*.html"),emit:html
         tuple val(meta),path("*.index"),emit:index
@@ -275,7 +278,9 @@ EOF
 
 
 bcftools view -i 'POS=${start}'  --regions "${contig}:${start}-${end}" "${vcf}" |\\
-        jvarkit  -Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP vcf2table --format html --no-html-header  > TMP/footer.html
+        jvarkit  -Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP vcf2table \\
+            --pedigree "${pedigree}" \\
+            --format html --no-html-header  > TMP/footer.html
 
 cat << EOF >> TMP/footer.html
 <div>
@@ -362,11 +367,17 @@ cat << EOF > TMP/jeter.html
     <td>${father}</td>
     <td>${mother}</td>
     <td><span class="${quality}">${quality}</span></td>
+    <td><code>
 EOF
+
+bcftools view -Ou -i 'POS==${start}'  TMP/jeter.vcf.gz "${contig}:${start}" |\\
+    bcftools query -f '%FILTER ' >>  TMP/jeter.html
+
+echo "</code></td><td>" >>  TMP/jeter.html
 
 for S in ${child} ${father} ${mother}
 do
-	bcftools view -Ob --samples "\${S}" -i 'POS==${start}'  TMP/jeter.vcf.gz "${contig}:${start}" |\\
+	bcftools view -Ou --samples "\${S}" -i 'POS==${start}'  TMP/jeter.vcf.gz "${contig}:${start}" |\\
 		bcftools query --allow-undef-tags -f '<td>[<code>gt:%GT</code> <code>gq:%GQ</code> <code>ad:%AD</code> <code>dp:%DP</code>]</td>' >> TMP/jeter.html
 done
 	
@@ -428,6 +439,7 @@ tr.loConfDeNovo {
         <th>Father</th>
         <th>Mother</th>
         <th>Quality</th>
+        <th>FILTER</th>
 	<th>Child FORMAT</th>
 	<th>Father FORMAT</th>
 	<th>Mother FORMAT</th>

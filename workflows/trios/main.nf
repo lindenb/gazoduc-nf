@@ -100,7 +100,6 @@ workflow {
         def fasta  = [ref_hash, file(params.fasta) ]
         def fai    = [ref_hash, file(params.fai) ]
         def dict   = [ref_hash, file(params.dict) ]
-        def bed    = [ref_hash,[]]
         def pedigree = [[id:"pedigree"],file(params.pedigree)]
 
         def versions = Channel.empty()
@@ -199,9 +198,11 @@ workflow {
         versions = versions.mix(DOWNLOAD_GTF.out.versions)
 
         if(params.bed==null) {
-         SCATTER_TO_BED(ref_hash,fasta,fai,dict)
-         versions = versions.mix(SCATTER_TO_BED.out.versions)
-         bed = SCATTER_TO_BED.out.bed
+            SCATTER_TO_BED(ref_hash,fasta,fai,dict)
+            versions = versions.mix(SCATTER_TO_BED.out.versions)
+            bed = SCATTER_TO_BED.out.bed
+         } else {
+             bed = [ref_hash, file(params.bed)]
          }
 
 
@@ -236,15 +237,12 @@ workflow {
             vcfs.sv
             )
             
-       versions = versions.mix(WORKFLOW_SV.out.versions)
-
-
-
+        versions = versions.mix(WORKFLOW_SV.out.versions)
 
         COMPILE_VERSIONS(versions.collect())
         to_multiqc = to_multiqc.mix(COMPILE_VERSIONS.out.multiqc)
 
-       MULTIQC(to_multiqc.collect().map{[[id:"trios"],it]})
+        MULTIQC(to_multiqc.collect().map{[[id:"trios"],it]})
        
 }
 

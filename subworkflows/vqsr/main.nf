@@ -90,7 +90,7 @@ workflow VQSR {
 		
         BCFTOOLS_CONCAT(
             APPLY_RECALIBRATION_INDEL.out.vcf
-                .map{[[id:"bqsr"],[it[1],it[2]]]}
+                .map{[[id:"vqsr"],[it[1],it[2]]]}
                 .groupTuple()
                 .map{[it[0],it[1].flatten()]},
             [[id:"nobed"],[]]
