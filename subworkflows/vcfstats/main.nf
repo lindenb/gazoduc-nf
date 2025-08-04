@@ -105,6 +105,15 @@ main:
     TAG_DISTRIBUTION(vcf2.combine(gatk_field_ch) ,bed)
     versions= versions.mix(TAG_DISTRIBUTION.out.versions)
     multiqc = multiqc.mix(TAG_DISTRIBUTION.out.multiqc)
+
+    GT_FILTERS(vcf2,bed)
+    versions= versions.mix(GT_FILTERS.out.versions)
+    multiqc = multiqc.mix(GT_FILTERS.out.multiqc)
+
+    SINGLETONS(vcf2,bed)
+    versions= versions.mix(SINGLETONS.out.versions)
+    multiqc = multiqc.mix(SINGLETONS.out.multiqc)
+
 emit:
     versions
     multiqc
@@ -641,3 +650,128 @@ END_VERSIONS
 """
 }
 
+
+process GT_FILTERS {
+tag "${meta.id?:""}"
+label "process_single"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
+when:
+    task.ext.when == null || task.ext.when
+input:
+    tuple val(meta ),path("VCFS/*")
+    tuple val(meta2),path(optional_bed)
+output:
+    path("*_mqc.yml"),optional:true, emit:multiqc
+    path("versions.yml"),emit:versions
+script:
+    def prefix  = task.ext.prefix?:"gtfilter"
+"""
+mkdir -p TMP
+set -x
+set +o pipefail
+
+find VCFS/ \\( -name "*.bcf" -o -name "*.vcf.gz" \\) | sort > TMP/jeter.list
+
+
+bcftools concat -O u --file-list TMP/jeter.list |\\
+    bcftools view --header-only > TMP/header.vcf
+
+bcftools query -l TMP/header.vcf > TMP/jeter.samples
+
+
+if grep -F '##FORMAT=<ID=FT,' TMP/header.vcf && test -s TMP/jeter.samples
+then
+
+cat "${moduleDir}/filter.gt.code" |\\
+    m4 -P   > TMP/jeter.code
+
+
+bcftools concat \\
+    ${optional_bed?"--regions-file \"${optional_bed}\"":""} \\
+    --file-list TMP/jeter.list \\
+    -Ov |\\
+    jvarkit -Djava.io.tmpdir=TMP bioalcidaejdk -F VCF -f TMP/jeter.code |\\
+    sed 's/\\[-Inf/[0/' > TMP/jeter.tsv
+
+
+if test -s TMP/jeter.tsv
+then
+
+mv TMP/jeter.tsv ${prefix}_mqc.yml
+
+fi
+
+fi
+
+
+cat << END_VERSIONS > versions.yml
+${task.process}:
+    bcftools: \$(bcftools version | awk '(NR==1)  {print \$NF}')
+    jvarkit : todo
+END_VERSIONS
+"""
+}
+
+
+
+process SINGLETONS {
+tag "${meta.id?:""}"
+label "process_single"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
+when:
+    task.ext.when == null || task.ext.when
+input:
+    tuple val(meta ),path("VCFS/*")
+    tuple val(meta2),path(optional_bed)
+output:
+    path("*_mqc.yml"),optional:true, emit:multiqc
+    path("versions.yml"),emit:versions
+script:
+    def prefix  = task.ext.prefix?:"gtfilter"
+"""
+mkdir -p TMP
+set -x
+set +o pipefail
+
+find VCFS/ \\( -name "*.bcf" -o -name "*.vcf.gz" \\) | sort > TMP/jeter.list
+
+
+bcftools concat -O u --file-list TMP/jeter.list |\\
+    bcftools view --header-only > TMP/header.vcf
+
+bcftools query -l TMP/header.vcf > TMP/jeter.samples
+
+
+if grep -F '##FORMAT=<ID=GT,' TMP/header.vcf && test -s TMP/jeter.samples
+then
+
+cat "${moduleDir}/sinletons.code" |\\
+    m4 -P   > TMP/jeter.code
+
+
+bcftools concat \\
+    ${optional_bed?"--regions-file \"${optional_bed}\"":""} \\
+    --file-list TMP/jeter.list \\
+    -Ov |\\
+    jvarkit -Djava.io.tmpdir=TMP bioalcidaejdk -F VCF -f TMP/jeter.code |\\
+    sed 's/\\[-Inf/[0/' > TMP/jeter.tsv
+
+if test -s TMP/jeter.tsv
+then
+
+mv TMP/jeter.tsv ${prefix}_mqc.yml
+
+fi
+
+fi
+
+
+cat << END_VERSIONS > versions.yml
+${task.process}:
+    bcftools: \$(bcftools version | awk '(NR==1)  {print \$NF}')
+    jvarkit : todo
+END_VERSIONS
+"""
+}

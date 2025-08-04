@@ -41,6 +41,7 @@ include {GENCC_DOWNLOAD            } from '../../modules/gencc/download'
 include {ENSEMBL_REG_DOWNLOAD      } from '../../modules/ensemblreg/download'
 include {HMC_DOWNLOAD              } from '../../modules/hmc/download'
 include {GREENDB_DOWNLOAD          } from '../../modules/greendb/download'
+include {DOWNLOAD_GNOMAD_SV        } from '../../modules/gnomadsv/download'
 
 String countVariants(def f) {
         return "\necho  \${LINENO} && bcftools query -f '.\\n' \""+f+"\" | wc -l 1>&2" +"\n"
@@ -142,6 +143,10 @@ main:
     GREENDB_DOWNLOAD(fasta,fai, dict)
     versions = versions.mix(GREENDB_DOWNLOAD.out.versions)   
 
+    DOWNLOAD_GNOMAD_SV(fasta,fai, dict)
+    versions = versions.mix(DOWNLOAD_GNOMAD_SV.out.versions)
+    FREQUENT_GNOMADSV(fai, DOWNLOAD_GNOMAD_SV.out.vcf)
+    versions = versions.mix(FREQUENT_GNOMADSV.out.versions)
 
     ANNOTATE(
         fasta,
@@ -172,6 +177,7 @@ main:
         ENSEMBL_REG_DOWNLOAD.out.bed,
         HMC_DOWNLOAD.out.bed,
         GREENDB_DOWNLOAD.out.bed,
+        FREQUENT_GNOMADSV.out.output,
         vcf
     )
 
@@ -235,7 +241,9 @@ input:
     /** HMC */
     tuple val(meta26 ),path(hmc),path(hmc_idx),path(hmc_hdr) 
     /** GREENDB */
-    tuple val(meta27 ),path(greendb),path(greendb_idx),path(greendb_hdr)  
+    tuple val(meta27 ),path(greendb),path(greendb_idx),path(greendb_hdr)
+    /** FREQUENT_SV */
+    tuple val(meta28 ),path(frequentsv),path(frequentsv_idx),path(frequentsv_hdr)  
 
 
     tuple val(meta  ),path(vcf),path(vcf_idx),path(optional_bed)
@@ -917,6 +925,28 @@ fi
 
 ################################################################################
 
+if ${frequentsv?true:false}
+then
+
+    bcftools annotate \\
+            --threads ${task.cpus} \\
+            -a "${frequentsv}" \\
+            -h "${frequentsv_hdr}" \\
+            --write-index \\
+            -c "CHROM,POS,END,FREQUENT_SV" \\
+            -O b \\
+            --merge-logic 'FREQUENT_SV:first' \\
+            -o TMP/jeter2.bcf \\
+            TMP/jeter1.bcf
+
+    mv  TMP/jeter2.bcf  TMP/jeter1.bcf
+    mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
+    ${countVariants("TMP/jeter1.bcf")}
+fi
+
+
+################################################################################
+
 mv TMP/jeter1.bcf ${prefix}.bcf
 mv TMP/jeter1.bcf.csi ${prefix}.bcf.csi
 
@@ -954,6 +984,44 @@ cat << END_VERSIONS > versions.yml
 "${task.process}":
 	join: todo
     awk: todo
+END_VERSIONS
+"""
+}
+
+process FREQUENT_GNOMADSV {
+tag "${meta1.id?:fasta.name}"
+afterScript "rm -rf TMP"
+label "process_single"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+input:
+    tuple val(meta1),path(fai)
+    tuple val(meta),path(vcf),path(vcfidx)
+output:
+    tuple val(meta),path("*.gz"),path("*.tbi"),path("*.hdr"),emit:output
+    path("versions.yml"),emit:versions
+script:
+    def tag="GRPMAX_AF"
+    def freq=0.1
+    def prefix = task.ext.prefix?:"gnomadsv.frequent"
+"""
+mkdir -p TMP
+
+bcftools query \\
+    -i '${tag} >= ${freq} && (FILTER=="PASS" || FILTER==".")' ${vcf} \\
+    -f '%CHROM\t%POS0\t%END\t%ID\\n' |\\
+    sort -T TMP -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n |\\
+    bgzip > TMP/jeter.tsv.gz
+
+tabix -p bed -f TMP/jeter.tsv.gz
+
+mv TMP/jeter.tsv.gz ${prefix}.tsv.gz
+mv TMP/jeter.tsv.gz.tbi ${prefix}.tsv.gz.tbi
+
+echo '##INFO=<ID=FREQUENT_SV,Number=1,Type=String,Description="Overlap SV Frequent in Gnomad ${tag} >= ${freq}.">' >  "${prefix}.hdr"
+
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	bcftools: todo
 END_VERSIONS
 """
 }

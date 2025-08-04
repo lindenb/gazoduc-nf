@@ -1,0 +1,58 @@
+
+class SampleInfo {
+    final String sn;
+    final Counter<String> counter = new Counter<>();
+
+    SampleInfo(final String sn) {
+        this.sn=sn;
+        }
+   
+    }
+
+final Map<String,SampleInfo> sn2info = new HashMap<>(header.getNGenotypeSamples());
+
+for(String sn:header.getSampleNamesInOrder() ) {
+	sn2info.put(sn,new SampleInfo(sn));
+	}
+
+stream().
+    forEach(V->{
+        Genotype singleton=null;
+        for(Genotype gt: V.getGenotypes()) {
+            if(gt.hasAltAllele()) {
+                if(singleton!=null) return;
+                singleton=gt;
+                }
+            }
+        if(singleton==null) return;
+        final String label = "VC_"+(V.isFiltered():"FILTER":"PASS")+"_GT_"+(singleton.isFiltered():"FILTER":"PASS");
+        sn2info.get(singleton.getSampleName()).counter.incr(label);
+        })
+	;
+	
+
+if(sn2info.values().stream().anyMatch(INFO->INFO.counter.getMaxCount().orElse(0L)>0L)) {
+    java.io.PrintStream w = System.out;
+    final Set<String> key = sn2info.values().stream().flatMap(V->V.count.keySet()).collect(Collectors.toSet());
+
+    w.println("id: \"__ID__\"");
+    w.println("section_name: \"__SECTION_NAME__\"");  
+    w.println("description: \"__DESCRIPTION__\"");
+    w.println("plot_type: \"bargraph\"");
+    w.println("pconfig:");
+    w.println("    id: \"__ID__.plot\"");
+    w.println("    title: \"__TITLE__\"");
+    w.println("    xlab: \"Sample\"");
+    w.println("    ylab: \"Filters\"");
+    w.println("data:");
+    
+
+    for(SampleInfo si: sn2info.values()) {
+        w.println("    "+si.sn+":");
+        for(final String key: keys) {
+            w.println("        "+key+": "+si.count(key));
+            }
+        }
+    
+    w.flush();
+}
