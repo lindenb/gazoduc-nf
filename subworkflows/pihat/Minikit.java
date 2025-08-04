@@ -31,12 +31,12 @@ private int doWork() {
     final String input = "${assoc}";
     try {
         Path path = Paths.get("__INPUT__");
-        final SAMSequenceDictionary dict0 = SAMSequenceDictionaryExtractor.extractDictionary(Paths.get(REF));
+        final SAMSequenceDictionary dict0 = SAMSequenceDictionaryExtractor.extractDictionary(Paths.get("__FASTA__"));
         final Pattern regex = Pattern.compile("(chr)?[XY0-9]+");
         final SAMSequenceDictionary dict = new SAMSequenceDictionary(dict0.getSequences().stream().
                 filter(SR->regex.matcher(SR.getSequenceName()).matches()).
                 collect(Collectors.toList()));
-        final Pattern ws = Pattern.compile("\\\\s+");
+        final Pattern ws = Pattern.compile("\\s+");
         final Pattern colon = Pattern.compile(":");
         final double p_treshold = -Math.log10(5E-8);
         double max_p = p_treshold;
@@ -47,8 +47,18 @@ private int doWork() {
                 if(line==null) break;
                 final String[] tokens = ws.split(line.trim());
                 if(tokens[tokens.length-1].equals("P")) continue;
-                double p = Double.parseDouble(tokens[tokens.length-1]);
-		if(p< MIN_P) p = MIN_P;
+                if(tokens[tokens.length-1].equals("NA")) continue;
+                double p;
+                try {
+                    p=Double.parseDouble(tokens[tokens.length-1]);
+                    }
+                catch(Throwable err0) {
+                    for(int i=0;i< tokens.length;i++) {
+                        System.err.println("$"+i+"\t"+tokens[i]);
+                        }
+                    throw err0;
+                    }
+		        if(p< MIN_P) p = MIN_P;
                 p = - Math.log10(p);
                 max_p = Math.max(max_p, p);
                 min_p = Math.min(min_p, p);
@@ -91,6 +101,7 @@ private int doWork() {
                 if(line==null) break;
                 String[] tokens = ws.split(line.trim());
                 if(tokens[tokens.length-1].equals("P")) continue;
+                if(tokens[tokens.length-1].equals("NA")) continue;
                 double p = Double.parseDouble(tokens[tokens.length-1]);
 		boolean low_pvalue = false;
 		if( p < MIN_P) {
@@ -148,7 +159,7 @@ private int doWork() {
 	g.setColor(Color.BLACK);        
         g.draw(new Rectangle2D.Double(left_margin,0,width,height));
         g.dispose();
-        ImageIO.write(img, "PNG", new File("${prefix}.multiqc.${title}.png"));
+        ImageIO.write(img, "PNG", new File("TMP/jeter.png"));
         return 0;
         }
     catch(final Throwable err) {

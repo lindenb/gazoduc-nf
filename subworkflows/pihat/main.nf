@@ -83,6 +83,21 @@ workflow PIHAT {
         versions = versions.mix(MERGE_SAMPLE2POP.out.versions)
 
 
+        PLINK_ASSOC(fasta, fai, dict, MERGE.out.merged_plink , MERGE.out.mds )
+        versions = versions.mix(PLINK_ASSOC.out.versions)
+
+
+        PLOT_ASSOC(
+            fasta,
+            fai,
+            dict,
+            PLINK_ASSOC.out.assoc
+                .flatMap{it[1]}
+                .filter{it.name.matches(".*C[123].qassoc")}
+                .map{[[id:"pihat"],it]}
+            )
+        versions = versions.mix(PLOT_ASSOC.out.versions)
+
         PLOT_PIHAT(MERGE.out.genome)
         versions = versions.mix(PLOT_PIHAT.out.versions)
 
@@ -688,12 +703,16 @@ input:
     tuple val(meta1),path(fasta)
     tuple val(meta2),path(fai)
     tuple val(meta3),path(dict)
-    tuple val(meta4),path(vcf)
+    tuple val(meta4),path("PLINK/*")
 	tuple val(meta ),path(mds)
 output:
     tuple val(meta ),path("*.qassoc"),emit:assoc
+    path("versions.yml"),emit:versions
 script:
     def treshold = task.ext.treshold?:5E-8
+    def plink_args  = "--const-fid 1 --allow-extra-chr --allow-no-sex --threads ${task.cpus}"
+
+
 	"""
 	hostname 2>&1
 	mkdir -p TMP
@@ -701,25 +720,14 @@ script:
 	# create pheno file https://www.cog-genomics.org/plink/1.9/input#pheno
 	awk '(NR==1) {split(\$0,header);} {X=0;for(i=1;i<=NF;i++) {if(header[i] !="SOL") {printf("%s%s",(X==0?"":"\t"),\$i);X=1;}} printf("\\n");}' '${mds}' > TMP/pheno.tsv
 
-	plink --bcf  '${genome_bcf}' \\
-		--double-id \\
-		--allow-no-sex \\
+	plink \\
+        ${plink_args} \\
+        --bfile `find PLINK/ -name "*.fam" | sed 's/\\.fam\$//'` \\
 		--pheno TMP/pheno.tsv \\
 		--all-pheno \\
 		--assoc \\
 		--out PHENO
 	
-	# list position CHROM POS REF ALT to remove
-	echo "##fileformat=VCFv4.2" > TMP/jeter.vcf
-	echo -e "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO" >> TMP/jeter.vcf
-
-	LC_ALL=C awk '(\$NF!="P" && \$NF < ${treshold}) {print \$2}'  PHENO.*.qassoc  |\\
-		awk -F ':' '{printf("%s\t%s\t.\t%s\t%s\t.\t.\t.\\n",\$1,\$2,\$3,\$4);}' |\
-		sed 's/^chr//' >> TMP/jeter.vcf
-	
-	jvarkit vcfsetdict -R '${fasta}'  --onNotFound SKIP TMP/jeter.vcf |\
-		bcftools sort -T TMP/tmp -O b -o variants_to_remove.bcf
-	bcftools index -f variants_to_remove.bcf
 
 cat << EOF > versions.yml
 ${task.process}:
@@ -733,19 +741,19 @@ process PLOT_ASSOC {
 tag "${assoc.name}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
-input:
     tuple val(meta1),path(fasta)
     tuple val(meta2),path(fai)
     tuple val(meta3),path(dict)
 	tuple val(meta ),path(assoc)
-
+output:
+    tuple val(meta ),path("*.png"),emit:png
+    path("versions.yml"),emit:versions
 script:
-	def prefix = "plotassoc"
-	def title = assoc.name.replace('.','_')
-	def nhead = 10
+
 """
 hostname 1>&2
 mkdir -p TMP
+set -x
 
 JD1=`which jvarkit`
 echo "JD1=\${JD1}" 1>&2
@@ -757,28 +765,10 @@ JVARKIT_DIST=`dirname "\${JVARKIT_JAR}"`
 
 
 cat "${moduleDir}/Minikit.java" |\\
-    sed -e 's/__INPUT__/${assoc}/'  -e 's//' > TMP/Minikit.java
-
-__EOF__
+    sed -e 's/__INPUT__/${assoc}/'  -e 's/__MIN_P_VALUE__/1e-8/' -e 's/__FASTA__/${fasta}/'  > TMP/Minikit.java
 
 javac -d TMP -cp \${JVARKIT_DIST}/jvarkit.jar TMP/Minikit.java
 java -Djava.awt.headless=true -cp \${JVARKIT_DIST}/jvarkit.jar:TMP Minikit
-
-
-cat << __EOF__ > TMP/jeter.html
-<!--
-parent_id: pihat_section
-parent_name: "PCA ${params.step_name}"
-parent_description: "${whatisapca}"
-id: '${title}_table'
-section_name: '${title} table'
-description: '${assoc} :  ${nhead} first lines. Number of variants per Chromosome.'
--->
-__EOF__
-
-
-tr -s " " < "${assoc}" | LC_ALL=C sort -T TMP -t ' ' -k10,10g  | head -n ${nhead} |\\
-	awk 'BEGIN{printf("<table class=\\"table\\">");} {t=(NR==1?"th":"td");print("<tr>");for(i=1;i<=NF;i++) printf("<%s>%s</%s>",t,\$i,t);printf("</tr>\\n");} END{printf("</table>\\n");}'  >> TMP/jeter.html
 
 #
 # Floriane suggested to also add the number of variants per chromosome
@@ -790,6 +780,7 @@ awk '(\$2!="SNP") {print \$2}' '${assoc}' |\\
 	join -t '\t' -1 1 -2 1 - <(sort -t '\t' -k1,1 '${fai}' ) |\\
 	awk 'BEGIN{printf("<table class=\\"table\\"><thead><caption>Number of variants per contig</caption><tr><th>CHROM</th><th>Length</th><th>VARIANTS</th><th>Variants per base</th></tr></thead><tbody>\\n");} {printf("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\\n",\$1,\$3,\$2,\$2/\$3);} END {printf("</tbody></table>\\n");}' >> TMP/jeter.html
 
+mv TMP/jeter.png "${assoc.baseName}.png"
 
 cat << EOF > versions.yml
 ${task.process}:
