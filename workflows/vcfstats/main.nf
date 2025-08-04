@@ -147,6 +147,9 @@ workflow {
         fasta,
         fai,
         dict,
+         [[id:"nosample2pop"],[]],
+        [[id:"noexcludesamples"],[]],
+        [[id:"noexcludebed"],[]],
         onekgenome,
         vcfs
     )
