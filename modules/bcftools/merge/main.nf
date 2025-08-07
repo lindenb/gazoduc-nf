@@ -23,9 +23,10 @@ SOFTWARE.
 
 */
 process BCFTOOLS_MERGE {
+label "process_short"
 tag "${meta.id?:""}"
 afterScript "rm -rf TMP"
-cpus 1
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	tuple val(meta ),path("VCFS/*"),path(optional_bed)
 output:
@@ -51,7 +52,18 @@ done
 LC_ALL=C sort -t, -T TMP -k1,1 TMP/jeter2.list | cut -d, -f2 > TMP/jeter3.list
 MD5=`cat TMP/jeter3.list | md5sum | cut -d ' ' -f1`
 
+if [[ \$(wc -l < TMP/jeter.list) -eq 1 ]]
+then
 
+bcftools view \\
+	--threads ${task.cpus} \\
+	${optional_bed?"--regions-file \"${optional_bed}\"":""} \\
+	-O u \\
+	-o TMP/jeter2.bcf \\
+	`cat TMP/jeter.list`
+
+
+else
 
 bcftools merge \\
 	--threads ${task.cpus} \\
@@ -61,7 +73,7 @@ bcftools merge \\
 	-O u \\
 	-o "TMP/jeter2.bcf" \\
 	--file-list TMP/jeter3.list
-
+fi
 
 bcftools  +fill-tags \\
 	--threads ${task.cpus} \\

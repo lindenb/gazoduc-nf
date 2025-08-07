@@ -200,24 +200,7 @@ bcftools view -m2 -M2 ${filters} --types snps -O u \
 
 	countIt TMP/jeter.bcf
 
-#
-# Dans le fichier hardyweinberg.hwe enlever les variants dont la colonne P < 0.00001
-#
-plink --double-id --bcf TMP/jeter.bcf --allow-extra-chr --hardy --allow-no-sex --out "TMP/hardyweinberg.txt"
-
-awk '(\$9 <  0.00001) {print \$2}' "TMP/hardyweinberg.txt.hwe" > TMP/xclude_ids.txt
-
-if [ -s "TMP/xclude_ids.txt" ] ; then
-	bcftools view -e 'ID=@TMP/xclude_ids.txt' -O b -o TMP/jeter2.bcf TMP/jeter.bcf
-	mv TMP/jeter2.bcf TMP/jeter.bcf
-	countIt TMP/jeter.bcf
-fi
-
-#
-# sélection de SNP indépendants 
-#
-plink --double-id --bcf  TMP/jeter.bcf --allow-extra-chr  --indep-pairwise 50 10 0.2 --out TMP/plink
-
+#<
 
 plink --double-id --bcf  TMP/jeter.bcf --allow-extra-chr  --extract TMP/plink.prune.in --recode vcf --out TMP/pruned_data
 test -f TMP/pruned_data.vcf

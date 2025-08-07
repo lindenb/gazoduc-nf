@@ -608,6 +608,16 @@ then
     bcftools index --threads ${task.cpus} -f -t  TMP/jeter1.vcf.gz
     ${countVariants("TMP/jeter1.vcf.gz")}
 
+
+    jvarkit -XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcftrio \\
+        --pedigree "${valid_trios}" \\
+        -o TMP/jeter2.vcf.gz \\
+        TMP/jeter1.vcf.gz
+
+    mv TMP/jeter2.vcf.gz TMP/jeter1.vcf.gz
+    bcftools index --threads ${task.cpus} -f -t  TMP/jeter1.vcf.gz
+    ${countVariants("TMP/jeter1.vcf.gz")}
+
     awk -f "${moduleDir}/../../modules/gatk/possibledenovo/pedigree4gatk.awk" "${valid_trios}" > TMP/jeter.trio.ped
 
     # bug in gatk, it expects that variants are diploids https://github.com/broadinstitute/gatk/blob/342c5ca3adc78e50ab2cc948c71a5ae64574b4ce/src/main/java/org/broadinstitute/hellbender/utils/samples/MendelianViolation.java#L180

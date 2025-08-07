@@ -1,0 +1,170 @@
+
+
+
+
+OptionalDouble median(final double[] values) {
+    if(values.length==0) return OptionalDouble.empty();
+    return  OptionalDouble.of(new org.apache.commons.math3.stat.descriptive.rank.Median().evaluate(values));
+    }
+
+OptionalDouble mean(final double[] values) {
+    if(values.length==0) return OptionalDouble.empty();
+    return  OptionalDouble.of(new  org.apache.commons.math3.stat.descriptive.moment.Mean().evaluate(values));
+    }
+
+boolean isPureHomozygous(final Genotype g) {
+    if(!g.hasAD()) return true;//default is ok
+    final int[] array= g.getAD();
+    return Arrays.stream(array).filter(DP->DP>0).count()==1L;
+    }
+
+
+OptionalDouble getHomozygousContamination(final Genotype g) {
+    if(!g.hasAD()) return OptionalDouble.empty();
+    if(!(g.isHomVar() || g.isHomRef())) return OptionalDouble.empty();
+    final int[] array= g.getAD();
+    double sum = 0.0;
+    double max_v = 0;
+
+    for(int i=0;i< array.length;i++) {
+        double v =  array[i];
+        if(i==0 || v > max_v) {
+            max_v = v;
+            }
+        sum+=v;
+        }
+    if(max_v==0) return OptionalDouble.empty();
+    return OptionalDouble.of(max_v/sum);
+    }
+
+OptionalDouble getADRatio(final Genotype g) {
+    if(!g.isHet()) return OptionalDouble.empty();
+    if(!g.hasAD()) return OptionalDouble.empty();
+    final int[] array= g.getAD();
+    if(array.length!=2) return OptionalDouble.empty();
+    final int sum = array[0] + array[1];
+    if(sum==0) return  OptionalDouble.empty();
+    double f = array[0]/(double)sum;
+    if(f>0.5) f=1.0-f;
+    return OptionalDouble.of(f);
+    }
+
+Optional<Genotype> getSingleton(final VariantContext vc) {
+    Genotype singleton =null;
+    for(Genotype g: vc.getGenotypes()) {
+        if(g.hasAltAllele()) {
+            if(singleton!=null) return Optional.empty();
+            singleton = g;
+            }
+        }
+    return Optional.ofNullable(singleton);
+    }
+
+
+@Override
+public Object apply(final VariantContext vc) {
+   
+    if(vc.hasGenotypes()) {
+         final VariantContextBuilder vcb = new VariantContextBuilder(vc);
+
+
+        double[] values = vc.getGenotypes().
+            stream().
+            filter(G->G.hasDP() && G.isCalled()).
+            mapToDouble(G->G.getDP()).
+            toArray();
+
+        if(values.length>0) {
+            OptionalDouble v = median(values);
+            if(v.isPresent()) vcb.attribute("MEDIAN_DP",v.orElse(0.0));
+            v = mean(values);
+            if(v.isPresent()) vcb.attribute("MEAN_DP",v.orElse(0.0));
+
+            vcb.attribute("MIN_DP",Arrays.stream(values).min().orElse(0.0));
+            vcb.attribute("MAX_DP",Arrays.stream(values).max().orElse(0.0));
+            }
+
+        values = vc.getGenotypes().
+            stream().
+            filter(G->G.hasGQ() && G.isCalled()).
+            mapToDouble(G->G.getGQ()).
+            toArray();
+        
+         if(values.length>0) {
+            OptionalDouble v = median(values);
+            if(v.isPresent()) vcb.attribute("MEDIAN_GQ",v.orElse(0.0));
+            v = mean(values);
+            if(v.isPresent()) vcb.attribute("MEAN_GQ",v.orElse(0.0));
+
+            vcb.attribute("MIN_GQ",Arrays.stream(values).min().orElse(0.0));
+            vcb.attribute("MAX_GQ",Arrays.stream(values).max().orElse(0.0));
+            }
+
+        values = vc.getGenotypes().
+            stream().
+            filter(G->G.isHet() && G.hasAD()).
+            map(G->getADRatio(G)).
+            filter(opt->opt.isPresent()).
+            mapToDouble(opt->opt.orElse(0.0)).
+            toArray();
+        
+         if(values.length>0) {
+            OptionalDouble v = median(values);
+            if(v.isPresent()) vcb.attribute("MEDIAN_HET_AD",v.orElse(0.0));
+            v = mean(values);
+            if(v.isPresent()) vcb.attribute("MEAN_HET_AD",v.orElse(0.0));
+            }
+
+        values = vc.getGenotypes().
+            stream().
+            filter(G->G.isHomVar()).
+            map(G->getHomozygousContamination(G)).
+            filter(opt->opt.isPresent()).
+            mapToDouble(opt->opt.orElse(0.0)).
+            toArray();
+
+         if(values.length>0) {
+            OptionalDouble v = median(values);
+            if(v.isPresent()) vcb.attribute("MEDIAN_AA_AD",v.orElse(0.0));
+            v = mean(values);
+            if(v.isPresent()) vcb.attribute("MEAN_AA_AD",v.orElse(0.0));
+            }
+
+
+         values = vc.getGenotypes().
+            stream().
+            filter(G->G.isHomRef()).
+            map(G->getHomozygousContamination(G)).
+            filter(opt->opt.isPresent()).
+            mapToDouble(opt->opt.orElse(0.0)).
+            toArray();
+
+         if(values.length>0) {
+            OptionalDouble v = median(values);
+            if(v.isPresent()) vcb.attribute("MEDIAN_RR_AD",v.orElse(0.0));
+            v = mean(values);
+            if(v.isPresent()) vcb.attribute("MEAN_RR_AD",v.orElse(0.0));
+            }
+
+
+
+        if(vc.getGenotypes().stream().
+            filter(G->G.isHomRef() || G.isHomVar()).
+            allMatch(G->isPureHomozygous(G))) {
+            vcb.attribute("PURE_HOM",true);
+            }
+        
+        Optional<Genotype> singleton =  getSingleton(vc);
+        if(singleton.isPresent()) {
+            vcb.attribute("SINGLETON",singleton.get().getSampleName());
+            }
+
+
+
+        vcb.attribute("N_ALT_SAMPLES", vc.getGenotypes().stream().filter(G->G.hasAltAllele()).count());
+
+        return vcb.make();
+        }
+
+    return vc;
+    }

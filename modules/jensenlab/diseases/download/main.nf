@@ -41,13 +41,16 @@ process DISEASES_DOWNLOAD {
 		def url = task.ext.url?:"https://download.jensenlab.org/human_disease_textmining_filtered.tsv"
 		def treshold = task.ext.treshold ?:4.5
 		def TAG = task.ext.tag?:"DISEASES"
-		def WHATIZ = "DISEASES is a weekly updated web resource that integrates evidence on disease-gene associations from automatic text mining, manually curated literature, cancer mutation data, and genome-wide association studies. ${url}. Treshold=${treshold}"
-
+		def enabled = ((task.ext.enabled?:task.attempt<=1) as boolean)
+		def WHATIZ = (enabled?"DISEASES is a weekly updated web resource that integrates evidence on disease-gene associations from automatic text mining, manually curated literature, cancer mutation data, and genome-wide association studies. ${url}. Treshold=${treshold}": "DISEASE disabled by user or resource not available")
 	"""
 	hostname 1>&2
 	export LC_ALL=C
 	mkdir -p TMP
-		set -x
+	set -x
+
+	if ${enabled}
+	then
 
 	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP gtf2bed  --columns "gtf.feature,gene_name" -R "${fasta}"  "${gtf}" |\\
 		awk -F '\t' '\$4=="gene" && \$5!="." && \$5!=""' |\\
@@ -56,8 +59,8 @@ process DISEASES_DOWNLOAD {
 		uniq > TMP/genes.bed
 
 
-	 wget  -O - "${url}" |\
-		awk -F '\t' '(\$5 > ${treshold}) {D=\$3; gsub(/[\\:]/,"_",D); M=\$4; gsub(/[^A-Za-z0-9]+/,"_",M); printf("%s\t%s\t%s\\n",\$2,D,M);}' |\
+	 curl L- "${url}" |\
+		awk -F '\t' '(\$5 > ${treshold}) {D=\$3; gsub(/[:]/,"_",D); M=\$4; gsub(/[^A-Za-z0-9]+/,"_",M); printf("%s\t%s\t%s\\n",\$2,D,M);}' |\
 		LC_ALL=C sort -T TMP -t '\t' -k1,1 > TMP/jeter.b
 
 	test -s TMP/jeter.b
@@ -65,6 +68,12 @@ process DISEASES_DOWNLOAD {
 
 	join -t '\t' -1 4 -2 1 -o '1.1,1.2,1.3,1.4,2.2,2.3' TMP/genes.bed TMP/jeter.b |\
 		LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n | uniq > TMP/jeter.bed
+
+	else
+	
+		touch TMP/jeter.bed
+	
+	fi
 
 	bgzip TMP/jeter.bed
         tabix --comment '#' -f -p bed TMP/jeter.bed.gz

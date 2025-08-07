@@ -35,7 +35,7 @@ input:
     tuple val(meta4),path(pedigree)
     tuple val(meta),path(vcf),path(vcfidx) // MUST BE ANNOTATED WITH SNPEFF, REMOVE FREQUENT VARIANTS
 output:
-	tuple val(meta),path("*.bcf"),path("*.bcf.csi"),emit:vcf
+	tuple val(meta),path("*.{bcf,vcf.gz}"),path("*.{csi,tbi}"),emit:vcf
 	tuple val(meta),path("*.genes.report.bed"),emit:genes_report
 	tuple val(meta),path("*.variants.report.txt"),emit:variants_report
 	path("versions.yml"),emit:versions
@@ -45,7 +45,8 @@ script:
     def prefix = task.ext.prefix?:vcf.baseName+".hetcomposite"
 	def extractors = task.ext.extractors?:"ANN/GeneId"
 	def max_variants = task.ext.max_variants?:30
-	def accession="SO:0001818,SO:0001629"
+	def accession= task.ext.accession?:"SO:0001818,SO:0001629"
+	def suffix = task.ext.suffix?:".bcf"
 """
 hostname 1>&2
 
@@ -72,7 +73,7 @@ bcftools view "${vcf}"  |\\
 	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcffilterjdk --body -f TMP/jeter.code > TMP/jeter2.vcf
 mv TMP/jeter2.vcf TMP/jeter1.vcf
 
-java -jar \${HOME}/jvarkit.jar vcffilterso  -A '${accession}' -r -R <  TMP/jeter1.vcf  > TMP/jeter2.vcf
+java -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -jar \${HOME}/jvarkit.jar vcffilterso  -A '${accession}' -r -R <  TMP/jeter1.vcf  > TMP/jeter2.vcf
 mv TMP/jeter2.vcf TMP/jeter1.vcf
 
 
@@ -89,11 +90,19 @@ jvarkit -Xmx${task.memory.giga}G  -Djava.io.tmpdir=TMP vcfcomposite \\
 mv TMP/jeter2.vcf TMP/jeter1.vcf
 
 
-bcftools sort -T TMP/sort -o TMP/${prefix}.bcf -O b TMP/jeter1.vcf
-bcftools index --threads ${task.cpus} TMP/${prefix}.bcf
+bcftools sort \\
+	-T TMP/sort \\
+	-o TMP/${prefix}.${suffix.contains("b")?"bcf":"vcf.gz"} \\
+	-O ${suffix.contains("b")?"b":"z"} \\
+	TMP/jeter1.vcf
 
-mv TMP/${prefix}.bcf ./
-mv TMP/${prefix}.bcf.csi ./
+bcftools index \\
+	-f \\
+	--threads ${task.cpus} ${suffix.contains("b")?"":"-t"} \\
+	TMP/${prefix}.${suffix.contains("b")?"bcf":"vcf.gz"}
+
+mv TMP/${prefix}.${suffix.contains("b")?"bcf":"vcf.gz"} ./
+mv TMP/${prefix}.${suffix.contains("b")?"bcf.csi":"vcf.gz.tbi"} ./
 
 cat << EOF > versions.yml
 ${task.process}:

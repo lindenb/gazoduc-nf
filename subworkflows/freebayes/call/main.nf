@@ -101,6 +101,8 @@ output:
 	path("versions.yml"),emit:versions
 script:
 	def prefix = task.ext.prefix?:vcf.name.md5().substring(0,7)+".ac_gt0"
+	// can break java based parser for VCF after BCFTOOLS MERGE: bad GL
+	def remove_GL = ((task.ext.no_GL?:false) as boolean)
 """
 mkdir -p TMP
 
@@ -111,14 +113,30 @@ bcftools view \\
 	-o TMP/jeter.bcf \\
 	"${vcf}"
 
-#  FORMAT/GL of freebayes are wrong, crashes htsjdk
-bcftools annotate \\
-	--write-index \\
-	-x 'FORMAT/GL' \\
-	--threads ${task.cpus} \\
-	-O b \\
-	-o TMP/jeter2.bcf \\
-	TMP/jeter.bcf
+if ${remove_GL}
+then
+
+	#  FORMAT/GL of freebayes are wrong, crashes htsjdk
+	bcftools annotate \\
+		--write-index \\
+		-x 'FORMAT/GL' \\
+		--threads ${task.cpus} \\
+		-O b \\
+		-o TMP/jeter2.bcf \\
+		TMP/jeter.bcf
+
+else
+
+	mv TMP/jeter.bcf TMP/jeter2.bcf
+
+	bcftools index -f \\
+		--threads ${task.cpus}  \\
+		TMP/jeter2.bcf	
+
+fi
+
+
+
 
 mv TMP/jeter2.bcf ${prefix}.bcf
 mv TMP/jeter2.bcf.csi ${prefix}.bcf.csi

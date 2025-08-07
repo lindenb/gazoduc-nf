@@ -104,12 +104,12 @@ process KEEP_DE_NOVO {
     
     bcftools view ${vcf} |\\
         jvarkit -Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP vcffilterjdk \\
-            -e 'return variant.hasAttribute(\\"loConfDeNovo\\")|| variant.hasAttribute(\\"hiConfDeNovo\\") || variant.getAttributeAsInt(\\"MERR\\",0)>0;' |\\
+            -e 'return variant.hasAttribute(\\"loConfDeNovo\\")|| variant.hasAttribute(\\"hiConfDeNovo\\") || variant.hasAttribute(\\"MENDEL\\")  || variant.getAttributeAsInt(\\"MERR\\",0)>0;' |\\
             awk '/#CHROM/ {printf("##INFO=<ID=CONTROLS_HAVING_ALT,Number=1,Type=Integer,Description=\\"In the pedigree, number of control or parent that have ALT allele.\\">\\n");} {print}' |\\
             bcftools view  -O z -o TMP/jeter.jeter.vcf.gz
     
     echo "Genotype g=null; int count=0;" > TMP/jeter.code
-    awk '(\$6=="control" || (\$3=="0" && \$4=="0")) {printf("%s\\n",\$2);} ' '${pedigree}'  |\\
+    awk '(\$6=="control" || (\$3=="0" && \$4=="0" && NF<=5)) {printf("%s\\n",\$2);} ' '${pedigree}'  |\\
         sort | uniq |\\
         awk '{printf("g=variant.getGenotype(\\"%s\\"); if(g!=null && g.hasAltAllele()) count++;\\n",\$1);}' >> TMP/jeter.code
         echo 'return new VariantContextBuilder(variant).attribute("CONTROLS_HAVING_ALT",count).make();' >>  TMP/jeter.code
@@ -154,37 +154,45 @@ process REPORT {
     script:
         def prefix = task.ext.prefix?:"snv.denovo"
         def args1 = task.ext.args1?:""
+        def args2 = task.ext.args2?:"--hide 'HOM_REF,NO_CALL' "
 	// do not create IGV report for more than XX variants
 	def max_igv_reports= task.ext.max_igv_reports?:1000
+	def controls_having_alts =task.ext.controls_having_alts!=null?task.ext.controls_having_alts:1000000 //use map because can be==0 == false
     """
     mkdir -p TMP
-    set -o pipefail
-
+    set -x
 
     bcftools view  ${args1} -Oz -o TMP/jeter.vcf.gz "${vcf}"
     bcftools index -f -t TMP/jeter.vcf.gz 
    
 cat << '_EOF_' > TMP/jeter.awk
     {
-    for(x=4;x<=5;++x) {
+    split("", found);
+    for(x=4;x<=6;++x) {
         N=split(\$x,a,/[,]/);
         for(i=1;i<=N;i++) {
-            if(a[i]=="." || a[i]=="") continue;
-            printf("%s\t%s\t%s\t%s\t%s\\n",\$1,\$2,\$3,a[i],(x==4?"loConfDeNovo":"hiConfDeNovo"));
+            if(a[i]=="." || a[i]=="" || (a[i] in found)) continue;
+            found[a[i]]=1;
+            tag="BUG";
+            if(x==4) {  tag="loConfDeNovo";  }
+            else if(x==5) {  tag="hiConfDeNovo";  }
+            else if(x==6) {  tag="MENDEL";  }
+            printf("%s\t%s\t%s\t%s\t%s\\n",\$1,\$2,\$3,a[i],tag);
             }
         }
     }
 _EOF_
 
 
-    bcftools query -f '%CHROM\t%POS0\t%END\t%INFO/loConfDeNovo\t%INFO/hiConfDeNovo\\n' TMP/jeter.vcf.gz |\\
+    bcftools query -i 'CONTROLS_HAVING_ALT<${controls_having_alts}' -f '%CHROM\t%POS0\t%END\t%INFO/loConfDeNovo\t%INFO/hiConfDeNovo\t%INFO/MENDEL\\n' TMP/jeter.vcf.gz |\\
         awk -F '\t' -f TMP/jeter.awk |\\
         LC_ALL=C sort -T TMP -k1,1 -k2,2n |\\
         uniq > TMP/jeter.bed
     
     bcftools view TMP/jeter.vcf.gz |\\
         jvarkit -Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP vcf2table \\
-            --hide 'HOM_REF,NO_CALL' --pedigree ${pedigree} > TMP/jeter.table.txt 
+            ${args2} \\
+            --pedigree ${pedigree} > TMP/jeter.table.txt 
 
     bcftools view TMP/jeter.vcf.gz |\\
         jvarkit -Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP groupbygene > TMP/jeter.genes.tsv
@@ -195,10 +203,12 @@ _EOF_
     mv TMP/jeter.table.txt ./${prefix}.table.txt
     mv TMP/jeter.genes.tsv ./${prefix}.genes.tsv
 
+    # NO DENOVO at all: prevent error
+    set +o pipefail
 
     if test \$(cat TMP/jeter.bed |wc -l) -lt ${max_igv_reports}
     then
-        grep -vFw loConfDeNovo  TMP/jeter.bed  > TMP/jeter2.bed
+        grep -vFw loConfDeNovo  TMP/jeter.bed | cat  > TMP/jeter2.bed
 	mv TMP/jeter2.bed TMP/jeter.bed
     fi
 
