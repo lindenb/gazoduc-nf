@@ -49,7 +49,7 @@ find \${PWD}/sv_results/ -type f -name "*.vcf.gz" | grep -v '/input_sites/' > TM
 
 bcftools concat \\
     --file-list TMP/vcf.list \\
-	--allow-overlaps --remove-duplicates \\
+	--allow-overlaps  \\
 	--threads ${task.cpus} \\
     -O u |\\
 	bcftools sort -T TMP/sort -O b -o TMP/jeter.bcf

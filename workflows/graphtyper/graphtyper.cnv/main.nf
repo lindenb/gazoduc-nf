@@ -28,6 +28,11 @@ include {GRAPHTYPER_GENOTYPE_SV           } from '../../../modules/graphtyper/ge
 include {SPLIT_N_VARIANTS                 } from '../../../subworkflows/jvarkit/split.n.variants'
 include {runOnComplete;dumpParams         } from '../../../modules/utils/functions.nf'
 include {SCATTER_TO_BED                   } from '../../../subworkflows/gatk/scatterintervals2bed'
+include {MULTIQC                          } from '../../../modules/multiqc'
+include {COMPILE_VERSIONS                 } from '../../../modules/versions/main.nf'
+include {JVARKIT_VCF_SET_DICTIONARY       } from '../../../modules/jvarkit/vcfsetdict'
+include {BCFTOOLS_CONCAT                  } from '../../../modules/bcftools/concat'
+
 if(params.help) {
     dumpParams(params);
     exit 0
@@ -119,7 +124,7 @@ workflow {
             fasta: [refhash,it[4][0]]
             fai: [refhash,it[5][0]]
             dict: [refhash,it[6][0]]
-            bams: [refhash.plus(id:it[0]), it[2].plus(it[3]) ]
+            bams: [refhash.plus(id:it[0]).plus(fasta_id:it[4][0].name.md5()), it[2].plus(it[3]) ]
 			vcf: [it[7],it[8],it[9]]
         }
 
@@ -131,7 +136,50 @@ workflow {
 		ch1.bams,
 		ch1.vcf
 		)
-	
+	versions = versions.mix(GRAPHTYPER_GENOTYPE_SV.out.versions)
+
+	/* group by reference */
+	/*
+	ch2= GRAPHTYPER_GENOTYPE_SV.out.vcf
+		.map{[id:it[0].fasta_id],[it[1],it[2]]}
+		.groupTuple()
+		.map{[it[0],it[1].flatten()]}
+
+
+
+	BCFTOOLS_CONCAT(
+       	ch2,
+        [[id:"nobed"],[]]
+        )
+    versions =  versions.mix(BCFTOOLS_CONCAT.out.versions)
+
+	JVARKIT_VCF_SET_DICTIONARY(
+        dict,
+        BCFTOOLS_CONCAT.out.vcf
+        )
+    versions = versions.mix(JVARKIT_VCF_SET_DICTIONARY.out.versions)
+
+
+	if(params.pedigree!=null) {
+        GTYPER_DENOVO(
+            fasta,
+            fai,
+            dict,
+            pedigree,
+            JVARKIT_VCF_SET_DICTIONARY.out.vcf
+            )
+        versions = versions.mix(GTYPER_DENOVO.out.versions)
+        }
+	*/
+/*
+    
+
+
+	COMPILE_VERSIONS(versions.collect())
+    multiqc = multiqc.mix(COMPILE_VERSIONS.out.multiqc)
+
+    MULTIQC(multiqc.collect().map{[[id:"gtyper_sv"],it]})
+	*/
 	}
 
 runOnComplete(workflow);
@@ -139,38 +187,103 @@ runOnComplete(workflow);
 
 
 
-workflow GRAPHTYPER_CNV_01 {
-	take:
-		bams
-		vcf
-		bed
-	main:
-		version_ch = Channel.empty()
-				
-		executable_ch = GRAPHTYPER_DOWNLOAD_01()
-		version_ch = version_ch.mix(executable_ch.version)
+process GTYPER_DENOVO {
+    label "process_single"
+    tag "${meta.id?:""} ${vcf.name}"
+    afterScript "rm -rf TMP"
+    conda "${moduleDir}/../../conda/bioinfo.01.yml"
+    input:
+		tuple val(meta1),path(fasta)
+		tuple val(meta2),path(fai)
+		tuple val(meta3),path(dict)
+        tuple val(meta4),path(pedigree)
+        tuple val(meta),path(vcf),path(vcfidx)
+    output:
+        tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:vcf
+    	path("versions.yml"),emit:versions
+  
+    script:
+        def prefix = task.ext.prefix?:meta.id + ".denovo"
+	"""
+	hostname 1>&2
+	mkdir -p TMP
 
-		splitvcf_ch = JVARKIT_VCF_SPLIT_N_VARIANTS_01(vcf, bed)
-		version_ch = version_ch.mix(splitvcf_ch.version)
+cat << __EOF__ > TMP/jeter.code
 
-		each_vcf = splitvcf_ch.output.splitText().map{it.trim()}
+private boolean isFiltered(final Genotype g) {
+	if(!g.isFiltered()) return false;
+	if(g.getFilters().equals("PASS")) return false;
+	return true;
+ 	}
 
-		x2_ch = GENOTYPE_CNV(
-			executable_ch.executable, 
-			bams,
-			each_vcf
-			)
-		
-		x3_ch = COLLECT_TO_FILE_01([:],x2_ch.output.collect())
-		version_ch = version_ch.mix(x3_ch.version)
+private boolean acceptControl(final VariantContext vc,String sm) {
+        final Genotype g = vc.getGenotype(sm);
+        if(g!=null && g.hasAltAllele() ) return false;
+        return true;
+        }
 
-		x4_ch = BCFTOOLS_CONCAT_01([:],x3_ch.output,file("NO_FILE"))
-		version_ch = version_ch.mix(x4_ch.version)
+private boolean acceptTrio(final VariantContext vc,String cm,String fm,String mm) {
+    final Genotype c = vc.getGenotype(cm);
+    if(c==null) return false;
+    if(isFiltered(c)) return false;
+    final Genotype m = vc.getGenotype(mm);
+    final Genotype f = vc.getGenotype(fm);
+    // child must be HET
+    if(!c.hasAltAllele()) return false;
+    // keep de novo
+    if(f.hasAltAllele() || m.hasAltAllele()) return false;
+    if(isFiltered(f)) return false;
+    if(isFiltered(m)) return false;
+    return true;
+    }
 
-		version_ch = MERGE_VERSION("graptyper",version_ch.collect())
-	emit:
-		version = version_ch
-		vcf = x4_ch.vcf
-	}
+public Object apply(final VariantContext variant) {
+if(variant.isFiltered()) return false;
+final String svType = variant.getAttributeAsString("SVTYPE","");
+if(svType.equals("BND")) return false;
+__EOF__
+
+
+
+    # convert pedigree if no 6th column
+    awk '{S=\$6 ; if(NF==5 || S=="") { if(\$3!="0" && \$4!="0") {S="case";} else {S="control"} }  printf("%s\t%s\t%s\t%s\t%s\t%s\\n",\$1,\$2,\$3,\$4,\$5,S);}' ${pedigree} > TMP/pedigree.tsv
+    
+
+    ## all other samples are controls
+	comm -13 \\
+			<(cut -f 2 TMP/pedigree.tsv  | sort | uniq) \\
+			<(bcftools query -l '${vcf}'| sort | uniq) |\\
+			awk '{printf("if(!acceptControl(variant,\\"%s\\")) return false;\\n",\$1);}' >> TMP/jeter.code
+
+awk -F '\t' '(\$6=="control" || \$6=="unaffected") {printf("if(!acceptControl(variant,\\"%s\\")) return false;\\n",\$2);}'  TMP/pedigree.tsv >> TMP/jeter.code
+
+awk -F '\t' '(\$6=="case" || \$6=="affected") {printf("if(acceptTrio(variant,\\"%s\\",\\"%s\\",\\"%s\\")) return true;\\n",\$2,\$3,\$4);}' TMP/pedigree.tsv  >> TMP/jeter.code
+
+cat << EOF >> TMP/jeter.code
+return false;
+}
+EOF
+
+    bcftools view "${vcf}"  |\\
+            jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcffilterjdk --body -f TMP/jeter.code |\\
+            bcftools view -o TMP/jeter.vcf.gz -O z
+
+    bcftools index --threads ${task.cpus} -f -t TMP/jeter.vcf.gz
+
+
+    mv  TMP/jeter.vcf.gz "${prefix}.vcf.gz"
+    mv  TMP/jeter.vcf.gz.tbi "${prefix}.vcf.gz.tbi"
+
+
+cat << EOF > versions.yml
+"${task.process}":
+	jvarkit: todo
+EOF
+"""
+}
+
+
+
+
 
 
