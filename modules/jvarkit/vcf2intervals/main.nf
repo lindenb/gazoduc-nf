@@ -23,16 +23,15 @@ SOFTWARE.
 
 */
 
-process JVARKIT_VCF_TO_INTERVALS_01 {
+process JVARKIT_VCF_TO_INTERVALS {
 	label "process_single"
 	conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 	afterScript "rm -rf TMP"
 	tag "${interval} ${vcf.name}"
 	input:
-		tuple val(interval),path(bed),path(vcf),path(idx)
-		
+		tuple val(meta),path(vcf),path(idx),path(optional_bed)
 	output:
-		path("*.bed"),emit:bed /* chrom/start/end/vcf/idx */
+		tuple val(meta),path("*.bed"),optional:true,emit:bed /* chrom/start/end/vcf/idx */
 		path("versions.yml"),emit:versions
 	script:
 		if(!task.ext.containsKey("distance")) throw new IllegalStateException("task.ext.distance missing for ${task.process}");
@@ -46,7 +45,7 @@ process JVARKIT_VCF_TO_INTERVALS_01 {
 
 	mkdir -p TMP
 
-	bcftools view --threads ${cpu2} -G "${vcf}" ${bed.name.endsWith(".bed")?"\"${bed}\"":"\"${interval}\""} |\\
+	bcftools view --threads ${cpu2}  ${optional_bed?"--regions-file \"${optional_bed.name}\""} "${vcf}" |\\
 	jvarkit  -Djava.io.tmpdir=TMP -Xmx${task.memory.giga}G vcf2intervals  \\
 		--bed \\
 		--distance "${distance}" \\

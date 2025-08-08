@@ -159,8 +159,6 @@ public Object apply(final VariantContext vc) {
             vcb.attribute("SINGLETON",singleton.get().getSampleName());
             }
 
-
-
         vcb.attribute("N_ALT_SAMPLES", vc.getGenotypes().stream().filter(G->G.hasAltAllele()).count());
 
         return vcb.make();

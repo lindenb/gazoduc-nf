@@ -955,6 +955,23 @@ then
 fi
 
 
+
+################################################################################
+
+
+    bcftools view TMP/jeter1.bcf |\\
+        awk -f "${moduleDir}/extraannot.awk" |\\
+         jvarkit -XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcffilterjdk \\
+            --body -f "${moduleDir}/extraannot.code" |\\
+        bcftools view -O b -o TMP/jeter2.bcf
+    
+     bcftools index -f --threads ${task.cpus}  TMP/jeter2.bcf
+
+    mv  TMP/jeter2.bcf  TMP/jeter1.bcf
+    mv  TMP/jeter2.bcf.csi  TMP/jeter1.bcf.csi
+    
+    ${countVariants("TMP/jeter1.bcf")} 
+
 ################################################################################
 
 mv TMP/jeter1.bcf ${prefix}.bcf

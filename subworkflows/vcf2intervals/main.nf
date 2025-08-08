@@ -23,9 +23,10 @@ SOFTWARE.
 
 */
 
-include {VCF_TO_BED} from '../vcf2bed'
-include {JVARKIT_VCF_TO_INTERVALS_01 as VCF_TO_INTERVALS} from '../../modules/jvarkit/vcf2intervals'
-include {CONCAT_FILES_01} from '../../modules/utils/concat.files.nf'
+include {VCF_TO_BED               } from '../../modules/bcftools/vcf2bed'
+include {JVARKIT_VCF_TO_INTERVALS } from '../../modules/jvarkit/vcf2intervals'
+include {CONCAT_FILES_01          } from '../../modules/utils/concat.files.nf'
+include {BEDTOOLS_INTERSECT       } from '../../modules/bedtools/intersect'
 
 
 
@@ -33,13 +34,41 @@ include {CONCAT_FILES_01} from '../../modules/utils/concat.files.nf'
  * call jvarkit vcf2intervals for one or more vcf
  *
  */
-workflow JVARKIT_VCF_TO_INTERVALS_01 {
+workflow VCF_TO_INTERVALS {
 	take:
-		vcf /* path to vcf, or file with .list suffix */
-		bed /* limit to that BED or NO_FILE */
-	main:	
+		meta
+		vcf /* meta,vcf,idx*/
+		bed /* meta,bed */
+	main:
+		versions = Channel.empty()
 		bed_ch = VCF_TO_BED(vcf)
+		versions = versions.mix(VCF_TO_BED.out.versions)
 	
+		ch1 = VCF_TO_BED.out.bed.
+			map{it instanceof List?it:[it]}.
+			flatMap{v->{
+				def L1=[];
+				for(X in v[1]) {
+					L1.add([v[0],X]);
+					}
+				return L1;
+			}}.
+			combine(bed).
+			map{[it[0],it[1],it[3]]}.
+			view()
+
+		BEDTOOLS_INTERSECT(
+			[ [id:"nofai"],[]],
+			ch1
+			)
+		versions = versions.mix(BEDTOOLS_INTERSECT.out.versions)
+		
+
+		ch2 =vcf.join(BEDTOOLS_INTERSECT.output.bed).view()
+
+		JVARKIT_VCF_TO_INTERVALS() 
+
+		/*
 		bed2ch = INTERSECT_BED(bed_ch.bed, bed)
 
 
@@ -49,10 +78,11 @@ workflow JVARKIT_VCF_TO_INTERVALS_01 {
 		rch = VCF_TO_INTERVALS(interval_vcf)
 
 		concat_ch = CONCAT_FILES_01(rch.bed.collect())
-
+		*/
 	emit:
-		vcf2bed = bed_ch.bed /** original BED computed by VCF_TO_BED */
-		bed = concat_ch.output /** sliced bed , this is what we want */
+		versions
+		//vcf2bed = bed_ch.bed /** original BED computed by VCF_TO_BED */
+		//bed = concat_ch.output /** sliced bed , this is what we want */
 	}
 
 

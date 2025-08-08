@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,16 +24,10 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-
-
-include {GRAPHTYPER_DOWNLOAD_01} from '../../../modules/graphtyper/graphtyper.download.01.nf'
-include {MERGE_VERSION} from '../../../modules/version/version.merge.02.nf'
-include {COLLECT_TO_FILE_01} from '../../../modules/utils/collect2file.01.nf'
-include {BCFTOOLS_CONCAT_01} from '../../../subworkflows/bcftools/bcftools.concat.01.nf'
-include {JVARKIT_VCF_SPLIT_N_VARIANTS_01} from '../../../subworkflows/jvarkit/jvarkit.vcfsplitnvariants.nf'
-include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
-include {runOnComplete;moduleLoad;getVersionCmd;dumpParams} from '../../../modules/utils/functions.nf'
-
+include {GRAPHTYPER_GENOTYPE_SV           } from '../../../modules/graphtyper/genotype_sv'
+include {SPLIT_N_VARIANTS                 } from '../../../subworkflows/jvarkit/split.n.variants'
+include {runOnComplete;dumpParams         } from '../../../modules/utils/functions.nf'
+include {SCATTER_TO_BED                   } from '../../../subworkflows/gatk/scatterintervals2bed'
 if(params.help) {
     dumpParams(params);
     exit 0
@@ -41,11 +35,103 @@ if(params.help) {
     dumpParams(params);
 }
 
+Map assertKeyExists(final Map hash,final String key) {
+    if(!hash.containsKey(key)) throw new IllegalArgumentException("no key ${key}'in ${hash}");
+    return hash;
+}
+
+Map assertKeyExistsAndNotEmpty(final Map hash,final String key) {
+    assertKeyExists(hash,key);
+    def value = hash.get(key);
+    if(value.isEmpty()) throw new IllegalArgumentException("empty ${key}'in ${hash}");
+    return hash;
+}
+
+Map assertKeyMatchRegex(final Map hash,final String key,final String regex) {
+    assertKeyExists(hash,key);
+    def value = hash.get(key);
+    if(!value.matches(regex)) throw new IllegalArgumentException(" ${key}'in ${hash} doesn't match regex '${regex}'.");
+    return hash;
+}
 
 
 workflow {
-	c1_ch = GRAPHTYPER_CNV_01(file(params.bams),file(params.vcf), file(params.bed))
-	html = VERSION_TO_HTML(c1_ch.version)	
+	def refhash=[
+		id: file(params.fasta).baseName,
+		name: file(params.fasta).baseName,
+		ucsc_name :( params.ucsc_name?:"undefined"),
+		ensembl_name : (params.ensembl_name?:"undefined")
+		]
+	versions = Channel.empty()
+
+	def fasta =    [ refhash, file(params.fasta) ]
+	def fai   =    [ refhash, file(params.fai)  ]
+	def dict  =    [ refhash, file(params.dict) ]
+	def gtf  =    [ refhash, file(params.gtf) ]
+	def pedigree = [ refhash, []]
+	def vcf = [ [id:file(params.vcf).name], file(params.vcf),file(params.vcf+ (params.vcf.endsWith(".vcf.gz")?".tbi":".csi"))]
+
+   if(params.bed==null) {
+        SCATTER_TO_BED(refhash,fasta,fai,dict)
+        versions = versions.mix(SCATTER_TO_BED.out.versions)
+        bed = SCATTER_TO_BED.out.bed
+        }
+	else {
+        bed =  [refhash, file(params.bed) ]
+        }
+	
+	SPLIT_N_VARIANTS( refhash, bed, Channel.of(vcf) )
+
+	versions = versions.mix(SPLIT_N_VARIANTS.out.versions)
+
+
+
+	ch1 = Channel.fromPath(params.samplesheet)
+        .splitCsv(header:true,sep:',')
+        .map{assertKeyMatchRegex(it,"sample","^[A-Za-z_0-9\\.\\-]+\$")}
+        .map{assertKeyMatchRegex(it,"bam","^\\S+\\.(bam|cram)\$")}
+        .map{
+            if(it.containsKey("batch")) return it;
+            return it.plus(batch:"batch_"+it.sample);
+        }
+        .map{
+            if(it.containsKey("bai")) return it;
+            if(it.bam.endsWith(".cram")) return it.plus(bai : it.bam+".crai");
+            return it.plus(bai:it.bam+".bai");
+        }
+        .map{
+            if(it.containsKey("fasta")) return it;
+            return it.plus(fasta:params.fasta);
+        }
+        .map{
+            if(it.containsKey("fai")) return it;
+            return it.plus(fai:it.fasta+".fai");
+        }
+        .map{
+            if(it.containsKey("dict")) return it;
+            return it.plus(dict: it.fasta.replaceAll("\\.(fasta|fa|fna)\$",".dict"));
+        }
+        .map{assertKeyMatchRegex(it,"bai","^\\S+\\.(bai|crai)\$")}
+        .map{[ it.fasta, it.sample,file(it.bam),file(it.bai),file(it.fasta),file(it.fai),file(it.dict)]}
+        .groupTuple()
+		.combine(SPLIT_N_VARIANTS.out.vcf)
+        .multiMap {
+            fasta: [refhash,it[4][0]]
+            fai: [refhash,it[5][0]]
+            dict: [refhash,it[6][0]]
+            bams: [refhash.plus(id:it[0]), it[2].plus(it[3]) ]
+			vcf: [it[7],it[8],it[9]]
+        }
+
+
+	GRAPHTYPER_GENOTYPE_SV(
+		ch1.fasta,
+		ch1.dict,
+		ch1.fai,
+		ch1.bams,
+		ch1.vcf
+		)
+	
 	}
 
 runOnComplete(workflow);
@@ -87,73 +173,4 @@ workflow GRAPHTYPER_CNV_01 {
 		vcf = x4_ch.vcf
 	}
 
-
-process GENOTYPE_CNV {
-tag "${file(vcf).name}"
-cpus 5
-afterScript "rm -rf results TMP sv_results"
-errorStrategy 'retry'
-maxRetries 3
-input:
-	val(graphtyper)
-	path(bams)
-	val(vcf)
-output:
-	path("genotyped.bcf"),emit:output
-	path("genotyped.bcf.csi"),emit:index
-	path("version.xml"),emit:version
-script:
-	def reference = params.genomes[params.genomeId].fasta
-"""
-hostname 1>&2
-${moduleLoad("bcftools bedtools")}
-mkdir -p TMP
-
-export TMPDIR=\${PWD}/TMP
-
-bcftools query -f '%CHROM\t%POS0\t%END\\n' '${vcf}' | sort -T TMP -t '\t' -k1,1 -k2,2n | bedtools merge |\
-	awk -F '\t' '{printf("%s:%d-%s\\n",\$1,int(\$2)+1,\$3);}' > TMP/jeter.intervals
-
-# prevent empty intervals
-if test ! -s TMP/jeter.intervals ; then
-	awk '(NR==1){printf("%s:1-2\\n",\$1);}' "${reference}.fai" > TMP/jeter.intervals
-fi
-
-
-${graphtyper} genotype_sv \
-	"${reference}" \
-	"${vcf}" \
-	--force_no_copy_reference \
-	--force_use_input_ref_for_cram_reading \
-	--region_file TMP/jeter.intervals \
-	--sams=${bams} \
-	--threads=${task.cpus}
-
-find \${PWD}/sv_results/ -type f -name "*.vcf.gz" | grep -v '/input_sites/' > TMP/vcf.list
-
-bcftools concat --file-list TMP/vcf.list \
-	--allow-overlaps --remove-duplicates \
-	--threads ${task.cpus} -O u |\
-	bcftools sort -T TMP -O b -o "genotyped.bcf"
-
-bcftools index --threads ${task.cpus} "genotyped.bcf"
-
-sleep 10
-touch genotyped.bcf
-sleep 10
-touch genotyped.bcf.csi
-
-
-##################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">run graphtyper</entry>
-        <entry key="bams">${bams}</entry>
-        <entry key="reference">${reference}</entry>
-        <entry key="version">${getVersionCmd("bcftools bedtools")}</entry>
-</properties>
-EOF
-"""
-}
 

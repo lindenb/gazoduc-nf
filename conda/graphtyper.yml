@@ -5,3 +5,4 @@ dependencies:
   - bioconda::graphtyper=2.7.7
   - bioconda::samtools=1.21
   - bioconda::bcftools=1.21
+  - bioconda::bedtools

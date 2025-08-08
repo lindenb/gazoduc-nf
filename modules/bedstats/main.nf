@@ -24,39 +24,32 @@ SOFTWARE.
 */
 
 
-process BEDTOOLS_INTERSECT {
+process BED_STATS {
 label "process_single"
 tag "${meta.id?:""}"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-afterScript "rm -rf TMP"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
-    tuple val(meta1),path(optional_fai)
-	tuple val(meta),path(file1),path(file2)    
+    tuple val(meta1),path(fai)
+	tuple val(meta),path("BED/*")   
 output:
-	tuple val(meta),path("*.bed"),optional:true,emit:bed
+	path("*_mqc.{html,csv}"),optional:true,emit:multiqc
 	path("versions.yml"),emit:versions
 script:	
-    def sizes = optional_fai?"-g ${optional_fai}":''
-    def prefix = task.ext.prefix?:"\${MD5}.intersect"
+    def prefix = task.ext.prefix?:"\${MD5}.summary"
 """
 hostname 1>&2
+set -o pipefail
 mkdir -p TMP
-
-bedtools intersect \\
-    ${sizes} \\
-    -a ${file1} \\
-    -b ${file2} > "TMP/jeter.bed"
+find BED \\( -name "*.bed" -o -name "*.bed.gz" \\) > TMP/jeter.list
+MD5=`md5sum < TMP/jeter.list| cut -d ' ' -f 1`
 
 
-if test -s TMP/jeter.bed
+if test `wc -l <  TMP/jeter.list` -eq 1
 then
+    echo TODO
+else
 
-sort -T TMP -k1,1 -k2,2n -t '\t' TMP/jeter.bed > TMP/jeter2.bed
-
-MD5=`cat TMP/jeter2.bed | md5sum | cut -d ' ' -f1`
-
-
-mv TMP/jeter2.bed "${prefix}.bed"
+    echo TODO
 
 fi
 
