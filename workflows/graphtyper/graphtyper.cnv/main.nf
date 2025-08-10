@@ -68,13 +68,18 @@ workflow {
 		ensembl_name : (params.ensembl_name?:"undefined")
 		]
 	versions = Channel.empty()
+	multiqc = Channel.empty()
 
 	def fasta =    [ refhash, file(params.fasta) ]
 	def fai   =    [ refhash, file(params.fai)  ]
 	def dict  =    [ refhash, file(params.dict) ]
-	def gtf  =    [ refhash, file(params.gtf) ]
+	def gtf  =    [ refhash, file(params.gtf),file(params.gtf +".tbi") ]
 	def pedigree = [ refhash, []]
 	def vcf = [ [id:file(params.vcf).name], file(params.vcf),file(params.vcf+ (params.vcf.endsWith(".vcf.gz")?".tbi":".csi"))]
+
+	if(params.pedigree!=null) {
+		pedigree = [ [id:file(params.pedigree).name], file(params.pedigree) ]
+	}
 
    if(params.bed==null) {
         SCATTER_TO_BED(refhash,fasta,fai,dict)
@@ -125,7 +130,7 @@ workflow {
             fai: [refhash,it[5][0]]
             dict: [refhash,it[6][0]]
             bams: [refhash.plus(id:it[0]).plus(fasta_id:it[4][0].name.md5()), it[2].plus(it[3]) ]
-			vcf: [it[7],it[8],it[9]]
+	    vcf: [it[7].plus(fasta_id:it[4][0].name.md5()),it[8],it[9]]
         }
 
 
@@ -139,11 +144,12 @@ workflow {
 	versions = versions.mix(GRAPHTYPER_GENOTYPE_SV.out.versions)
 
 	/* group by reference */
-	/*
+	
 	ch2= GRAPHTYPER_GENOTYPE_SV.out.vcf
-		.map{[id:it[0].fasta_id],[it[1],it[2]]}
+		.map{[ [id:it[0].fasta_id],[it[1],it[2]]]}
 		.groupTuple()
 		.map{[it[0],it[1].flatten()]}
+
 
 
 
@@ -151,7 +157,8 @@ workflow {
        	ch2,
         [[id:"nobed"],[]]
         )
-    versions =  versions.mix(BCFTOOLS_CONCAT.out.versions)
+     versions =  versions.mix(BCFTOOLS_CONCAT.out.versions)
+
 
 	JVARKIT_VCF_SET_DICTIONARY(
         dict,
@@ -160,7 +167,7 @@ workflow {
     versions = versions.mix(JVARKIT_VCF_SET_DICTIONARY.out.versions)
 
 
-	if(params.pedigree!=null) {
+    if(params.pedigree!=null) {
         GTYPER_DENOVO(
             fasta,
             fai,
@@ -169,17 +176,25 @@ workflow {
             JVARKIT_VCF_SET_DICTIONARY.out.vcf
             )
         versions = versions.mix(GTYPER_DENOVO.out.versions)
+
+	EXTRACT_DENOVO( GTYPER_DENOVO.out.vcf
+		.map{[ it[1],it[2] ]}
+		.collect()
+		.map{[ [id:"denovo"],it]}
+		.view()
+		)
+        versions = versions.mix(EXTRACT_DENOVO.out.versions)
         }
-	*/
-/*
+	
+
     
 
 
 	COMPILE_VERSIONS(versions.collect())
-    multiqc = multiqc.mix(COMPILE_VERSIONS.out.multiqc)
+       multiqc = multiqc.mix(COMPILE_VERSIONS.out.multiqc)
 
     MULTIQC(multiqc.collect().map{[[id:"gtyper_sv"],it]})
-	*/
+	
 	}
 
 runOnComplete(workflow);
@@ -191,7 +206,7 @@ process GTYPER_DENOVO {
     label "process_single"
     tag "${meta.id?:""} ${vcf.name}"
     afterScript "rm -rf TMP"
-    conda "${moduleDir}/../../conda/bioinfo.01.yml"
+    conda "${moduleDir}/../../../conda/bioinfo.01.yml"
     input:
 		tuple val(meta1),path(fasta)
 		tuple val(meta2),path(fai)
@@ -246,7 +261,7 @@ __EOF__
 
 
     # convert pedigree if no 6th column
-    awk '{S=\$6 ; if(NF==5 || S=="") { if(\$3!="0" && \$4!="0") {S="case";} else {S="control"} }  printf("%s\t%s\t%s\t%s\t%s\t%s\\n",\$1,\$2,\$3,\$4,\$5,S);}' ${pedigree} > TMP/pedigree.tsv
+    awk '{S=\$6 ; if(NF==5 || S=="") { if(\$3!="0" && \$4!="0") {S="case";} else {S="control"} }  printf("%s\t%s\t%s\t%s\t%s\t%s\\n",\$1,\$2,\$3,\$4,\$5,S);}' "${pedigree}" > TMP/pedigree.tsv
     
 
     ## all other samples are controls
@@ -271,13 +286,27 @@ EOF
     bcftools index --threads ${task.cpus} -f -t TMP/jeter.vcf.gz
 
 
-    mv  TMP/jeter.vcf.gz "${prefix}.vcf.gz"
-    mv  TMP/jeter.vcf.gz.tbi "${prefix}.vcf.gz.tbi"
+    # GATK possibledenovo
+    awk -f "${moduleDir}/../../../modules/gatk/possibledenovo/pedigree4gatk.awk" "${pedigree}" > TMP/jeter.ped
+
+    gatk --java-options "-XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" VariantAnnotator \\
+        -R "${fasta}" \\
+        --annotation PossibleDeNovo \\
+        --pedigree  TMP/jeter.ped \\
+        -V TMP/jeter.vcf.gz \\
+        -O TMP/jeter2.vcf.gz
+
+
+
+
+    mv  TMP/jeter2.vcf.gz "${prefix}.vcf.gz"
+    mv  TMP/jeter2.vcf.gz.tbi "${prefix}.vcf.gz.tbi"
 
 
 cat << EOF > versions.yml
 "${task.process}":
 	jvarkit: todo
+	gatk: todo
 EOF
 """
 }
@@ -287,3 +316,40 @@ EOF
 
 
 
+process EXTRACT_DENOVO {
+    label "process_single"
+    tag "${meta.id?:""}"
+    afterScript "rm -rf TMP"
+    conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+    input:
+	        tuple val(meta),path("VCFS/*")
+    output:
+        tuple val(meta),path("*.bed"),emit:bed
+        path("versions.yml"),emit:versions
+script:
+	def prefix = task.ext.prefix?:"\${MD5}.denovo"
+"""
+mkdir -p TMP
+
+
+find VCFS/ -name "*.vcf.gz" | while read F
+do
+	bcftools query -f '%CHROM\t%POS0\t%END\t%SVTYPE %hiConfDeNovo %loConfDeNovo\\n' "\$F" |tr "," " " | tr -s " " >> TMP/jeter.txt
+
+done
+
+
+echo -e 'chrom\tstart\tend\ttitle' >> TMP/jeter.bed
+sort -t '\t' -k1,1 -k2,2n  -k3,3n -T TMP --unique  TMP/jeter.txt >> TMP/jeter.bed
+
+MD5=`cat TMP/jeter.bed | md5sum | cut -d ' ' -f1`
+
+mv TMP/jeter.bed "${prefix}.bed"
+
+cat << EOF > versions.yml
+"${task.process}":
+        jvarkit: todo
+        gatk: todo
+EOF
+"""
+}
