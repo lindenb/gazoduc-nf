@@ -6,8 +6,8 @@ import java.util.List;
 import java.util.Random;
 
 import com.beust.jcommander.Parameter;
-import com.github.lindenb.jvarkit.bio.SequenceDictionaryUtils;
-import com.github.lindenb.jvarkit.jcommander.Launcher;
+import com.github.lindenb.jvarkit.util.bio.SequenceDictionaryUtils;
+import com.github.lindenb.jvarkit.util.jcommander.Launcher;
 
 import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.tribble.index.tabix.TabixFormat;
@@ -24,7 +24,7 @@ public class Minikit extends Launcher {
 	@Parameter(names={"-o","--output"},description=OPT_OUPUT_FILE_OR_STDOUT)
 	private File outputDir = null;
 	@Parameter(names={"-L","--length"},description="max-length")
-	private int max_len = 100_000;
+	private int max_len = 1_000_000;
 	
 	private int ID_GENERATOR=0;
 	
@@ -41,6 +41,7 @@ private class Batch {
 				String.valueOf(getLengthOnReference()),
 				variants.size()
 				));
+		System.err.println("Save "+filename);
 		final TabixIndexCreator tbi=new TabixIndexCreator(dict, TabixFormat.VCF);
 		final VariantContextWriterBuilder vcw= new VariantContextWriterBuilder();
 		vcw.setIndexCreator(tbi);
@@ -67,7 +68,7 @@ public int doWork(List<String> args) {
 			final VCFHeader header = iter.getHeader();
 			final List<Batch> batches = new ArrayList<>();
 			for(;;) {
-				final VariantContext ctx=iter.hasNext()?iter.next():null;
+				final VariantContext ctx = iter.hasNext()?iter.next():null;
 				
 				if(ctx==null) {
 					for(Batch b:batches) {

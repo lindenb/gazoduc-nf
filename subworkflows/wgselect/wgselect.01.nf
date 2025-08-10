@@ -120,7 +120,7 @@ echo "JD1=\${JD1}" 1>&2
 # directory of jvarkit
 JD2=`dirname "\${JD1}"`
 # find the jar itself
-JVARKIT_JAR=`find "\${JD2}/../.." -type f -name "jvarkit.jar" | head -n1`
+JVARKIT_JAR=`find "\${JD2}/../.." -type f -name "jvarkit.jar" -print -quit`
 JVARKIT_DIST=`dirname "\${JVARKIT_JAR}"`
 
 test ! -z "\${JVARKIT_JAR}"

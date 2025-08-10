@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -22,8 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {SAMTOOLS_SAMPLES02} from '../../subworkflows/samtools/samtools.samples.02.nf'
-
+include {GHOSTSCRIPT_MERGE                } from '../../modules/gs/merge'
+include {PDF_NAVIGATION                   } from '../../modules/pdf/navigation'
 
 workflow PLOT_COVERAGE_01 {
 	take:
@@ -32,8 +32,8 @@ workflow PLOT_COVERAGE_01 {
 		fai
 		dict
 		gtf
-		bed
-		bams //[bam,bai]
+		bed // [meta,bed]
+		bams //[meta,bam,bai]
 	main:
 		versions = Channel.empty()
 		EXTEND_BED(fasta,fai,dict, bed)
@@ -48,18 +48,18 @@ workflow PLOT_COVERAGE_01 {
 		DRAW_COVERAGE(fasta,fai,dict,gtf,c1_ch.combine(bams))
 		versions = versions.mix(DRAW_COVERAGE.out.versions)
 
-		MERGE_PDFS(
+		GHOSTSCRIPT_MERGE(
 			DRAW_COVERAGE.out.pdf
 				.map{T->[[id:T[0].chrom+"_"+T[0].delstart+"_"+T[0].delend],T[1]]}
 				.groupTuple()
 			)
-		versions = versions.mix(MERGE_PDFS.out.versions)
+		versions = versions.mix(GHOSTSCRIPT_MERGE.out.versions)
 
 
-		ZIP_ALL(MERGE_PDFS.out.pdf.map{it[1]}.collect().map{[meta,it]})
-		versions = versions.mix(ZIP_ALL.out.versions)
+		PDF_NAVIGATION(GHOSTSCRIPT_MERGE.out.pdf.map{it[1]}.collect().map{[meta,it]})
+		versions = versions.mix(PDF_NAVIGATION.out.versions)
 	emit:
-		zip =ZIP_ALL.out.zip
+		zip =PDF_NAVIGATION.out.zip
 		versions
 	}
 
@@ -91,10 +91,6 @@ BEGIN {
 	N=${min_sv_len};
 	}
 
-/^(browser|track|#)/ {
-	next;
-	}
-
 	{
 	L=int(\$3)-int(\$2);
 	if(M>0 && L>M) next;
@@ -103,7 +99,8 @@ BEGIN {
 	}
 EOF
 
-	jvarkit  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedrenamechr -R "${fasta}" -c 1 "${bed}" | \\
+	grep -vE '^(chrom|browser|track|#)'  "${bed}" |\\
+	jvarkit  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedrenamechr -R "${fasta}" -c 1 | \\
 		awk -F '\t' -f jeter.awk > TMP/jeter1.bed
 
 	cut -f 1,2,3 TMP/jeter1.bed |\\
@@ -190,112 +187,6 @@ R --vanilla < TMP/jeter.R
 
 mv TMP/jeter.pdf "${row.chrom}_${row.start}_${row.end}.${meta.id}.pdf"
 
-touch versions.yml
-"""
-}
-
-
-process MERGE_PDFS {
-	tag "${meta.id}"
-	label "process_single"
-	conda "${moduleDir}/../../conda/ghostscript.yml"
-	input:
-		tuple val(meta),path("PDF/*")
-	output:
-		tuple val(meta),path("*.pdf"),emit:pdf
-		path("versions.yml"),emit:versions
-	script:
-		def title = meta.id
-	"""
-	hostname 1>&2
-
-	find PDF/ -type l -name "*.pdf" | LC_ALL=C sort -V > jeter.txt
-
-	test -s jeter.txt
-
-	gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -dPDFSETTINGS=/prepress -sOutputFile=${title}.pdf `cat jeter.txt`
-
-	rm jeter.txt
-	touch versions.yml
-	"""
-	}
-
-process ZIP_ALL {
-label "process_single"
-input:
-	tuple val(meta),path("PDF/*")
-output:
-	tuple val(meta),path("all.zip"),emit:zip
-	path("versions.yml"),emit:versions
-script:
-	def dir = (params.prefix?:"")+"archive"
-	"""
-hostname 1>&2
-mkdir -p "${dir}"
-cp -v PDF/*.pdf ${dir}/
-
-
-cat << EOF > ${dir}/index.html
-<html>
-<head>
-<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-<meta http-equiv="author" content="Pierre Lindenbaum Phd ">
-<title>${params.prefix?:""} Coverage</title>
-<script>
-var files=[
-EOF
-
-find ${dir} -type f -name "*.pdf" -printf "\\"%f\\"\\n" | paste -sd ','  >> ${dir}/index.html 
-
-cat << EOF >> ${dir}/index.html
-];
-var page =0;
-
-function goTo(dx) {
-    if(files.length==0) return;
-    page = page+dx;
-    if(page<0) page = files.length-1;
-    if(page>=files.length) page=0;
-    document.getElementById("id1").src = files[page];
-    document.getElementById("h1").textContent = files[page]+ " ("+(page+1)+"/"+files.length+")";
-    }
-
- 
-
-window.addEventListener('load', (event) => {
-  var frame = document.getElementById("id1");
-  frame.style.height=(frame.contentWindow.document.body.scrollHeight+20)+'px';
-  goTo(0);
-});
-
-</script>
-</head>
-<body>
-<div>
-    <button onclick="goTo(-1);">PREV</button>
-    <span id="h1"></span>
-    <button onclick="goTo(1);">NEXT</button>
-</div>
-
-<iframe id="id1" style="height:800px;width:100%;" src="blank_">
-</iframe>
-
-<div>
-    <button onclick="goTo(-1);">PREV</button>
-    <span>navigation</span>
-    <button onclick="goTo(1);">NEXT</button>
-</div>
-
-
-</body>
-</html>
-EOF
-
-
-
-zip -9r  "all.zip" ${dir}
-rm  -f ${dir}/*.pdf
-rm  -f ${dir}/*.html
 touch versions.yml
 """
 }

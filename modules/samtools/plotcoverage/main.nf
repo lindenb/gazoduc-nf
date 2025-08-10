@@ -33,6 +33,7 @@ input:
 	tuple val(meta),path(fasta),path(fai) ,path(dict),path("BAMS/*")
 output:
 	tuple val(meta),path("*.pdf"),emit:pdf
+	tuple val(meta),path("*.html"),emit:html
 	path("versions.yml"),emit:versions
 script:
 	def has_gtf =gtf?true:false
@@ -91,6 +92,17 @@ cat "${moduleDir}/plot.R" |\\
 		-D__XLEN__=${xlen} > TMP/jeter.R
 
 R --vanilla < TMP/jeter.R
+
+cat << EOF > TMP/jeter.html
+<tr>
+	<td><code>${contig}:${start}-${end}</td>
+	<td>${len}</td>
+	<td>${title}</td>
+	<td><a href="${prefix}.pdf">${prefix}.pdf</a></td>
+</tr>
+EOF
+
+mv TMP/jeter.html ${prefix}.html
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":

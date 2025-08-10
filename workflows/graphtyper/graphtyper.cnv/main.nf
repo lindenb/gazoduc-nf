@@ -25,13 +25,14 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 include {GRAPHTYPER_GENOTYPE_SV           } from '../../../modules/graphtyper/genotype_sv'
-include {SPLIT_N_VARIANTS                 } from '../../../subworkflows/jvarkit/split.n.variants'
 include {runOnComplete;dumpParams         } from '../../../modules/utils/functions.nf'
 include {SCATTER_TO_BED                   } from '../../../subworkflows/gatk/scatterintervals2bed'
 include {MULTIQC                          } from '../../../modules/multiqc'
 include {COMPILE_VERSIONS                 } from '../../../modules/versions/main.nf'
 include {JVARKIT_VCF_SET_DICTIONARY       } from '../../../modules/jvarkit/vcfsetdict'
 include {BCFTOOLS_CONCAT                  } from '../../../modules/bcftools/concat'
+include {JVARKIT_BAM_RENAME_CONTIGS       } from '../../../modules/jvarkit/bamrenamechr'
+include {PLOT_COVERAGE_01                 } from '../../../subworkflows/plotdepth'
 
 if(params.help) {
     dumpParams(params);
@@ -90,13 +91,14 @@ workflow {
         bed =  [refhash, file(params.bed) ]
         }
 	
-	SPLIT_N_VARIANTS( refhash, bed, Channel.of(vcf) )
+	SPLIT_VCF( bed, Channel.of(vcf) )
+	versions = versions.mix(SPLIT_VCF.out.versions)
 
-	versions = versions.mix(SPLIT_N_VARIANTS.out.versions)
+	splitvcf = SPLIT_VCF.out.vcf.map{it[1]}.flatMap().map{[[id:(it.name+".tbi").md5()],it]}
+		.join(SPLIT_VCF.out.tbi.map{it[1]}.flatMap().map{[[id:it.name.md5()],it]})
 
 
-
-	ch1 = Channel.fromPath(params.samplesheet)
+	bams_ch = Channel.fromPath(params.samplesheet)
         .splitCsv(header:true,sep:',')
         .map{assertKeyMatchRegex(it,"sample","^[A-Za-z_0-9\\.\\-]+\$")}
         .map{assertKeyMatchRegex(it,"bam","^\\S+\\.(bam|cram)\$")}
@@ -122,39 +124,44 @@ workflow {
             return it.plus(dict: it.fasta.replaceAll("\\.(fasta|fa|fna)\$",".dict"));
         }
         .map{assertKeyMatchRegex(it,"bai","^\\S+\\.(bai|crai)\$")}
-        .map{[ it.fasta, it.sample,file(it.bam),file(it.bai),file(it.fasta),file(it.fai),file(it.dict)]}
-        .groupTuple()
-		.combine(SPLIT_N_VARIANTS.out.vcf)
-        .multiMap {
-            fasta: [refhash,it[4][0]]
-            fai: [refhash,it[5][0]]
-            dict: [refhash,it[6][0]]
-            bams: [refhash.plus(id:it[0]).plus(fasta_id:it[4][0].name.md5()), it[2].plus(it[3]) ]
-	    vcf: [it[7].plus(fasta_id:it[4][0].name.md5()),it[8],it[9]]
-        }
+        .branch {
+            ok_ref: it.fasta.equals(params.fasta)
+            bad_ref: true
+            }
 
 
+	JVARKIT_BAM_RENAME_CONTIGS(
+		dict,
+		[[id:"nobed"],[]],
+		bams_ch.bad_ref.map{[[id:it.sample],file(it.bam),file(it.bai),file(it.fasta),file(it.fai),file(it.dict)]}
+		)
+
+	versions =versions.mix(JVARKIT_BAM_RENAME_CONTIGS.out.versions)
+	
+
+	bams2_ch = bams_ch.ok_ref.map{[[id:it.sample],file(it.bam),file(it.bai)]}
+			.mix(JVARKIT_BAM_RENAME_CONTIGS.out.bam.map{[it[0],it[1],it[2]]})
+
+	grouped_bams = bams2_ch.map{[it[1],it[2]]}
+                    .collect()
+                    .map{[[id:"gtyper"],it]}
+   
 	GRAPHTYPER_GENOTYPE_SV(
-		ch1.fasta,
-		ch1.dict,
-		ch1.fai,
-		ch1.bams,
-		ch1.vcf
+		fasta,
+		dict,
+		fai,
+		grouped_bams,
+		splitvcf
 		)
 	versions = versions.mix(GRAPHTYPER_GENOTYPE_SV.out.versions)
 
-	/* group by reference */
 	
-	ch2= GRAPHTYPER_GENOTYPE_SV.out.vcf
-		.map{[ [id:it[0].fasta_id],[it[1],it[2]]]}
-		.groupTuple()
-		.map{[it[0],it[1].flatten()]}
-
-
-
 
 	BCFTOOLS_CONCAT(
-       	ch2,
+       	GRAPHTYPER_GENOTYPE_SV.out.vcf
+            .map{[it[1],it[2]]}
+            .collect()
+            .map{[[id:"gtyper"],it]},
         [[id:"nobed"],[]]
         )
      versions =  versions.mix(BCFTOOLS_CONCAT.out.versions)
@@ -177,14 +184,35 @@ workflow {
             )
         versions = versions.mix(GTYPER_DENOVO.out.versions)
 
-	EXTRACT_DENOVO( GTYPER_DENOVO.out.vcf
-		.map{[ it[1],it[2] ]}
-		.collect()
-		.map{[ [id:"denovo"],it]}
-		.view()
-		)
+        EXTRACT_DENOVO( GTYPER_DENOVO.out.vcf);
         versions = versions.mix(EXTRACT_DENOVO.out.versions)
-        }
+
+
+	chcov = EXTRACT_DENOVO.out.bed.map{it[1]}.splitCsv(sep:'\t',header:true)
+		.map{[
+			contig:it.chrom,
+			start: it.start,
+			end: it.end,
+			title: it.title,
+			id : it.chrom+"_"+it.start+"_"+it.end+"."+ it.toString().md5().substring(0,7)
+			]}
+		.combine(Channel.of(fasta).map{it[1]})
+		.combine(Channel.of(fai).map{it[1]})
+		.combine(Channel.of(dict).map{it[1]})
+		.combine(grouped_bams.map{[it[1]]}) /* convert to array */
+
+	PLOT_COVERAGE_01(
+        [id:"graphtyper"],
+        fasta,
+        fai,
+        dict,
+        gtf,
+        EXTRACT_DENOVO.out.bed,
+        bams2_ch
+        )
+    versions = versions.mix(PLOT_COVERAGE_01.out.versions)
+
+    }
 	
 
     
@@ -199,7 +227,50 @@ workflow {
 
 runOnComplete(workflow);
 
+process SPLIT_VCF {
+    label "process_single"
+    tag "${meta.id?:""} ${vcf.name}"
+    afterScript "rm -rf TMP"
+    conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+    input:
+	tuple val(meta1),path(bed)
+	tuple val(meta),path(vcf),path(idx)
+    output:
+	tuple val(meta),path("OUT/*.vcf.gz"),optional:true, emit:vcf
+	tuple val(meta),path("OUT/*.vcf.gz.tbi"),optional:true, emit:tbi
+	path("versions.yml"),emit:versions
+    script:
+	def maxlen = task.ext.maxlen?:1000000
+	def args1 = task.ext.args1?:""
+"""
+mkdir -p TMP/OUT
+set -x
+JD1=`which jvarkit`
+echo "JD1=\${JD1}" 1>&2
+# directory of jvarkit
+JD2=`dirname "\${JD1}"`
+# find the jar itself
+# https://unix.stackexchange.com/questions/62880/how-to-stop-the-find-command-after-first-match
+JVARKIT_JAR=`find "\${JD2}/../.." -type f -name "jvarkit.jar" -print -quit`
 
+test ! -z "\${JVARKIT_JAR}"
+
+cat "${moduleDir}/Minikit.java"  > TMP/Minikit.java
+
+javac -d TMP -cp \${JVARKIT_JAR} TMP/Minikit.java
+
+bcftools view ${args1} -G --targets-file "${bed}" --regions-overlap 2 "${vcf}" |\\
+	java	-Djava.awt.headless=true -cp \${JVARKIT_JAR}:TMP Minikit -o TMP/OUT -L ${maxlen}
+
+
+mv TMP/OUT ./
+cat << EOF > versions.yml
+"${task.process}":
+        jvarkit: todo
+        gatk: todo
+EOF
+"""
+}
 
 
 process GTYPER_DENOVO {
@@ -322,7 +393,7 @@ process EXTRACT_DENOVO {
     afterScript "rm -rf TMP"
     conda "${moduleDir}/../../../conda/bioinfo.01.yml"
     input:
-	        tuple val(meta),path("VCFS/*")
+	    tuple val(meta),path(vcf),path(vcfidx)
     output:
         tuple val(meta),path("*.bed"),emit:bed
         path("versions.yml"),emit:versions
@@ -331,16 +402,11 @@ script:
 """
 mkdir -p TMP
 
-
-find VCFS/ -name "*.vcf.gz" | while read F
-do
-	bcftools query -f '%CHROM\t%POS0\t%END\t%SVTYPE %hiConfDeNovo %loConfDeNovo\\n' "\$F" |tr "," " " | tr -s " " >> TMP/jeter.txt
-
-done
-
-
 echo -e 'chrom\tstart\tend\ttitle' >> TMP/jeter.bed
-sort -t '\t' -k1,1 -k2,2n  -k3,3n -T TMP --unique  TMP/jeter.txt >> TMP/jeter.bed
+
+bcftools query -f '%CHROM\t%POS0\t%END\t%SVTYPE %hiConfDeNovo %loConfDeNovo\\n' "${vcf}" |\\
+    tr "," " " | tr -s " " |\\
+   sort -t '\t' -k1,1 -k2,2n  -k3,3n -T TMP --unique   >> TMP/jeter.bed
 
 MD5=`cat TMP/jeter.bed | md5sum | cut -d ' ' -f1`
 
