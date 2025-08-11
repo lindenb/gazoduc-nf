@@ -23,8 +23,8 @@ SOFTWARE.
 
 */
 process GHOSTSCRIPT_MERGE {
-tag "${title}"
-label "process_short"
+tag "${meta.id?:""}"
+label "process_single"
 conda "${moduleDir}/../../../conda/ghostscript.yml"
 afterScript "rm -rf TMP"
 input:
