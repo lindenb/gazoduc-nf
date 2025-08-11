@@ -1,0 +1,7 @@
+name: duphold
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::octopus=0.7.4
+  - bioconda::bcftools
