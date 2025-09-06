@@ -23,78 +23,61 @@ SOFTWARE.
 
 */
 
-
-
-
-include { getKeyValue; getModules} from '../../modules/utils/functions.nf'
-
-process MANTA_SINGLE_01 {
-    tag "${row.sample} ${file(row.bam).name}"
+process MANTA_SINGLE {
+    tag "${meta.id?:""}"
+	label "process_medium"
     afterScript "rm -rf TMP"
-    cache 'lenient'
-    errorStrategy 'finish'
-    // must be specified with config cpus ((params.manta_cpus?:16) as int)
-    // memory "20g"
+    conda "${moduleDir}/../../../conda/manta.yml"
     input:
-	val(meta)
-	val(genomeId)
-	path(bed)
-	path(bed_tbi)
-	val(row)
+		tuple val(meta1),path(fasta)
+		tuple val(meta2),path(fai)
+		tuple val(meta3),path(dict)
+        tuple val(meta4),path(optional_bed)
+        tuple val(meta),path(bam),path(bai)
     output:
-    	tuple val(row),path("${row.sample}.txt"),emit:output
-	path("version.xml"),emit:version
+        tuple val(meta),path("*.diploidSV.vcf.gz"),path("*.diploidSV.vcf.gz.tbi"),emit:diploidSV
+        tuple val(meta),path("*.candidateSmallIndels.vcf.gz"),path("*.candidateSmallIndels.vcf.gz.tbi"),emit:candidateSmallIndels
+        tuple val(meta),path("*.candidateSV.vcf.gz"),path("*.candidateSV.vcf.gz.tbi"),emit:candidateSV
+    	path("versions.yml"),emit:versions
     script:
-	def bam = row.bam
-	def name = row.sample
-	def genome = params.genomes[genomeId]
-	def reference = genome.fasta
-	def prefix = params.prefix?:""
+        def has_bed = optional_bed?true:false
+        def args1 = task.ext.args1?:""
+        def args2 = task.ext.args2?:"--quiet"
+        def prefix = task.ext.prefix?:meta.id
 	"""
 	hostname 1>&2
-	module load ${getModules("manta samtools bcftools")}
 	mkdir -p TMP
+    set -x
 
-	configManta.py  --bam "${bam}" --referenceFasta "${reference}" \\
-		${bed.name.equals("NO_FILE")?"":"--callRegions \"${bed}\" "} \\
+	if ${has_bed}
+    then
+		${has_bed && optional_bed.name.endsWith(".gz")?"gunzip -c":"cat"} ${optional_bed} |\\
+		sort -T TMP -t '\t' -k1,1 -k2,2n > manta.bed
+	    bgzip manta.bed
+	    tabix -fp bed manta.bed.gz
+	fi
+
+	configManta.py \\
+		--bam ${bam} \\
+        ${args1} \\
+		--referenceFasta "${fasta}" \\
+		${has_bed?"--callRegions manta.bed.gz":""} \\
 		--runDir "TMP"
 
+
+	./TMP/runWorkflow.py ${args2} -m local -j ${task.cpus}
+	rm -rf TMP/workspace
 	
-	./TMP/runWorkflow.py --quiet -m local -j '${task.cpus}'
-	
-	rm -rf ./TMP/workspace
+	for X in diploidSV candidateSmallIndels candidateSV
+	do
+		bcftools view --threads ${task.cpus} -O z -o "${prefix}.\${X}.vcf.gz" "./TMP/results/variants/\${X}.vcf.gz"
+		bcftools index --threads ${task.cpus}  -f -t "${prefix}.\${X}.vcf.gz"
+	done
 
 
-	# convert BND TO INVERSIONS (added 20230115 but not tested)
-	DIPLOID=`find ./TMP -type f -name "diploidSV.vcf.gz"`
-	test ! -z "\${DIPLOID}"
-	\$(ls \$( dirname \$(which configManta.py) )/../share/manta*/libexec/convertInversion.py)  `which samtools` "${reference}" "\${DIPLOID}" | bcftools sort -T TMP -O z -o TMP/jeter.vcf.gz
-
-	bcftools index -t TMP/jeter.vcf.gz
-
-	mv -v TMP/jeter.vcf.gz "\${DIPLOID}"
-	mv -v TMP/jeter.vcf.gz.tbi "\${DIPLOID}.tbi"
-
-	# change name to sample
-	find ./TMP -type f -name "*.vcf.gz" \
-		-printf 'mv -v %p  ${prefix}${name}.%f\\n mv -v %p.tbi ${prefix}${name}.%f.tbi\\n' |bash 
-	
-	ls *.vcf.gz
-	find \${PWD}  -maxdepth 1  -type f -name "*.vcf.gz" -o -name "*.vcf.gz.tbi" |\
-		awk 'BEGIN{printf("sample\tbam\tvcf\\n");} {printf("${name}\t${bam}\t%s\\n",\$0);}' > ${name}.txt
-	tail -n +2 ${name}.txt | grep -m1 vcf 
-
-
-#################################################################################################
-
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="date">\$(date)</entry>
-	<entry key="sample">${name}</entry>
-	<entry key="bam">${bam}</entry>
-	<entry key="manta.version">\$(configManta.py --version)</entry>
-</properties>
+cat << EOF > versions.yml
+"${task.process}":
+	manta: "\$(configManta.py --version)"
 EOF
 	"""
 	}

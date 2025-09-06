@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -23,116 +23,66 @@ SOFTWARE.
 
 */
 
+include {MANTA_SINGLE as MANTA     } from '../../../modules/manta/single'
+include {MANTA_CANDIDATESV         } from '../../../modules/manta/candidateSV'
+include {MANTA_CONVERT_INVERSION   } from '../../../modules//manta/convert.inversion'
+include {TRUVARI_COLLAPSE          } from '../../../modules/truvari/collapse'
 
-include {TRUVARI_01} from '../../truvari'
+workflow MANTA_SINGLE {
+take:
+	meta
+        fasta
+        fai
+        dict
+        bams
+	optional_bed
+main:
+        versions = Channel.empty()
 
-workflow MANTA_GERMLINE_SINGLE_SV01 {
-	take:
-		samplesheet
-		bed
-	main:
-		version_ch = Channel.empty()
-
-		sn_bam_bai_ch = samplesheet.
-			splitCsv(header:true,sep:'\t').
-			map{T->{
-				if(!T.containsKey("sample")) throw new IllegalArgumentException("sample missing in "+T);
-				if(!T.containsKey("bam")) throw new IllegalArgumentException("bam missing in "+T);
-				if(!T.containsKey("bai")) throw new IllegalArgumentException("bai missing in "+T);
-				if(!T.containsKey("fasta") || T.fasta.equals(".") || T.fasta.isEmpty()) {
-					T = T.plus(fasta: params.fasta, fai: params.fai)
-					}
-				return T;
-				}}.map{[it.sample,it.bam,it.bai,it.fasta,it.fai]}
-
-		manta_ch = APPLY_MANTA_GERMLINE_SINGLE(sn_bam_bai_ch ,bed)	
-		
+        
 	
-		
-		if(params.with_merge_manta_vcf==false) {
-			merge_vcf = Channel.empty()
-			merge_vcf_index = Channel.empty()
-			}
-		else
-			{
-			/* TODO
-			truvari_ch = TRUVARI_01([:] , genomeId, file_list_ch.output)
-			to_zip = to_zip.mix(truvari_ch.version)
+        MANTA(
+                fasta,
+                fai,
+                dict,
+                optional_bed,
+                bams
+                )
 
-			merge_vcf = truvari_ch.vcf
-			merge_vcf_index = truvari_ch.index
+        versions = versions.mix(MANTA.out.versions)
+        
+        MANTA_CONVERT_INVERSION(
+				fasta,
+				fai,
+				dict,
+                MANTA.out.diploidSV,
+                )
+        versions = versions.mix(MANTA_CONVERT_INVERSION.out.versions)
 
-			*/
-			}
 
 
-		
-		
-	emit:
-		merge_vcf = merge_vcf
-		merge_vcf_index = merge_vcf_index
-		//manta_files = file_list_ch.output
-	}
 
-process APPLY_MANTA_GERMLINE_SINGLE {
-    tag "${sample} ${bam.name}"
-    label "process_single_high"
-    conda "${moduleDir}/../../../conda/manta.yml"
-    afterScript "rm -rf TMP"
-    input:
-	tuple val(sample),path(bam),path(bai),path(fasta),path(fai)
-	path(bed)
-    output:
-    	tuple val(sample),path("*.{vcf.gz,vcf.gz.tbi}"),emit:output
-    script:
-	"""
-	set -x
-	hostname 1>&2
-	mkdir -p TMP
+        ch1 = MANTA_CONVERT_INVERSION.out.vcf
+                .map{[it[1],it[2]]}
+                .flatten()
+                .collect()
+                .filter{it.size()>2} // NO need to run truvari if there is only one vcf and one tbi
+                .map{[[id:"manta"],it]}
 
-	if test -f "${bed}"
-	then
-		${bed.name.endsWith("gz")?"gunzip -c":"cat"} "${bed}" |\\
-			cut -f1,2,3 |\\
-			python ${moduleDir}/../../../src/python/rename_bed.py "${params.fai}" |\\
-			awk -F '\t' '(\$1 ~ /^${params.regex_contig}\$/ )' |\\
-			LC_ALL=C sort -t '\t' -T TMP -k1,1 -k2,2n |\\
-			bedtools merge > TMP/intervals.bed
-	else
-		awk -F '\t' '(\$1 ~ /^${params.regex_contig}\$/ ) {printf("%s\t0\t%s\\n",\$1,\$2);}' "${fai}" |\\
-			LC_ALL=C sort -t '\t' -T TMP -k1,1 -k2,2n > TMP/intervals.bed
-		
-	fi
-	
-	test -s TMP/intervals.bed
-	bgzip TMP/intervals.bed
-	tabix -f -p bed TMP/intervals.bed.gz
 
-	configManta.py  \\
-		--bam "${bam}" \\
-		--referenceFasta "${fasta}" \\
-		--callRegions TMP/intervals.bed.gz \\
-		--runDir "TMP"
+        MANTA_CANDIDATESV( MANTA.out.candidateSV)
+        versions = versions.mix(MANTA_CANDIDATESV.out.versions)
+        
+        
 
-	./TMP/runWorkflow.py ${params.runWorkflow_args} -m local -j '${task.cpus}'
-	
-	rm -rf ./TMP/workspace
+        TRUVARI_COLLAPSE(
+			fasta,
+			fai,
+			dict,
+			ch1
+			)
+        versions = versions.mix(TRUVARI_COLLAPSE.out.versions)
 
-	
-	# convert BND TO INVERSIONS (added 20230115 but not tested)
-	DIPLOID=`find ./TMP -type f -name "diploidSV.vcf.gz"` 1>&2
-	test ! -z "\${DIPLOID}"
-	convertInversion.py  `which samtools` "${fasta}" "\${DIPLOID}" | bcftools sort -T TMP -O z -o TMP/jeter.vcf.gz
-
-	bcftools index -t TMP/jeter.vcf.gz
-
-	mv -v TMP/jeter.vcf.gz "\${DIPLOID}"
-	mv -v TMP/jeter.vcf.gz.tbi "\${DIPLOID}.tbi"
-
-	# change name to sample
-	find ./TMP -type f -name "*.vcf.gz" \
-		-printf 'mv -v %p  ${sample}.%f\\n mv -v %p.tbi ${sample}.%f.tbi\\n' |bash 
-	
-	ls *.vcf.gz
-	"""
-	}
+emit:
+        versions
+}

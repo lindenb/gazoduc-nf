@@ -7,7 +7,7 @@ input:
 	tuple val(meta),path(fasta)
 output:
 	tuple val(meta),path("${fasta.baseName}BWAIndex"),emit:bwa_index
-    path("versions.yml")
+    path("versions.yml"),emit:versions
 script:
     def prefix = task.ext.prefix ?: "${fasta.baseName}"
     def args = task.ext.args?:""

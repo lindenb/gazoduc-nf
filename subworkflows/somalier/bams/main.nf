@@ -33,23 +33,35 @@ include {SOMALIER_DOWNLOAD_SITES} from '../../../modules/somalier/download.sites
 workflow SOMALIER_BAMS {
 	take:
 		meta
-		fasta
+		fasta//MUST BE PROVIDED AS Channel.of() [meta,fasta]
 		fai
 		dict
 		bams_ch // sample,bam,bai
 		pedigree // pedigree for somalier
-		user_sites //file or no file
+		user_sites //file or no file   [meta,vcf,vcf_idx]
 	main:
 		version_ch = Channel.empty()
 
+		// not NEED to run SOMALIER if there is no or one BAM
+		fasta2 = bams_ch.count()
+				.filter{it>1}
+				.combine(fasta)
+				.map{[it[1],it[2]]}
+			
 
 
 		if(user_sites[1]) {
-			sites_vcf = user_sites
+			sites_vcf =  bams_ch.count()
+				.filter{it>1}
+				.combine(user_sites)
+				.map{[it[1],it[2],it[3]]}
 			}
 		else
 			{
-			SOMALIER_DOWNLOAD_SITES(fasta,fai,dict)
+			//there must be at least 2 BAMS
+			
+
+			SOMALIER_DOWNLOAD_SITES(fasta2,fai,dict)
 			version_ch = version_ch.mix(SOMALIER_DOWNLOAD_SITES.out.versions)
 			sites_vcf= SOMALIER_DOWNLOAD_SITES.out.vcf
 			}
@@ -72,17 +84,16 @@ workflow SOMALIER_BAMS {
 
 
 
-		ch2 = ch1.tuple3
-			.map{ it+[fasta[1],fai[1]] }
+		ch2 = ch1.tuple3.combine(fasta2)
+			.map{ [it[0],it[1],it[2],it[4], fai[1] ] }
 			.mix( ch1.tuple5)
-
 
 
 		EXTRACT_BAM(sites_vcf, ch2)
 		version_ch = version_ch.mix(EXTRACT_BAM.out.versions.first())
 	
 		RELATE_SOMALIER(
-			fasta,fai,dict,
+			fasta2,fai,dict,
 			EXTRACT_BAM.out.output.collect(),
 			pedigree
 			)

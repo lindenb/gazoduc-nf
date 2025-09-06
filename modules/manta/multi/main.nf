@@ -26,7 +26,7 @@ SOFTWARE.
 process MANTA_MULTI {
     label "process_medium"
     tag "${meta.id?:""}"
-    //afterScript "rm -rf TMP"
+    afterScript "rm -rf TMP"
     conda "${moduleDir}/../../../conda/manta.yml"
     input:
 		tuple val(meta1),path(fasta)

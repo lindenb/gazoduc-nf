@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -22,56 +22,40 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {moduleLoad;isBlank} from '../utils/functions.nf'
+process FASTQC {
+label "process_single"
+tag "${meta.id?:""}"
+afterScript "rm -rf TMP"
+conda "${moduleDir}/../../conda/fastqc.yml"
+input:
+	tuple val(meta),path("IN/*")
+output:
+	tuple val(meta), path("OUT/*.zip"),emit:zip
+	tuple val(meta), path("OUT/*.html"),emit:html
+	path("versions.yml"),emit:versions
+script:
+	def prefix0 = task.ext.prefix?:""
+	def prefix = "${prefix0}${meta.id}."
+"""
+mkdir -p TMP/FQ OUT
 
-String sampleOf(String s) {
-	int i= s.lastIndexOf("/");
-	if(i!=-1) s=s.substring(i+1);
-	if(s.endsWith(".gz")) s=s.substring(0,s.length()-3);
-	if(s.endsWith(".fq")) s=s.substring(0,s.length()-3);
-	if(s.endsWith(".fastq")) s=s.substring(0,s.length()-6);
-	return s;
-	}
+find "\${PWD}/IN/" -type l | while read F
+do
+	ln -v -s "\${F}" "TMP/FQ/${prefix}\${F##*/}"
+done
 
-process APPLY_FASTQC_01 {
-    tag "${row.fastq}"
-    afterScript "rm -rf TMP"
-    input:
-	val(meta)
-        val(row)
-    output:
-	tuple val(row), path("OUT/${sampleOf(row.fastq)}_fastqc.zip") ,path("OUT/${sampleOf(row.fastq)}_fastqc_data.txt"),emit:output
-        path("version.xml"),emit:version
-    script:
-	def sample = sampleOf(row.fastq.toString())
-      """
-      hostname 1>&2
-      ${moduleLoad("fastqc")}
-      set -o pipefail
-      mkdir -p TMP
-      mkdir -p OUT
+fastqc \\
+--dir TMP \\
+--memory ${task.memory.mega} \\
+--threads ${task.cpus} \\
+-o OUT \\
+-f "fastq" \\
+TMP/FQ/* 1>&2
 
-      fastqc --dir TMP -o OUT \
-		--noextract \
-		${row.adapters.name.equals("NO_FILE")?"":"--adapters "+ row.adapters} \
-		${row.contaminants.name.equals("NO_FILE")?"":"--contaminants "+ row.contaminants} \
-		--quiet -f "fastq" ${row.fastq}
-
-
-	unzip -p OUT/${sample}_fastqc.zip '${sample}_fastqc/fastqc_data.txt' > 'OUT/${sample}_fastqc_data.txt'
-
-##################################################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">fastqc</entry>	
-	<entry key="basename">${sample}</entry>
-	<entry key="fastq">${row.fastq}</entry>
-	<entry key="contaminants">${row.contaminants}</entry>
-	<entry key="adapters">${row.adapters}</entry>
-	<entry key="fastqc.version">\$( fastqc --version)</entry>
-</properties>
-EOF
+cat <<-END_VERSIONS > versions.yml
+"${task.process}":
+        fastqc: \$( fastqc --version | sed '/FastQC v/!d; s/.*v//' )
+END_VERSIONS
 """
 }
 

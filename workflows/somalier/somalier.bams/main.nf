@@ -61,7 +61,7 @@ workflow {
 
 	SOMALIER_BAMS(
 		[:],
-		fasta,
+		Channel.of(fasta),
 		fai,
 		dict,
 		Channel.fromPath(params.samplesheet)

@@ -3,6 +3,7 @@ process MERGE_BEDS {
 label "process_single"
 tag "${meta.id}"
 afterScript "rm -rf TMP"
+conda "${moduleDir}/../../../conda/goleft.yml"
 when:
     task.ext.when == null || task.ext.when
 input:
