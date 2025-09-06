@@ -23,31 +23,42 @@ SOFTWARE.
 
 */
 
-process GATK4_GATHER_BQSR {
-tag "${meta.id?:""}"
+process HAPLOTYPECALLER {
+tag "${meta.id?:""} ${optional_bed?optional_bed.name:""}"
 label "process_single"
-afterScript 'rm -rf TMP'
+afterScript "rm -rf TMP"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-	tuple val(meta),path("TABLES/*")
+    tuple val(meta1),path(fasta)
+    tuple val(meta2),path(fai)
+    tuple val(meta3),path(dict)
+    tuple val(meta ),path(bam),path(bai),path(optional_bed)
 output:
-    tuple val(meta),path("*.recal.table"),emit:table
+    tuple val(meta),path("*.g.vcf.gz"),path("*.g.vcf.gz.tbi"),path(optional_bed),emit:gvcf
     path("versions.yml"),emit:versions
 script:
+   def prefix0 = (meta.id?:"${bam.name}")+(optional_bed?"."+optional_bed.baseName:"")
+   def prefix= task.ext.prefix?:prefix0
+   def args1 = task.ext.args1?:"-G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation"
+   def args2 =task.ext.args2?:""
 """
 hostname 1>&2
 mkdir -p TMP
 
-find TABLES/ -name "*.table" |\\
-	awk '{printf("-I %s\\n",\$0);}' > TMP/arguments.list
+gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" HaplotypeCaller \\
+    ${optional_bed?"-L \"${optional_bed}\"":""} \\
+    -R "${fasta}" \\
+    -I "${bam}" \\
+    -ERC GVCF \\
+    ${args1} ${args2}\\
+    -O "TMP/${prefix}.g.vcf.gz"
 
-gatk --java-options "-Xmx${task.memory.giga}g  -XX:-UsePerfData  -Djava.io.tmpdir=TMP" GatherBQSRReports \
-	--arguments_file  TMP/arguments.list \\
-	-O "${meta.id}.recal.table" 
+mv TMP/*.g.vcf.gz ./
+mv TMP/*.g.vcf.gz.tbi ./
 
-cat << EOF > version.yml
+cat << EOF > versions.yml
 ${task.process}:
     gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
 EOF
 """
-
 }

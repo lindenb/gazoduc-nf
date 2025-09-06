@@ -33,7 +33,7 @@ freebayes \\
 awk -F '\t' '/^#/ {print;next;} {OFS="\t";R=\$4;gsub(/[^ATGCatgc]/,"N",R);\$4=R;print;}' TMP/jeter.vcf |\\
 bcftools sort --max-mem ${task.memory.giga}G  -T TMP/sort -O b -o TMP/${prefix}.bcf
 
-bcftools index -f --threads ${task.cpus} -o TMP/${prefix}.bcf
+bcftools index -f --threads ${task.cpus} TMP/${prefix}.bcf
 
 mv TMP/*.bcf ./
 mv TMP/*.csi ./

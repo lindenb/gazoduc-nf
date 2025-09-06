@@ -47,7 +47,7 @@ include {BED_CLUSTER                              } from '../../modules/jvarkit/
 include {GRAPHTYPER                               } from '../../modules/graphtyper/genotype'
 include {BCFTOOLS_CALL                            } from '../../subworkflows/bcftools/call'
 include {FREEBAYES_CALL                           } from '../../subworkflows/freebayes/call'
-
+include {HAPLOTYPECALLER                          } from '../../subworkflows/gatk/haplotypecaller'
 
 Map assertKeyExists(final Map hash,final String key) {
     if(!hash.containsKey(key)) throw new IllegalArgumentException("no key ${key}'in ${hash}");
@@ -424,6 +424,19 @@ workflow {
       )
     versions_ch = versions_ch.mix(FREEBAYES_CALL.out.versions)
     }
+
+  if(params.with_gatk == true) {
+    pedigree = [[:],[]] //TODO check pedigree
+    HAPLOTYPECALLER(
+      hash_ref,
+      fasta,
+      fai,
+      dict,
+      cluster_bed.map{[[id:"bed"],it]},
+      PB_FQ2BAM.out.bam
+      )
+    versions_ch = versions_ch.mix(HAPLOTYPECALLER.out.versions)
+    }   
 
   /***************************************************
    *
