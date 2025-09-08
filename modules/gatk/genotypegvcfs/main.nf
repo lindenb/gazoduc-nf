@@ -34,7 +34,7 @@ input:
     tuple val(meta3),path(dict)
     tuple val(meta ),path(vcf),path(vcf_idx),path(optional_bed)
 output:
-    tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),path(optional_bed),emit:gvcf
+    tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),path(optional_bed),emit:vcf
     path("versions.yml"),emit:versions
 script:
    def prefix0 = (meta.id?:"${vcf.name}")+(optional_bed?"."+optional_bed.baseName:"")

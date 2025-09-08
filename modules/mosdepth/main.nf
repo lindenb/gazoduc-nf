@@ -42,6 +42,7 @@ when:
     task.ext.when == null || task.ext.when
 
 script:
+    def per_base = (task.ext.per_base?:false) as boolean
     def args = task.ext.args ?: ''
     def prefix = task.ext.prefix?:"${meta.id}"
 """
@@ -49,6 +50,7 @@ mkdir -p TMP
 
 mosdepth \\
     --threads ${task.cpus} \\
+   ${per_base==true?"":"--no-per-base"} \\
    ${optional_bed?"--by \"${optional_bed}\"":""} \\
     --fasta "${fasta}" \\
     ${args} \\

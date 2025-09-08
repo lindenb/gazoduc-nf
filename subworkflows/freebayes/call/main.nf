@@ -75,7 +75,7 @@ workflow FREEBAYES_CALL {
 	
 		BCFTOOLS_CONCAT(
 			FILTER_AC_GT_0.out.vcf
-				.map{[[id:"call"],[it[1],it[2]]]}
+				.map{[[id:"freebayes"],[it[1],it[2]]]}
 				.groupTuple()
 				.map{[it[0],it[1].flatten()]},
 			[[id:"nobed"],[]]

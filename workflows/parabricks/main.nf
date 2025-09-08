@@ -47,7 +47,7 @@ include {BEDTOOLS_MAKEWINDOWS                     } from '../../modules/bedtools
 include {BED_CLUSTER                              } from '../../modules/jvarkit/bedcluster'
 include {BCFTOOLS_GUESS_PLOIDY                    } from '../../modules/bcftools/guess_ploidy'
 include {BCFTOOLS_STATS                           } from '../../modules/bcftools/stats'
-include {GRAPHTYPER                               } from '../../modules/graphtyper/genotype'
+include {GRAPHTYPER                               } from '../../subworkflows/graphtyper/genotype'
 include {BCFTOOLS_CALL                            } from '../../subworkflows/bcftools/call'
 include {FREEBAYES_CALL                           } from '../../subworkflows/freebayes/call'
 include {HAPLOTYPECALLER                          } from '../../subworkflows/gatk/haplotypecaller'
@@ -289,10 +289,14 @@ workflow {
    * STATS ON BAM
    *
    */
-  if( params.with_bam_qc == true) {
+  // stats from mosdepth will be used by graphtyper
+  mosdepth_summary_ch = Channel.empty()
+  // stats are required if graphtyper is used
+  if( params.with_bam_qc == true || params.with_graphtyper == true) {
       BAM_QC(hash_ref,fasta,fai,dict,bed,bams_ch)
       versions_ch = versions_ch.mix(BAM_QC.out.versions)
       multiqc_ch = multiqc_ch.mix(BAM_QC.out.multiqc)
+      mosdepth_summary_ch = BAM_QC.out.mosdepth_summary
   }
 
 
@@ -446,9 +450,13 @@ workflow {
    */
   if(params.with_graphtyper == true) {
     GRAPHTYPER(
+      hash_ref,
       fasta,
       fai,
-      grouped_bams.combine(cluster_bed)
+      dict,
+      mosdepth_summary_ch,
+      cluster_bed.map{[[id:it.name.toString().md5().substring(0,8)],it]},
+      bams_ch
       )
     versions_ch = versions_ch.mix(GRAPHTYPER.out.versions)
     vcf_ch = vcf_ch.mix(GRAPHTYPER.out.vcf)
@@ -539,7 +547,7 @@ workflow {
   if( params.with_multiqc ==true) {
     COMPILE_VERSIONS(versions_ch.collect().map{it.sort()})
     multiqc_ch = multiqc_ch.mix(COMPILE_VERSIONS.out.multiqc)
-    multiqc_ch.view()
+    multiqc_ch.filter{!(it instanceof List) || it.size()!=2}.view{"### FIX ME ${it} MULTIQC"}
     //MULTIQC(multiqc_ch.collect().map{[[id:"parabricks"],it]})
     }
 }

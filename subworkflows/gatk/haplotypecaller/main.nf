@@ -27,6 +27,7 @@ include { HAPLOTYPECALLER as HAPCALLER         }  from '../../../modules/gatk/ha
 include { COMBINEGVCFS as HC_COMBINE0          }  from '../../../modules/gatk/combinegvcfs'
 include { COMBINEGVCFS as HC_COMBINE1          }  from '../../../modules/gatk/combinegvcfs'
 include { GENOTYPEGVCFS                        }  from '../../../modules/gatk/genotypegvcfs'
+include { BCFTOOLS_CONCAT                      }  from '../../../modules/bcftools/concat'
 
 
 List makeSQRT(def L1) {
@@ -113,7 +114,7 @@ main:
     versions  = versions.mix(HC_COMBINE1.out.versions)
 
 */
-    to_genotype
+    
     GENOTYPEGVCFS(
         fasta,
         fai,
@@ -122,6 +123,18 @@ main:
         )
     versions  = versions.mix(GENOTYPEGVCFS.out.versions)
     
+
+
+    BCFTOOLS_CONCAT(
+        GENOTYPEGVCFS.out.vcf
+            .map{[it[1],it[2]]}//gvcf,tbi
+             .collect()
+             .map{[[id:"gatkhapcaller"],it]},
+        [[:],[]] //bed
+        )
+    versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
+
 emit:
     versions
+    vcf = BCFTOOLS_CONCAT.out.vcf
 }

@@ -44,9 +44,15 @@ main:
 		)
 	versions_ch = versions_ch.mix(MOSDEPTH.out.versions)
 
-	reports_ch = reports_ch.mix(MOSDEPTH.out.global_txt)
-	reports_ch = reports_ch.mix(MOSDEPTH.out.summary_txt)
-	reports_ch = reports_ch.mix(MOSDEPTH.out.regions_txt)
+
+        mosdepth_global  = MOSDEPTH.out.global_txt
+        mosdepth_summary = MOSDEPTH.out.summary_txt
+        mosdepth_regions = MOSDEPTH.out.regions_txt
+
+	reports_ch = reports_ch
+		.mix(mosdepth_global)
+		.mix(mosdepth_summary)
+		.mix(mosdepth_regions)
 
     SAMTOOLS_STATS(fasta,fai,bed,bams)
 	versions_ch = versions_ch.mix(SAMTOOLS_STATS.out.versions)
@@ -55,6 +61,9 @@ main:
 emit:
 	versions = versions_ch
 	multiqc = reports_ch
+	mosdepth_global
+	mosdepth_summary
+	mosdepth_regions
 }
 
 
