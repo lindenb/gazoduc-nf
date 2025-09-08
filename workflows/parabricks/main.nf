@@ -546,9 +546,9 @@ workflow {
    */
   if( params.with_multiqc ==true) {
     COMPILE_VERSIONS(versions_ch.collect().map{it.sort()})
-    multiqc_ch = multiqc_ch.mix(COMPILE_VERSIONS.out.multiqc)
-    multiqc_ch.filter{!(it instanceof List) || it.size()!=2}.view{"### FIX ME ${it} MULTIQC"}
-    //MULTIQC(multiqc_ch.collect().map{[[id:"parabricks"],it]})
+    multiqc_ch = multiqc_ch.mix(COMPILE_VERSIONS.out.multiqc.map{[[id:"versions"],it]})
+    // in case of problem multiqc_ch.filter{!(it instanceof List) || it.size()!=2}.view{"### FIX ME ${it} MULTIQC"}
+    MULTIQC(multiqc_ch.map{it[1]}.collect().map{[[id:"parabricks"],it]})
     }
 }
 

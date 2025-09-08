@@ -22,41 +22,30 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-process GATHER_VCFS {
-tag "${meta.id?:""}"
-label "process_short"
+process BED_TO_INTERVAL_LIST {
+tag "${meta.id?:interval_list.name}"
+label "process_single"
 afterScript "rm -rf TMP"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-when:
-    task.ext.when == null || task.ext.when
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-	tuple val(meta),path("VCFS/*")
+	tuple val(meta1),path(dict)
+	tuple val(meta),path(bed)
 output:
-	tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:vcf
+    tuple val(meta),path("*.interval_list"),emit:interval_list
     path("versions.yml"),emit:versions
 script:
-    def prefix = task.ext.prefix?:"\${MD5}.gathervcfs"
+	def prefix = task.ext.prefix?:bed.baseName
 """
-hostname 1>&2
 mkdir -p TMP
-# gonna fail if there is a BCF, paranoid
-find VCFS/ \\( -name "*.vcf.gz" -o -name "*.bcf" \\) > TMP/jeter.list
-MD5=`cat TMP/jeter.list | md5sum | cut -d ' ' -f1`
+gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" BedToIntervalList \\
+    --INPUT "${bed}" \\
+    --SD "${dict}" \\
+    --O ${prefix}.interval_list
 
-gatk  --java-options "-Xmx${task.memory.giga}g -XX:-UsePerfData -Djava.io.tmpdir=TMP" GatherVcfs  \\
-	--INPUT TMP/jeter.list \\
-	--REORDER_INPUT_BY_FIRST_VARIANT \\
-	--OUTPUT TMP/jeter.vcf.gz	
-
-bcftools index --force --threads "${task.cpus}" TMP/jeter.vcf.gz
-
-mv TMP/jeter.vcf.gz "${prefix}.vcf.gz"
-mv TMP/jeter.vcf.gz.tbi "${prefix}.vcf.gz.tbi"
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	gatk: todo
-	bcftools: todo
+	gatk: "\$(gatk --version 2>&1  | paste -s -d ' ' | tr -c -d 'A-Za-z0-9._-' )"
 END_VERSIONS
 """
 }

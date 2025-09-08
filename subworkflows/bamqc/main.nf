@@ -22,8 +22,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {MOSDEPTH        } from '../../modules/mosdepth'
-include {SAMTOOLS_STATS  } from '../../modules/samtools/stats'
+include {MOSDEPTH                   } from '../../modules/mosdepth'
+include {SAMTOOLS_STATS             } from '../../modules/samtools/stats'
+include {BED_TO_INTERVAL_LIST       } from '../../modules/gatk/bed2intervallist'
+include {COLLECT_MULTIPLE_METRICS   } from '../../modules/gatk/collectmultiplemetrics'
 
 workflow BAM_QC {
 take:
@@ -37,6 +39,11 @@ main:
 	versions_ch = Channel.empty()
 	reports_ch  = Channel.empty()
 
+  /***************************************************
+   *
+   *  MOSDEPTH
+   *
+   */
 	MOSDEPTH(
 		fasta,
 		fai,
@@ -44,19 +51,54 @@ main:
 		)
 	versions_ch = versions_ch.mix(MOSDEPTH.out.versions)
 
-
-        mosdepth_global  = MOSDEPTH.out.global_txt
-        mosdepth_summary = MOSDEPTH.out.summary_txt
-        mosdepth_regions = MOSDEPTH.out.regions_txt
+	mosdepth_global  = MOSDEPTH.out.global_txt
+	mosdepth_summary = MOSDEPTH.out.summary_txt
+	mosdepth_regions = MOSDEPTH.out.regions_txt
 
 	reports_ch = reports_ch
 		.mix(mosdepth_global)
 		.mix(mosdepth_summary)
 		.mix(mosdepth_regions)
 
+  /***************************************************
+   *
+   *  SAMTOOLS STATS
+   *
+   */
     SAMTOOLS_STATS(fasta,fai,bed,bams)
 	versions_ch = versions_ch.mix(SAMTOOLS_STATS.out.versions)
 	reports_ch = reports_ch.mix(SAMTOOLS_STATS.out.stats)
+
+
+
+  /***************************************************
+   *
+   *  GATK QC
+   *
+   */
+	BED_TO_INTERVAL_LIST(
+		dict,
+		bed
+		)
+	versions_ch = versions_ch.mix(BED_TO_INTERVAL_LIST.out.versions)
+
+	COLLECT_MULTIPLE_METRICS(
+		fasta,
+		fai,
+		dict,
+		[[:],[]],//refflat
+		BED_TO_INTERVAL_LIST.out.interval_list,
+		bams
+		)
+	versions_ch = versions_ch.mix(COLLECT_MULTIPLE_METRICS.out.versions)
+
+
+	reports_ch = reports_ch
+		.mix(COLLECT_MULTIPLE_METRICS.out.alignment_summary_metrics)
+		.mix(COLLECT_MULTIPLE_METRICS.out.base_distribution_by_cycle_metrics)
+		.mix(COLLECT_MULTIPLE_METRICS.out.insert_size_metrics)
+		.mix(COLLECT_MULTIPLE_METRICS.out.quality_by_cycle_metrics)
+		.mix(COLLECT_MULTIPLE_METRICS.out.quality_distribution_metrics)
 
 emit:
 	versions = versions_ch

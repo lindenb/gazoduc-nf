@@ -27,6 +27,8 @@ process GATK4_GATHER_BQSR {
 tag "${meta.id?:""}"
 label "process_single"
 afterScript 'rm -rf TMP'
+when:
+    task.ext.when == null || task.ext.when
 input:
 	tuple val(meta),path("TABLES/*")
 output:
