@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {k1_signature} from '../../utils/functions/main.nf'
+include {k1_signature} from '../../utils/k1.nf'
 
 process BCFTOOLS_GUESS_PLOIDY {
 label "process_single"

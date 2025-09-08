@@ -22,43 +22,39 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-process PB_HAPLOTYPECALLER {
+process PB_GENOTYPEGVCF {
   tag "${meta.id?:""}"
   label 'process_gpu'
   afterScript "rm -rf TMP"
   input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)
-	tuple val(meta),path(bam),path(bai),path(recal_file)
+	tuple val(meta),path(gvcf),path(gvcf_idx)
   output:
 	tuple val(meta),
-		path("${meta.id}.g.vcf.gz"),
-		path("${meta.id}.g.vcf.gz.tbi"),emit:gvcf
+		path("${meta.id}.vcf.gz"),
+		path("${meta.id}.vcf.gz.tbi"),emit:bams
 	path("${meta.id}.hc.log"),emit:log
 	path("versions.yml"),emit:versions
   script:
-    def sample = task.ext.prefix?:"${meta.id}"
-    def recal_args = recal_file?"--in-recal-file \"${recal_file.name}\"":""
+    def prefix = task.ext.prefix?:"${meta.id}"
  """
 mkdir -p TMP
 
 nvidia-smi 1>&2
 
-pbrun haplotypecaller \\
+pbrun genotypegvcf \\
     --num-gpus ${task.ext.gpus} \\
     --ref ${fasta} \\
-    --in-bam "${bam}" \\
-    --gvcf \\
-    --htvc-low-memory \\
-    --out-variants "${sample}.g.vcf.gz" \\
+    --in-gvcf "${gvcf}" \\
+    --out-vcf "${prefix}.vcf.gz" \\
     --tmp-dir TMP \\
-    --logfile ${sample}.hc.log \\
-  ${recal_args}
+    --logfile ${prefix}.log
 
 
 cat <<-END_VERSIONS > versions.yml
 "${task.process}":
-        pbrun: \$(grep Parabr -m1 -A1 "${sample}.hc.log" | grep -o 'Version [^ ]*' )
+        pbrun: \$(grep Parabr -m1 -A1 "${prefix}.log" | grep -o 'Version [^ ]*' )
 END_VERSIONS
 """
 

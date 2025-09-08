@@ -113,7 +113,7 @@ main:
     versions  = versions.mix(HC_COMBINE1.out.versions)
 
 */
-    to_genotype.view()
+    to_genotype
     GENOTYPEGVCFS(
         fasta,
         fai,

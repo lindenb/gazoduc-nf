@@ -1,6 +1,6 @@
 process PB_BAM2FQ {
   tag "${meta.id}"
-  label 'process_short'
+  label 'process_gpu'
 
   afterScript "rm -rf TMP"
   input:
