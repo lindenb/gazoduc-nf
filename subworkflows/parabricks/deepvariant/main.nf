@@ -51,7 +51,7 @@ main:
     GLNEXUS_GENOTYPE(
         cluster_beds,
         [[:],[]], //config
-        ch1.view()
+        ch1
         )
      versions = versions.mix(GLNEXUS_GENOTYPE.out.versions)
 

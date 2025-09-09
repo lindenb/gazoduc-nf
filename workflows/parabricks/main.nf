@@ -271,6 +271,45 @@ workflow {
        bams_ch = bams_ch.mix(bams2_ch)
   }
 
+
+  /***************************************************
+   *
+   * BUILD A PEDIGREE FROM META INFO
+   *
+   */
+  MAKE_PED(
+    bams_ch
+    .map{
+      def meta=it[0];
+      def sample = meta.id
+      def father = meta.father?:"0"
+      def mother = meta.mother?:"0"
+      def sex = meta.sex?:(meta.gender?:"0")
+      def status = meta.status?:"case"
+      return [sample, father, mother, sex, status]
+      }
+    .collect(flat:false)
+    .view()
+    .map{
+      def snmap=[:];
+      for(row in it) {
+        snmap.put(row[0],row);
+        }
+      def s="";
+      for(row in it) {
+        s+=row[0]+"\t"+row[0]+"\t";
+        s+= (snmap.containsKey(row[1])?row[1]:"0") + "\t";
+        s+= (snmap.containsKey(row[2])?row[2]:"0") + "\t";
+        s+= row[3] + "\t";
+        s+= row[4] + "\n";
+        }
+      return s;
+      }
+    .map{[[id:"pedigree"],it]}
+    )
+   pedigree_ch = MAKE_PED.out.pedigree.ifEmpty([[:],[]])
+   trios_ped_ch = MAKE_PED.out.trio_ped.ifEmpty([[:],[]])
+
   /***************************************************
    *
    * GET A BED FOR GENOME WITHOUT THE POLY-NNNN
@@ -308,7 +347,6 @@ workflow {
    *
    */ 
   if(params.with_somalier==true && is_wgs) {
-        pedigree = [[:],[]] //TODO check pedigree
         user_sites = [[:],[],[]] //custom sites
         SOMALIER_BAMS(
             hash_ref,
@@ -316,7 +354,7 @@ workflow {
             fai,
             dict,
             bams_ch,
-            pedigree,
+            pedigree_ch,
             user_sites
             )
         versions_ch = versions_ch.mix(SOMALIER_BAMS.out.versions)
@@ -344,15 +382,14 @@ workflow {
    *
    */
   if(params.with_indexcov == true && is_wgs) {
-     pedigree = [[:],[]] //TODO check pedigree
     INDEXCOV(
-            hash_ref,
-            fasta,
-            fai,
-            dict,
-            pedigree,
-            bams_ch.map{[it[0],it[1]]/* no BAI please */}
-            )
+      hash_ref,
+      fasta,
+      fai,
+      dict,
+      pedigree_ch,
+      bams_ch.map{[it[0],it[1]]/* no BAI please */}
+      )
     versions_ch = versions_ch.mix(INDEXCOV.out.versions)
   }
   /***************************************************
@@ -468,13 +505,12 @@ workflow {
    *
    */
   if(params.with_bcftools_call == true) {
-    pedigree = [[:],[]] //TODO check pedigree
     BCFTOOLS_CALL(
       hash_ref,
       fasta,
       fai,
       dict,
-      pedigree,
+      pedigree_ch,
       cluster_bed.map{[[id:"bed"],it]},
       bams_ch
       )
@@ -488,13 +524,12 @@ workflow {
    *
    */
   if(params.with_freebayes == true) {
-    pedigree = [[:],[]] //TODO check pedigree
     FREEBAYES_CALL(
       hash_ref,
       fasta,
       fai,
       dict,
-      pedigree,
+      pedigree_ch,
       cluster_bed.map{[[id:"bed"],it]},
       bams_ch
       )
@@ -503,7 +538,6 @@ workflow {
     }
 
   if(params.with_gatk == true) {
-    pedigree = [[:],[]] //TODO check pedigree
     HAPLOTYPECALLER(
       hash_ref,
       fasta,
@@ -553,3 +587,38 @@ workflow {
 }
 
 runOnComplete(workflow)
+
+/***************************************************
+  *
+  *  BUILD A PEDIGREE FILE
+  *
+  */
+process MAKE_PED {
+executor "local"
+input:
+  tuple val(meta),val(content)
+output:
+  tuple val(meta),path("pedigree.ped"),emit:pedigree
+  tuple val(meta),path("trios.ped"),optional:true,emit:trio_ped
+  tuple val(meta),path("gatk.ped"),optional:true,emit:gatk_ped
+
+script:
+"""
+mkdir -p TMP
+
+cat << __EOF__  > pedigree.ped
+${content}
+__EOF__
+
+# special pedigree containing at least one trios
+awk '(!(\$3=="0" || \$4=="0"))' pedigree.ped > TMP/a
+
+if test -s TMP/jeter.a
+then
+  cp TMP/jeter.ped trios.ped
+fi
+
+awk -f "${moduleDir}/../../modules/gatk/possibledenovo/pedigree4gatk.awk" pedigree.ped > gatk.ped
+
+"""
+}
