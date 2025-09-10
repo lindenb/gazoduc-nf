@@ -42,6 +42,7 @@ process PB_FQ2BAM {
 	mkdir -p TMP/TMP
 	mkdir -p TMP/REF
   mkdir -p TMP/OUT
+  
 	# pb doesn't like the symlinks ?
 
   find ${bwa_index_dir}/  1>&2
@@ -58,6 +59,8 @@ process PB_FQ2BAM {
 	# show what's here
 	find .  1>&2
 	pwd 1>&2
+
+  nvidia-smi 1>&2
 
   pbrun fq2bam \\
       --num-gpus ${task.ext.gpus} \\

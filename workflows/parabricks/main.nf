@@ -36,6 +36,7 @@ include {BWA_INDEX                                } from '../../modules/bwa/inde
 include {PB_FQ2BAM                                } from '../../modules/parabricks/fq2bam'
 include {PB_HAPLOTYPECALLER                       } from '../../subworkflows/parabricks/haplotypecaller'
 include {PB_DEEPVARIANT                           } from '../../subworkflows/parabricks/deepvariant'
+include {PB_BAM2FQ                                } from '../../modules/parabricks/bam2fq'
 include {SCATTER_TO_BED                           } from '../../subworkflows/gatk/scatterintervals2bed'
 include {BAM_QC                                   } from '../../subworkflows/bamqc'
 include {SOMALIER_BAMS                            } from '../../subworkflows/somalier/bams'
@@ -57,10 +58,17 @@ Map assertKeyExists(final Map hash,final String key) {
     return hash;
 }
 
+boolean testKeyExistsAndNotEmpty(final Map hash,final String key) {
+  if(!hash.containsKey(key)) return false;
+  def value = hash.get(key);
+  if(value==null || value.isEmpty() || value.equals(".")) return false;
+  return true;
+}
+
 Map assertKeyExistsAndNotEmpty(final Map hash,final String key) {
     assertKeyExists(hash,key);
     def value = hash.get(key);
-    if(value.isEmpty()) throw new IllegalArgumentException("empty ${key}'in ${hash}");
+    if(value==null || value.isEmpty()) throw new IllegalArgumentException("empty ${key}'in ${hash}");
     return hash;
 }
 
@@ -69,8 +77,21 @@ Map assertKeyMatchRegex(final Map hash,final String key,final String regex) {
     def value = hash.get(key);
     if(!value.matches(regex)) throw new IllegalArgumentException(" ${key}'in ${hash} doesn't match regex '${regex}'.");
     return hash;
-}
+  }
 
+/** create the META ID of each sample, hash must contains "sample" */
+Map makeID(final Map hash) {
+  def hh = [:];
+  assertKeyExistsAndNotEmpty(hash,"sample")
+  hh = hh.plus(id: hash.sample)
+  if(testKeyExistsAndNotEmpty(hash,"family")) hh = hh.plus(family: hash.family)
+  if(testKeyExistsAndNotEmpty(hash,"father")) hh = hh.plus(father: hash.father)
+  if(testKeyExistsAndNotEmpty(hash,"mother")) hh = hh.plus(mother: hash.mother)
+  if(testKeyExistsAndNotEmpty(hash,"status")) hh = hh.plus(status: hash.status)
+  if(testKeyExistsAndNotEmpty(hash,"sex")) hh = hh.plus(sex: hash.sex)
+  if(testKeyExistsAndNotEmpty(hash,"collection")) hh = hh.plus(collection: hash.collection)
+  return hh;
+}
 
 if( params.help ) {
     dumpParams(params);
@@ -106,45 +127,48 @@ workflow {
   versions_ch = Channel.empty()
   multiqc_ch = Channel.empty()
 
-  	samplesheet_ch = Channel.fromPath(params.samplesheet)
+  samplesheet0_ch = Channel.fromPath(params.samplesheet)
 			.splitCsv(sep:',',header:true)
-			.map{assertKeyMatchRegex(it,"sample","^[A-Za-z][A-Za-z0-9_\\-\\.]*[A-Za-z0-9]\$")}
-			.map{assertKeyMatchRegex(it,"fastq_1","^\\S+\\.(fastq|fq|ora|fastq\\.gz|fq\\.gz)\$")}
-      .map{
-          if(it.containsKey("fastq_2")) {
-            if(!(it.fastq_2==null || it.fastq_2.equals(".") || it.fastq_2.isEmpty())) {
-              // fastq cannot end with '.ora'
-              assertKeyMatchRegex(it,"fastq_2","^\\S+\\.(fastq|fq|fastq\\.gz|fq\\.gz)\$")
-              }
-            return it;
-            }
-          }
-		.map{[ [id:it.sample],it.fastq_1,it.fastq_2]}
-			
-
-	if(params.sampleinfo!=null) {
-		ch2 = Channel.fromPath(params.sampleinfo)
-                        .splitCsv(sep:',',header:true)
-			.map{assertKeyExistsAndNotEmpty(it,"sample")}
-			.map{[ [id:it.sample], it ]}
-
-		/* join with fastq info */
-		samplesheet_ch = samplesheet_ch.join(ch2,remainder:true)
-			.filter{it.size()==4}
-			.map {
-			  if(it[3]!=null) return [it[0].plus(it[3]),it[1],it[2]];
-			  return  [it[0],it[1],it[2]]	
-         }
-		}
-	   
-
-
-    /* select fastq having an .ORA extension */
-    fastq_type_ch = samplesheet_ch.branch{v->
-      ora       : v[1].endsWith(".ora")
-      single_end: v[2]==null || v[2].isEmpty() || v[2].equals(".")
-      paired_end: true
+			.map{assertKeyMatchRegex(it,"sample","^[A-Za-z0-9][A-Za-z0-9_\\-\\.]*[A-Za-z0-9]\$")}
+      .branch{v->
+        fastq : testKeyExistsAndNotEmpty(v,"fastq_1") && !testKeyExistsAndNotEmpty(v,"bam") && !testKeyExistsAndNotEmpty(v,"ora")
+        bam: testKeyExistsAndNotEmpty(v,"bam") && 
+             testKeyExistsAndNotEmpty(v,"fasta") && 
+            !testKeyExistsAndNotEmpty(v,"fastq_1") && 
+            !testKeyExistsAndNotEmpty(v,"fastq_2") && 
+            !testKeyExistsAndNotEmpty(v,"ora")
+        ora: testKeyExistsAndNotEmpty(v,"ora") &&
+            !testKeyExistsAndNotEmpty(v,"bam") &&
+            !testKeyExistsAndNotEmpty(v,"fastq_1")
+        other: true
       }
+
+  samplesheet0_ch.other.map{throw new IllegalArgumentException("bad input in ${params.samplesheet} : ${it} not a BAM or fastq or ORA input")}
+  
+  /***************************************************
+   *
+   * REMAP BAMS
+   *
+   */
+  samplesheet_bam_ch = samplesheet0_ch.bam
+      .filter{testKeyExistsAndNotEmpty(it,"bam")}
+			.map{assertKeyMatchRegex(it,"bam","^\\S+\\.(bam|cram)\$")}
+      .map{assertKeyMatchRegex(it,"fasta","^\\S+\\.(fa|fasta)\$")}
+      .map{
+        if(!it.containsKey("fai")) {
+          return it.plus(fai:it.fasta+".fai")
+          }
+        return it;
+        }
+      .map{assertKeyMatchRegex(it,"fai","^\\S+\\.(fai)\$")}
+      .map{[ makeID(it), it.bam, it.fasta, it.fai]}
+
+  PB_BAM2FQ(samplesheet_bam_ch)
+  versions_ch = versions_ch.mix(PB_BAM2FQ.out.versions)
+  bam2fq_ch = PB_BAM2FQ.out.fastqs
+    .map{[it[0],it[1].findAll{v->v.name.endsWith(".R1.fastq.gz") || v.name.endsWith(".R2.fastq.gz")}.sort()]}//ignore singletons, orphans
+    .map{[it[0],it[1][0], (it[1].size()>1?it[1][1]:null)]}
+
 
   /***************************************************
    *
@@ -153,18 +177,80 @@ workflow {
    */
   ORA_TO_FASTQ(
     Channel.of([id:"ora"]),
-    fastq_type_ch.ora.map{[it[0],file(it[1])]}
+    samplesheet0_ch.ora
+      .map{assertKeyMatchRegex(it,"ora","^\\S+\\.(ora)\$")}
+      .map{[ makeID(it) , file(it.ora)]}
     ) 
   versions_ch = versions_ch.mix(ORA_TO_FASTQ.out.versions)    
+  
+
+
+  samplesheet_ch = samplesheet0_ch.fastq
+      .filter{testKeyExistsAndNotEmpty(it,"fastq_1")}
+			.map{assertKeyMatchRegex(it,"fastq_1","^\\S+\\.(fastq|fq|fastq\\.gz|fq\\.gz)\$")}
+      .map{
+          if(it.containsKey("fastq_2")) {
+            if(!(it.fastq_2==null || it.fastq_2.equals(".") || it.fastq_2.isEmpty())) {
+              // fastq cannot end with '.ora'
+              assertKeyMatchRegex(it,"fastq_2","^\\S+\\.(fastq|fq|fastq\\.gz|fq\\.gz)\$")
+              }
+            return [[id:it.sample],file(it.fastq_1),file(it.fastq_2)];//paired end
+            }
+          return [makeID(it),file(it.fastq_1), null ];//single end
+          }
+    .mix(bam2fq_ch)
+    .mix(ORA_TO_FASTQ.out.single_end.map{[it[0],it[1],null ]})
+    .mix(ORA_TO_FASTQ.out.paired_end.map{[it[0],it[1],it[2]]})
+
+
+  /***************************************************
+   *
+   * Check no duplicate sample
+   *
+   */  
+  samplesheet_ch.map{it[0].id}.unique().count()
+    .combine( samplesheet_ch.map{it[0].id}.count() )
+    .map{
+      if(!it[0].equals(it[1])) throw new IllegalArgumentException("probably duplicate sample. Check samplesheet");
+      return it;
+    }
+
+
+  /**
+   * join meta data about samples
+   */
+	if(params.sampleinfo!=null) {
+      ch2 = Channel.fromPath(params.sampleinfo)
+        .splitCsv(sep:',',header:true)
+        .map{assertKeyExistsAndNotEmpty(it,"sample")}
+        .map{[ [id:it.sample], it ]}
+
+      /* join with fastq info */
+      samplesheet_ch = samplesheet_ch.join(ch2,remainder:true)
+        .filter{it.size()==4}
+        .map {
+          if(it[3]!=null) return [it[0].plus(it[3]),it[1],it[2]];
+          return  [it[0],it[1],it[2]]	
+          }
+      }
+	   
+
+
+  /* select fastq having an .ORA extension */
+  fastq_type_ch = samplesheet_ch.branch{v->
+      single_end: v.size()==2 || !v[2]
+      paired_end: v.size()==3
+      other: true
+      }
+
+  fastq_type_ch.other.map{throw new IllegalArgumentException("bad input fastq_type_ch : ${it}")}
+
 
   single_end = fastq_type_ch.single_end
-		.map{[it[0], file(it[1])]}
-		.mix(ORA_TO_FASTQ.out.single_end)
     .map{[it[0],[it[1]]]}
     
     
   paired_end = fastq_type_ch.paired_end
-		.mix(ORA_TO_FASTQ.out.paired_end)
     .map{[it[0],[it[1],it[2]]]}
 
    
@@ -174,8 +260,7 @@ workflow {
    *
    */
    if( params.with_fastqc == true) {
-      FASTQC_BEFORE_TRIM( single_end.mix(paired_end)
-      )
+    FASTQC_BEFORE_TRIM( single_end.mix(paired_end) )
     versions_ch = versions_ch.mix(FASTQC_BEFORE_TRIM.out.versions)
     multiqc_ch = multiqc_ch.mix(FASTQC_BEFORE_TRIM.out.zip)
    }
@@ -194,7 +279,7 @@ workflow {
     multiqc_ch = multiqc_ch.mix(FASTP.out.json)
 
 
-     /***************************************************
+   /***************************************************
     *
     *  FASTQC : get FASTQ quality control after FASTP
     *
@@ -246,10 +331,10 @@ workflow {
       bams2_ch = 
         Channel.fromPath(params.exta_bams)
           .splitCsv(sep:',',header:true)
-          .map{assertKeyMatchRegex(it,"sample","^[A-Za-z][A-Za-z0-9_\\-\\.]*[A-Za-z0-9]\$")}
+          .map{assertKeyMatchRegex(it,"sample","^[A-Za-z0-9][A-Za-z0-9_\\-\\.]*[A-Za-z0-9]\$")}
           .map{assertKeyMatchRegex(it,"bam","^\\S+\\.(bam|cram)\$")}
           .map{assertKeyMatchRegex(it,"bai","^\\S+\\.(bai|crai)\$")}
-          .map{[ [id:it.sample],it.bam,it.bai]}
+          .map{[ makeID(it) ,it.bam,it.bai]}
       
         /* join SAMPLE INFO is any */
       	if(params.sampleinfo!=null) {
@@ -271,6 +356,17 @@ workflow {
        bams_ch = bams_ch.mix(bams2_ch)
   }
 
+  /***************************************************
+   *
+   * Check no duplicate sample after merging
+   *
+   */  
+  bams_ch.map{it[0].id}.unique().count()
+    .combine( bams_ch.map{it[0].id}.count() )
+    .map{
+      if(!it[0].equals(it[1])) throw new IllegalArgumentException("probably duplicate sample. Check samplesheet");
+      return it;
+    }
 
   /***************************************************
    *

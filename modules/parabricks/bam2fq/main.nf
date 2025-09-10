@@ -1,48 +1,62 @@
-process PB_BAM2FQ {
-  tag "${meta.id}"
-  label 'process_gpu'
+/*
 
+Copyright (c) 2025 Pierre Lindenbaum
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+The MIT License (MIT)
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
+process PB_BAM2FQ {
+  tag "${meta.id?:""}"
+  label 'process_gpu'
   afterScript "rm -rf TMP"
   input:
     tuple val(meta),path(bam),path(fasta),path(fai)
   output:
-      tuple val(meta), path("*.gz")  , emit: fastqs
+      tuple val(meta), path("*.fastq.gz", arity: '1..*'), emit: fastqs
       path("${meta.id}.bam2fq.log")
       path("versions.yml"),emit:versions
   when:
-        task.ext.when == null || task.ext.when
+      task.ext.when == null || task.ext.when
   script:
-    def sample = meta.id?bam.simpleName
+    def sample = meta.id?:bam.simpleName
     def with_orphan = task.ext.with_orphan?:false
     def with_singleton = task.ext.with_singleton?:false
-    def cpu_per_gpu = task.ext.cpu_per_gpu
-    def bqsr_args = with_bqsr && known_vcf? "--knownSites \"${known_vcf.name}\"   --out-recal-file \"${sample}.bqsr.report.txt\"   " : ""
-    def low_memory = task.ext.low_memory==true || task.attempt>1 ? "--low-memory" : ""
-    def fixmate_args = (task.ext.with_fixmate==true?"--fix-mate":"")
  """
 	mkdir -p TMP/OUT
 
   pbrun bam2fq \\
-      --num-gpus ${task.ext.gpus} \\
       --num-threads ${task.cpus} \\
-      --num-cpu-threads-per-stage ${cpu_per_gpu} \\
-      --memory-limit ${task.memory.giga} \\
       --ref ${fasta} \\
       --out-prefix "TMP/OUT/${sample}." \\
-      --out-suffixF  .R1.fastq.gz \\
-      --out-suffixF2 .R2.fastq.gz \\
+      --out-suffixF  R1.fastq.gz \\
+      --out-suffixF2 R2.fastq.gz \\
       ${with_orphan   ?"--out-suffixO  .orphan1.fastq.gz":""} \\
       ${with_orphan   ?"--out-suffixO2 .orphan2.fastq.gz":""} \\
       ${with_singleton?"--out-suffixS  .singletons.fastq.gz":""} \\
       --in-bam "${bam}" \\
       --tmp-dir TMP \\
-      --logfile ${sample}.bam2fq.log \\
-      ${low_memory}
+      --logfile ${sample}.bam2fq.log
 
 find .  1>&2
 
-mv "TMP/OUT/*.gz ./
-
+mv -v TMP/OUT/*.gz ./
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
