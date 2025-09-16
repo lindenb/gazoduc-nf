@@ -7,7 +7,6 @@ ORIGINAL snakemake workflow by Raphael Blanchet PhD.
 process PB_FQ2BAM {
   tag "${meta.id}"
   label 'process_gpu'
-
   afterScript "rm -rf TMP"
   input:
     tuple val(meta2),path(fasta)
@@ -19,7 +18,7 @@ process PB_FQ2BAM {
 	    tuple val(meta), path("*.cram") ,path("*.crai"),emit: bam,    optional: true
       tuple val(meta), path("*.duplicate.metrics.txt"), emit:duplicate_metrics, optional:true
       tuple val(meta), path("*.bqsr.report.txt"), emit:bqsr_report, optional:true
-      tuple val(meta), path("*.qc_metrics"), emit:qc_metrics, optional:true
+      tuple val(meta), path("*.qc_metrics"),optional:true, emit:qc_metrics
       path("*.log")
       path("versions.yml"),emit:versions
   when:
@@ -61,7 +60,7 @@ process PB_FQ2BAM {
 	pwd 1>&2
 
   nvidia-smi 1>&2
-
+   
   pbrun fq2bam \\
       --num-gpus ${task.ext.gpus} \\
       --gpusort \\
@@ -81,7 +80,7 @@ process PB_FQ2BAM {
       ${fixmate_args} \\
       --tmp-dir TMP \\
       --logfile ${sample}.log \\
-      ${low_memory}
+      ${low_memory} 1>&2
 
 find .  1>&2
 

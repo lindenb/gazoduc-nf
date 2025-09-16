@@ -92,6 +92,13 @@ bcftools call  \\
     ${args2} \\
 	TMP/jeter.bcf
 
+
+# fix non ATGC alleles for GATK/HTSJDK
+bcftools view  TMP/jeter2.bcf |\\
+	awk -F '\t' '/^#/ {print;next;} {OFS="\t"; R=\$4;gsub(/[RYMKSWHBVD]/,"N",R);\$4=R; R=\$5;gsub(/[RYMKSWHBVD]/,"N",R);\$5=R; print;}' |\\
+	bcftools view -O u -o TMP/jeter.bcf
+mv  TMP/jeter.bcf TMP/jeter2.bcf
+
 bcftools sort \\
     --max-mem '${task.memory.giga}G' \\
     -T TMP/sort \\

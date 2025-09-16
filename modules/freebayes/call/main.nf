@@ -30,7 +30,7 @@ freebayes \\
         ${args}
     
 
-awk -F '\t' '/^#/ {print;next;} {OFS="\t";R=\$4;gsub(/[^ATGCatgc]/,"N",R);\$4=R;print;}' TMP/jeter.vcf |\\
+awk -F '\t' '/^#/ {print;next;} {OFS="\t";R=\$4;gsub(/[RYMKSWHBVD]/,"N",R);\$4=R; R=\$5;gsub(/[RYMKSWHBVD]/,"N",R);\$5=R;print;}' TMP/jeter.vcf |\\
 bcftools sort --max-mem ${task.memory.giga}G  -T TMP/sort -O b -o TMP/${prefix}.bcf
 
 bcftools index -f --threads ${task.cpus} TMP/${prefix}.bcf

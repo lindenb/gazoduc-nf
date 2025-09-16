@@ -28,25 +28,24 @@ process PB_DEEPVARIANT {
 
   afterScript "rm -rf TMP"
   input:
-	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai)
-	tuple val(meta),path(bam),path(bai)
+    tuple val(meta1),path(fasta)
+    tuple val(meta2),path(fai)
+    tuple val(meta),path(bam),path(bai)
   output:
-	tuple val(meta), path("${meta.id}.g.vcf.gz"),path("${meta.id}.g.vcf.gz.tbi"),emit:gvcf
-	path("${meta.id}.deepvariant.log")
-	path("versions.yml"),emit:versions
+	  tuple val(meta), path("${meta.id}.g.vcf.gz"),path("${meta.id}.g.vcf.gz.tbi"),emit:gvcf
+    path("${meta.id}.deepvariant.log")
+    path("versions.yml"),emit:versions
   script:
     def sample = meta.id
     def args1 = task.ext.args1?:""
+    def num_gpus = task.accelerator ? "--num-gpus $task.accelerator.request" : ''
  """
 	mkdir -p TMP
 
   nvidia-smi 1>&2
-
-   pbrun deepvariant --help 1>&2 || true
-
+  set -x
   pbrun deepvariant \\
-      --num-gpus ${task.ext.gpus} \\
+      ${num_gpus} \\
       --ref ${fasta} \\
       --in-bam "${bam}" \\
       --gvcf \\

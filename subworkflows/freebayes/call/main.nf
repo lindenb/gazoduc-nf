@@ -58,18 +58,28 @@ workflow FREEBAYES_CALL {
 		versions = versions.mix(CALL.out.versions)
 
 
+		ch3 = CALL.out.vcf
+			.map{[[id:it[3].toRealPath().toString()/* bed */],[it[1],it[2]]]}
+			.groupTuple()
+			.map{[it[0],it[1].flatten(), [] /* no bed */]}
+			.branch{v->
+				to_merge:v[1].size()>2 /* bed and it's index */
+				other: true
+				}
 
-		BCFTOOLS_MERGE(
-			CALL.out.vcf
-				.map{[[id:it[3].toRealPath().toString()/* bed */],[it[1],it[2]]]}
-				.groupTuple()
-				.map{[it[0],it[1].flatten(), [] /* no bed */]}
-			)
+
+		BCFTOOLS_MERGE(ch3.to_merge)
 		versions = versions.mix(BCFTOOLS_MERGE.out.versions)
 
+		without_merge = ch3.other.map{[
+			it[0],
+			it[1].find{v->v.name.endsWith(".bcf") || v.name.endsWith("*.vcf.gz")}, 
+			it[1].find{v->v.name.endsWith(".tbi") || v.name.endsWith("*.csi")}
+			]}
 
 
-		FILTER_AC_GT_0(BCFTOOLS_MERGE.out.vcf)
+
+		FILTER_AC_GT_0(BCFTOOLS_MERGE.out.vcf.mix(without_merge))
 		versions = versions.mix(FILTER_AC_GT_0.out.versions)
 
 	

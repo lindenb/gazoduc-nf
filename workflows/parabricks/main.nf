@@ -45,7 +45,8 @@ include {INDEXCOV                                 } from '../../subworkflows/ind
 include {DELLY                                    } from '../../subworkflows/delly2'
 include {CNVNATOR                                 } from '../../subworkflows/cnvnator'
 include {BEDTOOLS_MAKEWINDOWS                     } from '../../modules/bedtools/makewindows'
-include {BED_CLUSTER                              } from '../../modules/jvarkit/bedcluster'
+include {BED_CLUSTER as BED_CLUSTER1              } from '../../modules/jvarkit/bedcluster'
+include {BED_CLUSTER as BED_CLUSTER2              } from '../../modules/jvarkit/bedcluster'
 include {BCFTOOLS_GUESS_PLOIDY                    } from '../../modules/bcftools/guess_ploidy'
 include {BCFTOOLS_STATS                           } from '../../modules/bcftools/stats'
 include {GRAPHTYPER                               } from '../../subworkflows/graphtyper/genotype'
@@ -84,6 +85,7 @@ Map makeID(final Map hash) {
   def hh = [:];
   assertKeyExistsAndNotEmpty(hash,"sample")
   hh = hh.plus(id: hash.sample)
+  if(testKeyExistsAndNotEmpty(hash,"batch")) hh = hh.plus(batch: hash.batch) // batch calling for samtools/freebayes/... call all the samples at the same time in that batch
   if(testKeyExistsAndNotEmpty(hash,"family")) hh = hh.plus(family: hash.family)
   if(testKeyExistsAndNotEmpty(hash,"father")) hh = hh.plus(father: hash.father)
   if(testKeyExistsAndNotEmpty(hash,"mother")) hh = hh.plus(mother: hash.mother)
@@ -169,6 +171,7 @@ workflow {
     .map{[it[0],it[1].findAll{v->v.name.endsWith(".R1.fastq.gz") || v.name.endsWith(".R2.fastq.gz")}.sort()]}//ignore singletons, orphans
     .map{[it[0],it[1][0], (it[1].size()>1?it[1][1]:null)]}
 
+  prevent_multi_gpu_ch = bam2fq_ch.count()
 
   /***************************************************
    *
@@ -318,12 +321,14 @@ workflow {
     fai,
     BWA_INDEX.out.bwa_index ,
     known_indels,
-    single_end.mix(paired_end)
-  )  
+    prevent_multi_gpu_ch //prevent multiple GPUs jobs at the same time
+      .combine(single_end.mix(paired_end))
+      .map{it[1..<it.size()]} // remove item[0] containing multiple GPLUs guard
+    )  
   versions_ch = versions_ch.mix(PB_FQ2BAM.out.versions)
   multiqc_ch = multiqc_ch.mix(PB_FQ2BAM.out.duplicate_metrics)
-
   bams_ch =  PB_FQ2BAM.out.bam
+  prevent_multi_gpu_ch = bams_ch.count()
 
 
   /* add extra BAM , if any */
@@ -528,9 +533,15 @@ workflow {
   versions_ch = versions_ch.mix(BEDTOOLS_MAKEWINDOWS.out.versions)
 
   /* if it's an exome , group the small genome together in BED */
-  BED_CLUSTER(fasta,fai,dict,BEDTOOLS_MAKEWINDOWS.out.bed)
-  versions_ch = versions_ch.mix(BED_CLUSTER.out.versions)
-  cluster_bed = BED_CLUSTER.out.bed.map{it[1]}.flatMap()
+  BED_CLUSTER1(fasta,fai,dict,BEDTOOLS_MAKEWINDOWS.out.bed)
+  versions_ch = versions_ch.mix(BED_CLUSTER1.out.versions)
+  cluster_bed1 = BED_CLUSTER1.out.bed.map{it[1]}.flatMap()
+
+  /* But for slow callers like bcftools or freebayes, we need smaller intervals */
+  BED_CLUSTER2(fasta,fai,dict,BEDTOOLS_MAKEWINDOWS.out.bed)
+  versions_ch = versions_ch.mix(BED_CLUSTER2.out.versions)
+  cluster_bed2 = BED_CLUSTER2.out.bed.map{it[1]}.flatMap()
+
 
   grouped_bams = bams_ch
     .map{[it[1],it[2]]}//bam,bai
@@ -550,11 +561,14 @@ workflow {
       fasta,
       fai,
       dict,
-      cluster_bed.map{[[id:it.name.toString().md5().substring(0,8)],it]},
-      bams_ch.map{it + [[]]/* empty file for BQSR */}
+      cluster_bed1.map{[[id:it.name.toString().md5().substring(0,8)],it]},
+      prevent_multi_gpu_ch //prevent multiple GPUs jobs at the same time
+        .combine(  bams_ch.map{it + [[]]/* empty file for BQSR */})
+        .map{it[1..<it.size()]} // remove item[0] containing multiple GPLUs guard
       )
     versions_ch = versions_ch.mix(PB_HAPLOTYPECALLER.out.versions)
     vcf_ch = vcf_ch.mix(PB_HAPLOTYPECALLER.out.vcf)
+    prevent_multi_gpu_ch = vcf_ch.count()
   }
 
  /***************************************************
@@ -568,11 +582,14 @@ workflow {
       fasta,
       fai,
       dict,
-      cluster_bed.map{[[id:it.name.toString().md5().substring(0,8)],it]},
-      bams_ch
+      cluster_bed1.map{[[id:it.name.toString().md5().substring(0,8)],it]},
+      prevent_multi_gpu_ch //prevent multiple GPUs jobs at the same time
+        .combine(bams_ch)
+        .map{it[1..<it.size()]} // remove item[0] containing multiple GPLUs guard
       )
     versions_ch = versions_ch.mix(PB_DEEPVARIANT.out.versions)
     vcf_ch = vcf_ch.mix(PB_DEEPVARIANT.out.vcf)
+    prevent_multi_gpu_ch =  vcf_ch.count()
   }
 
 
@@ -588,7 +605,7 @@ workflow {
       fai,
       dict,
       mosdepth_summary_ch,
-      cluster_bed.map{[[id:it.name.toString().md5().substring(0,8)],it]},
+      cluster_bed1.map{[[id:it.name.toString().md5().substring(0,8)],it]},
       bams_ch
       )
     versions_ch = versions_ch.mix(GRAPHTYPER.out.versions)
@@ -607,7 +624,7 @@ workflow {
       fai,
       dict,
       pedigree_ch,
-      cluster_bed.map{[[id:"bed"],it]},
+      cluster_bed2.map{[[id:"bed"],it]},
       bams_ch
       )
     versions_ch = versions_ch.mix(BCFTOOLS_CALL.out.versions)
@@ -626,7 +643,7 @@ workflow {
       fai,
       dict,
       pedigree_ch,
-      cluster_bed.map{[[id:"bed"],it]},
+      cluster_bed2.map{[[id:"bed"],it]},
       bams_ch
       )
     versions_ch = versions_ch.mix(FREEBAYES_CALL.out.versions)
@@ -639,7 +656,7 @@ workflow {
       fasta,
       fai,
       dict,
-      cluster_bed.map{[[id:"bed"],it]},
+      cluster_bed1.map{[[id:"bed"],it]},
       bams_ch
       )
     versions_ch = versions_ch.mix(HAPLOTYPECALLER.out.versions)

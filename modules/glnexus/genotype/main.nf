@@ -48,6 +48,14 @@ script:
 	hostname 1>&2
 	mkdir TMP
 
+	# glnexus doesn't like overlapping BED records
+	if ${optional_bed?true:false}
+	then
+		cut -f1,2,3 "${optional_bed}" |\\
+			sort -T TMP -t '\t' -k1,1 -k2,2n |\\
+			bedtools merge > TMP/jeter.bed
+	fi
+
 
 	# check all samples in the same order
 	find GVCF/ \\( -name "*.vcf.gz" -o -name ".gvcf.gz" \\) | while read F
@@ -70,7 +78,7 @@ script:
 	glnexus_cli \\
 	 	${args1} \\
 		--config ${optional_config?"${optional_config}":"${config}"} \\
-        ${optional_bed?"--bed \"${optional_bed}\"":""} \\
+        ${optional_bed?"--bed TMP/jeter.bed":""} \\
 		--threads ${task.cpus} \\
 		--mem-gbytes ${task.memory.giga} \\
 		--list TMP/jeter.list > TMP/jeter.vcf.gz
@@ -84,7 +92,7 @@ mv TMP/jeter.bcf.csi ./${prefix}.bcf.csi
 
 cat << EOF > versions.yml
 "${task.process}":
-    glnexus : "\$( bcftools view --header-only merged.bcf | grep -m1 -o GLnexusVersion=.*)"
+    glnexus : "\$( bcftools view --header-only ${prefix}.bcf | grep -m1 -o GLnexusVersion=.*)"
 EOF
 
 """

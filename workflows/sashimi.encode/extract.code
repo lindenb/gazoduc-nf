@@ -1,0 +1,40 @@
+stream().
+filter(R->!R.getReadUnmappedFlag()).
+forEach(rec->{
+	final Cigar cigar=rec.getCigar();
+	int refPos1=rec.getAlignmentStart();
+	for(int cIdx=0;cIdx< cigar.numCigarElements();++cIdx)
+		{
+		final CigarElement ce=cigar.getCigarElement(cIdx);
+		switch(ce.getOperator())
+			{
+			case S: break;
+			case I: break;
+			case N:
+				{
+				if(cIdx+1<cigar.numCigarElements() &&
+					cigar.getCigarElement(cIdx+1).getOperator().isAlignment())
+					{
+					out.print(rec.getContig());
+					out.print("\t");
+					out.print(refPos1-1);
+					out.print("\t");
+					out.print(refPos1+ce.getLength()-1);
+					out.println();
+					}
+				refPos1+=ce.getLength();	
+				break;
+				}
+			case D:
+			case X:
+			case EQ:
+			case M:
+				{
+				refPos1+=ce.getLength();
+				break;
+				}
+			case H:case P: break;//ignore
+			default:throw new IllegalStateException("operator not handled. ops.");
+			}
+		}
+	});

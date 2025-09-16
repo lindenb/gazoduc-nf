@@ -5,4 +5,5 @@ channels:
   - bioconda
 dependencies:
   - bioconda::bcftools=1.21
+  - bioconda::bedtools>=2.30.0
   - bioconda::glnexus=1.4.1
