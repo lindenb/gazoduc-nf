@@ -31,7 +31,9 @@ include {JVARKIT_BAM_WITHOUT_BAI     } from '../../modules/jvarkit/bamwithoutbai
 include {BAM_QC                      } from '../../subworkflows/bamqc'
 include {MULTIQC                     } from '../../modules/multiqc'
 include {COMPILE_VERSIONS            } from '../../modules/versions'
-
+include {BATIK_DOWNLOAD              } from '../../modules/batik/download'
+include {BATIK_RASTERIZE             } from '../../modules/batik/rasterize'
+include {GHOSTSCRIPT_MERGE           } from '../../modules/gs/merge'
 runOnComplete(workflow)
 
 workflow {
@@ -65,7 +67,7 @@ workflow {
 		.filter{!it.File_accession.isEmpty()}
 		.filter{!it.File_download_URL.isEmpty()}
 		.map{[[id:it.File_accession],it.File_download_URL]}
-		.filter{!it[1].equals("ENCFF337XBW") }//broken bam
+		.filter{!it[1].matches("ENCFF402BMB|ENCFF337XBW|ENCFF008ILD|ENCFF241TBK|ENCFF722YLK|ENCFF818YGY|ENCFF849EUO|ENCFF979GXG") }//broken bam
 	
 	
 	ch2 = Channel.fromPath(params.bed).splitCsv(header: false,sep:'\t',strip:true)
@@ -88,6 +90,40 @@ workflow {
 		]})
 	version_ch = version_ch.mix(JVARKIT_BAM_WITHOUT_BAI.out.versions)
 
+
+	tosvg_ch = JVARKIT_BAM_WITHOUT_BAI.out.bam
+		.combine(FETCH_GENES.out.gtf)
+		.filter{it[0].contig.equals(it[3].contig)}
+		.filter{(it[0].start as int)===(it[3].start as int)}
+		.filter{(it[0].end as int)===(it[3].end as int)}
+		.map{[it[0],it[1],it[2],it[4],it[5]]}
+		
+	
+	PLOT_SVG(tosvg_ch)
+	
+		
+	BATIK_DOWNLOAD(hash_ref);
+
+	BATIK_RASTERIZE(
+		BATIK_DOWNLOAD.out.rasterizer,
+		PLOT_SVG.out.svg
+		.map{[it[0],(it[1] instanceof List?it[1]:[it[1]])]}
+			.flatMap{
+				def L=[];
+				for(int i=0;i< it[1].size();i++) {
+					L.add([it[0],it[1][i]]);
+					}
+				return L;
+				}
+		)
+
+
+	GHOSTSCRIPT_MERGE(BATIK_RASTERIZE.out.output
+		.map{[[id:it[0].contig+"_"+it[0].start+"_"+it[0].end],it[1]]}
+		.groupTuple()
+	)
+	
+
 	ch1 = JVARKIT_BAM_WITHOUT_BAI.out.bam.map{[
 			[id:it[0].id],
 			[it[1],it[2]]//bam,bai
@@ -99,22 +135,40 @@ workflow {
 				other: true
 				}
 
+	
+
 	ch1.need_merge.map{throw new IllegalStateException("TODO need to merge");}
 	
 	all_bams = ch1.other
 		.map{[it[0],it[1][0],it[1][1]]}
 	
+	GET_EXONS(gtf,bed)
+	version_ch = version_ch.mix(GET_EXONS.out.versions)
+
 	BAM_QC(
 		hash_ref,
 		fasta,
 		fai,
 		dict,
-		Channel.of(bed).first(),
+		GET_EXONS.out.bed.first(),
 		all_bams
 		)
 	version_ch = version_ch.mix(BAM_QC.out.versions)
 	multiqc = multiqc.mix(BAM_QC.out.multiqc)
 
+
+	// group BAMs in 255 pools using md5sum.subtr(0,2)
+
+	pools_ch = all_bams
+		.map{[[id:it[0].id.md5().substring(0,2)],[it[1],it[2]]]}
+		.groupTuple()
+		.map{[it[0],it[1].flatten()]}
+	
+	SCAN_FOR_SPLICE_EVENTS(pools_ch)
+	CAT_SPLICE_EVENTS(SCAN_FOR_SPLICE_EVENTS.out.bed.map{[[id:"junctions"],it[1]]}.groupTuple())
+
+
+	
 
  	COMPILE_VERSIONS(version_ch.collect().map{it.sort()})
     multiqc = multiqc.mix(COMPILE_VERSIONS.out.multiqc.map{[[id:"versions"],it]})
@@ -207,121 +261,121 @@ EOF
 	"""
 }
 
+process GET_EXONS {
+	label "process_single"
+	conda "${moduleDir}/../../conda/bioinfo.01.yml"
+	afterScript "rm -rf TMP"
+	input:
+		tuple val(meta1),path(gtf),path(idx)
+		tuple val(meta),path(bed)
+	output:
+		tuple val(meta),path("*.bed"),emit:bed
+		path("versions.yml"),emit:versions
+	script:
+	"""
+	        tabix --regions "${bed}" "${gtf}"  |\\
+                awk -F '\t' '(\$3=="exon") {printf("%s\t%s\t%s\\n",\$1,int(\$4)-1,\$5);}' |\\
+		sort -T TMP -t '\t' -k1,1 -k4,4n |\\
+		bedtools merge > exons.bed
 
-process DOWNLOAD_BAM_01 {
-    tag "${sample} ${contig}:${start}-${end} ${url}"
-        cache 'lenienhostname 1>&2t'
-	afterScript 'rm -rf TMP'
-	errorStrategy  {task.exitStatus!=0 && task.attempt<3 ? 'retry' : 'ignore' }
-	memory "5g"
-	maxForks 5
-        input:
-			path(gtf)
-            tuple val(meta),val(sample),val(url),val(contig),val(start),val(end)
-        output:
-            tuple val(meta),path("*.mf"),emit:manifest
-            tuple val(meta),path("*.tsv"),emit:junctions
-			tuple val(meta),path("*.svg.gz"),optional:true,emit:svg
-			path("versions.yml"),emit:versions
-    script:
- """
-	hostname 1>&2
+	test -s exons.bed
 
-	mkdir -p TMP
-	jvarkit  -Xmx${task.memory.giga}g \${JAVA_PROXY} bamwithoutbai -r "${contig}:${start}-${end}"  '${url}' |\\
-		samtools addreplacerg -r '@RG\\tID:${sample}\\tSM:${sample}' -o TMP/jeter.bam -O BAM -
+cat << EOF > versions.yml
+${task.process}:
+	tabix: "todo"
+EOF	"""
 	
-	samtools index TMP/jeter.bam
+	}
 
-	tabix "${gtf.toRealPath()}" "${contig}" |\\
-		jvarkit -Xmx${task.memory.giga}g bedrenamechr -f "TMP/jeter.bam" --convert SKIP > TMP/tmp.gtf
 
-	# bioalcidae
-	jvarkit  -Xmx${task.memory.giga}g bioalcidaejdk --nocode -f "${moduleDir}/extract.code" TMP/jeter.bam |\\
+process SCAN_FOR_SPLICE_EVENTS {
+tag "pool ${meta.id}"
+label "process_single"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
+input:
+	tuple val(meta),path("BAMS/*")
+output:
+	tuple val(meta),path("*.bed"),emit:bed
+	path("versions.yml"),emit:versions
+script:
+	def prefix = task.ext.prefix?:"${meta.id}";
+"""
+mkdir -p TMP
+
+find ./BAMS/ -name "*am" | while read F
+do
+	jvarkit  -Xmx${task.memory.giga}g bioalcidaejdk --nocode -f "${moduleDir}/extract.code" "\${F}" |\\
 		sort -T TMP |\\
 		uniq -c |\\
-		awk '{printf("%s\\t${sample}\\n",\$0);}' > ${sample}_${contig}_${start}_${end}.tsv
-
-	mkdir -p OUT
-	jvarkit  plotsashimi --hyperlink hg38 --skip-empty -r '${contig}:${start}-${end}' \\
-		--gzip --gtf  TMP/tmp.gtf -m "${sample}_${contig}_${start}_${end}.mf" -o \${PWD}/OUT TMP/jeter.bam
-
-	# apply batik	
-	#find ./OUT -type f -name "*.svg.gz" | xargs --no-run-if-empty java  -Xmx${task.memory.giga}g -jar ${rasterizer_jar} -m "application/pdf" 
-
-	# find generated pdfs
-	#find \${PWD}/OUT -type f -name "*.pdf" > all.pdf.csv
-
-cat <<- EOF > versions.yml
-"${task.process}"
-	jvarkit: todo
-EOF
-"""
-}
-
-process COLLECT_ALL_JUNCTIONS {
-tag "N=${L.size()}"
-input:
-	val(meta)
-	val(L)
-output:
-	path("${params.prefix}junctions.tsv.gz"),emit:output
-	path("version.xml"),emit:version
-script:
-"""
-hostname 1>&2
-set -o pipefail
-
-
-cat << __EOF__ > jeter.txt
-${L.join("\n")}
-__EOF__
-
-touch "${params.prefix}junctions.tsv"
-
-cat jeter.txt | while read F
-do
-	awk '{printf("%s\t%s\t%s\t%s\t%s\\n",\$2,\$3,\$4,\$5,\$1);}' \$F >> "${params.prefix}junctions.tsv"
+		awk -vS="\${F}" '{printf("%s\t%s\t%s\t%s\t%s\\n",\$2,\$3,\$4,\$1,S);}' |\\
+		sed 's%\\./BAMS/%%' | sed 's/\\.bam\$//' >> TMP/jeter.tsv 
 done
 
-gzip --best "${params.prefix}junctions.tsv"
+mv -v TMP/jeter.tsv "${prefix}.bed"
 
-rm jeter.txt
-	
-cat <<- EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-	<entry key="description">merge junctions</entry>
-        <entry key="count">${L.size()}</entry>
-</properties>
+cat << EOF > versions.yml
+${task.process}:
+	jvarkit: "todo"
 EOF
 """
 }
 
-process MERGE_PDF {
-tag "${interval} N=${L.size()}"
+process CAT_SPLICE_EVENTS {
+tag "${meta.id?:""}"
+label "process_single"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
 input:
-	val(meta)
-	tuple val(interval),val(L)
+	tuple val(meta),path("BEDS/*")
 output:
-	path("${params.prefix?:""}${interval}.pdf"),emit:output
-	path("version.xml"),emit:version
+	tuple val(meta),path("*.bed"),emit:bed
+	path("versions.yml"),emit:versions
 script:
+	def prefix=task.ext.prefix?:"${meta.id}" 
 """
-hostname 1>&2
-set -o pipefail
+mkdir -p TMP
+echo -e "#CHROM\tSTART0\tEND\tCOUNT\tBAM" > TMP/jeter.bed
+find ./BEDS/ -name "*.bed" -exec cat '{}' ';' |\\
+	sort -t '\t' -T TMP -k1,1 -k2,2n -k3,3n >> TMP/jeter.bed
 
-cat ${L.join(" ")} | awk -F '/' '{printf("%s,%s\\n",\$NF,\$0);}' |\
-	sort -t, -k1,1 -T. | cut -d, -f2  > jeter.list
-gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -dPDFSETTINGS=/prepress -sOutputFile="${params.prefix?:""}${interval}.pdf" @jeter.list
-rm jeter.list
+mv TMP/jeter.bed "${prefix}.bed"
 
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">merge pdfs</entry>
-        <entry key="gs.version">\$(gs --version)</entry>
-</properties>
+touch versions.yml
+"""
+}
+
+process PLOT_SVG {
+tag "${meta.id} ${meta.contig}:${meta.start}-${meta.end}"
+label "process_single"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
+input:
+	tuple val(meta),path(bam),path(bai),path(gtf),path(gtf_tbi)
+output:
+	tuple val(meta),path("*.svg.gz", arity: '0..*'),optional:true,emit:svg
+	path("versions.yml"),emit:versions
+script:
+	def prefix = task.ext.prefix?:"${meta.id}";
+"""
+mkdir -p TMP/OUT
+
+jvarkit  plotsashimi --hyperlink hg38 --skip-empty \\
+		-r '${meta.contig}:${meta.start}-${meta.end}' \\
+		--gzip \\
+		--gtf  "${gtf}" \\
+		-o "TMP/OUT" "${bam}"
+
+find TMP/OUT -type f -name "*.svg.gz" | while read F
+do
+	MD5=`md5sum "\${F}" | awk '{print \$1}'`
+	mv -v "\${F}" "./${meta.id}.${meta.contig}_${meta.start}_${meta.end}.\${MD5}.svg.gz"
+done
+
+cat << EOF > versions.yml
+${task.process}:
+	jvarkit: "todo"
 EOF
 """
 }
+

@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,27 +24,22 @@ SOFTWARE.
 */
 
 
-process BATIK_DOWNLOAD_01 {
+process BATIK_DOWNLOAD {
 input:
 	val(meta)
 output:
-	path("batik-1.15/batik-rasterizer-1.15.jar"),emit:rasterizer
-	path("version.xml"),emit:version
+	tuple val(meta),path("batik-1.19/batik-rasterizer-1.19.jar"),emit:rasterizer
+	path("versions.yml"),emit:versions
 script:
-	def url = "https://www.apache.org/dyn/closer.cgi?filename=/xmlgraphics/batik/binaries/batik-bin-1.15.zip&action=download"
+	def url = "https://www.apache.org/dyn/closer.cgi?filename=/xmlgraphics/batik/binaries/batik-bin-1.19.zip&action=download"
 """
-hostname 1>&2
-wget -O batik-bin-1.15.zip "${url}"
-unzip batik-bin-1.15.zip
-rm batik-bin-1.15.zip
+curl -L -o batik-bin-1.19.zip "${url}"
+unzip batik-bin-1.19.zip
+rm batik-bin-1.19.zip
 
-##################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">download apache batik</entry>
-        <entry key="url"><a>${url}</a></entry>
-</properties>
+cat << EOF > versions.yml
+"${task.process}"
+	batik: "${url}"
 EOF
 """
 }
