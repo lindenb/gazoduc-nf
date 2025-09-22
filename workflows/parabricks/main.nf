@@ -448,7 +448,7 @@ workflow {
    *
    */ 
   if(params.with_somalier==true && is_wgs) {
-        user_sites = [[:],[],[]] //custom sites
+        user_sites = Channel.of([[:],[],[]]) //custom sites
         SOMALIER_BAMS(
             hash_ref,
             Channel.of(fasta),

@@ -157,7 +157,7 @@ workflow {
                 dict,
 		        triosbams_ch, // sample,bam,bai
 		        pedigree, // pedigree for somalier
-		        [[id:"no_sites"],[]]
+		        Channel.of([[id:"no_sites"],[]])
                 )
             versions = versions.mix(SOMALIER_BAMS.out.versions)
 
