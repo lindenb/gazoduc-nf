@@ -168,6 +168,13 @@ workflow {
 	CAT_SPLICE_EVENTS(SCAN_FOR_SPLICE_EVENTS.out.bed.map{[[id:"junctions"],it[1]]}.groupTuple())
 
 
+	if(params.cryptic_tsv!=null) {
+		SCAN_FOR_CRYPTIC(
+			[[id:"cryptic"],file(params.cryptic_tsv)],
+			pools_ch
+			)
+		CAT_CRYPTIC(SCAN_FOR_CRYPTIC.out.tsv.map{[[id:"cryptic"],it[1]]}.groupTuple())
+	}
 	
 
  	COMPILE_VERSIONS(version_ch.collect().map{it.sort()})
@@ -321,6 +328,62 @@ EOF
 """
 }
 
+process SCAN_FOR_CRYPTIC {
+tag "pool ${meta.id}"
+label "process_single"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
+input:
+	tuple val(meta1),path(tsv)
+        tuple val(meta),path("BAMS/*")
+output:
+        tuple val(meta),path("*.junctions.tsv"),emit:tsv
+        path("versions.yml"),emit:versions
+script:
+        def prefix = task.ext.prefix?:"${meta.id}";
+	def undefined="[ATGCNatgcn]{5,20}"
+"""
+mkdir -p TMP
+
+# bases a droite et a gauche, utilise option -o de grep
+awk -F '\t' '{printf("%s_5prime\t${undefined}%s\\n",\$1,\$2);}' "${tsv}" >  TMP/patterns.txt
+awk -F '\t' '{printf("%s_3prime\t%s${undefined}\\n",\$1,\$3);}' "${tsv}" >> TMP/patterns.txt
+awk -F '\t' '{printf("s|%s|[%s_5prime]|i\\n",\$2,\$1);}' "${tsv}" >  TMP/sed.txt
+awk -F '\t' '{printf("s|%s|[%s_3prime]|i\\n",\$3,\$1);}' "${tsv}" >> TMP/sed.txt
+
+set +o pipefail
+
+
+
+find ./BAMS/ -name "*am" | while read F
+do
+	cat TMP/patterns.txt | while read NAME PATTERN
+	do
+		samtools view -F 3844 "\${F}" |\\
+			cut -f 10 |\\
+			grep -iEo "\${PATTERN}" |\\
+			sed -f TMP/sed.txt |\\
+                	sort -T TMP |\\
+	                uniq -c |\\
+        	        awk -vS="\${F}" -vN="\${NAME}" -vP="\${PATTERN}" '{printf("%s\t%s\t%s\t%s\t%s\\n",\$2,N,P,\$1,S);}' |\\
+                	sed 's%\\./BAMS/%%' |\\
+			sed 's/\\.bam\$//' >> TMP/jeter.tsv
+	done
+done
+
+mv -v TMP/jeter.tsv "${prefix}.junctions.tsv"
+
+cat << EOF > versions.yml
+${task.process}:
+        jvarkit: "todo"
+EOF
+"""
+}
+
+
+
+
+
 process CAT_SPLICE_EVENTS {
 tag "${meta.id?:""}"
 label "process_single"
@@ -344,6 +407,31 @@ mv TMP/jeter.bed "${prefix}.bed"
 touch versions.yml
 """
 }
+
+process CAT_CRYPTIC {tag "${meta.id?:""}"
+label "process_single"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
+input:
+        tuple val(meta),path("BEDS/*")
+output:
+        tuple val(meta),path("*.tsv"),emit:bed
+        path("versions.yml"),emit:versions
+script:
+        def prefix=task.ext.prefix?:"${meta.id}"
+"""
+mkdir -p TMP
+echo -e "DNA\tNAME\tDNA\tCOUNT\tBAM" > TMP/jeter.tsv
+find ./BEDS/ -name "*.tsv" -exec cat '{}' ';' |\\
+        sort -t '\t' -T TMP -k1,1 -k2,2n -k3,3 >> TMP/jeter.tsv
+
+mv TMP/jeter.tsv "${prefix}.tsv"
+
+touch versions.yml
+"""
+}
+
+
 
 process PLOT_SVG {
 tag "${meta.id} ${meta.contig}:${meta.start}-${meta.end}"
