@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,33 +24,24 @@ SOFTWARE.
 */
 
 
-process SAMTOOLS_IDXSTATS {
-label "process_single"
-tag "${meta.id?:bam.name}"
-afterScript "rm -rf TMP"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-when:
-    task.ext.when == null || task.ext.when
+process FOP_DOWNLOAD {
+tag "2.11"
+executor "single"
 input:
-	tuple val(meta),path(bam),path(bai)
+	val(meta)
 output:
-	tuple val(meta),path("*.idxstat.tsv"),emit:stats
-	tuple val(meta),path("*.bed"),emit:bed
+	tuple val(meta),path("fop-2.11/fop/fop"),emit:fop
 	path("versions.yml"),emit:versions
 script:
-	def prefix = task.ext.prefix?:(meta.id?:bam.baseName)
+	def url="https://www.apache.org/dyn/closer.cgi?filename=/xmlgraphics/fop/binaries/fop-2.11-bin.tar.gz&action=download
 """
-hostname 1>&2
-set -o pipefail
+curl -L -o jeter.zip "${url}"
+unzip jeter.zip
+rm jeter.zip
 
-samtools idxstats --threads ${task.cpus} "${bam}" > ${prefix}.idxstat.tsv
-
-awk -F '\t' '(\$3!=0 && \$1!="*") {printf("%s\t0\t%s\t${meta.id}\t%s\\n",\$1,\$2,\$3);}' ${prefix}.idxstat.tsv > ${prefix}.bed
-
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-	samtools: "\$(samtools version | awk '(NR==1) {print \$NF;}')"
-END_VERSIONS
+cat << EOF > versions.yml
+"${task.process}"
+	fop: "${url}"
+EOF
 """
 }
-

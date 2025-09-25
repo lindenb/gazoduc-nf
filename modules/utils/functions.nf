@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -438,6 +438,34 @@ Object slurpJsonFile(f) {
 	def slurper = new groovy.json.JsonSlurper();
 	return slurper.parse(f)
 	}
+
+
+Map assertKeyExists(final Map hash,final String key) {
+    if(!hash.containsKey(key)) throw new IllegalArgumentException("no key ${key}'in ${hash}");
+    return hash;
+}
+
+boolean testKeyExistsAndNotEmpty(final Map hash,final String key) {
+  if(!hash.containsKey(key)) return false;
+  def value = hash.get(key);
+  if(value==null || value.isEmpty() || value.equals(".")) return false;
+  return true;
+}
+
+Map assertKeyExistsAndNotEmpty(final Map hash,final String key) {
+    assertKeyExists(hash,key);
+    def value = hash.get(key);
+    if(value==null || value.isEmpty()) throw new IllegalArgumentException("empty ${key}'in ${hash}");
+    return hash;
+}
+
+Map assertKeyMatchRegex(final Map hash,final String key,final String regex) {
+    assertKeyExists(hash,key);
+    def value = hash.get(key);
+    if(!value.matches(regex)) throw new IllegalArgumentException(" ${key}'in ${hash} doesn't match regex '${regex}'.");
+    return hash;
+  }
+
 
 void runOnComplete(def wf) {
 wf.onComplete {

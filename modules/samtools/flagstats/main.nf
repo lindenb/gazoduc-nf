@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,7 +24,7 @@ SOFTWARE.
 */
 
 
-process SAMTOOLS_IDXSTATS {
+process SAMTOOLS_FLAGSTATS {
 label "process_single"
 tag "${meta.id?:bam.name}"
 afterScript "rm -rf TMP"
@@ -32,20 +32,36 @@ conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 when:
     task.ext.when == null || task.ext.when
 input:
+    tuple val(meta1),path(fasta)
+    tuple val(meta2),path(fai)
+    tuple val(meta3),path(optional_bed)  
 	tuple val(meta),path(bam),path(bai)
 output:
-	tuple val(meta),path("*.idxstat.tsv"),emit:stats
-	tuple val(meta),path("*.bed"),emit:bed
+	tuple val(meta),path("*.flagstats.tsv"),emit:stats
 	path("versions.yml"),emit:versions
 script:
 	def prefix = task.ext.prefix?:(meta.id?:bam.baseName)
+    if(!task.ext.containsKey("args1")) {
+        throw new IllegalArgumentException("${task.process} ext.args1 must be specified e.g '-M' ");
+        }
+    def args1 = task.ext.args1
 """
 hostname 1>&2
-set -o pipefail
+mkdir -p TMP
+if ${optional_bed?true:false}
+then
 
-samtools idxstats --threads ${task.cpus} "${bam}" > ${prefix}.idxstat.tsv
+    samtools view ${args1} --regions-file \"${optional_bed}\" -O BAM --uncompressed --reference "${fasta}" "${bam}" |\\
+        samtools flagstats '-' > TMP/jeter.flags.txt
 
-awk -F '\t' '(\$3!=0 && \$1!="*") {printf("%s\t0\t%s\t${meta.id}\t%s\\n",\$1,\$2,\$3);}' ${prefix}.idxstat.tsv > ${prefix}.bed
+else
+
+    samtools flagstats --threads ${task.cpus} '${bam}' > TMP/jeter.flags.txt
+fi
+
+    mv -v "TMP/jeter.flags.txt" "${prefix}.flagstats.tsv" 
+
+
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
@@ -53,4 +69,3 @@ cat << END_VERSIONS > versions.yml
 END_VERSIONS
 """
 }
-

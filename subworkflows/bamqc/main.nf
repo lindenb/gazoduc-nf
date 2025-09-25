@@ -24,6 +24,8 @@ SOFTWARE.
 */
 include {MOSDEPTH                   } from '../../modules/mosdepth'
 include {SAMTOOLS_STATS             } from '../../modules/samtools/stats'
+include {SAMTOOLS_FLAGSTATS         } from '../../modules/samtools/flagstats'
+include {SAMTOOLS_IDXSTATS          } from '../../modules/samtools/bamidxstats'
 include {BED_TO_INTERVAL_LIST       } from '../../modules/gatk/bed2intervallist'
 include {COLLECT_MULTIPLE_METRICS   } from '../../modules/gatk/collectmultiplemetrics'
 
@@ -68,6 +70,29 @@ main:
     SAMTOOLS_STATS(fasta,fai,bed,bams)
 	versions_ch = versions_ch.mix(SAMTOOLS_STATS.out.versions)
 	reports_ch = reports_ch.mix(SAMTOOLS_STATS.out.stats)
+
+  /***************************************************
+   *
+   *  SAMTOOLS IDXSTATS
+   *
+   */
+    SAMTOOLS_IDXSTATS(bams)
+	versions_ch = versions_ch.mix(SAMTOOLS_IDXSTATS.out.versions)
+	reports_ch = reports_ch.mix(SAMTOOLS_IDXSTATS.out.stats)
+
+  /***************************************************
+   *
+   *  SAMTOOLS IDXSTATS
+   *
+   */
+    SAMTOOLS_FLAGSTATS(
+		fasta,
+		fai,
+		bed,
+		bams
+		)
+	versions_ch = versions_ch.mix(SAMTOOLS_FLAGSTATS.out.versions)
+	reports_ch = reports_ch.mix(SAMTOOLS_FLAGSTATS.out.stats)
 
 
 
