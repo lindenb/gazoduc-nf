@@ -62,6 +62,23 @@ main:
 		.mix(mosdepth_summary)
 		.mix(mosdepth_regions)
 
+	ch1 = mosdepth_summary.splitCsv(header:true,sep:'\t')
+		.filter{it[1].chrom.matches("(chr)?[XY]_region")}
+		.map{[it[1].chrom.replaceAll("_region",""), it[1].length,it[0].id,it[1].bases]}
+		.branch{v->
+			chrX: v[0].contains("X")
+			chrY: v[0].contains("Y")
+			}
+	
+	PLOT_CHR_XY(
+		ch1.chrX.join(ch1.chrY, by:2) //sample,chrX,lengthX,basesX,chrY,lengthY,basesY
+			.map{it.join("\t")}
+			.toSortedList()
+			.map{[[id:"xy"],it]}
+		)
+	versions_ch = versions_ch.mix(PLOT_CHR_XY.out.versions)
+
+
   /***************************************************
    *
    *  SAMTOOLS STATS
@@ -134,3 +151,75 @@ emit:
 }
 
 
+process PLOT_CHR_XY {
+label "process_single"
+tag "${meta.id?:""}"
+afterScript "rm -rf TMP"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+input:
+   tuple val(meta),val(data)
+output:
+    tuple val(meta),path("*.tsv"),emit:tsv
+	tuple val(meta),path("*.png"),emit:png
+	path("versions.yml"),emit:versions
+script:
+    def prefix = task.ext.prefix?:"${meta.id?:"XY"}"
+	def treshold = task.ext.treshold?:10.0
+	def subtitle = task.ext.subtitle?:"Treshold M/F : ${treshold}"
+"""
+mkdir -p TMP
+cat << EOF > TMP/jeter.tsv
+${data.join("\n")}
+EOF
+
+echo 'sample\tchrX\tlengthX\tbasesX\tchrY\tlengthY\tbasesY\tdpx\tdpy\tratio\tsex' > TMP/samples.sex.tsv
+
+
+awk -F '\t' '{S="male";FX=((\$4*1.0)/(\$3*1.0));FY=((\$7*1.0)/(\$6*1.0)); if(FX > (FY * ${treshold} )) {S="female"};printf("%s\t%f\t%f\t%s\t%s\\n",\$0,FX,FY,(FX<=0.0?".":(FY/FX)),S);}' TMP/jeter.tsv >> TMP/samples.sex.tsv
+
+
+cat << '__EOF__' | R --vanilla
+T1<-read.table("TMP/samples.sex.tsv",header = TRUE,sep="\t",comment.char="",stringsAsFactors=FALSE)
+male <-T1[T1\$sex=="male",]
+head(male)
+
+female <-T1[T1\$sex=="female",]
+head(female)
+
+png("TMP/${prefix}.png")
+plot(1,
+        xlab="Depth chrX",
+        ylab="Depth chrY",
+        main="Sex guessed from Depth of Coverage.",
+        sub="${subtitle}",
+        xlim=c(0,max(T1\$dpx)),
+        ylim=c(0,max(T1\$dpy))
+        )
+
+
+text(x = T1\$dpx, y = T1\$dpy, labels = T1\$sample , pos = 4 , cex = 0.5 , col= "green") 
+
+mc <- rgb(0,0,1.0,alpha=0.5)
+points(x=male\$dpx,y=male\$dpy,type='p',col=mc,pch=16,
+        xlim=c(0,max(T1\$dpx)),
+        ylim=c(0,max(T1\$dpy))
+        )
+
+fc <- rgb(1.0,0,0,alpha=0.5)
+points(x=female\$dpx,y=female\$dpy,type='p',col=fc,pch=16,
+        xlim=c(0,max(T1\$dpx)),
+        ylim=c(0,max(T1\$dpy))
+        )
+
+
+
+legend("topright",legend=c("male","female"),title="Sex",pch=16,col=c(mc,fc)) 
+dev.off()
+__EOF__
+
+mv TMP/samples.sex.tsv ./${prefix}.tsv
+mv TMP/${prefix}.png ./
+
+touch versions.yml
+"""
+}

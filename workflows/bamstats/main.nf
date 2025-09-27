@@ -28,6 +28,8 @@ nextflow.enable.dsl=2
 include {runOnComplete;testKeyExistsAndNotEmpty;assertKeyMatchRegex} from '../../modules/utils/functions.nf'
 include {BAM_QC                                                    } from '../../subworkflows/bamqc'
 include {SCATTER_TO_BED                                            } from '../../subworkflows/gatk/scatterintervals2bed'
+include {MULTIQC                                                   } from '../../modules/multiqc'
+include {COMPILE_VERSIONS                                          } from '../../modules/versions/main.nf'
 
 // Print help message, supply typical command line usage for the pipeline
 if (params.help) {
@@ -44,7 +46,7 @@ if (params.help) {
 
 workflow {
 	versions_ch = Channel.empty()
-	toqc_ch = Channel.empty()
+	to_multiqc = Channel.empty()
 	tozip_ch = Channel.empty()
 		
     def hash_ref= [
@@ -94,7 +96,16 @@ workflow {
 		bed,
 		bams_ch
 		)
+        versions_ch = versions_ch.mix(BAM_QC.out.versions)
+
+        COMPILE_VERSIONS(versions_ch.collect())
+        to_multiqc = to_multiqc.mix(COMPILE_VERSIONS.out.multiqc)
+
+        MULTIQC(to_multiqc.collect().map{[[id:"bamqc"],it]})
+
 }
+
+runOnComplete(workflow)
 
 
 process ZIP_IT {
@@ -108,36 +119,6 @@ process ZIP_IT {
 	"""
 	}
 
-process MULTIQC_1 {
-label "process_medium"
-input:
-        path("FILES/*")
-output:
-        path("multiqc.01.zip"),emit:output
-	path("${params.prefix?:""}multiqc/${params.prefix?:""}multiqc_report_data/multiqc_data.json"),emit:json
-script:
-        def prefix = params.prefix?:""
-"""
-hostname 1>&2
-module load multiqc
-mkdir -p TMP
-find ./FILES -type l  > TMP/jeter.list
-
-export LC_ALL=en_US.utf8
-
-        mkdir -p "${prefix}multiqc"
-        multiqc  --filename  "${prefix}multiqc_report.html" --no-ansi \
-                        --title "BAM QCs"  \
-                        --comment "QC for multiple BAMS"  \
-                        --force \
-                        --outdir "${prefix}multiqc" \
-                        --file-list TMP/jeter.list
-
-        rm -f multiqc.01.zip
-        zip -9 -r "multiqc.01.zip" "${prefix}multiqc"
-
-"""
-}
 
 
 process MULTIQC_2 {

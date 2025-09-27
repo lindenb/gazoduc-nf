@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -22,20 +22,40 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
 
 /**
  * Guess sample sex from bam
  *
  */
-workflow SEX_GUESS_01 {
+workflow SEX_GUESS {
 	take:
-		rows /* contains samples/bam/fasta */
+		meta
+		fasta
+		fai // channel ! [meta,fai]
+		dict
+		bam // [[id:id],bam,bai]
 	main:
-		version_ch = Channel.empty()
-		sex_count_ch = SEX_CONTIG_COUNT(rows)
-		version_ch = version_ch.mix(sex_count_ch.version)
+		versions = Channel.empty()
 
+		chrXY_ch = fai.splitCsv(sep:'\t',header:false)
+			.filter{it[0].matches("chr[XY]")}
+			.map{[it[0],it[1]]}//chrom,length
+
+
+		sex_count_ch = SEX_CONTIG_COUNT(
+			fasta,
+			fai,
+			bam.combine(chrXY_ch)
+			)
+		versions = versions.mix(SEX_CONTIG_COUNT.out.versions)
+
+		SEX_CONTIG_COUNT.out.tsv
+			.map{it[1]}
+			.splitCsv(sep:'\t',header:false)
+			branch{v->
+				KX: v[1].matches("(chr)?X")
+				KY: v[1].matches("(chr)?Y")
+			}
 
 		sn_sex_ch  = DIGEST(sex_count_ch.output.collect())
 
@@ -47,62 +67,37 @@ workflow SEX_GUESS_01 {
 		version_ch = version_ch.mix(sn_sex_ch.version)
 	emit:
 		pdf = sn_sex_ch.pdf
-//		rows = ch1
-		version = version_ch
+		versions = versions
 	}
 
 
 process SEX_CONTIG_COUNT {
-tag "${row.sample}  ${file(row.bam).name}"
-cpus 1
+label "process_single"
+tag "${meta.id?:} ${contig}"
 afterScript "rm -rf TMP"
 input:
-	val(row)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta),path(bam),path(bai),val(contig),val(chromLen)
 output:
-	path("samples.sex.tsv"),emit:output
-	path("version.xml"),emit:version
+	tuple val(contig),path("*.tsv"),emit:tsv
+	path("versions.yml"),emit:versions
 script:
-	def genome = params.genomes[row.genomeId]
-	def reference = genome.fasta
-	def bam = row.bam?:"NO_FILE"
-	def mapq = params.mapq?:30
+	def args1 = task.ext.args1?:""
+	def prefix = task.ext.prefix?:"${meta.id}.${contig}"
 """
-hostname 1>&2
-${moduleLoad("samtools")}
+# get coverage on this contig
+samtools coverage ${args1} \\
+	--reference "${fasta}" \\
+	-r "${contig}:1-${chromLen}" \\
+	--no-header "${bam}" |\\
+	awk -F '\t' '{printf("${meta.id}\t${contig}\t${chromLen}\t%s\\n",\$7);}' > TMP/depth.txt
 
-function countIt {
-	# find the name of chromosome X or Y
-	awk -F '\t' -vC=\$1 '{if(\$1==C || sprintf("chr%s",C)==\$1) {printf("%s\t0\t%s\\n",\$1,\$2);}}' "${reference}.fai" > "TMP/jeter.bed"
-	test -s "TMP/jeter.bed"
+mv TMP/depth.txt ${prefix}.tsv
 
-	# get coverage on this contig
-	samtools coverage -q "${mapq}" --reference "${reference}" -r `cut -f 1 TMP/jeter.bed` --no-header "${bam}" | cut -f 7 > TMP/depth.txt
-
-	}
-
-mkdir -p TMP
-
-test -s "${reference}.fai"
-
-countIt X
-mv TMP/depth.txt TMP/countX.txt
-countIt Y
-mv TMP/depth.txt TMP/countY.txt
-
-paste TMP/countX.txt TMP/countY.txt | awk -F '\t' '{printf("${row.sample}\t${row.bam}\t%s\\n",\$0);}' > samples.sex.tsv
-
-
-
-#######################
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="name">${task.process}</entry>
-	<entry key="description">extract count from sexual chromosome, guess the sex</entry>
-	<entry key="sample">${row.sample}</entry>
-	<entry key="bam">${bam}</entry>
-	<entry key="reference">${reference}</entry>
-	<entry key="version">${getVersionCmd("awk samtools")}</entry>
-</properties>
+cat << EOF > versions.yml
+${task.process}:
+	samtools: todo
 EOF
 """
 }
