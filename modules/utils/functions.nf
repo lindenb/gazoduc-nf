@@ -467,6 +467,17 @@ Map assertKeyMatchRegex(final Map hash,final String key,final String regex) {
   }
 
 
+boolean isClusterError(task) {
+	if(task==null) return false;
+	if(task.previousException == null) return false;
+	String s = task.previousException.message;
+	if(s.startsWith("Error submitting process ") && s.endsWith("for execution")) {
+		return true;
+		}
+	return false;
+	}
+
+
 void runOnComplete(def wf) {
 wf.onComplete {
     println ( workflow.success ? """
