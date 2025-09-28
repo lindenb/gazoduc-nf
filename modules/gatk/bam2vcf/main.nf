@@ -90,6 +90,8 @@ do
      -G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation \\
      -O "TMP/jeter.\${i}.g.vcf.gz"
 
+     rm -f TMP/tmp_read_resource_*.config TMP/libgkl_*.so
+
 	
 	if ! cmp "\${FASTA}.fai" "${fai}"
 	then
@@ -133,6 +135,7 @@ done
 SQRT=`awk 'END{X=NR;if(X <= ${min_file_split}){print(X);} else {z=sqrt(X); print (z==int(z)?z:int(z)+1);}}' TMP/gvcfs.list`
 
 split -a 9 --additional-suffix=.list --lines=\${SQRT} TMP/gvcfs.list  TMP/split.
+rm TMP/gvcfs.list
 
 i=1
 find ./TMP -type f -name "split*.list" | while read F
@@ -149,6 +152,9 @@ do
 
 	 echo "TMP/combined.\${i}.g.vcf.gz" >> TMP/gvcfs.list
 	 i=\$((i+1))
+  
+         rm -f TMP/tmp_read_resource_*.config TMP/libgkl_*.so
+
 done
 
 if [[ \$(wc -l < TMP/gvcfs.list) -gt 1  ]]

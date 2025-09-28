@@ -28,6 +28,7 @@ include {DIVIDE_AND_CONQUER as  DIVIDE_AND_CONQUER3 } from './sub.nf'
 include {DIVIDE_AND_CONQUER as  DIVIDE_AND_CONQUER4 } from './sub.nf'
 include {DIVIDE_AND_CONQUER as  DIVIDE_AND_CONQUER5 } from './sub.nf'
 include {DIVIDE_AND_CONQUER as  DIVIDE_AND_CONQUER6 } from './sub.nf'
+include {BCFTOOLS_CONCAT                            } from '../../../modules/bcftools/concat'
 
 
 workflow GATK_BAM2VCF {
@@ -64,6 +65,7 @@ main:
         )
     beds = DIVIDE_AND_CONQUER1.out.bed
     concat = concat.mix(DIVIDE_AND_CONQUER1.out.vcf)
+    versions = versions.mix(DIVIDE_AND_CONQUER1.out.versions)
 
 
     DIVIDE_AND_CONQUER2(
@@ -79,6 +81,7 @@ main:
         )
     beds = DIVIDE_AND_CONQUER2.out.bed
     concat = concat.mix(DIVIDE_AND_CONQUER2.out.vcf)
+    versions = versions.mix(DIVIDE_AND_CONQUER2.out.versions)
 
     DIVIDE_AND_CONQUER3(
         meta,
@@ -93,7 +96,7 @@ main:
         )
     beds = DIVIDE_AND_CONQUER3.out.bed
     concat = concat.mix(DIVIDE_AND_CONQUER3.out.vcf)
-
+    versions = versions.mix(DIVIDE_AND_CONQUER3.out.versions)
 
     DIVIDE_AND_CONQUER4(
         meta,
@@ -108,7 +111,7 @@ main:
         )
     beds = DIVIDE_AND_CONQUER4.out.bed
     concat = concat.mix(DIVIDE_AND_CONQUER4.out.vcf)
-
+    versions = versions.mix(DIVIDE_AND_CONQUER4.out.versions)
 
     DIVIDE_AND_CONQUER5(
         meta,
@@ -123,6 +126,7 @@ main:
         )
     beds = DIVIDE_AND_CONQUER5.out.bed
     concat = concat.mix(DIVIDE_AND_CONQUER5.out.vcf)
+    versions = versions.mix(DIVIDE_AND_CONQUER5.out.versions)
 
     DIVIDE_AND_CONQUER6(
         meta,
@@ -137,9 +141,20 @@ main:
         )
     beds = DIVIDE_AND_CONQUER6.out.bed
     concat = concat.mix(DIVIDE_AND_CONQUER6.out.vcf)
+    versions = versions.mix(DIVIDE_AND_CONQUER6.out.versions)
 
 
+    BCFTOOLS_CONCAT(
+        concat.map{[it[1],it[2]]}
+            .flatMap()
+            .collect()
+            .map{[[id:"hapcaller"],it]},
+         [[id:"nobed"],[]]
+         )
+    versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
 
 emit:
     versions
+    vcf_chunks = concat
+    vcf = BCFTOOLS_CONCAT.out.vcf
 }

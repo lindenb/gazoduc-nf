@@ -25,18 +25,18 @@ SOFTWARE.
 include {GATK_BAM2VCF   } from '../../../modules/gatk/bam2vcf'
 
 
-String toFilePath(Object bed) {
+String toFilePath(Object bed,int level) {
 	def dir2 = bed.toRealPath().toString().md5();
-	def f= ""+workflow.workDir + "/FLAG/" + dir2.substring(0,2) + "/" + dir2.substring(2,4);
-    return f;
+	def f= ""+workflow.workDir + "/FLAG/L"+level+ "/" + dir2.substring(0,2) + "/" + dir2.substring(2);
+       return f;
 	}
 
 
-String toFailurePath(Object bed) {
-	return toFilePath(bed)+".failed";
+String toFailurePath(Object bed,int level) {
+	return toFilePath(bed,level)+".failed";
 	}
-String toSuccessPath(Object bed) {
-	return toFilePath(bed)+".ok";
+String toSuccessPath(Object bed,int level) {
+	return toFilePath(bed,level)+".ok";
 	}
 
 
@@ -57,8 +57,8 @@ main:
     bed = bed.map{[it[0].plus("level":level),it[1]]}
 
     bed.branch {B->
-        known_for_success : file(toSuccessPath(B[1])).exists()
-        known_to_fail: file(toFailurePath(B[1])).exists()
+        known_for_success : file(toSuccessPath(B[1],level)).exists()
+        known_to_fail: file(toFailurePath(B[1],level)).exists()
         todo: true
         }.set{branch1}
 
@@ -94,7 +94,7 @@ main:
 
 
 
-    TOUCH_FAILURE(branch2.failure)
+    TOUCH_FAILURE(level, branch2.failure)
 
     SPLITBED(
         fasta,
@@ -110,10 +110,10 @@ main:
         .flatMap()
         .map{[[id:it.toRealPath().toString().md5()],it]}      
 
-    TOUCH_SUCCESS(GATK_BAM2VCF.out.vcf)
+    TOUCH_SUCCESS(level,GATK_BAM2VCF.out.vcf)
 
     success_vcf = branch1.known_for_success
-        .map{file(toSuccessPath(it[1]))}
+        .map{file(toSuccessPath(it[1], level))}
         .splitCsv(header:false,sep:',')
         .map{[[id:it[0]],file(it[1]),file(it[2])]}
 
@@ -129,11 +129,12 @@ process TOUCH_FAILURE {
 tag "${bed.name}"
 executor "local"
 input:
+    val(level)
     tuple val(meta),path(bed)
 output:
     tuple val(meta),path(bed),emit:bed
 script:
-    def f = file(toFailurePath(bed));
+    def f = file(toFailurePath(bed),level);
 """
 mkdir -p "${f.parent}"
 echo "${bed.toRealPath()}" > ${f}
@@ -144,11 +145,12 @@ process TOUCH_SUCCESS {
 tag "${bed.name}"
 executor "local"
 input:
+    val(level)
     tuple val(meta),path(vcf),path(tbi),path(bed)
 output:
     tuple val(meta),path(vcf),path(tbi),emit:vcf
 script:
-    def f = file(toSuccessPath(bed));
+    def f = file(toSuccessPath(bed,level));
 """
 mkdir -p "${f.parent}"
 echo '${meta.id},${vcf.toRealPath()},${tbi.toRealPath()}' > ${f}

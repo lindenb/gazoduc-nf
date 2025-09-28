@@ -33,6 +33,9 @@ include {SCATTER_TO_BED                      } from '../../../subworkflows/gatk/
 include {BEDTOOLS_MAKEWINDOWS                } from '../../../modules/bedtools/makewindows'
 include {BED_CLUSTER                         } from '../../../modules/jvarkit/bedcluster'
 include {GATK_BAM2VCF                        } from '../../../subworkflows/gatk/bam2vcf'
+include {runOnComplete; dumpParams           } from '../../../modules/utils/functions.nf'
+include {BCFTOOLS_GUESS_PLOIDY               } from '../../../modules/bcftools/guess_ploidy'
+include {BCFTOOLS_STATS                      } from '../../../modules/bcftools/stats'
 
 
 // Print help message, supply typical command line usage for the pipeline
@@ -66,6 +69,12 @@ workflow {
             {
             dbsnp =     [ ref_hash, file(params.dbsnp), file(params.dbsnp+".tbi") ]
             }
+
+    def gtf     = [ref_hash,[],[]]
+  
+    if(params.gtf!=null) {
+        gtf = [ref_hash,file(params.gtf),file(params.gtf+".tbi")]
+    }
 
 
 
@@ -138,5 +147,37 @@ GATK_BAM2VCF(
     )
  versions = versions.mix(GATK_BAM2VCF.out.versions)
  
+ /***************************************************
+   *
+   * BCFTOOLS STATS FROM VCFS
+   *
+   */
+  BCFTOOLS_GUESS_PLOIDY(fasta, fai,GATK_BAM2VCF.out.vcf)
+  versions = versions.mix(BCFTOOLS_GUESS_PLOIDY.out.versions)
+
+
+
+  /***************************************************
+   *
+   * BCFTOOLS STATS FROM VCFS
+   *
+   */
+  BCFTOOLS_STATS(
+    fasta,
+    fai,
+    bed,
+    Channel.of(gtf).map{[it[0],it[1]]}.first(),//meta,gtf
+    [[:],[]],//samples,
+    GATK_BAM2VCF.out.vcf.map{[it[0],[it[1],it[2]]]}
+    )
+  versions = versions.mix(BCFTOOLS_GUESS_PLOIDY.out.versions)
+
+
+    COMPILE_VERSIONS(versions.collect().map{it.sort()})
+    multiqc = multiqc.mix(COMPILE_VERSIONS.out.multiqc.map{[[id:"versions"],it]})
+    // in case of problem multiqc_ch.filter{!(it instanceof List) || it.size()!=2}.view{"### FIX ME ${it} MULTIQC"}
+    MULTIQC(multiqc.map{it[1]}.collect().map{[[id:"hapcaller"],it]})
+
 }
 
+runOnComplete(workflow)
