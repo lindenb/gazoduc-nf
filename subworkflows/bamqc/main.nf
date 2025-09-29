@@ -64,14 +64,15 @@ main:
 
 	ch1 = mosdepth_summary.splitCsv(header:true,sep:'\t')
 		.filter{it[1].chrom.matches("(chr)?[XY]_region")}
-		.map{[it[1].chrom.replaceAll("_region",""), it[1].length,it[0].id,it[1].bases]}
+		.map{[it[1].chrom.replaceAll("_region",""), it[0].id, (it[1].mean?:it[1].median)]}
 		.branch{v->
 			chrX: v[0].contains("X")
 			chrY: v[0].contains("Y")
 			}
 	
 	PLOT_CHR_XY(
-		ch1.chrX.join(ch1.chrY, by:2) //sample,chrX,lengthX,basesX,chrY,lengthY,basesY
+		ch1.chrX.join(ch1.chrY, by:1) 
+			.map{[it[0],it[2],it[4]]}//sample,depthX,depthY
 			.map{it.join("\t")}
 			.toSortedList()
 			.map{[[id:"xy"],it]}
@@ -164,18 +165,19 @@ output:
 	path("versions.yml"),emit:versions
 script:
     def prefix = task.ext.prefix?:"${meta.id?:"XY"}"
-	def treshold = task.ext.treshold?:10.0
-	def subtitle = task.ext.subtitle?:"Treshold M/F : ${treshold}"
+	def treshold  = task.ext.treshold?:10.0
+	def treshold2 = task.ext.treshold2?:2.0
+	def subtitle  = task.ext.subtitle?:"Treshold M/F : ${treshold}"
 """
 mkdir -p TMP
 cat << EOF > TMP/jeter.tsv
 ${data.join("\n")}
 EOF
 
-echo 'sample\tchrX\tlengthX\tbasesX\tchrY\tlengthY\tbasesY\tdpx\tdpy\tratio\tsex' > TMP/samples.sex.tsv
+echo 'sample\tdpx\tdpy\tratio\tsex' > TMP/samples.sex.tsv
 
 
-awk -F '\t' '{S="male";FX=((\$4*1.0)/(\$3*1.0));FY=((\$7*1.0)/(\$6*1.0)); if(FX > (FY * ${treshold} )) {S="female"};printf("%s\t%f\t%f\t%s\t%s\\n",\$0,FX,FY,(FX<=0.0?".":(FY/FX)),S);}' TMP/jeter.tsv >> TMP/samples.sex.tsv
+awk -F '\t' '{S="male";FX=(\$2*1.0);FY=(\$3*1.0); if(FX > (FY * ${treshold2} )) {S="ambigous"}; if(FX > (FY * ${treshold} )) {S="female"};printf("%s\t%s\t%s\\n",\$0,(FX<=0.0?".":(FY/FX)),S);}' TMP/jeter.tsv >> TMP/samples.sex.tsv
 
 
 cat << '__EOF__' | R --vanilla
@@ -185,6 +187,10 @@ head(male)
 
 female <-T1[T1\$sex=="female",]
 head(female)
+
+ambigous <-T1[T1\$sex=="ambigous",]
+head(ambigous)
+
 
 png("TMP/${prefix}.png")
 plot(1,
@@ -197,7 +203,7 @@ plot(1,
         )
 
 
-text(x = T1\$dpx, y = T1\$dpy, labels = T1\$sample , pos = 4 , cex = 0.5 , col= "green") 
+text(x = ambigous\$dpx, y = ambigous\$dpy, labels = ambigous\$sample , pos = 4 , cex = 0.5 , col= "green") 
 
 mc <- rgb(0,0,1.0,alpha=0.5)
 points(x=male\$dpx,y=male\$dpy,type='p',col=mc,pch=16,
@@ -211,9 +217,14 @@ points(x=female\$dpx,y=female\$dpy,type='p',col=fc,pch=16,
         ylim=c(0,max(T1\$dpy))
         )
 
+ac <- rgb(0.5,0.8,0.5,alpha=0.5)
+points(x=ambigous\$dpx,y=ambigous\$dpy,type='p',col=ac,pch=16,
+        xlim=c(0,max(T1\$dpx)),
+        ylim=c(0,max(T1\$dpy))
+        )
 
 
-legend("topright",legend=c("male","female"),title="Sex",pch=16,col=c(mc,fc)) 
+legend("topright",legend=c("male","female","ambigous"),title="Sex",pch=16,col=c(mc,fc,ac)) 
 dev.off()
 __EOF__
 
