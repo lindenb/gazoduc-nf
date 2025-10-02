@@ -22,49 +22,33 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-
-process GENOTYPEGVCFS {
-tag "${meta.id?:""} ${optional_bed?optional_bed.name:""}"
+process SAMTOOLS_SAMPLES {
+tag "${meta.id?:""}"
 label "process_single"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-    tuple val(meta1),path(fasta)
-    tuple val(meta2),path(fai)
-    tuple val(meta3),path(dict)
-    tuple val(meta4),path(dbsnp),path(dbsnp_tbi)
-    tuple val(meta ),path(vcf),path(vcf_idx),path(optional_bed)
+    tuple val(meta1),path("REFS/*")
+    tuple val(meta ),path("BAMS/*")
 output:
-    tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),path(optional_bed),emit:vcf
+    tuple val(meta),path("*.tsv"),emit:samplesheet
     path("versions.yml"),emit:versions
-when:
-    task.ext.when == null || task.ext.when
 script:
-   def prefix0 = (meta.id?:"${vcf.name}")+(optional_bed?"."+optional_bed.baseName:"")
-   def prefix= task.ext.prefix?:prefix0
-   def args1 = task.ext.args1?:""
-   def jvm = task.ext.jvm?:"-XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
+    def args1 = task.ext.args1?:""
 """
-hostname 1>&2
 mkdir -p TMP
 
-gatk --java-options "${jvm}" GenotypeGVCFs  \\
-    -R "${fasta}" \\
-    ${args1} \\
-    ${dbsnp?"--dbsnp \"${dbsnp}\"":""} \\
-    ${optional_bed?"-L \"${optional_bed}\"":""} \\
-    -V "${vcf}" \\
-    -O "TMP/${prefix}.vcf.gz"
 
-# bcftools adds meta data
-bcftools index --threads ${task.cpus} --force --tbi "TMP/${prefix}.vcf.gz"
+find \${PWD}/BAMS/ -name "*am" |\\
+    samtools samples \\
+        ` find REFS/ \\( -name "*.fasta" -o  -name "*.fa" -o -name "*.fna" \\)  -printf "-f %p "` \\
+        ${args1} > TMP/samplesheet.tsv
 
-mv TMP/${prefix}.vcf.gz ./
-mv TMP/${prefix}.vcf.gz.tbi ./
+mv TMP/samplesheet.tsv ./
 
-cat << EOF > versions.yml
-${task.process}:
-    gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
-EOF
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	samtools: "\$(samtools version | awk '(NR==1) {print \$NF;}')"
+END_VERSIONS
 """
 }

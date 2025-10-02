@@ -466,7 +466,7 @@ Map assertKeyMatchRegex(final Map hash,final String key,final String regex) {
     return hash;
   }
 
-
+/** return true if error looks like at error from the cluster, not from the script itself */
 boolean isClusterError(task) {
 	if(task==null) return false;
 	if(task.previousException == null) return false;
@@ -476,6 +476,50 @@ boolean isClusterError(task) {
 		}
 	return false;
 	}
+
+/** called by 'makeKey' below, private use  */
+void _makeKey(digest,o) {   
+    if(o==null) {
+        digest.update((byte)0);
+        }
+    else if(o instanceof List) {
+        digest.update((byte)'[');
+        for(int i=0;i< o.size();i++) {
+            _makeKey(digest,o[i]);
+            if(i>0) digest.update((byte)',');
+        }
+       digest.update((byte)']');
+    } else if(o instanceof Map) {
+        def keys = o.keySet().sort()
+        digest.update((byte)'[');
+        for(int i=0;i< keys.size();i++) {
+            _makeKey(digest,keys[i]);
+             digest.update((byte)':');
+             _makeKey(digest,o.get(keys[i]));
+            if(i>0) digest.update((byte)',');
+        }
+       digest.update((byte)']');
+    } else if(o instanceof java.lang.String) {
+            digest.update(o.getBytes("UTF-8"));
+    } else if(o instanceof java.lang.Number || o instanceof java.lang.Boolean) {
+		_makeKey(digest,o.getClass().toString());
+        _makeKey(digest,o.toString());
+    } else if(o instanceof java.nio.file.Path) {
+		   _makeKey(digest,o.getClass().toString());
+           _makeKey(digest,o.toRealPath().toString());
+    } else {
+       throw new IllegalArgumentException("cannot invoke _makeKey with class=${o.getClass()}");
+    }
+}
+
+/** convert a java/groovy object to a md5 checksum */
+String makeKey(o) {
+    java.security.MessageDigest md5 = java.security.MessageDigest.getInstance("MD5");
+    _makeKey(md5,o);
+    java.math.BigInteger bigInt = new java.math.BigInteger(1, md5.digest());
+    String s= "K"+bigInt.toString(16);
+    return s;
+}
 
 
 void runOnComplete(def wf) {

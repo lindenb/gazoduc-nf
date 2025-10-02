@@ -44,9 +44,14 @@ hostname 1>&2
 mkdir -p TMP
 
 find VCFS/ -name "*.g.vcf.gz" | sort > TMP/jeter.list
+test -s TMP/jeter.list
 MD5=`cat TMP/jeter.list ${optional_bed?:""} | md5sum | awk '{print \$1}'`
 
-gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" \\
+if [[ \$(wc -l < "TMP/jeter.list") -gt 1  ]]
+then
+
+
+gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" -XX:-UsePerfData \\
     CombineGVCFs \\
     -R "${fasta}" \\
     ${optional_bed?"-L \"${optional_bed}\"":""} \\
@@ -56,6 +61,14 @@ gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" \\
 
 mv TMP/combine.g.vcf.gz "${prefix}.g.vcf.gz"
 mv TMP/combine.g.vcf.gz.tbi "${prefix}.g.vcf.gz.tbi"
+
+else
+
+	# there is only one GVCF in the VCF folder. No need to Combine
+	ln -s VCFS/*.g.vcf.gz "${prefix}.g.vcf.gz"
+	ln -s VCFS/*.g.vcf.gz.tbi "${prefix}.g.vcf.gz.tbi"
+
+fi
 
 cat << EOF > versions.yml
 ${task.process}:

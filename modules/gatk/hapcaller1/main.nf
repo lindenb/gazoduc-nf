@@ -32,6 +32,7 @@ input:
     tuple val(meta1),path(fasta)
     tuple val(meta2),path(fai)
     tuple val(meta3),path(dict)
+    tuple val(meta4),path("REFS/*") //bag fasta/fai will be used change the dict if ref(bam) is not the fasta
     tuple val(meta ),path(bam),path(bai),path(optional_bed)
 output:
     tuple val(meta),path("*.g.vcf.gz"),path("*.g.vcf.gz.tbi"),path(optional_bed),emit:gvcf
@@ -41,20 +42,80 @@ script:
    def prefix= task.ext.prefix?:prefix0
    def args1 = task.ext.args1?:"-G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation"
    def args2 =task.ext.args2?:""
+   def jvm = task.ext.jvm?:"-XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
 """
 hostname 1>&2
 mkdir -p TMP
+echo "${fasta}" > TMP/references.txt
+find ./REFS/ \\( -name "*.fasta" -o -name "*.fa" -o -name "*.fna" \\) >> TMP/references.txt
 
-gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" HaplotypeCaller \\
-    ${optional_bed?"-L \"${optional_bed}\"":""} \\
-    -R "${fasta}" \\
-    -I "${bam}" \\
-    -ERC GVCF \\
-    ${args1} ${args2}\\
-    -O "TMP/${prefix}.g.vcf.gz"
+samtools samples -F TMP/references.txt "${bam}" | cut -f1,3 | head -n1 | while read SAMPLE REF
+    do
 
-mv TMP/*.g.vcf.gz ./
-mv TMP/*.g.vcf.gz.tbi ./
+        # test fasta is known
+        test "\${REF}" != "."
+
+        
+        if ${optional_bed?true:false}
+        then
+            if cmp "\${REF}.fai" "${fai}"
+            then
+               cp -v "${optional_bed}" TMP/${optional_bed.name}
+            else
+                # no the same reference ? change the BED according to chr notation
+                jvarkit ${jvm} bedrenamechr \\
+                        -f "\${REF}" --column 1 --convert SKIP "${optional_bed}" > TMP/${optional_bed.name}
+                
+                # never empty file
+                if ! test -s TMP/${optional_bed.name}
+                then
+                        awk -F '\t' '{printf("%s\t0\t1\\n",\$1);}' "\${REF}.fai" | tail -n 1 > TMP/${optional_bed.name}
+                fi
+
+            fi
+        fi
+
+        gatk --java-options "${jvm}" HaplotypeCaller \\
+            ${optional_bed?"-L TMP/${optional_bed.name}":""} \\
+            -R "\${REF}" \\
+            -I "${bam}" \\
+            -ERC GVCF \\
+            ${args1} ${args2}\\
+            -O "TMP/jeter.g.vcf.gz"
+
+
+        # rename sample if needed
+        if test "${meta.id}" != "\${SAMPLE}"
+        then
+                gatk --java-options "${jvm}"  RenameSampleInVcf \
+                        -INPUT "TMP/jeter.g.vcf.gz" \
+                        -OUTPUT TMP/jeter2.g.vcf.gz \
+                        -NEW_SAMPLE_NAME "${meta.id}"
+
+                rm -f TMP/jeter.g.vcf.gz.tbi
+                mv TMP/jeter2.g.vcf.gz "TMP/jeter.g.vcf.gz"
+        fi
+
+
+        # not the original fasta ?
+        if ! cmp "\${REF}.fai" "${fai}"
+        then
+            jvarkit ${jvm} vcfsetdict \\
+                -n SKIP \\
+                -R "${fasta}" \\
+                "TMP/jeter.g.vcf.gz" > TMP/jeter2.vcf
+
+            rm -f TMP/jeter.g.vcf.gz.tbi
+            bcftools sort  -T TMP/sort  --max-mem "${task.memory.giga}G" \\
+                -O z -o "TMP/jeter.g.vcf.gz" TMP/jeter2.vcf
+        fi
+
+    done
+
+bcftools index --threads ${task.cpus} --force --tbi "TMP/jeter.g.vcf.gz"
+
+mv "TMP/jeter.g.vcf.gz" ${prefix}.g.vcf.gz
+mv "TMP/jeter.g.vcf.gz.tbi" ${prefix}.g.vcf.gz.tbi
 
 cat << EOF > versions.yml
 ${task.process}:

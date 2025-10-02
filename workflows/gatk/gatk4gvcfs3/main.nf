@@ -36,8 +36,8 @@ include {GATK_BAM2VCF                        } from '../../../subworkflows/gatk/
 include {runOnComplete; dumpParams           } from '../../../modules/utils/functions.nf'
 include {BCFTOOLS_GUESS_PLOIDY               } from '../../../modules/bcftools/guess_ploidy'
 include {BCFTOOLS_STATS                      } from '../../../modules/bcftools/stats'
-
-
+include {HAPLOTYPECALLER                     } from '../../../subworkflows/gatk/haplotypecaller'
+include {SAMTOOLS_SAMPLES                    } from '../../../modules/samtools/samples'
 // Print help message, supply typical command line usage for the pipeline
 if (params.help) {
    log.info paramsHelp("nextflow run my_pipeline ")
@@ -81,14 +81,6 @@ workflow {
 	bams_and_ref = Channel.fromPath(params.samplesheet)
 			.splitCsv(header:true,sep:',')
 
-    bams_ch = bams_and_ref
-            .map{if(!it.containsKey("bam")) throw new IllegalArgumentException("${it} : bam missing"); return it;}
-			.map{if(!(it.bam.endsWith(".cram") || it.bam.endsWith(".bam"))) throw new IllegalArgumentException("${it}.bam should end with bam or cram"); return it;}
-			.map{it.bai?it: (it.bam.endsWith(".bam") ? it.plus(["bai":it.bam+".bai"]):  it.plus(["bai":it.bam+".crai"]))}
-            .map{it.sample ? it : it.plus(["sample":it.bam.md5()])}
-            .map{[[id:it.sample], file(it.bam),file(it.bai)]}
-            .take(10)
-            
 
     references = Channel.of([file(params.fasta),file(params.fai),file(params.dict)])
 
@@ -109,6 +101,59 @@ workflow {
         .collect()
         .map{[ref_hash,it]}
 
+
+
+    bams_ch1 = bams_and_ref
+            .map{if(!it.containsKey("bam")) throw new IllegalArgumentException("${it} : bam missing"); return it;}
+            .map{if(!(it.bam.endsWith(".cram") || it.bam.endsWith(".bam"))) throw new IllegalArgumentException("${it}.bam should end with bam or cram"); return it;}
+            .branch{
+                /** sample undefined, need to find sample name */
+                no_sample: !it.containsKey("sample") || it.sample.isEmpty() || it.sample.equals(".")
+                /* sample defined */
+                has_sample: true
+            }
+    
+    /* get sample names for bam without id */
+    SAMTOOLS_SAMPLES(
+            all_references,
+            bams_ch1.no_sample
+                .map{file(it.bam)}
+                .collect()
+                .map{[[id:"bams"],it]}
+            )
+   versions = versions.mix(SAMTOOLS_SAMPLES.out.versions)
+
+   fix_sample_name = SAMTOOLS_SAMPLES.out.samplesheet
+            .map{meta,f->f}
+            .splitCsv(sep:'\t',header:false)
+            .map{[file(it[1]).toRealPath().toString(),it[0]]}
+            .groupTuple()
+            .map{bam,names->
+                if(names.size()!=1) throw new IllegalArgumentException("Multiple samples for "+bam+":"+samples);
+                return [bam,names[0]];
+                }
+            .join( bams_ch1.no_sample.map{[file(it.bam).toRealPath().toString(),it]})
+            .map{bam,sample_name,meta->meta.plus("sample":sample_name)}
+
+    bams_ch = fix_sample_name.mix(bams_ch1.has_sample)
+			.map{it.bai?it: (it.bam.endsWith(".bam") ? it.plus(["bai":it.bam+".bai"]):  it.plus(["bai":it.bam+".crai"]))}
+            .filter{assertKeyExistsAndNotEmpty(it,"sample")}
+            .map{[[id:it.sample], file(it.bam),file(it.bai)]}
+            .take(10)
+        
+    /* check no duplicate samples */
+    bams_ch.map{meta,bam,bai->meta.id}.unique().count()
+        .combine(bams_ch.map{meta,bam,bai->meta.id}.count())
+        .filter{c1,c2->c1!=c2}
+        .view()
+        .map{
+            throw new IllegalArgumentException("Check the samplesheet. There is a duplicate sample name");
+            }
+
+
+
+    
+
     if(params.bed==null) {
         SCATTER_TO_BED(ref_hash,fasta,fai,dict)
         versions = versions.mix(SCATTER_TO_BED.out.versions)
@@ -125,14 +170,29 @@ workflow {
    BED_CLUSTER(fasta,fai,dict,BEDTOOLS_MAKEWINDOWS.out.bed)
    versions = versions.mix(BED_CLUSTER.out.versions)
    beds_ch = BED_CLUSTER.out.bed
-    .map{it[1]}
-    .map{it instanceof List?it:[it]}
+    .map{meta,beds->beds}
+    .map{beds->beds instanceof List?beds:[beds]}
     .flatMap()
-    .map{[[id:it.baseName],it]}
+    .map{bed->[[id:bed.baseName],bed]}
     .take(10)//TODO
 
 
+    
 
+
+    HAPLOTYPECALLER(
+        [id:"hapcaller"],
+        fasta,
+        fai,
+        dict,
+        all_references,
+        dbsnp,
+        beds_ch,
+        bams_ch
+        )
+   
+
+if("A".equals("B")) {
     
 
 GATK_BAM2VCF(
@@ -146,6 +206,7 @@ GATK_BAM2VCF(
     bams_ch, // [meta,bam,bai]
     )
  versions = versions.mix(GATK_BAM2VCF.out.versions)
+ 
  
  /***************************************************
    *
@@ -178,6 +239,8 @@ GATK_BAM2VCF(
     // in case of problem multiqc_ch.filter{!(it instanceof List) || it.size()!=2}.view{"### FIX ME ${it} MULTIQC"}
     MULTIQC(multiqc.map{it[1]}.collect().map{[[id:"hapcaller"],it]})
 
+
+}
 }
 
 runOnComplete(workflow)

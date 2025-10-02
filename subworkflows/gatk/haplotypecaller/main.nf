@@ -24,31 +24,10 @@ SOFTWARE.
 */
 
 include { HAPLOTYPECALLER as HAPCALLER         }  from '../../../modules/gatk/hapcaller1'
-include { COMBINEGVCFS as HC_COMBINE0          }  from '../../../modules/gatk/combinegvcfs'
-include { COMBINEGVCFS as HC_COMBINE1          }  from '../../../modules/gatk/combinegvcfs'
-include { GENOTYPEGVCFS                        }  from '../../../modules/gatk/genotypegvcfs'
 include { BCFTOOLS_CONCAT                      }  from '../../../modules/bcftools/concat'
-
-
-List makeSQRT(def L1) {
-	def key = L1.get(0);
-	def L = L1.get(1).sort();
-	int n = (int)Math.ceil(Math.sqrt(L.size()));
-	if(n<25) n=25;
-	def returnList = [];
-	def currList = [];
-	int i=0;
-	for(;;) {
-		if(i<L.size()) currList.add(L.get(i));
-		if(i==L.size() || currList.size()==n) {
-			if(!currList.isEmpty()) returnList.add([key,currList]);
-			if(i==L.size()) break;
-			currList=[];
-			}
-		i++;
-		}
-	return returnList;
-	}
+include { COMBINE_GENOTYPE_GVCFS               }  from '../combinegenotypegvcfs'
+include { makeKey                              }  from '../../../modules/utils/functions.nf'
+include {FIND_GVCF_BLOCKS                      }  from '../../..//modules/jvarkit/findgvcfblocks'
 
 
 workflow HAPLOTYPECALLER {
@@ -57,6 +36,8 @@ take:
     fasta
     fai
     dict
+    all_references// meta,fasta_files
+    dbsnp // meta,vcf,tbi
     beds // meta,bed
     bams // meta,bam,bai
 main:
@@ -66,68 +47,35 @@ main:
         fasta,
         fai,
         dict,
-        bams.combine(beds.map{it[1]})
+        all_references,
+        bams.combine(beds)
+            .map{meta1,bam,bai,meta2,bed->[meta1,bam,bai,bed]}
         )
     versions  = versions.mix(HAPCALLER.out.versions)
 
-    ch1 = HAPCALLER.out.gvcf
-        .map{[[it[3].toRealPath()],[it[1],it[2]]]}
-        .groupTuple()
 
-    ch2 = ch1.branch{v->
-        //nocombine: v[1].size()==1
-        combine1 : v[1].size() < 100
-        combine2 : true
-        }
-
-  to_genotype = Channel.empty()
-  /***************************************************
-   *
-   * NO COMBINE NEEDED
-   *
-   */
-//   to_genotype = to_genotype.mix(ch2.nocombine.map{[[id:it[0].toString().md5().substring(0,8)],it[1].flatten()]})
-  
-  /***************************************************
-   *
-   * LEVEL1
-   *
-   */    
-  HC_COMBINE0(
-	fasta,
-	fai,
-	dict,
-	ch2.combine1.map{[[id:it[0].toString().md5().substring(0,7)],it[1].flatten(),it[0]]}
-	)
-  versions  = versions.mix(HC_COMBINE0.out.versions)
-  to_genotype= to_genotype.mix(HC_COMBINE0.out.gvcf)
-  /***************************************************
-   *
-   * LEVEL2
-   *
-   */    
-   /*level2a_ch = ch2.combine2
-            .flatMap{makeSQRT(it)}
-			.map{[[id:it[0].name],it[1].flatten(),it[0]]}
-    
-    HC_COMBINE1(fasta,fai,dict, level2a_ch )
-    versions  = versions.mix(HC_COMBINE1.out.versions)
-
-*/
-    
-    GENOTYPEGVCFS(
-        fasta,
-        fai,
-        dict,
-        to_genotype
+    FIND_GVCF_BLOCKS(
+        HAPCALLER.out.gvcf
+            .map{meta,vcf,tbi,bed->[bed.toRealPath(),[vcf,tbi]]}
+            .groupTuple()
+            .map{bed,vcf_files->[[id:makeKey(bed)],vcf_files.flatten().sort(),bed]}
         )
-    versions  = versions.mix(GENOTYPEGVCFS.out.versions)
-    
+    versions  = versions.mix(FIND_GVCF_BLOCKS.out.versions)
+
+/*
+    COMBINE_GENOTYPE_GVCFS(
+            meta,
+            fasta,
+            fai,
+            dict,
+            HAPCALLER.out.gvcf
+            )
+    versions  = versions.mix(COMBINE_GENOTYPE_GVCFS.out.versions)
 
 
     BCFTOOLS_CONCAT(
-        GENOTYPEGVCFS.out.vcf
-            .map{[it[1],it[2]]}//gvcf,tbi
+        COMBINE_GENOTYPE_GVCFS.out.vcf
+            .map{meta,vcf,tbi,bed->[vcf,tbi]}//gvcf,tbi
              .collect()
              .map{[[id:"gatkhapcaller"],it]},
         [[:],[]] //bed
@@ -137,4 +85,5 @@ main:
 emit:
     versions
     vcf = BCFTOOLS_CONCAT.out.vcf
+*/
 }
