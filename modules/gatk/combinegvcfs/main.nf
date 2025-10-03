@@ -39,19 +39,19 @@ output:
 script:
    def prefix= task.ext.prefix?:"\${MD5}"
    def args1 = task.ext.args1?:"-G StandardAnnotation -G AS_StandardAnnotation"
+   def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -XX:-UsePerfData"
 """
 hostname 1>&2
 mkdir -p TMP
 
-find VCFS/ -name "*.g.vcf.gz" | sort > TMP/jeter.list
+find VCFS/ -name "*.g.vcf.gz" | sort -T TMP -V > TMP/jeter.list
 test -s TMP/jeter.list
 MD5=`cat TMP/jeter.list ${optional_bed?:""} | md5sum | awk '{print \$1}'`
 
 if [[ \$(wc -l < "TMP/jeter.list") -gt 1  ]]
 then
 
-
-gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" -XX:-UsePerfData \\
+gatk --java-options "${jvm}" \\
     CombineGVCFs \\
     -R "${fasta}" \\
     ${optional_bed?"-L \"${optional_bed}\"":""} \\

@@ -75,6 +75,7 @@ main:
 		)
 	versions = versions.mix(HC_COMBINE1.out.versions)
 
+
 	ch2 = HC_COMBINE1.out.gvcf
 		.map{meta,gvcf,tbi,bed->[
 			bed.toRealPath(),
@@ -104,6 +105,7 @@ main:
 	versions = versions.mix(HC_COMBINE2.out.versions)
 	
 	combined = ch2.other
+		.map{bed,vcf_files->[bed,vcf_files.flatten()]}
 		.map{bed,vcf_files->[
 			vcf_files.find{it.name.endsWith(".vcf.gz")},
 			vcf_files.find{it.name.endsWith(".vcf.gz.tbi")},
@@ -116,7 +118,9 @@ main:
 			bed
 			]}
 		.mix(HC_COMBINE2.out.gvcf)
+
 emit:
     versions
 	gvcf = combined
+
 }

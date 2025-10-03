@@ -26,7 +26,7 @@ process FIND_GVCF_BLOCKS {
 	label "process_single"
 	conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 	afterScript "rm -rf TMP"
-	tag "${meta.id?:""}"
+	tag "${meta.id?:""} ${optional_bed?optional_bed.name:""}"
 	input:
 		tuple val(meta),path("GVCFS/*"),path(optional_bed)
 	output:
@@ -52,7 +52,8 @@ process FIND_GVCF_BLOCKS {
 	do
 
 		jvarkit  -XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP findgvcfsblocks \\
-			${bed?"--bed ${bed}":""} \\
+			${args1} \\
+			${optional_bed?"--bed ${optional_bed}":""} \\
 			--chromosome "\${C}" \\
 			-o TMP/jeter.interval_list \\
 			TMP/gvcfs.list
@@ -60,6 +61,19 @@ process FIND_GVCF_BLOCKS {
 		awk -F '\t' '/^@/ {next;} {printf("%s\t%d\t%s\\n",\$1,int(\$2)-1,\$3);}' TMP/jeter.interval_list >> TMP/jeter.bed
 	
 	done
+
+
+if ${optional_bed?true:false}
+then
+	bedtools intersect -v \\
+		-a <(sort -T TMP -t '\t' -k1,1 -k2,2n ${optional_bed} | bedtools merge) \\
+		-b <(sort -T TMP -t '\t' -k1,1 -k2,2n TMP/jeter.bed | bedtools merge) > TMP/not.covered.bed
+
+	if test -s TMP/not.covered.bed
+	then
+		mv TMP/not.covered.bed ./
+	fi
+fi
 
 mv TMP/jeter.bed ${prefix}.bed
 

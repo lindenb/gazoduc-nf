@@ -14,9 +14,11 @@ workflow COMBINE_GENOTYPE_GVCFS {
         COMBINE_GVCFS(meta,fasta,fai,dict,gvcfs_bed)
         versions = versions.mix(COMBINE_GVCFS.out.versions)
 
-        GENOTYPEGVCFS(fasta,fai,dict,COMBINE_GVCFS.out.gvcf)
+
+        GENOTYPEGVCFS(fasta,fai,dict,dbsnp, COMBINE_GVCFS.out.gvcf)
         versions = versions.mix(GENOTYPEGVCFS.out.versions)
     emit:
         versions
         vcf = GENOTYPEGVCFS.out.vcf
+
 }
