@@ -42,7 +42,7 @@ script:
    def prefix= task.ext.prefix?:prefix0
    def args1 = task.ext.args1?:"-G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation"
    def args2 =task.ext.args2?:""
-   def jvm = task.ext.jvm?:"-XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
+   def jvm = task.ext.jvm?:"-XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -DGATK_STACKTRACE_ON_USER_EXCEPTION=true"
 """
 hostname 1>&2
 mkdir -p TMP

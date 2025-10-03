@@ -40,7 +40,7 @@ script:
 	def args2 = task.ext.args2?:"--no-version --allow-overlaps --remove-duplicates "
 	def args3 = optional_bed?"--regions-file \"${optional_bed}\"":""
 	def limit = task.ext.limit?:10
-	def prefix = task.ext.prefix?:(meta.id?:"variants")+".concat"
+	def prefix = task.ext.prefix?:(meta.id?:"variants")+".\${MD5}.concat"
 	def suffix = task.ext.suffix?:".bcf"
 	def suffix2 = (suffix.endsWith("bcf")?"bcf":"vcf.gz")
 	def suffix3 = (suffix.endsWith("bcf")?"bcf.csi":"vcf.gz.tbi")
@@ -48,7 +48,9 @@ script:
 """	
 	hostname 1>&2
 	mkdir -p TMP
-	find VCFS/ -name "*.vcf.gz" -o -name "*.bcf" > TMP/jeter.list
+	find VCFS/ -name "*.vcf.gz" -o -name "*.bcf" | sort -V -T TMP > TMP/jeter.list
+	MD5=\$(cat TMP/jeter.list ${optional_bed?optional_bed:""} | md5sum | cut -d ' ' -f1)
+
 	set -x
 
 	if ${by_contig}

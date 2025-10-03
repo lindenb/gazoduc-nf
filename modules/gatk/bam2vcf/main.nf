@@ -48,6 +48,7 @@ script:
 	def args3 = task.ext.args3?:""
 	def args4 = task.ext.args4?:""
 	def prefix = task.ext.prefix?:"${bed.name}"
+	def jvm = "-Xmx${task.memory.giga}g -XX:-UsePerfData -Djava.io.tmpdir=TMP -DGATK_STACKTRACE_ON_USER_EXCEPTION=true"
 """
 hostname 1>&2
 mkdir -p TMP
@@ -69,9 +70,9 @@ do
 	# no the same reference ? change the BED according to chr notation
 	if cmp "\${FASTA}.fai" "${fai}"
 	then
-		ln -f -s "${bed}" TMP/${bed.name}
+		cp -v "${bed}" TMP/${bed.name}
 	else
-		jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedrenamechr \\
+		jvarkit ${jvm} bedrenamechr \\
 			-f "\${FASTA}" --column 1 --convert SKIP "${bed}" > TMP/${bed.name}
 	
 		if ! test -s TMP/${bed.name}
@@ -81,7 +82,7 @@ do
 	fi
 
 
-   gatk --java-options "-Xmx${task.memory.giga}g -XX:-UsePerfData -Djava.io.tmpdir=TMP" HaplotypeCaller \\
+   gatk --java-options "${jvm}" HaplotypeCaller \\
      -L "TMP/${bed.name}" \\
      -R "\${FASTA}" \\
      -I "\${BAM}" \\
@@ -95,7 +96,7 @@ do
 	
 	if ! cmp "\${FASTA}.fai" "${fai}"
 	then
-			jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfsetdict \\
+			jvarkit ${jvm} vcfsetdict \\
 					-n SKIP \\
 					-R "${fasta}" \\
 					"TMP/jeter.\${i}.g.vcf.gz" > TMP/jeter2.vcf
@@ -113,7 +114,7 @@ do
 
 	if test "\${SAMPLE2}" != "\${SAMPLE}"
 	then
-		gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"  RenameSampleInVcf \
+		gatk --java-options "${jvm}"  RenameSampleInVcf \
 				-INPUT "TMP/jeter.\${i}.g.vcf.gz" \
 				-OUTPUT TMP/jeter2.g.vcf.gz \
 				-NEW_SAMPLE_NAME "\${SAMPLE2}"
@@ -140,7 +141,7 @@ rm TMP/gvcfs.list
 i=1
 find ./TMP -type f -name "split*.list" | while read F
 do
-	gatk --java-options "-Xmx${task.memory.giga}g -XX:-UsePerfData -Djava.io.tmpdir=TMP" \\
+	gatk --java-options "${jvm}" \\
 		CombineGVCFs \\
 		-R "${fasta}" \\
 		-L "${bed}" \\
@@ -160,7 +161,7 @@ done
 if [[ \$(wc -l < TMP/gvcfs.list) -gt 1  ]]
 then
 
-	gatk --java-options "-Xmx${task.memory.giga}g -XX:-UsePerfData -Djava.io.tmpdir=TMP" \\
+	gatk --java-options "${jvm}" \\
 		CombineGVCFs \\
 		-R "${fasta}" \\
 		-L "${bed}" \\
@@ -179,7 +180,7 @@ fi
 
 
 
-gatk --java-options "-Xmx${task.memory.giga}g -XX:-UsePerfData -Djava.io.tmpdir=TMP" \\
+gatk --java-options "${jvm}" \\
 	GenotypeGVCFs \\
 	-R "${fasta}" \\
 	-L "${bed}" \\

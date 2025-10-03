@@ -28,10 +28,55 @@ include {DIVIDE_AND_CONQUER as  DIVIDE_AND_CONQUER3 } from './sub.nf'
 include {DIVIDE_AND_CONQUER as  DIVIDE_AND_CONQUER4 } from './sub.nf'
 include {DIVIDE_AND_CONQUER as  DIVIDE_AND_CONQUER5 } from './sub.nf'
 include {DIVIDE_AND_CONQUER as  DIVIDE_AND_CONQUER6 } from './sub.nf'
-include {BCFTOOLS_CONCAT                            } from '../../../modules/bcftools/concat'
+include {GATK_BAM2VCF as BAM2VCF                    } from '../../../modules/gatk/bam2vcf'
+include {BCFTOOLS_CONCAT                            } from '../../../subworkflows/bcftools/concat'
+include {makeKey                                    } from '../../../modules/utils/functions.nf'
 
 
 workflow GATK_BAM2VCF {
+ take:
+    meta
+    fasta
+    fai
+    dict
+    dbsnp
+    references //[meta, [ref files fa fai dict...]] all known reference
+    beds // [meta,bed]
+    bams // [meta,bam,bai]
+main:
+    versions = Channel.empty()
+    BAM2VCF(
+        fasta,
+        fai,
+        dict,
+        dbsnp,
+        references,
+        bams.combine(beds)
+            .map{meta1,bam,bai,meta2,bed->[
+                bed.toRealPath()/* bed.meta */,
+                [bam,bai]/*bam and bai */,
+                ]}
+            .groupTuple()
+            .map{bed,bam_files->[[id:makeKey(bed)],bam_files.flatten(),bed]}
+        )
+    versions = versions.mix(BAM2VCF.out.versions)
+
+
+    BCFTOOLS_CONCAT(
+        meta,
+         [[id:"nobed"],[]],
+        BAM2VCF.out.vcf.map{[[id:"hapcaller"],it[1],it[2]]}
+         )
+    versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
+
+emit:
+    versions
+    vcf_chunks = concat
+    vcf = BCFTOOLS_CONCAT.out.vcf
+}
+
+
+workflow GATK_BAM2VCF_OLD {
 take:
     meta
     fasta

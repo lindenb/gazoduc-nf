@@ -170,43 +170,49 @@ workflow {
    BED_CLUSTER(fasta,fai,dict,BEDTOOLS_MAKEWINDOWS.out.bed)
    versions = versions.mix(BED_CLUSTER.out.versions)
    beds_ch = BED_CLUSTER.out.bed
-    .map{meta,beds->beds}
-    .map{beds->beds instanceof List?beds:[beds]}
-    .flatMap()
-    .map{bed->[[id:bed.baseName],bed]}
-    .take(10)//TODO
+        .map{meta,beds->beds}
+        .map{beds->beds instanceof List?beds:[beds]}
+        .flatMap()
+        .map{bed->[[id:bed.baseName],bed]}
+        .take(10)//TODO
 
 
-    
+    vcf_ch = Channel.empty()
 
+    if(params.method.equalsIgnoreCase("gvcf")) {
+        HAPLOTYPECALLER(
+            [id:"hapcaller"],
+            fasta,
+            fai,
+            dict,
+            all_references,
+            dbsnp,
+            beds_ch,
+            bams_ch
+            )
+        versions = versions.mix(HAPLOTYPECALLER.out.versions)
+        }
+    else if(params.method.equalsIgnoreCase("bam2vcf")) {
+        GATK_BAM2VCF(
+            ref_hash,
+            fasta,
+            fai,
+            dict,
+            dbsnp,
+            all_references, //[meta, [ref files fa fai dict...]] all known reference
+            beds_ch, // [meta,bed]
+            bams_ch, // [meta,bam,bai]
+            )
+        versions = versions.mix(GATK_BAM2VCF.out.versions)
+        vcf_ch = GATK_BAM2VCF.out.vcf
+        }
+    else if(params.method.equalsIgnoreCase("direct")) {
+        }
+    else
+        {
+        throw new IllegalArgumentException("undefined params.method=${params.method}")
+        }
 
-    HAPLOTYPECALLER(
-        [id:"hapcaller"],
-        fasta,
-        fai,
-        dict,
-        all_references,
-        dbsnp,
-        beds_ch,
-        bams_ch
-        )
-   
-
-if("A".equals("B")) {
-    
-
-GATK_BAM2VCF(
-    ref_hash,
-    fasta,
-    fai,
-    dict,
-    dbsnp,
-    all_references, //[meta, [ref files fa fai dict...]] all known reference
-    beds_ch, // [meta,bed]
-    bams_ch, // [meta,bam,bai]
-    )
- versions = versions.mix(GATK_BAM2VCF.out.versions)
- 
  
  /***************************************************
    *
@@ -240,7 +246,7 @@ GATK_BAM2VCF(
     MULTIQC(multiqc.map{it[1]}.collect().map{[[id:"hapcaller"],it]})
 
 
-}
+    
 }
 
 runOnComplete(workflow)

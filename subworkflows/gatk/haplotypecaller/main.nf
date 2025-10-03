@@ -74,10 +74,9 @@ main:
 				}
 			return L;
 			}}
-        .combine(HAPCALLER.out.gvcf)
+        .combine(HAPCALLER.out.gvcf) // I tried to use 'join' but it doesn't work / Nasty bug ? So combine+filter
         .filter{srcbed1,bed,meta,vcf,tbi,srcbed2->srcbed1.toRealPath().equals(srcbed2.toRealPath())}
         .map{srcbed1,bed,meta,vcf,tbi,srcbed2->[meta,vcf,tbi,bed]}
-        .view()
 
 
     COMBINE_GENOTYPE_GVCFS(
