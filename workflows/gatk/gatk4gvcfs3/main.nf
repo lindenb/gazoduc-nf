@@ -141,8 +141,18 @@ workflow {
     bams_ch = fix_sample_name.mix(bams_ch1.has_sample)
 			.map{it.bai?it: (it.bam.endsWith(".bam") ? it.plus(["bai":it.bam+".bai"]):  it.plus(["bai":it.bam+".crai"]))}
             .filter{assertKeyExistsAndNotEmpty(it,"sample")}
-            .map{[[id:it.sample], file(it.bam),file(it.bai)]}
-            .take(10)
+            .map{
+		def meta = [id:it.sample];
+		for(k in ["group","sex","father","mother","family","status","collection"])
+			{
+			if(!it.containsKey(k)) continue;
+			def v = it.get(k);
+			if(v.isEmpty()) continue;
+			if(v.equals(".")) continue;
+			meta=meta.plus([k:v]);
+			}
+		return [meta, file(it.bam),file(it.bai)];
+		}
         
     /* check no duplicate samples */
     bams_ch.map{meta,bam,bai->meta.id}.unique().count()
@@ -151,11 +161,7 @@ workflow {
         .view()
         .map{
             throw new IllegalArgumentException("Check the samplesheet. There is a duplicate sample name");
-            }
-
-
-
-    
+            }    
 
     if(params.bed==null) {
         SCATTER_TO_BED(ref_hash,fasta,fai,dict)
@@ -177,7 +183,6 @@ workflow {
         .map{beds->beds instanceof List?beds:[beds]}
         .flatMap()
         .map{bed->[[id:bed.baseName],bed]}
-        .take(10)//TODO
 
 
     vcf_ch = Channel.empty()
