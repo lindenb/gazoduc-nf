@@ -37,7 +37,10 @@ include {runOnComplete; dumpParams           } from '../../../modules/utils/func
 include {BCFTOOLS_GUESS_PLOIDY               } from '../../../modules/bcftools/guess_ploidy'
 include {BCFTOOLS_STATS                      } from '../../../modules/bcftools/stats'
 include {HAPLOTYPECALLER                     } from '../../../subworkflows/gatk/haplotypecaller'
+include {HAPLOTYPECALLER_DIRECT              } from '../../../subworkflows/gatk/haplotypecaller.direct'
 include {SAMTOOLS_SAMPLES                    } from '../../../modules/samtools/samples'
+
+
 // Print help message, supply typical command line usage for the pipeline
 if (params.help) {
    log.info paramsHelp("nextflow run my_pipeline ")
@@ -207,6 +210,17 @@ workflow {
         vcf_ch = GATK_BAM2VCF.out.vcf
         }
     else if(params.method.equalsIgnoreCase("direct")) {
+        HAPLOTYPECALLER_DIRECT(
+            ref_hash,
+            fasta,
+            fai,
+            dict,
+            dbsnp,
+            beds_ch,
+            bams_ch
+            )
+        versions = versions.mix(HAPLOTYPECALLER_DIRECT.out.versions)
+        vcf_ch = HAPLOTYPECALLER_DIRECT.out.vcf
         }
     else
         {
@@ -219,7 +233,7 @@ workflow {
    * BCFTOOLS STATS FROM VCFS
    *
    */
-  BCFTOOLS_GUESS_PLOIDY(fasta, fai,GATK_BAM2VCF.out.vcf)
+  BCFTOOLS_GUESS_PLOIDY(fasta, fai,vcf_ch)
   versions = versions.mix(BCFTOOLS_GUESS_PLOIDY.out.versions)
 
 
@@ -235,7 +249,7 @@ workflow {
     bed,
     Channel.of(gtf).map{[it[0],it[1]]}.first(),//meta,gtf
     [[:],[]],//samples,
-    GATK_BAM2VCF.out.vcf.map{[it[0],[it[1],it[2]]]}
+    vcf_ch.map{[it[0],[it[1],it[2]]]}
     )
   versions = versions.mix(BCFTOOLS_GUESS_PLOIDY.out.versions)
 

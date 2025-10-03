@@ -33,7 +33,7 @@ input:
     tuple val(meta2),path(fai)
     tuple val(meta3),path(dict)
     tuple val(meta4),path(dbsnp),path(dbsnptbi)
-    tuple val(meta ),path("BAM/*"),path(optional_bed)
+    tuple val(meta ),path("BAMS/*"),path(optional_bed)
 output:
     tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),path(optional_bed),emit:vcf
     path("versions.yml"),emit:versions
@@ -46,10 +46,12 @@ script:
 """
 hostname 1>&2
 mkdir -p TMP
+set -x
 find ./BAMS/ \\( -name "*.bam" -o -name "*.cram" \\) | sort -T TMP -V >> TMP/bams.list
+MD5=\$(cat TMP/bams.list ${optional_bed?optional_bed:""} | md5sum | cut -d ' ' -f1)
 
-cat MP/bams.list | samtools samples -f "${fasta}" | awk -F '\t' '(\$3==".")' > TMP/bad.txt
-if test ! -s TMP/bad.txt
+cat TMP/bams.list | samtools samples -f "${fasta}" | awk -F '\t' '(\$3==".")' > TMP/bad.txt
+if test -s TMP/bad.txt
 then
     sed 's/^/UNDEFINED or WRONG REF FOR /' TMP/bad.txt 1>&2
 fi

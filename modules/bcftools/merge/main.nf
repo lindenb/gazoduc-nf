@@ -30,7 +30,7 @@ conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	tuple val(meta ),path("VCFS/*"),path(optional_bed)
 output:
-        tuple val(meta),path("*.bcf"),path("*.bcf.csi"),emit:vcf
+        tuple val(meta),path("*.bcf"),path("*.bcf.csi"),path(optional_bed),emit:vcf
 	path("versions.yml"),emit:versions
 script:
         def args1  = task.ext.args1?:""
