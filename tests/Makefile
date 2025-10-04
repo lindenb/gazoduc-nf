@@ -8,7 +8,7 @@ all: test_fastqc
 
 
 test_fastqc: DATA/FASTQ/samplesheet1.csv base.config
-	$(NEXTFLOW) -c conda.config run ../workflows/fastqc/main.nf --samplesheet $<
+	$(NEXTFLOW) -c base.config run ../workflows/fastqc/main.nf --samplesheet $<
 
 reference.config: REF/$(BUILD).fa REF/$(BUILD).fa.fai REF/$(BUILD).dict REF/$(BUILD).fa.bwt
 	echo 'params {' > $@
