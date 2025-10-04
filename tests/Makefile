@@ -22,7 +22,9 @@ base.config:
 	echo 'conda.enabled = true'  > $@
 	echo 'conda.useMicromamba = true'  >> $@
 	echo 'process {' >> $@
+	echo 'cache="lenient"' >> $@
 	echo 'maxForks=1' >> $@
+	echo "shell = ['/bin/bash', '-euo', 'pipefail']" >> $@
 	echo '}'  >> $@
 
 reference: REF/$(BUILD).fa REF/$(BUILD).fa.fai REF/$(BUILD).dict

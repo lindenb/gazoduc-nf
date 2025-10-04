@@ -60,7 +60,7 @@ workflow {
                 paired: it.fastq_2!=null &&  !it.fastq_2.isEmpty() &&  !it.fastq_2.equals(".")
                 single: true
                 }
-        }
+        
     
     ch2a = ch1.paired.map{assertKeyExistsAndNotEmpty(it,"fastq_2")}.map{[
         [id:it.sample],
