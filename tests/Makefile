@@ -25,6 +25,8 @@ base.config:
 	echo 'cache="lenient"' >> $@
 	echo 'maxForks=1' >> $@
 	echo "shell = ['/bin/bash', '-euo', 'pipefail']" >> $@
+	echo 'memory = "5g"' >> $@
+	echo 'cpus = 2' >> $@
 	echo '}'  >> $@
 
 reference: REF/$(BUILD).fa REF/$(BUILD).fa.fai REF/$(BUILD).dict

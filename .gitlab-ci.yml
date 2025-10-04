@@ -10,6 +10,7 @@ before_script:
   - curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj bin/micromamba
   - export PATH="${PWD}/bin:${PATH}"
   - eval "$(./bin/micromamba shell hook -s posix)"
+  - export NXF_ANSI_LOG=false
 
 stages:
   - test
