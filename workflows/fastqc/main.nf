@@ -26,6 +26,7 @@ nextflow.enable.dsl=2
 
 include {dumpParams;runOnComplete   } from '../../modules/utils/functions.nf'
 include {testKeyExistsAndNotEmpty   } from '../../modules/utils/functions.nf'
+include {assertKeyExistsAndNotEmpty } from '../../modules/utils/functions.nf'
 include {FASTQC                     } from '../../modules/fastqc'
 include {MULTIQC                    } from '../../modules/multiqc'
 include {COMPILE_VERSIONS           } from '../../modules/versions'
