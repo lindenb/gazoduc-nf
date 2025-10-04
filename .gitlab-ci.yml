@@ -7,10 +7,9 @@ before_script:
   - (mkdir -p bin && cd bin && curl -s https://get.nextflow.io | bash && chmod +x nextflow)
   - export PATH="${PWD}/bin:${PATH}"
   - nextflow info
-  - wget --quiet "https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh" -O ./miniconda.sh
-  - /bin/bash ./miniconda.sh -b -p /opt/conda
-  - export PATH=/opt/conda/bin:${PATH}
-  - conda update -y conda
+  - curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj bin/micromamba
+  - export PATH="${PWD}/bin:${PATH}"
+  - eval "$(./bin/micromamba shell hook -s posix)"
 
 stages:
   - test

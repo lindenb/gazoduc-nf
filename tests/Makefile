@@ -20,6 +20,7 @@ reference.config: REF/$(BUILD).fa REF/$(BUILD).fa.fai REF/$(BUILD).dict REF/$(BU
 
 base.config:
 	echo 'conda.enabled = true'  > $@
+	echo 'conda.useMicromamba = true'  >> $@
 	echo 'process {' >> $@
 	echo 'maxForks=1' >> $@
 	echo '}'  >> $@
@@ -67,7 +68,7 @@ REF/$(BUILD).gtf.gz:
 		bgzip  > $@
 
 REF/$(BUILD).dict: REF/$(BUILD).fa
-        samtools dict -a "$(BUILD)" -A -o $@ $<
+	samtools dict -a "$(BUILD)" -A -o $@ $<
 
 
 REF/$(BUILD).fa.fai: REF/$(BUILD).fa
