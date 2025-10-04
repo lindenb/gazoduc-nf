@@ -74,7 +74,7 @@ workflow {
         ]}
 
 
-    FASTQC( ch2a.mix(ch2b) )
+    FASTQC( ch2a.mix(ch2b).view() )
     versions = versions.mix(FASTQC.out.versions)
     multiqc_ch = multiqc_ch.mix(FASTQC.out.zip)
     multiqc_ch = multiqc_ch.mix(FASTQC.out.html)

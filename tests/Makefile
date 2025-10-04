@@ -35,13 +35,13 @@ DATA/FASTQ/samplesheet1.csv:
 	mkdir -p $(dir $@)
 	cd $(dir $@) && \
 		wget -O jeter.zip "https://zenodo.org/records/1236641/files/test_fastq_small.zip?download=1"  && \
-		echo "$${PATH}" && \
 		unzip jeter.zip && \
 		rm jeter.zip
 	find $(dir $@) -type f -name "*.fastq" -exec gzip '{}' ';'
 	echo "sample,fastq_1,fastq_2" > $@
 	find $(dir $@) -name "*.fastq.gz" | sort -V | paste -sd, | awk '{printf("SAMPLE%d,%s\n",NR,$$0);}' >> $@
-	
+	cat $@
+
 REF/$(BUILD).fa.bwt:
 	mkdir -p $(dir $@)
 	cd $(dir $@) && wget -O jeter.tar.gz "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/$(BUILD)/seqs_for_alignment_pipelines.ucsc_ids/$(BUILD)_no_alt_analysis_set.fna.bwa_index.tar.gz" && \
@@ -55,9 +55,9 @@ REF/$(BUILD).fa.bwt:
 
 REF/$(BUILD).gff.gz.tbi: REF/$(BUILD).gff.gz
 	tabix -p gff -f $<
-	
+
 REF/$(BUILD).gff.gz:
-	mkdir -p $(dir $@) 
+	mkdir -p $(dir $@)
 	wget -O - "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/$(BUILD)/seqs_for_alignment_pipelines.ucsc_ids/$(BUILD)_full_analysis_set.refseq_annotation.gff.gz" |\
 		gunzip -c |\
 		bgzip  > $@
@@ -65,9 +65,9 @@ REF/$(BUILD).gff.gz:
 
 REF/$(BUILD).gtf.gz.tbi: REF/$(BUILD).gtf.gz
 	tabix -p gff -f $<
-	
+
 REF/$(BUILD).gtf.gz:
-	mkdir -p $(dir $@) 
+	mkdir -p $(dir $@)
 	wget -O - "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/$(BUILD)/seqs_for_alignment_pipelines.ucsc_ids/$(BUILD)_full_analysis_set.refseq_annotation.gtf.gz" |\
 		gunzip -c |\
 		bgzip  > $@
