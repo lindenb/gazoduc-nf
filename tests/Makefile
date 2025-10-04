@@ -39,8 +39,7 @@ DATA/FASTQ/samplesheet1.csv:
 		rm jeter.zip
 	find $(dir $@) -type f -name "*.fastq" -exec gzip '{}' ';'
 	echo "sample,fastq_1,fastq_2" > $@
-	find $(dir $@) -name "*.fastq.gz" | sort -V | paste -sd, | awk '{printf("SAMPLE%d,%s\n",NR,$$0);}' >> $@
-	cat $@
+	find $(dir $@) -name "*.fastq.gz" | sort -V | paste -d, - - | awk '{printf("SAMPLE%d,%s\n",NR,$$0);}' >> $@
 
 REF/$(BUILD).fa.bwt:
 	mkdir -p $(dir $@)
