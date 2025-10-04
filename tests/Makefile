@@ -31,6 +31,7 @@ DATA/FASTQ/samplesheet1.csv:
 	mkdir -p $(dir $@)
 	cd $(dir $@) && \
 		wget -O jeter.zip "https://zenodo.org/records/1236641/files/test_fastq_small.zip?download=1"  && \
+		echo "$${PATH}" && \
 		unzip jeter.zip && \
 		rm jeter.zip
 	find $(dir $@) -type f -name "*.fastq" -exec gzip '{}' ';'
