@@ -37,12 +37,13 @@ output:
 script:
     if(!(fastqs instanceof List)) throw new IllegalArgumentException("${task.process}: fastqs should be a List");
     if(fastqs.size()>2) throw new IllegalArgumentException("${task.process}: fastqs.size > 2");
+    def L = fastqs.sort()
     def prefix = task.ext.prefix?:""
     def args1 = task.ext.args1?:""
 """
     mkdir -p TMP
 
-    if ${fastqs.size()==2}
+    if ${L.size()==2}
     then
         fastp \\
              ${args1} \\
@@ -52,8 +53,8 @@ script:
             --report_title "${meta.id}" \\
             -i "${fastqs[0]}" \\
             -I "${fastqs[1]}" \\
-            -o "TMP/${prefix}${fastqs[0].baseName}.fastp.fq.gz" \\
-            -O "TMP/${prefix}${fastqs[1].baseName}.fastp.fq.gz"
+            -o "TMP/${prefix}${L[0].baseName}.fastp.fq.gz" \\
+            -O "TMP/${prefix}${L[1].baseName}.fastp.fq.gz"
     else
          fastp \\
             ${args1} \\
@@ -61,8 +62,8 @@ script:
             --json TMP/jeter.json \\
             --html TMP/jeter.html \\
             --report_title "${meta.id}" \\
-            -i "TMP/${prefix}${fastqs[0]}" \\
-            -o "TMP/${prefix}${fastqs[0].baseName}.fastp.fq.gz"
+            -i "TMP/${prefix}${L[0]}" \\
+            -o "TMP/${prefix}${L[0].baseName}.fastp.fq.gz"
     fi
 
 mv -v TMP/*.gz ./

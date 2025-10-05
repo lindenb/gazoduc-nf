@@ -40,33 +40,44 @@ workflow MAP_BWA {
 		fastqs
 	main:
 		versions = Channel.empty()
-
-	
-		FASTP(
-			fastqs.map{met,R1,R2->{
-				if(R2) return [met,[R1,R2]];
-				return [met,[R1]]
-				}}
-			)
-		versions = versions.mix(FASTP.out.versions)
+		out_bams = Channel.empty()
 		
-		SEQKIT_SPLIT(meta,FASTP.out.fastqs.map{meta,fqs->{
-			if(fqs.size()==1) return [meta,fqs[0],[]];
-			if(fqs.size()!=2) throw new IllegalArgumentException("Boum after FASTP"); 
-			def L1 = fqs.sort();
-			return [meta,fqs[0],fqs[1]];
-			}})
-		versions = versions.mix(SEQKIT_SPLIT.out.versions)
+		
+		if(meta.with_fastp==null || meta.with_fastp==true) {
+			FASTP(
+				fastqs.map{met,R1,R2->{
+					if(R2) return [met,[R1,R2]];
+					return [met,[R1]]
+					}}
+				)
+			versions = versions.mix(FASTP.out.versions)
+			fastqs = FASTP.out.fastqs
+			}
+		
+		if("A".equals("B")) {
+		
+		if(meta.with_seqkit_split==null || meta.with_seqkit_split==true) {
+			SEQKIT_SPLIT(meta,fastqs.map{meta,fqs->{
+				if(fqs.size()==1) return [meta,fqs[0],[]];
+				if(fqs.size()!=2) throw new IllegalArgumentException("Boum after FASTP"); 
+				def L1 = fqs.sort();
+				return [meta,L[0],L[1]];
+				}})
+			versions = versions.mix(SEQKIT_SPLIT.out.versions)
+			fastqs = SEQKIT_SPLIT.out.fastqs
+			}
 		
 		
 		BWA_MEM(fasta,fai,BWADir,bed, 
-			SEQKIT_SPLIT.out.fastqs.map{meta,fqs->{
+			fastqs.map{meta,fqs->{
 				if(fqs.size()==1) return [meta,fqs[0],[]];
 				if(fqs.size()!=2) throw new IllegalArgumentException("Boum after FASTP"); 
 				def L1 = fqs.sort();
 				return [meta,fqs[0],fqs[1]];
 				}})
 		versions = versions.mix(BWA_MEM.out.versions)
+	
+		
 	
 		if(meta.markdup==null || meta.markdup.equals("markduplicates")) {
 				MARK_DUPLICATES(BWA_MEM.out.bam
@@ -75,10 +86,11 @@ workflow MAP_BWA {
 					.map{id,metas,bam_files->[metas[0],bam_files.flatten.sort()]}
 				)
 			versions = versions.mix(MARK_DUPLICATES.out.versions)
+			out_bams = MARK_DUPLICATES.out.bam
 			}
 
-		
+		}
 	emit:
 		versions
-		//bams = cram_ch.output
+		bam = out_bams
 	}
