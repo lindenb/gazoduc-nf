@@ -56,7 +56,7 @@ set -x
 bwa mem \\
 	${args1} \\
 	-t ${cpus2} \\
-	-R '@RG\\tID:${ID}\\tSM:${sample}\\tLB:${LB}.R0\\tCN:${CN}\\tPL:${PL}' \\
+	-R '@RG\\tID:${ID}\\tSM:${ID}\\tLB:${LB}.R0\\tCN:${CN}\\tPL:${PL}' \\
 	`find ${bwaDir}/ -name "*.amb" | sed 's/\\.amb\$//'` \\
 	"${R1}" ${R2?:""} |\\
 	samtools view -O BAM ${args2} ${optional_bed?"-L ${optional_bed}":""} -o TMP/jeter.bam

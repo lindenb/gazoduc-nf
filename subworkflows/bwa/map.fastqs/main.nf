@@ -27,7 +27,9 @@ include {BWA_MEM                         } from '../../../modules/bwa/mem'
 include {SEQKIT_SPLIT                    } from '../../seqkit/split'
 include {FASTP                           } from '../../../modules/fastp'
 include {MARK_DUPLICATES                 } from '../../../modules/gatk/markduplicates'
+include {SAMTOOLS_MERGE                  } from '../../../modules/samtools/merge'
 include {BQSR                            } from '../../gatk/bqsr'
+include {SAMBAMBA_MARKDUP                } from '../../../modules/sambamba/markdup'
 
 workflow MAP_BWA {
 	take:
@@ -88,6 +90,37 @@ workflow MAP_BWA {
 					)
 				versions = versions.mix(MARK_DUPLICATES.out.versions)
 				out_bams = MARK_DUPLICATES.out.bam
+				}
+			else if(meta.markdup.equals("sambamba")) {
+			
+			
+				ch1 = BWA_MEM.out.bam
+					.map{meta,bam,bai->[meta.id,meta,[bam,bai]]}
+					.groupTuple()
+					.map{id,metas,bam_files->[metas[0],bam_files]}
+					.branch{
+						needmerge: it[1].size() > 1
+						one: true
+						}
+				
+				
+				SAMTOOLS_MERGE(
+					fasta,
+					fai,
+					ch1.needmerge.map{meta,bam_files->[meta,bam_files.flatten().sort()]}
+					)
+				versions = versions.mix(SAMTOOLS_MERGE.out.versions)
+				
+				
+				SAMBAMBA_MARKDUP(					
+					SAMTOOLS_MERGE.out.bam.mix(ch1.one.map{meta,bam_files->[meta,bam_files[0]]})
+					)
+				versions = versions.mix(SAMBAMBA_MARKDUP.out.versions)
+				out_bams = SAMBAMBA_MARKDUP.out.bams
+				}
+			else
+				{
+				throw new IllegalArgumentException("Boum MAP_BWA undefined meta.markdup: ${meta.markdup}"); 
 				}
 			}
 		

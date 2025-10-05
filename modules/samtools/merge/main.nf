@@ -23,53 +23,49 @@ SOFTWARE.
 
 */
 
-process SAMBAMBA_MARKDUP {
-tag "${meta.id?:""} ${bam.name}"
-label "process_short"
-conda "${moduleDir}/../../../conda/sambamba.yml"
-afterScript "rm -rf TMP"
 
+process SAMTOOLS_MERGE {
+tag "${meta.id?:""}"
+label "process_single"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
 input:
-	tuple val(meta),path(bam),path(bai)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta ),path("BAMS/*")
 output:
 	tuple val(meta),path("*.bam"),path("*.bai"),emit:bam
 	path("versions.yml"),emit:versions
 script:
-	def overflow_size = task.ext.overflow_size?:"600000"
-	def prefix = task.ext.prefix?:bam.baseName+".markdup"
+	def prefix = task.ext.prefix?:"${meta.id}.merged"
 """
 hostname 2>&1
 mkdir TMP
 
-# avoid too many files open. ulimit doesn't work...
-ulimit -s unlimited || true
-
-# markdup
-sambamba markdup \\
-	--overflow-list-size ${overflow_size} \\
-	--tmpdir=TMP \\
-	-t ${task.cpus} \\
-	"${bam}" TMP/jeter2.bam
-mv TMP/jeter2.bam TMP/jeter.bam
-
-samtools index  -@ ${task.cpus} "TMP/jeter.bam"
+find BAMS \\( -name "*.bam" -o -name "*.cram" \\) | sort -V > TMP/jeter.list
 
 
-mv TMP/jeter.bam "${prefix}.bam"
-mv TMP/jeter.bam.bai "${prefix}.bam.bai"
+samtools merge \\
+	--write-index \\
+	--reference "${fasta}" \\
+	--threads ${task.cpus} \\
+	-o TMP/${prefix}.bam \\
+	-b TMP/jeter.list
 
 
-cat << EOF > versions.yml
+
+mv TMP/${prefix}.bam ./
+mv TMP/${prefix}.bam.bai ./
+
+cat << END_VERSIONS > versions.yml
 "${task.process}":
-    sambamba: \$(sambamba --version 2>&1 | sort | uniq | paste -s -d ' ')
-    samtools: \$(samtools  --version | head -n 1| cut -d ' ' -f2)
-</properties>
-EOF
+	samtools: "\$(samtools version | awk '(NR==1) {print \$NF;}')"
+END_VERSIONS
 """
 stub:
 """
-touch  "${sample}.markdup.bam"   "${sample}.markdup.bam.bai"
-echo "<properties/>" > version.xml
+touch "${meta.id}.merged.bam" "${meta.id}.merged.bam.bai"
+touch versions.yml
 """
 }
 
