@@ -12,11 +12,9 @@ test_bwa : DATA/FASTQ/samplesheet1.csv base.config reference.config
 test_fastqc: DATA/FASTQ/samplesheet1.csv base.config
 	$(NEXTFLOW) -c base.config run ../workflows/fastqc/main.nf --samplesheet $<
 
-reference.config: REF/$(BUILD).fa REF/$(BUILD).fa.fai REF/$(BUILD).dict
+reference.config: REF/$(BUILD).fa 
 	echo 'params {' > $@
 	echo '  fasta="REF/$(BUILD).fa"' >> $@
-	echo '  fai="REF/$(BUILD).fa.fai"' >> $@
-	echo '  dict="REF/$(BUILD).dict"' >> $@
 	echo '  ucsc_name="hg38"' >> $@
 	echo '  bwa_index_directory=null' >> $@
 	echo '}'  >> $@
@@ -64,12 +62,6 @@ REF/$(BUILD).gtf.gz:
 		gunzip -c | grep '^chr22' | \
 		bgzip  > $@
 
-REF/$(BUILD).dict: REF/$(BUILD).fa
-	samtools dict -a "$(BUILD)" -A -o $@ $<
-
-
-REF/$(BUILD).fa.fai: REF/$(BUILD).fa
-	samtools faidx $<
 
 
 REF/$(BUILD).fa:

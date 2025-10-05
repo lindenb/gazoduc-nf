@@ -54,9 +54,7 @@ workflow {
       ucsc_name: (params.ucsc_name?:"undefined")
       ]
 	def fasta = [ hash_ref, file(params.fasta)]
-	def fai   = [ hash_ref, file(params.fai)]
-	def dict  = [ hash_ref, file(params.dict)]
-
+	
 	versions = Channel.empty()
 	multiqc_ch = Channel.empty()
 	ch1 = Channel.fromPath(params.samplesheet)
@@ -89,6 +87,11 @@ workflow {
 
 	bed = Channel.of([[id:"nobed"],[]])
 	
+	PREPARE_REFERENCE(fasta)
+	versions = versions.mix(PREPARE_REFERENCE.out.versions)
+	fai = PREPARE_REFERENCE.out.fai
+	dict = PREPARE_REFERENCE.out.dict
+	
 	if(params.bwa_index_directory!=null) {
 		BWADir = [[id:"bwaindex"],file(params.bwa_index_directory)];
 		}
@@ -98,12 +101,6 @@ workflow {
 		versions = versions.mix(BWA_INDEX.out.versions)
 		BWADir = BWA_INDEX.out.bwa_index
 		}
-
-
-	PREPARE_REFERENCE(fasta)
-	versions = versions.mix(PREPARE_REFERENCE.out.versions)
-	fai = PREPARE_REFERENCE.out.fai
-	dict = PREPARE_REFERENCE.out.dict
 
 	MAP_BWA(
 		hash_ref,

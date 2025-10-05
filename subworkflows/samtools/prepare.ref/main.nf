@@ -22,8 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {SAMTOOLS_DICT   } from '../../modules/samtools/dict'
-include {SAMTOOLS_FAIDX  } from '../../modules/samtools/faidx'
+include {SAMTOOLS_DICT   } from '../../../modules/samtools/dict'
+include {SAMTOOLS_FAIDX  } from '../../../modules/samtools/faidx'
 
 workflow PREPARE_REFERENCE {
 take:
