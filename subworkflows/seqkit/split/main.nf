@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {SEQTK_SPLIT as SPLIT            } from '../../../modules/seqtk/split'
+include {SEQKIT_SPLIT2 as SPLIT2            } from '../../../modules/seqkit/split2'
 
 def restorePairs(def meta, def fastqs) {
 	def L=[];
@@ -59,10 +59,11 @@ workflow SEQTK_SPLIT {
 		out_fq  = ch1.other
 		
 
-		SPLIT(ch1.seqtk.mix(ch1.all.map{meta,R1,R2->[meta.plus([sektq_split_args:meta.sektq_split_args]),R1,R2]}))
-		versions = versions.mix(SPLIT.out.versions)
-		ch2 = SPLIT.out.fastqs.
-			flatMap{meta,fastqs->restorePairs(meta,fastqs)}
+		SPLIT2(ch1.seqtk.mix(ch1.all.map{meta,R1,R2->[meta.plus([sektq_split_args:meta.sektq_split_args]),R1,R2]}))
+		versions = versions.mix(SPLIT2.out.versions)
+		ch2 = SPLIT2.out.fastqs
+			.view()
+			.flatMap{meta,fastqs->restorePairs(meta,fastqs)}
 
 		out_fq = out_fq.mix(ch2)
 			.map{meta,R1,R2->[meta.findAll{k,v->!k.equals("sektq_split_args")},R1,R2]}
