@@ -1,17 +1,25 @@
 SHELL=/bin/bash
 NEXTFLOW?=nextflow
 BUILD=GRCh38
-.PHONY=all reference test_fastqc test_bwa
+.PHONY=all reference test_wgsim test_fastqc test_bwa
 
 
 all: test_fastqc test_bwa
 
 test_bwa : DATA/FASTQ/samplesheet1.csv base.config reference.config
 	which wgsim || true
-	$(NEXTFLOW) -c base.config -c reference.config run ../workflows/bwa/main.nf --samplesheet $<
+	echo 'params.wgsim=20' > local.cfg
+	$(NEXTFLOW) -c base.config -c reference.config -c local.cfg run ../workflows/bwa/main.nf --samplesheet $<
+	rm local.cfg
 
-test_fastqc: DATA/FASTQ/samplesheet1.csv base.config
+test_fastqc: DATA/FASTQ/samplesheet1.csv
 	$(NEXTFLOW) -c base.config run ../workflows/fastqc/main.nf --samplesheet $<
+
+test_wgsim: results/FASTQ/samplesheet.csv
+
+
+results/FASTQ/samplesheet.csv: base.config reference.config
+	$(NEXTFLOW) -c base.config run ../workflows/wgsim/main.nf --n_samples 10 --samplesheet $<
 
 reference.config: REF/$(BUILD).fa 
 	echo 'params {' > $@

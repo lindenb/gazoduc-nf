@@ -22,38 +22,30 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+process WGSIM {
+tag "${meta.id?:""}"
+label "process_single"
+afterScript "rm -rf TMP"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+input:
+    tuple val(meta1),path(fasta)
+    tuple val(meta2),path(fai)
+    val(meta)
+output:
+    tuple val(meta),path("*.R1.fq.gz"),path("*.R2.fq.gz")emit:fastq
+    path("versions.yml"),emit:versions
+script:
+    def args1 = task.ext.args1?:""
+"""
+mkdir -p TMP
 
-include {BASE_RECALIBRATOR       } from '../../../modules/gatk/baserecalibrator'
-include {APPLY_BQSR              } from '../../../modules/gatk/applybqsr'
+wgsim ${args1} ${fasta} TMP/${meta.id}.R1.fq.gz TMP/${meta.id}.R2.fq.gz 
 
-workflow BQSR {
-take:
-	meta
-	fasta
-	fai
-	dict
-	known_variants // meta,vcf_files
-	bams
-main:
-	versions = Channel.empty()
+mv TMP/*.gz ./
 
-	BASE_RECALIBRATOR(
-		fasta,
-		fai,
-		dict,
-		known_variants,
-		bams
-		)
-	versions = versions.mix( BASE_RECALIBRATOR.out.versions)
-	
-	APPLY_BQSR(
-		fasta,
-		fai,
-		dict,
-		BASE_RECALIBRATOR.out.table
-		);
-	versions = versions.mix( APPLY_BQSR.out.versions)
-emit:
-	versions
-	bams = APPLY_BQSR.out.bam
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	wgsim: "todo"
+END_VERSIONS
+"""
 }
