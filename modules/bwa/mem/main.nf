@@ -24,7 +24,7 @@ SOFTWARE.
 */
 process BWA_MEM {
 label "process_short"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bwa.yml"
 tag "${meta.id} ${R1.name} ${R2?R2.name:""}"
 afterScript "rm -rf TMP"
 input:
