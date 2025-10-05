@@ -42,7 +42,9 @@ workflow MAP_BWA {
 		versions = Channel.empty()
 		out_bams = Channel.empty()
 		
+		fastqs.view()
 		
+		if("A".equals("B")) {
 		if(meta.with_fastp==null || meta.with_fastp==true) {
 			FASTP(
 				fastqs.map{met,R1,R2->{
@@ -54,7 +56,7 @@ workflow MAP_BWA {
 			fastqs = FASTP.out.fastqs
 			}
 		
-		if("A".equals("B")) {
+		
 		
 		if(meta.with_seqkit_split==null || meta.with_seqkit_split==true) {
 			SEQKIT_SPLIT(meta,fastqs.map{meta,fqs->{
