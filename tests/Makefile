@@ -7,6 +7,7 @@ BUILD=GRCh38
 all: test_fastqc test_bwa
 
 test_bwa : DATA/FASTQ/samplesheet1.csv base.config reference.config
+	which wgsim || true
 	$(NEXTFLOW) -c base.config -c reference.config run ../workflows/bwa/main.nf --samplesheet $<
 
 test_fastqc: DATA/FASTQ/samplesheet1.csv base.config

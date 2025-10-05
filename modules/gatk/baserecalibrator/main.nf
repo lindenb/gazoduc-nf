@@ -23,31 +23,30 @@ SOFTWARE.
 
 */
 
-process GATK4_BASE_RECALIBRATOR {
+process BASE_RECALIBRATOR {
 tag "${meta.id?:bam.nam}"
 label "process_single"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript 'rm -rf TMP'
 input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)
 	tuple val(meta3),path(dict)
-	tuple val(meta4),path(known),path(known_idx)
-	tuple val(meta ),path(bam),path(bai),path(optional_bed)
+	tuple val(meta4),path("VCFS/"*)
+	tuple val(meta ),path(bam),path(bai)
 output:
-	tuple val(row),path("*.recal.table"),emit:table
+	tuple val(meta),path(bam),path(bai),path("*.table"),emit:table
 	path("versions.yml"),emit:versions
 script:
-	
-	def bedarg = (optional_bed?"-L \"${optional_bed}\"":"")
 	def prefix = task.ext.prefix?:meta.id+(optional_bed?"."+optional_bed.baseName:"")+".recal"
+	def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP"
 """
 hostname 1>&2
 mkdir TMP
 
-gatk --java-options "-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP" BaseRecalibrator \\
+gatk --java-options "${jvm}" BaseRecalibrator \\
 	-I "${bam}" \\
-	 ${bedarg} \\
-	 ${known?"--known-sites ${known}":""} \\
+	 `find VCFS \\( -name "*.vcf.gz" -o -name "*.vcf"  \\) -printf " --known-sites %p " ` \\
 	-O "${prefix}.table" \\
 	-R "${fasta}"
 

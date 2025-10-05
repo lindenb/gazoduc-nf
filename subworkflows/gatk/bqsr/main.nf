@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -23,38 +23,36 @@ SOFTWARE.
 
 */
 
-process APPLY_BQSR {
-label "process_short"
-tag "${row.sample} ${row.bam}"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-afterScript 'rm -rf TMP'
-input:
-	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai)
-	tuple val(meta3),path(dict)
-	tuple val(meta),path(bam),path(bai),path(table)
-output:
-    tuple val(row),path("*.bam"),path("*.bai"),emit:bam
-    path("versions.yml"),emit:versions
-script:
-	def prefix = task.ext.prefix?:bam.baseName+".bqsr"
-	def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP"
-"""
-hostname 1>&2
-mkdir TMP
+include {BASE_RECALIBRATOR       } from '../../../modules/gatk/baserecalibrator'
+include {APPLY_BQSR              } from '../../../modules/gatk/applybqsr'
 
-gatk --java-options gatk --java-options "${jvm}" ApplyBQSR \
-	-R "${fasta}" \\
-	-I "${bam}" \\
-	-bqsr "${table}" \\
-	-O "TMP/${prefix}.bam"
+workflow BQSR {
+take:
+	meta
+	fasta
+	fai
+	dict
+	known_variants // meta,vcf_files
+	bams
+main:
+	versions = Channel.empty()
 
-mv "TMP/${prefix}.bam" ./
-mv "TMP/*.bai" "${prefix}.bam.bai"
-
-cat << EOF > version.yml
-${task.process}:
-    gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
-EOF
-"""
-}
+	BASE_RECALIBRATOR(
+		fasta,
+		fai,
+		dict,
+		known_variants,
+		bams
+		)
+	versions = versions.mix( BASE_RECALIBRATOR.out.versions)
+	
+	APPLY_BQSR(
+		fasta,
+		fai,
+		dict,
+		BASE_RECALIBRATOR.out.table
+		);
+	versions = versions.mix( APPLY_BQSR.out.versions)
+emit:
+	versions
+	bams = APPLY_BQSR.out.bam

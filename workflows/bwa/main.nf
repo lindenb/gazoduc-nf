@@ -77,12 +77,14 @@ workflow {
     
     ch2a = ch1.paired.map{assertKeyExistsAndNotEmpty(it,"fastq_2")}.map{[
         [id:it.sample, single_end:false, paired_end:true],
-        [file(it.fastq_1),file(it.fastq_2)]
+        file(it.fastq_1),
+        file(it.fastq_2)
         ]}
 
     ch2b = ch1.single.map{[
         [id:it.sample,single_end:true, paired_end:false],
-        [file(it.fastq_1),file([])]
+        file(it.fastq_1),
+        file([])
         ]}
 
 	bed = Channel.of([[id:"nobed"],[]])

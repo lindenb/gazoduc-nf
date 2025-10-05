@@ -19,4 +19,9 @@ test-job:
   stage: test
   script:
     - make -C tests
+  artifacts:
+    paths:
+        - .nextflow.log
+
+
 

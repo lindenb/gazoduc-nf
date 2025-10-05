@@ -44,7 +44,7 @@ workflow MAP_BWA {
 		
 		fastqs.view()
 		
-		if("A".equals("B")) {
+		
 		if(meta.with_fastp==null || meta.with_fastp==true) {
 			FASTP(
 				fastqs.map{met,R1,R2->{
@@ -91,7 +91,7 @@ workflow MAP_BWA {
 			out_bams = MARK_DUPLICATES.out.bam
 			}
 
-		}
+		
 	emit:
 		versions
 		bam = out_bams
