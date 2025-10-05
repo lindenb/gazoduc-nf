@@ -67,6 +67,7 @@ workflow {
 			"${params.outdir}/FASTQ/${params.prefix}${R2.name}",
 			]}
 		.map{it.join(",")}
+		.collect()
 		)
 	versions = versions.mix(MAKE_SAMPLESHEET.out.versions)
 	
@@ -82,6 +83,7 @@ runOnComplete(workflow);
 
 
 process MAKE_SAMPLESHEET {
+tag "N=${L.size()}"
 input:
 	val(L)
 output:
