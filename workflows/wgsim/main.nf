@@ -29,6 +29,9 @@ include {dumpParams                 } from '../../modules/utils/functions.nf'
 include {runOnComplete              } from '../../modules/utils/functions.nf'
 include {PREPARE_REFERENCE          } from '../../subworkflows/samtools/prepare.ref'
 include {WGSIM                      } from '../../modules/samtools/wgsim'
+include {MULTIQC                    } from '../../modules/multiqc'
+include {COMPILE_VERSIONS           } from '../../modules/versions'
+
 
 if( params.help ) {
     dumpParams(params);
@@ -48,6 +51,8 @@ workflow {
       ucsc_name: (params.ucsc_name?:"undefined")
       ]
 	def fasta = [ hash_ref, file(params.fasta)]
+	versions = Channel.empty()
+	multiqc_ch = Channel.empty()
 	
 	PREPARE_REFERENCE(hash_ref,fasta)
 	versions = versions.mix(PREPARE_REFERENCE.out.versions)
@@ -69,6 +74,11 @@ workflow {
 		)
 	versions = versions.mix(MAKE_SAMPLESHEET.out.versions)
 	
+	
+    COMPILE_VERSIONS(versions.collect().map{it.sort()})
+    multiqc_ch = multiqc_ch.mix(COMPILE_VERSIONS.out.multiqc.map{[[id:"versions"],it]})
+    // in case of problem multiqc_ch.filter{!(it instanceof List) || it.size()!=2}.view{"### FIX ME ${it} MULTIQC"}
+    MULTIQC(multiqc_ch.map{it[1]}.collect().map{[[id:"wgsim"],it]})
     }
 
 
