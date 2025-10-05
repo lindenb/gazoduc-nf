@@ -42,5 +42,5 @@ main:
 emit:
 	versions
 	fai = SAMTOOLS_FAIDX.out.fai
-	dict = SAMTOOLS_FAIDX.out.dict
+	dict = SAMTOOLS_DICT.out.dict
 }
