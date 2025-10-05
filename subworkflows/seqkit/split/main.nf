@@ -22,10 +22,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {SEQKIT_SPLIT2 as SPLIT2            } from '../../../modules/seqkit/split2'
+include {SEQKIT_SPLIT2  } from '../../../modules/seqkit/split2'
 
 def restorePairs(def meta, def fastqs) {
 	def L=[];
+	System.err.println("restorePairs "+fastqs);
 	def R1 = fastqs.findAll{F->F.name.endsWith("R1.fq.gz")}.sort()
 	def R2 = fastqs.findAll{F->F.name.endsWith("R2.fq.gz")}.sort()
 	if(R1.size()!=R2.size()) throw new IllegalArgumentException("restorePairs : R1.size != R2.size");
@@ -49,19 +50,30 @@ workflow SEQKIT_SPLIT {
 	main:		
 		versions = Channel.empty()
 		
-		ch1 = fastqs.branch{
-			all: meta.sektq_split_args!=null && !meta.sektq_split_args.trim().isEmpty()
-			seqtk: it[0].sektq_split_args!=null && !it[0].sektq_split_args.trim().isEmpty()
-			other: true
-			}
+		ch1 = fastqs
+			.view()
+			.branch{
+				all: meta.sektq_split_args!=null && !meta.sektq_split_args.trim().isEmpty()
+				seqtk: it[0].sektq_split_args!=null && !it[0].sektq_split_args.trim().isEmpty()
+				other: true
+				}
 
-
+		
+		ch_all = ch1.all.map{meta,R1,R2->[
+			meta.plus([sektq_split_args:meta.sektq_split_args]),
+			R1,
+			R2
+			]}
+		
 		out_fq  = ch1.other
 		
 
-		SPLIT2(ch1.seqtk.mix(ch1.all.map{meta,R1,R2->[meta.plus([sektq_split_args:meta.sektq_split_args]),R1,R2]}))
-		versions = versions.mix(SPLIT2.out.versions)
-		ch2 = SPLIT2.out.fastqs
+		SEQKIT_SPLIT2(ch1.seqtk.mix(ch_all))
+		
+		versions = versions.mix(SEQKIT_SPLIT2.out.versions)
+		
+		
+		ch2 = SEQKIT_SPLIT2.out.fastqs
 			.view()
 			.flatMap{meta,fastqs->restorePairs(meta,fastqs)}
 

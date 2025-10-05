@@ -30,7 +30,7 @@ include {BAM_QC                                                    } from '../..
 include {SCATTER_TO_BED                                            } from '../../subworkflows/gatk/scatterintervals2bed'
 include {MULTIQC                                                   } from '../../modules/multiqc'
 include {COMPILE_VERSIONS                                          } from '../../modules/versions/main.nf'
-
+include {PREPARE_REFERENCE                                         } from '../../subworkflows/samtools/prepare.ref'
 // Print help message, supply typical command line usage for the pipeline
 if (params.help) {
    log.info paramsHelp("nextflow run my_pipeline --input input_file.csv")
@@ -55,8 +55,12 @@ workflow {
       ucsc_name: (params.ucsc_name?:"undefined")
       ]
 	def fasta = [ hash_ref, file(params.fasta)]
-	def fai   = [ hash_ref, file(params.fai)]
-	def dict  = [ hash_ref, file(params.dict)]
+  
+  
+  PREPARE_REFERENCE(hash_ref,fasta)
+  versions = versions.mix(PREPARE_REFERENCE.out.versions)
+  fai = PREPARE_REFERENCE.out.fai
+  dict = PREPARE_REFERENCE.out.dict
  
   if(params.bed==null) {
     SCATTER_TO_BED(hash_ref,fasta,fai,dict)
