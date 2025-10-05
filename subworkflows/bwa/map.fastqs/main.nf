@@ -24,7 +24,7 @@ SOFTWARE.
 */
 
 include {BWA_MEM                         } from '../../../modules/bwa/mem'
-include {SEQTK_SPLIT                     } from '../../seqtk/split'
+include {SEQKIT_SPLIT                    } from '../../seqkit/split'
 include {FASTP                           } from '../../../modules/fastp'
 include {MARK_DUPLICATES                 } from '../../../modules/gatk/markduplicates'
 
@@ -50,17 +50,17 @@ workflow MAP_BWA {
 			)
 		versions = versions.mix(FASTP.out.versions)
 		
-		SEQTK_SPLIT(meta,FASTP.out.fastqs.map{meta,fqs->{
+		SEQKIT_SPLIT(meta,FASTP.out.fastqs.map{meta,fqs->{
 			if(fqs.size()==1) return [meta,fqs[0],[]];
 			if(fqs.size()!=2) throw new IllegalArgumentException("Boum after FASTP"); 
 			def L1 = fqs.sort();
 			return [meta,fqs[0],fqs[1]];
 			}})
-		versions = versions.mix(SEQTK_SPLIT.out.versions)
+		versions = versions.mix(SEQKIT_SPLIT.out.versions)
 		
 		
 		BWA_MEM(fasta,fai,BWADir,bed, 
-			SEQTK_SPLIT.out.fastqs.map{meta,fqs->{
+			SEQKIT_SPLIT.out.fastqs.map{meta,fqs->{
 				if(fqs.size()==1) return [meta,fqs[0],[]];
 				if(fqs.size()!=2) throw new IllegalArgumentException("Boum after FASTP"); 
 				def L1 = fqs.sort();

@@ -42,7 +42,7 @@ def restorePairs(def meta, def fastqs) {
 	}
 
 /** split FASTQ using seqtk split2 */
-workflow SEQTK_SPLIT {
+workflow SEQKIT_SPLIT {
 	take:
 		meta
 		fastqs // meta, R1,optional_R2
