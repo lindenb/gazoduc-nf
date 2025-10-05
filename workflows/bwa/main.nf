@@ -87,7 +87,7 @@ workflow {
 
 	bed = Channel.of([[id:"nobed"],[]])
 	
-	PREPARE_REFERENCE(fasta)
+	PREPARE_REFERENCE(hash_ref,fasta)
 	versions = versions.mix(PREPARE_REFERENCE.out.versions)
 	fai = PREPARE_REFERENCE.out.fai
 	dict = PREPARE_REFERENCE.out.dict
