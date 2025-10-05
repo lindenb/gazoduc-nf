@@ -4,7 +4,7 @@ BUILD=GRCh38
 .PHONY=all reference test_wgsim test_fastqc test_bwa
 
 
-all: test_fastqc test_bwa
+all: test_wgsim test_fastqc test_bwa
 
 test_bwa : DATA/FASTQ/samplesheet1.csv base.config reference.config
 	which wgsim || true
@@ -17,9 +17,8 @@ test_fastqc: DATA/FASTQ/samplesheet1.csv
 
 test_wgsim: results/FASTQ/samplesheet.csv
 
-
 results/FASTQ/samplesheet.csv: base.config reference.config
-	$(NEXTFLOW) -c base.config run ../workflows/wgsim/main.nf --n_samples 10 --samplesheet $<
+	$(NEXTFLOW) -c base.config -c reference.config  run ../workflows/wgsim/main.nf --n_samples 10 --samplesheet $<
 
 reference.config: REF/$(BUILD).fa 
 	echo 'params {' > $@
