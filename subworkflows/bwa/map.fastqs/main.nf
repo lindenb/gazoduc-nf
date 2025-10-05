@@ -48,7 +48,7 @@ workflow MAP_BWA {
 				return [met,[R1]]
 				}}
 			)
-		versions = version_ch.mix(FASTP.out.versions)
+		versions = versions.mix(FASTP.out.versions)
 		
 		SEQTK_SPLIT(meta,FASTP.out.fastqs.map{meta,fqs->{
 			if(fqs.size()==1) return [meta,fqs[0],[]];
@@ -56,7 +56,7 @@ workflow MAP_BWA {
 			def L1 = fqs.sort();
 			return [meta,fqs[0],fqs[1]];
 			}})
-		versions = version_ch.mix(SEQTK_SPLIT.out.versions)
+		versions = versions.mix(SEQTK_SPLIT.out.versions)
 		
 		
 		BWA_MEM(fasta,fai,BWADir,bed, 
@@ -66,7 +66,7 @@ workflow MAP_BWA {
 				def L1 = fqs.sort();
 				return [meta,fqs[0],fqs[1]];
 				}})
-		versions = version_ch.mix(BWA_MEM.out.versions)
+		versions = versions.mix(BWA_MEM.out.versions)
 	
 		if(meta.markdup==null || meta.markdup.equals("markduplicates")) {
 				MARK_DUPLICATES(BWA_MEM.out.bam
