@@ -34,6 +34,7 @@ include {COMPILE_VERSIONS           } from '../../modules/versions'
 include {MAP_BWA                    } from '../../subworkflows/bwa/map.fastqs'
 include {BWA_INDEX                  } from '../../modules/bwa/index'
 include {runOnComplete              } from '../../modules/utils/functions.nf'
+include {PREPARE_REFERENCE          } from '../../subworkflows/samtools/prepare.ref'
 
 if( params.help ) {
     dumpParams(params);
@@ -98,8 +99,14 @@ workflow {
 		BWADir = BWA_INDEX.out.bwa_index
 		}
 
+
+	PREPARE_REFERENCE(fasta)
+	versions = versions.mix(PREPARE_REFERENCE.out.versions)
+	fai = PREPARE_REFERENCE.out.fai
+	dict = PREPARE_REFERENCE.out.dict
+
 	MAP_BWA(
-		meta,
+		hash_ref,
 		fasta,
 		fai,
 		dict,
