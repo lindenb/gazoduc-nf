@@ -1,6 +1,6 @@
 SHELL=/bin/bash
 NEXTFLOW?=nextflow
-BUILD=GCA_000001405.15_GRCh38
+BUILD=GRCh38
 .PHONY=all reference test_fastqc test_bwa
 
 
@@ -36,7 +36,7 @@ DATA/FASTQ/samplesheet1.csv:
 
 REF/$(BUILD).fa.bwt:
 	mkdir -p $(dir $@)
-	cd $(dir $@) && wget -O jeter.tar.gz "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/$(BUILD)/seqs_for_alignment_pipelines.ucsc_ids/$(BUILD)_no_alt_analysis_set.fna.bwa_index.tar.gz" && \
+	cd $(dir $@) && wget -q -O jeter.tar.gz "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/$(BUILD)/seqs_for_alignment_pipelines.ucsc_ids/$(BUILD)_no_alt_analysis_set.fna.bwa_index.tar.gz" && \
 		tar xvfz jeter.tar.gz && \
 		mv $(BUILD)_no_alt_analysis_set.fna.amb $(BUILD).fa.amb && \
 		mv $(BUILD)_no_alt_analysis_set.fna.ann $(BUILD).fa.ann && \
@@ -50,8 +50,8 @@ REF/$(BUILD).gff.gz.tbi: REF/$(BUILD).gff.gz
 
 REF/$(BUILD).gff.gz:
 	mkdir -p $(dir $@)
-	wget -O - "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/$(BUILD)/seqs_for_alignment_pipelines.ucsc_ids/$(BUILD)_full_analysis_set.refseq_annotation.gff.gz" |\
-		gunzip -c |\
+	wget -qO - "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_full_analysis_set.refseq_annotation.gff.gz" |\
+		gunzip -c | grep '^chr22' | \
 		bgzip  > $@
 
 
@@ -60,8 +60,8 @@ REF/$(BUILD).gtf.gz.tbi: REF/$(BUILD).gtf.gz
 
 REF/$(BUILD).gtf.gz:
 	mkdir -p $(dir $@)
-	wget -O - "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/$(BUILD)/seqs_for_alignment_pipelines.ucsc_ids/$(BUILD)_full_analysis_set.refseq_annotation.gtf.gz" |\
-		gunzip -c |\
+	wget -qO - "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_full_analysis_set.refseq_annotation.gtf.gz" |\
+		gunzip -c | grep '^chr22' | \
 		bgzip  > $@
 
 REF/$(BUILD).dict: REF/$(BUILD).fa
@@ -69,18 +69,12 @@ REF/$(BUILD).dict: REF/$(BUILD).fa
 
 
 REF/$(BUILD).fa.fai: REF/$(BUILD).fa
-	mkdir -p $(dir $@) && \
-		wget -O - "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/$(BUILD)/seqs_for_alignment_pipelines.ucsc_ids/$(BUILD)_no_alt_analysis_set.fna.fai" > $@
+	samtools faidx $<
 
 
 REF/$(BUILD).fa:
 	mkdir -p $(dir $@) && \
-		wget -O - "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/$(BUILD)/seqs_for_alignment_pipelines.ucsc_ids/$(BUILD)_no_alt_analysis_set.fna.gz" |\
+		wget -O - "https://hgdownload.soe.ucsc.edu/goldenpath/hg38/chromosomes/chr22.fa.gz" |\
 		gunzip -c  > $@
-
-install.conda:
-
-
-	touch $@
 
 
