@@ -1,13 +1,13 @@
 
 process SEQTK_SPLIT {
+label "process_single"
 tag "${meta.id?:R1.name}"
 afterScript "rm -rf TMP OUT/fastq.tsv"
 // cpus 4 set in config file
 input:
 	val(meta),path(R1),path(R2)
-	val(row)
 output:
-	tuple val(meta),path("fastq.tsv"),emit:output
+	tuple val(meta),path("OUT/*.gz"),emit:output
 	path("versions.yml"),emit:versions
 script:
 	def COL = row.grep({!(it.key.equals("R1") || it.key.equals("R2"))}).collect{it.key}.join("\t")
@@ -17,7 +17,6 @@ script:
 
 if(row.containsKey("R2") && !row.R2.isEmpty() && !row.R2.equals("."))
 """
-hostname 1>&2
 ${moduleLoad("seqkit")}
 set -o pipefail
 

@@ -1,0 +1,84 @@
+/*
+
+Copyright (c) 2025 Pierre Lindenbaum
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+The MIT License (MIT)
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
+
+include {BWA_MEM                         } from '../../../modules/bwa/mem'
+include {SEQTK_SPLIT                     } from '../../seqtk/split'
+include {FASTP                           } from '../../../modules/fastp'
+include {MARK_DUPLICATES                 } from '../../../modules/gatk/markduplicates'
+
+workflow MAP_BWA {
+	take:
+		meta
+		fasta
+		fai
+		dict
+		BWADir
+		bqsr_files
+		bed
+		fastqs
+	main:
+		versions = Channel.empty()
+
+	
+		FASTP(
+			fastqs.map{met,R1,R2->{
+				if(R2) return [met,[R1,R2]];
+				return [met,[R1]]
+				}}
+			)
+		versions = version_ch.mix(FASTP.out.versions)
+		
+		SEQTK_SPLIT(meta,FASTP.out.fastqs.map{meta,fqs->{
+			if(fqs.size()==1) return [meta,fqs[0],[]];
+			if(fqs.size()!=2) throw new IllegalArgumentException("Boum after FASTP"); 
+			def L1 = fqs.sort();
+			return [meta,fqs[0],fqs[1]];
+			}})
+		versions = version_ch.mix(SEQTK_SPLIT.out.versions)
+		
+		
+		BWA_MEM(fasta,fai,BWADir,bed, 
+			SEQTK_SPLIT.out.fastqs.map{meta,fqs->{
+				if(fqs.size()==1) return [meta,fqs[0],[]];
+				if(fqs.size()!=2) throw new IllegalArgumentException("Boum after FASTP"); 
+				def L1 = fqs.sort();
+				return [meta,fqs[0],fqs[1]];
+				}})
+		versions = version_ch.mix(BWA_MEM.out.versions)
+	
+		if(meta.markdup==null || meta.markdup.equals("markduplicates")) {
+				MARK_DUPLICATES(BWA_MEM.out.bam
+					.map{meta,bam,bai->[meta.id,meta,[bam,bai]]}
+					.groupTuple().view()
+					.map{id,metas,bam_files->[metas[0],bam_files.flatten.sort()]}
+				)
+			versions = versions.mix(MARK_DUPLICATES.versions)
+			}
+
+		
+	emit:
+		versions
+		//bams = cram_ch.output
+	}

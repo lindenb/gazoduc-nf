@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -22,40 +22,40 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-nextflow.enable.dsl=2
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putGenomeId()
+process MARK_DUPLICATES {
+tag "${meta.id?:bam.nam}"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+label "process_short"
+afterScript 'rm -rf TMP'
+input:
+	tuple val(meta ),path("BAMS/*")
+output:
+	tuple val(meta),path("*.bam"),path("*.bai"),emit:bam
+	tuple val(meta),path("*.txt"),emit:metrics
+	path("versions.yml"),emit:versions
+script:
+	def prefix = task.ext.prefix?:"${meta.id}.markdup"
+	def args1 =  task.ext.args1?:""
+	def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP" 
+"""
+hostname 1>&2
+mkdir TMP
 
-gazoduc.build("fastqs", "NO_FILE").
-	desc("TSV file with the path to fastqs with the following header sample,R1,R2").
-	existingFile().
-	required().
-	put()
+gatk --java-options "${jvm}" MarkDuplicates \\
+	${args1} \\
+	`find BAMS/ -name "*.bam"  -printf " -I %p " ` \\
+	--VALIDATION_STRINGENCY LENIENT \\
+	-M "${prefix}.marked_dup_metrics.txt" \\
+	-O TMP/jeter.bam
+	
+mv TMP/jeter.bam "${prefix}.bam" 
+mv TMP/jeter.*bai "${prefix}.bam.bai"
+ 
+cat << EOF > version.yml
+${task.process}:
+    gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
+EOF
+"""
 
-
-
-
-include {MAP_BWA_01} from '../../../subworkflows/mapping/map.bwa.01.nf'
-include {VERSION_TO_HTML} from '../../../modules/version/version2html.nf'
-include {runOnComplete} from '../../../modules/utils/functions.nf'
-
-
-if( params.help ) {
-    gazoduc.usage().
-	name("Map bwa").
-	desc("map fastqs on a reference genome").
-	print();
-    exit 0
-} else {
-   gazoduc.validate();
 }
-
-workflow {
-	fastqs_ch = Channel.fromPath(params.fastqs).splitCsv(header:true,sep:'\t')
-	remap_ch = MAP_BWA_01([:], params.genomeId, fastqs_ch)
-	html = VERSION_TO_HTML(remap_ch.version)	
-	}
-
-
-runOnComplete(workflow);
-

@@ -1,11 +1,13 @@
 SHELL=/bin/bash
 NEXTFLOW?=nextflow
 BUILD=GCA_000001405.15_GRCh38
-.PHONY=all reference test_fastqc
+.PHONY=all reference test_fastqc test_bwa
 
 
-all: test_fastqc
+all: test_fastqc test_bwa
 
+test_bwa : DATA/FASTQ/samplesheet1.csv base.config reference.config
+	$(NEXTFLOW) -c base.config -c reference.config run ../workflows/bwa/main.nf --samplesheet $<
 
 test_fastqc: DATA/FASTQ/samplesheet1.csv base.config
 	$(NEXTFLOW) -c base.config run ../workflows/fastqc/main.nf --samplesheet $<
@@ -16,18 +18,9 @@ reference.config: REF/$(BUILD).fa REF/$(BUILD).fa.fai REF/$(BUILD).dict REF/$(BU
 	echo '  fai="REF/$(BUILD).fa.fai"' >> $@
 	echo '  dict="REF/$(BUILD).dict"' >> $@
 	echo '  ucsc_name="hg38"' >> $@
+	echo '  bwa_index_directory="REF"' >> $@
 	echo '}'  >> $@
 
-base.config:
-	echo 'conda.enabled = true'  > $@
-	echo 'conda.useMicromamba = true'  >> $@
-	echo 'process {' >> $@
-	echo 'cache="lenient"' >> $@
-	echo 'maxForks=1' >> $@
-	echo "shell = ['/bin/bash', '-euo', 'pipefail']" >> $@
-	echo 'memory = "5g"' >> $@
-	echo 'cpus = 2' >> $@
-	echo '}'  >> $@
 
 reference: REF/$(BUILD).fa REF/$(BUILD).fa.fai REF/$(BUILD).dict
 
