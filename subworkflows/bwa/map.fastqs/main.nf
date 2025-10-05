@@ -27,6 +27,7 @@ include {BWA_MEM                         } from '../../../modules/bwa/mem'
 include {SEQKIT_SPLIT                    } from '../../seqkit/split'
 include {FASTP                           } from '../../../modules/fastp'
 include {MARK_DUPLICATES                 } from '../../../modules/gatk/markduplicates'
+include {BQSR                            } from '../../gatk/bqsr'
 
 workflow MAP_BWA {
 	take:
@@ -70,27 +71,33 @@ workflow MAP_BWA {
 			}
 		fastqs.view{"after seqkit ${it}"}
 		
-		BWA_MEM(fasta,fai,BWADir,bed, 
-			fastqs.map{meta,fqs->{
-				if(fqs.size()==1) return [meta,fqs[0],[]];
-				if(fqs.size()!=2) throw new IllegalArgumentException("Boum after FASTP"); 
-				def L1 = fqs.sort();
-				return [meta,fqs[0],fqs[1]];
-				}})
+		BWA_MEM(fasta,fai,BWADir,bed,fastqs)
 		versions = versions.mix(BWA_MEM.out.versions)
 	
-		
-	
-		if(meta.markdup==null || meta.markdup.equals("markduplicates")) {
+		if(meta.with_markdup==null || meta.with_markdup==true) {
+			if((meta.markdup==null || meta.markdup.equals("markduplicates")) {
 				MARK_DUPLICATES(BWA_MEM.out.bam
 					.map{meta,bam,bai->[meta.id,meta,[bam,bai]]}
 					.groupTuple().view()
 					.map{id,metas,bam_files->[metas[0],bam_files.flatten.sort()]}
-				)
-			versions = versions.mix(MARK_DUPLICATES.out.versions)
-			out_bams = MARK_DUPLICATES.out.bam
+					)
+				versions = versions.mix(MARK_DUPLICATES.out.versions)
+				out_bams = MARK_DUPLICATES.out.bam
+				}
 			}
 
+		if(meta.with_bqsr==null || meta.with_bqsr==true) {
+			BQSR(
+				meta,
+				fasta,
+				fai,
+				dict,
+				bqsr_files,
+				out_bams
+				)
+			versions = versions.mix(BQSR.out.versions)
+			out_bams = BQSR.out.bams
+			}
 		
 	emit:
 		versions
