@@ -32,7 +32,7 @@ input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)
 	tuple val(meta3),path(dict)
-	tuple val(meta4),path("VCFS/"*)
+	tuple val(meta4),path("VCFS/*")
 	tuple val(meta ),path(bam),path(bai)
 output:
 	tuple val(meta),path(bam),path(bai),path("*.table"),emit:table
@@ -55,5 +55,4 @@ ${task.process}:
     gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
 EOF
 """
-
 }

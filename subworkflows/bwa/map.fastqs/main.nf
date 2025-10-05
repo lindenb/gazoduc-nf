@@ -54,38 +54,43 @@ workflow MAP_BWA {
 					}}
 				)
 			versions = versions.mix(FASTP.out.versions)
-			fastqs = FASTP.out.fastqs
+			fastqs = FASTP.out.fastqs.map{meta2,fqs->{
+					if(fqs.size()==1) return [meta2,fqs[0],[]];
+					if(fqs.size()!=2) throw new IllegalArgumentException("Boum after FASTP ${meta2} ${fqs}"); 
+					def L1 = fqs.sort();
+					return [meta2,L1[0],L1[1] ];
+					}
+				}
 			}
 		
 		fastqs.view{"after fastp ${it}"}
-		
+	
 		if(meta.with_seqkit_split==null || meta.with_seqkit_split==true) {
-			SEQKIT_SPLIT(meta,fastqs.map{meta,fqs->{
-				if(fqs.size()==1) return [meta,fqs[0],[]];
-				if(fqs.size()!=2) throw new IllegalArgumentException("Boum after FASTP ${it}"); 
-				def L1 = fqs.sort();
-				return [meta,L1[0],L1[1]];
-				})
+			SEQKIT_SPLIT(
+				meta,
+				fastqs
+				)
 			versions = versions.mix(SEQKIT_SPLIT.out.versions)
 			fastqs = SEQKIT_SPLIT.out.fastqs
 			}
-		fastqs.view{"after seqkit ${it}"}
 		
+		fastqs.view{"after seqkit ${it}"}
+
 		BWA_MEM(fasta,fai,BWADir,bed,fastqs)
 		versions = versions.mix(BWA_MEM.out.versions)
 	
 		if(meta.with_markdup==null || meta.with_markdup==true) {
-			if((meta.markdup==null || meta.markdup.equals("markduplicates")) {
+			if(meta.markdup==null || meta.markdup.equals("markduplicates")) {
 				MARK_DUPLICATES(BWA_MEM.out.bam
 					.map{meta,bam,bai->[meta.id,meta,[bam,bai]]}
 					.groupTuple().view()
-					.map{id,metas,bam_files->[metas[0],bam_files.flatten.sort()]}
+					.map{id,metas,bam_files->[metas[0],bam_files.flatten().sort()]}
 					)
 				versions = versions.mix(MARK_DUPLICATES.out.versions)
 				out_bams = MARK_DUPLICATES.out.bam
 				}
 			}
-
+		
 		if(meta.with_bqsr==null || meta.with_bqsr==true) {
 			BQSR(
 				meta,
