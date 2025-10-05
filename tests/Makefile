@@ -12,13 +12,13 @@ test_bwa : DATA/FASTQ/samplesheet1.csv base.config reference.config
 test_fastqc: DATA/FASTQ/samplesheet1.csv base.config
 	$(NEXTFLOW) -c base.config run ../workflows/fastqc/main.nf --samplesheet $<
 
-reference.config: REF/$(BUILD).fa REF/$(BUILD).fa.fai REF/$(BUILD).dict REF/$(BUILD).fa.bwt
+reference.config: REF/$(BUILD).fa REF/$(BUILD).fa.fai REF/$(BUILD).dict
 	echo 'params {' > $@
 	echo '  fasta="REF/$(BUILD).fa"' >> $@
 	echo '  fai="REF/$(BUILD).fa.fai"' >> $@
 	echo '  dict="REF/$(BUILD).dict"' >> $@
 	echo '  ucsc_name="hg38"' >> $@
-	echo '  bwa_index_directory="REF"' >> $@
+	echo '  bwa_index_directory=null' >> $@
 	echo '}'  >> $@
 
 
@@ -34,7 +34,7 @@ DATA/FASTQ/samplesheet1.csv:
 	echo "sample,fastq_1,fastq_2" > $@
 	find $(dir $@) -name "*.fastq.gz" | sort -V | paste -d, - - | awk '{printf("SAMPLE%d,%s\n",NR,$$0);}' >> $@
 
-REF/$(BUILD).fa.bwt:
+REF/$(BUILD).xxfa.bwt:
 	mkdir -p $(dir $@)
 	cd $(dir $@) && wget -q -O jeter.tar.gz "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/$(BUILD)/seqs_for_alignment_pipelines.ucsc_ids/$(BUILD)_no_alt_analysis_set.fna.bwa_index.tar.gz" && \
 		tar xvfz jeter.tar.gz && \
