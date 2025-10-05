@@ -29,7 +29,7 @@ tag "${meta.id} ${R1.name} ${R2?R2.name:""}"
 afterScript "rm -rf TMP"
 // cpus 4 set in config file
 input:
-	val(meta),path(R1),path(R2)
+	tuple val(meta),path(R1),path(R2)
 output:
 	tuple val(meta),path("OUT/*.gz"),emit:fastqs
 	path("versions.yml"),emit:versions
@@ -44,10 +44,11 @@ seqkit split2 \\
 	${args1} \\
 	--force \\
 	--extension ".gz" \\
-	-O TMP --force \\
+	-O TMP \\
+	--force \\
     --threads ${task.cpus} \\
-    --read1 '${R1}' \\
-    ${R2?"--read2 ${R2}":""}
+    --read1 "${R1}" \\
+    ${R2?"--read2 \"${R2}\"":""}
 
 mv -v TMP OUT
 
