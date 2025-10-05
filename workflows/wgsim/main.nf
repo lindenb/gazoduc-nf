@@ -27,7 +27,6 @@ nextflow.enable.dsl=2
 
 include {dumpParams                 } from '../../modules/utils/functions.nf'
 include {runOnComplete              } from '../../modules/utils/functions.nf'
-include {PREPARE_REFERENCE          } from '../../subworkflows/samtools/prepare.ref'
 include {WGSIM                      } from '../../modules/samtools/wgsim'
 include {MULTIQC                    } from '../../modules/multiqc'
 include {COMPILE_VERSIONS           } from '../../modules/versions'
@@ -54,15 +53,12 @@ workflow {
 	versions = Channel.empty()
 	multiqc_ch = Channel.empty()
 	
-	PREPARE_REFERENCE(hash_ref,fasta)
-	versions = versions.mix(PREPARE_REFERENCE.out.versions)
-	fai = PREPARE_REFERENCE.out.fai
 
 	
 	def n_samples= (params.n_samples as int)
 	ch1 = Channel.of(0..<n_samples).map{n->[id:"S"+(n+1)]}
 	
-	WGSIM(fasta,fai,ch1)
+	WGSIM(fasta,ch1)
 	versions = versions.mix(WGSIM.out.versions)
 	
 	MAKE_SAMPLESHEET(WGSIM.out.fastq.map{meta,R1,R2->[

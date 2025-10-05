@@ -29,7 +29,6 @@ afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
     tuple val(meta1),path(fasta)
-    tuple val(meta2),path(fai)
     val(meta)
 output:
     tuple val(meta),path("*.R1.fq.gz"),path("*.R2.fq.gz"),emit:fastq
