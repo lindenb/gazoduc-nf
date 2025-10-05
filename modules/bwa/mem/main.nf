@@ -32,7 +32,7 @@ input:
 	tuple val(meta2),path(fai)
 	tuple val(meta3),path(BWADir)
 	tuple val(meta4),path(optional_bed)
-	tupel val(meta ),path(R1),path(R2)
+	tuple val(meta ),path(R1),path(R2)
 	
 output:
 	tuple val(meta),path("*.bam"), path("*.bai"),emit:bam
