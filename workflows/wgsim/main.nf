@@ -28,7 +28,7 @@ nextflow.enable.dsl=2
 include {dumpParams                 } from '../../modules/utils/functions.nf'
 include {runOnComplete              } from '../../modules/utils/functions.nf'
 include {PREPARE_REFERENCE          } from '../../subworkflows/samtools/prepare.ref'
-include {runOnComplete              } from '../../modules/samtools/wgsim'
+include {WGSIM                      } from '../../modules/samtools/wgsim'
 
 if( params.help ) {
     dumpParams(params);
