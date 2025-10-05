@@ -32,16 +32,18 @@ input:
     tuple val(meta2),path(fai)
     val(meta)
 output:
-    tuple val(meta),path("*.R1.fq.gz"),path("*.R2.fq.gz")emit:fastq
+    tuple val(meta),path("*.R1.fq.gz"),path("*.R2.fq.gz"),emit:fastq
+    tuple val(meta),path("*.tsv"),emit:variants
     path("versions.yml"),emit:versions
 script:
     def args1 = task.ext.args1?:""
 """
 mkdir -p TMP
 
-wgsim ${args1} ${fasta} TMP/${meta.id}.R1.fq.gz TMP/${meta.id}.R2.fq.gz 
+wgsim ${args1} ${fasta} TMP/${meta.id}.R1.fq.gz TMP/${meta.id}.R2.fq.gz > TMP/{meta.id}.variants.tsv
 
 mv TMP/*.gz ./
+mv TMP/*.tsv ./
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
