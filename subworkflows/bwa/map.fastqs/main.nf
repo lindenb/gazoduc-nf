@@ -56,19 +56,19 @@ workflow MAP_BWA {
 			fastqs = FASTP.out.fastqs
 			}
 		
-		
+		fastqs.view{"after fastp ${it}"}
 		
 		if(meta.with_seqkit_split==null || meta.with_seqkit_split==true) {
 			SEQKIT_SPLIT(meta,fastqs.map{meta,fqs->{
 				if(fqs.size()==1) return [meta,fqs[0],[]];
-				if(fqs.size()!=2) throw new IllegalArgumentException("Boum after FASTP"); 
+				if(fqs.size()!=2) throw new IllegalArgumentException("Boum after FASTP ${it}"); 
 				def L1 = fqs.sort();
 				return [meta,L1[0],L1[1]];
 				}})
 			versions = versions.mix(SEQKIT_SPLIT.out.versions)
 			fastqs = SEQKIT_SPLIT.out.fastqs
 			}
-		
+		fastqs.view{"after seqkit ${it}"}
 		
 		BWA_MEM(fasta,fai,BWADir,bed, 
 			fastqs.map{meta,fqs->{
