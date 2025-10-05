@@ -74,7 +74,7 @@ workflow MAP_BWA {
 					.groupTuple().view()
 					.map{id,metas,bam_files->[metas[0],bam_files.flatten.sort()]}
 				)
-			versions = versions.mix(MARK_DUPLICATES.versions)
+			versions = versions.mix(MARK_DUPLICATES.out.versions)
 			}
 
 		
