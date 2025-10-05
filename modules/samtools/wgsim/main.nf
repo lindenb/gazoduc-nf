@@ -39,10 +39,13 @@ script:
 """
 mkdir -p TMP
 
-wgsim ${args1} ${fasta} TMP/${meta.id}.R1.fq.gz TMP/${meta.id}.R2.fq.gz > TMP/{meta.id}.variants.tsv
+wgsim ${args1} ${fasta} TMP/${meta.id}.R1.fq TMP/${meta.id}.R2.fq > TMP/{meta.id}.variants.tsv
 
-mv TMP/*.gz ./
-mv TMP/*.tsv ./
+gzip  TMP/${meta.id}.R1.fq
+gzip  TMP/${meta.id}.R2.fq
+
+mv -v TMP/*.gz ./
+mv -v TMP/*.tsv ./
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
