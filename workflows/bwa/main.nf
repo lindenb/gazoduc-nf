@@ -130,7 +130,7 @@ workflow {
     ch2b = ch1.single.map{[
         cleanupHash(it),
         file(it.fastq_1),
-        file([])
+        []
         ]}
 
 	bed = Channel.of([[id:"nobed"],[]])
@@ -150,13 +150,30 @@ workflow {
 		BWADir = BWA_INDEX.out.bwa_index
 		}
 
+
+	vcf_for_bqsr= Channel.empty()
+
+	if(params.known_sites!=null) {
+		vcf_for_bqsr = Channel.of([hash_ref,[ file(params.known_sites), file(params.known_sites+".tbi")] ])
+		}
+	else
+		{
+		vcf_for_bqsr = Channel.of([[id:"novcf"],[] ])
+		}
+
+
 	MAP_BWA(
-		hash_ref,
+		hash_ref.plus(
+			with_bqsr: (params.known_sites==null || params.with_bqsr==false?false:true),
+			with_cram : params.with_cram,
+			with_markdup: params.with_markdup,
+			markdup_method : params.markdup_method
+			),
 		fasta,
 		fai,
 		dict,
 		BWADir,
-		[[id:"bqsr"],[]],
+		vcf_for_bqsr,
 		bed,
 		ch2a
 			.mix(ch2b)
@@ -184,7 +201,7 @@ workflow {
 		fai,
 		dict,
 		bed4qc,
-		MAP_BWA.out.bams
+		MAP_BWA.out.crams
 		)
 
 	MULTIQC(

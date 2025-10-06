@@ -46,7 +46,7 @@ workflow MAP_BWA {
 		versions = Channel.empty()
 		out_bams = Channel.empty()
 		
-		fastqs.view()
+
 		
 		
 		if(meta.with_fastp==null || meta.with_fastp==true) {
@@ -66,7 +66,7 @@ workflow MAP_BWA {
 				}
 			}
 		
-		fastqs.view{"after fastp ${it}"}
+
 	
 		if(meta.with_seqkit_split==null || meta.with_seqkit_split==true) {
 			SEQKIT_SPLIT(
@@ -77,22 +77,22 @@ workflow MAP_BWA {
 			fastqs = SEQKIT_SPLIT.out.fastqs
 			}
 		
-		fastqs.view{"after seqkit ${it}"}
+
 
 		BWA_MEM(fasta,fai,BWADir,bed,fastqs)
 		versions = versions.mix(BWA_MEM.out.versions)
 	
 		if(meta.with_markdup==null || meta.with_markdup==true) {
-			if(meta.markdup==null || meta.markdup.equals("markduplicates")) {
+			if(meta.markdup_method==null || meta.markdup_method.equals("markduplicates")) {
 				MARK_DUPLICATES(BWA_MEM.out.bam
 					.map{meta,bam,bai->[meta.id,meta,[bam,bai]]}
-					.groupTuple().view()
+					.groupTuple()
 					.map{id,metas,bam_files->[metas[0],bam_files.flatten().sort()]}
 					)
 				versions = versions.mix(MARK_DUPLICATES.out.versions)
 				out_bams = MARK_DUPLICATES.out.bam
 				}
-			else if(meta.markdup.equals("sambamba")) {
+			else if(meta.markdup_method.equals("sambamba")) {
 			
 			
 				ch1 = BWA_MEM.out.bam
@@ -121,7 +121,7 @@ workflow MAP_BWA {
 				}
 			else
 				{
-				throw new IllegalArgumentException("Boum MAP_BWA undefined meta.markdup: ${meta.markdup}"); 
+				throw new IllegalArgumentException("Boum MAP_BWA undefined meta.markdup_method: ${meta.markdup_method}");
 				}
 			}
 		
@@ -137,14 +137,15 @@ workflow MAP_BWA {
 			versions = versions.mix(BQSR.out.versions)
 			out_bams = BQSR.out.bams
 			}
-		
+		out_crams  =Channel.empty()
 		if(meta.with_cram==null || meta.with_cram==true) {
 			BAM_TO_CRAM(fasta,fai,out_bams.map{meta,bam,bai->[meta,bam]});
 			versions = versions.mix(BAM_TO_CRAM.out.versions)
-			out_bams = BAM_TO_CRAM.out.bam
+			out_crams = out_crams.mix(BAM_TO_CRAM.out.cram)
 			}
 		
 	emit:
 		versions
 		bams = out_bams
+		crams = out_crams
 	}

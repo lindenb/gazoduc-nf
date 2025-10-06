@@ -37,12 +37,15 @@ input:
 output:
 	tuple val(meta),path(bam),path(bai),path("*.table"),emit:table
 	path("versions.yml"),emit:versions
+when:
+    task.ext.when == null || task.ext.when
 script:
 	def prefix = task.ext.prefix?:"${meta.id}.recal"
 	def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP"
 """
 hostname 1>&2
 mkdir TMP
+find VCFS \\( -name "*.vcf.gz" -o -name "*.vcf"  \\) | grep vcf -q || echo "VCF MUST BE SPECIFIED" 1>&2
 
 gatk --java-options "${jvm}" BaseRecalibrator \\
 	-I "${bam}" \\

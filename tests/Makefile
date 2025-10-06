@@ -6,20 +6,21 @@ BUILD=GRCh38
 
 all: test_wgsim test_fastqc test_bwa
 
-test_bwa : results/FASTQ/samplesheet.csv base.config reference.config nproc.cfg
-	which wgsim || true
-	echo 'params.wgsim=20' > local.cfg
-	$(NEXTFLOW) -c base.config -c reference.config -c local.cfg -c nproc.cfg run ../workflows/bwa/main.nf --samplesheet $<
-	rm local.cfg
+test_bwa : results/FASTQ/samplesheet.csv base.config reference.config nproc.cfg REF/$(BUILD).dbsnp.vcf.gz
+	$(NEXTFLOW) -c base.config -c reference.config  -c nproc.cfg run ../workflows/bwa/main.nf --samplesheet $< --known_sites REF/$(BUILD).dbsnp.vcf.gz
 
 test_fastqc: results/FASTQ/samplesheet.csv nproc.cfg
+
 	$(NEXTFLOW) -c base.config -c nproc.cfg run ../workflows/fastqc/main.nf --samplesheet $<
 
+	
 test_wgsim: results/FASTQ/samplesheet.csv
 
 results/FASTQ/samplesheet.csv: base.config reference.config nproc.cfg
+	echo 'params.wgsim=20' > local.cfg
 	$(NEXTFLOW) -c base.config -c reference.config  -c nproc.cfg run ../workflows/wgsim/main.nf --n_samples 10 --samplesheet $<
-
+	rm local.cfg
+	
 reference.config: REF/$(BUILD).fa 
 	echo 'params {' > $@
 	echo '  fasta="REF/$(BUILD).fa"' >> $@
@@ -81,4 +82,12 @@ REF/$(BUILD).fa:
 		wget -qO - "https://hgdownload.soe.ucsc.edu/goldenpath/hg38/chromosomes/chr22.fa.gz" |\
 		gunzip -c  > $@
 
+REF/$(BUILD).dbsnp.vcf.gz:
+	mkdir -p $(dir $@) && \
+	wget -qO - "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/ALL.chr22.phase3_shapeit2_mvncall_integrated_v5b.20130502.genotypes.vcf.gz" |\
+		gunzip -c |\
+		grep -v '^##contig=' |\
+		head -n 10000 |\
+		awk '/^#CHROM/ {printf("##contig=<ID=chr22,length=50818468>\n");}{print;}'|\
+		sed 's/^22/chr22/' | bcftools view -O z -o $@ && bcftools index -f -t $@
 

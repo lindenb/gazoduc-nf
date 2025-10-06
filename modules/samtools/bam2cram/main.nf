@@ -35,7 +35,7 @@ input:
 	tuple val(meta2),path(fai)
 	tuple val(meta ),path(bam)
 output:
-	tuple val(meta),path("*.cram"), path("*.crai"),emit:bam
+	tuple val(meta),path("*.cram"), path("*.crai"),emit:cram
 	path("versions.yml"),emit:versions
 script:
 	def args1 = task.ext.args1?:""
