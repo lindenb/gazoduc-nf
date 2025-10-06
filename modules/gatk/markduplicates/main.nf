@@ -40,7 +40,7 @@ script:
 	def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP" 
 """
 hostname 1>&2
-mkdir TMP
+mkdir -p TMP
 
 gatk --java-options "${jvm}" MarkDuplicates \\
 	${args1} \\
@@ -48,9 +48,11 @@ gatk --java-options "${jvm}" MarkDuplicates \\
 	--VALIDATION_STRINGENCY LENIENT \\
 	-M "${prefix}.marked_dup_metrics.txt" \\
 	-O TMP/jeter.bam
+
+samtools index -@ ${task.cpus} TMP/jeter.bam
 	
 mv TMP/jeter.bam "${prefix}.bam" 
-mv TMP/jeter.*bai "${prefix}.bam.bai"
+mv TMP/jeter.bam.bai "${prefix}.bam.bai"
  
 cat << EOF > version.yml
 ${task.process}:
