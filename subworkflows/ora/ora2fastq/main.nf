@@ -65,10 +65,12 @@ workflow ORA_TO_FASTQ {
 		single_end = ch1.single_end.map {
 			return [it[0],it[1][0]];
 			}
+		fastqs = paired_end.mix( single_end.map{m,fq->[m,fq,[] ]} )
 	emit:
 		versions = version_ch
 		paired_end
 		single_end
+		fastqs
 	}
 
 

@@ -33,8 +33,10 @@ include {MULTIQC                    } from '../../modules/multiqc'
 include {COMPILE_VERSIONS           } from '../../modules/versions'
 include {MAP_BWA                    } from '../../subworkflows/bwa/map.fastqs'
 include {BWA_INDEX                  } from '../../modules/bwa/index'
+include {BWA_INDEX                  } from '../../modules/bwa/index'
 include {runOnComplete              } from '../../modules/utils/functions.nf'
-include {PREPARE_REFERENCE          } from '../../subworkflows/samtools/prepare.ref'
+include {ORA_TO_FASTQ               } from '../../subworkflows/ora/ora2fastq'
+include {BAM_TO_FASTQ               } from '../../modules/samtools/bam2fastq'
 
 if( params.help ) {
     dumpParams(params);
@@ -44,7 +46,9 @@ if( params.help ) {
 }
 
 
-
+boolean hasKey(def h, def id) {
+	return h!=null && h.id!=null && !(h.id.trim().isEmpty() || h.id.equals("."));
+	}
 
 
 workflow {
@@ -57,9 +61,39 @@ workflow {
 	
 	versions = Channel.empty()
 	multiqc_ch = Channel.empty()
-	ch1 = Channel.fromPath(params.samplesheet)
+	ch0 = Channel.fromPath(params.samplesheet)
         .splitCsv(header:true)
         .map{assertKeyExistsAndNotEmpty(it,"sample")}
+        .map{h->hasKey(h,"id")?h:h.plus(id:it.sample)}
+        .branch {
+        	fastq :  hasKey(it,"fastq_1") && !hasKey(it,"ora") && !hasKey(it,"bam")
+        	ora   : !hasKey(it,"fastq_1") &&  hasKey(it,"ora") && !hasKey(it,"bam")
+        	bam   : !hasKey(it,"fastq_1") && !hasKey(it,"ora") &&  hasKey(it,"bam") && hasKey(it,"fasta")
+        	other : true
+        	}
+     
+     ch0.other.map{throw new IllegalArhumentException("undefined input ${it}.");}
+     
+     
+     ORA_TO_FASTQ(
+     	hash_ref,
+     	ch0.ora.map{[it,file(it.ora)]}
+     	)
+     versions = versions.mix(ORA_TO_FASTQ.out.versions)
+     
+     BAM_TO_FASTQ(
+     	ch0.bam.map{[
+     		it,
+     		file(it.bam),
+     		(hasKey(it,"bai")?file(it.bai): file(it.bam+(it.bam.endsWith(".bam")?".bai":".crai"))),
+     		file(it.fasta),
+     		(hasKey(it,"fai")?file(it.fai): file(it.fasta+".fai")),
+     		(hasKey(it,"bed")?file(it.bed): [] )
+     		]}
+     	)
+     versions = versions.mix(BAM_TO_FASTQ.out.versions)
+     
+     ch1 = ch0.fastq
         .map{
             if(it.fastq_1==null && it.R1!=null) return it.plus(fastq_1:it.R1);
             return it;
@@ -112,7 +146,14 @@ workflow {
 		BWADir,
 		[[id:"bqsr"],[]],
 		bed,
-		ch2a.mix(ch2b)
+		ch2a
+			.mix(ch2b)
+			.mix(ORA_TO_FASTQ.out.fastqs)
+			.mix(BAM_TO_FASTQ.out.flatMap{[
+				[it[0],it[1],it[2]],
+				[it[0],it[3]],
+				[it[0],it[4]]
+				]})
 		)
 	versions = versions.mix(MAP_BWA.out.versions)
 

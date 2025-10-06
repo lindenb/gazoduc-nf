@@ -54,7 +54,7 @@ samtools index -@ ${task.cpus} TMP/jeter.bam
 mv TMP/jeter.bam "${prefix}.bam" 
 mv TMP/jeter.bam.bai "${prefix}.bam.bai"
  
-cat << EOF > version.yml
+cat << EOF > versions.yml
 ${task.process}:
     gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
 EOF
