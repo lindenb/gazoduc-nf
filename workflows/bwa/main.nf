@@ -185,6 +185,7 @@ workflow {
 				]})
 		)
 	versions = versions.mix(MAP_BWA.out.versions)
+	multiqc_ch = multiqc_ch.mix(MAP_BWA.out.multiqc)
 
 	if(params.capture==null) {
 		SCATTER_TO_BED(hash_ref,fasta,fai,dict)

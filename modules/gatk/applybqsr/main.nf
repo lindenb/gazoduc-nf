@@ -43,16 +43,16 @@ script:
 	def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP"
 """
 hostname 1>&2
-mkdir TMP
+mkdir -p TMP
 
-gatk --java-options gatk --java-options "${jvm}" ApplyBQSR \
+gatk --java-options "${jvm}" ApplyBQSR \
 	-R "${fasta}" \\
 	-I "${bam}" \\
 	-bqsr "${table}" \\
 	-O "TMP/${prefix}.bam"
 
-mv "TMP/${prefix}.bam" ./
-mv "TMP/*.bai" "${prefix}.bam.bai"
+mv -v "TMP/${prefix}.bam" ./
+mv -v "TMP/*.bai" "${prefix}.bam.bai"
 
 cat << EOF > version.yml
 ${task.process}:

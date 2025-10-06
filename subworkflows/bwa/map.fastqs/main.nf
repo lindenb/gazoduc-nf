@@ -45,7 +45,7 @@ workflow MAP_BWA {
 	main:
 		versions = Channel.empty()
 		out_bams = Channel.empty()
-		
+		multiqc = Channel.empty()
 
 		
 		
@@ -91,6 +91,7 @@ workflow MAP_BWA {
 					)
 				versions = versions.mix(MARK_DUPLICATES.out.versions)
 				out_bams = MARK_DUPLICATES.out.bam
+				multiqc = multiqc.mix(MARK_DUPLICATES.out.metrics)
 				}
 			else if(meta.markdup_method.equals("sambamba")) {
 			
@@ -148,4 +149,5 @@ workflow MAP_BWA {
 		versions
 		bams = out_bams
 		crams = out_crams
+		multiqc
 	}

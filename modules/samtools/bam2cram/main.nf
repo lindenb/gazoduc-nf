@@ -36,6 +36,7 @@ input:
 	tuple val(meta ),path(bam)
 output:
 	tuple val(meta),path("*.cram"), path("*.crai"),emit:cram
+	tuple val(meta),path("*.md5"),emit:md5
 	path("versions.yml"),emit:versions
 script:
 	def args1 = task.ext.args1?:""
@@ -56,6 +57,7 @@ samtools view \\
 
 mv TMP/jeter.cram "${prefix}.cram"
 mv TMP/jeter.cram.crai "${prefix}.cram.crai"
+md5sum "${prefix}.cram" > "${prefix}.md5"
 
 cat << EOF > versions.yml
 "${task.process}":
@@ -65,6 +67,7 @@ EOF
 
 stub:
 """
+touch ${meta.id}.md5
 touch ${meta.id}.cram
 touch ${meta.id}.cram.crai
 touch versions.yml
