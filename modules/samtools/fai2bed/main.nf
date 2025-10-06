@@ -36,7 +36,7 @@ script:
     def prefix = task.ext.prefix?:fai.baseName+".bed"
 """
 
-awk -F '\t' '${awk_expr}{printf("%s\t0\t%s\\n",\$1,\$2);}' "${fai}" > "${prefix.bed}"
+awk -F '\t' '${awk_expr}{printf("%s\t0\t%s\\n",\$1,\$2);}' "${fai}" > "${prefix}.bed"
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
