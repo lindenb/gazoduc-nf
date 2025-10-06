@@ -24,6 +24,7 @@ SOFTWARE.
 */
 include {SAMTOOLS_DICT   } from '../../../modules/samtools/dict'
 include {SAMTOOLS_FAIDX  } from '../../../modules/samtools/faidx'
+include {FAI2BED         } from '../../../modules/samtools/fai2bed'
 
 workflow PREPARE_REFERENCE {
 take:
@@ -38,9 +39,11 @@ main:
 	SAMTOOLS_DICT(fasta)
 	versions = versions.mix(SAMTOOLS_DICT.out.versions)
 	
-	
+	FAI2BED(SAMTOOLS_FAIDX.out.fai)
+	versions = versions.mix(FAI2BED.out.versions)
 emit:
 	versions
 	fai = SAMTOOLS_FAIDX.out.fai
 	dict = SAMTOOLS_DICT.out.dict
+	bed = FAI2BED.out.bed
 }

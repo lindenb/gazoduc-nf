@@ -59,4 +59,10 @@ cat << END_VERSIONS > versions.yml
 	gatk: "\$(gatk --version 2>&1  | paste -s -d ' ' | tr -c -d 'A-Za-z0-9._-' )"
 END_VERSIONS
 """
+
+
+stub:
+"""
+touch versions.yml "${meta1.id}.interval_list"
+"""
 }

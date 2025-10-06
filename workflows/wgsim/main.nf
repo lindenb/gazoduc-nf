@@ -41,8 +41,6 @@ if( params.help ) {
 
 
 
-
-
 workflow {
   def hash_ref= [
       id: file(params.fasta).baseName,
@@ -52,11 +50,25 @@ workflow {
 	def fasta = [ hash_ref, file(params.fasta)]
 	versions = Channel.empty()
 	multiqc_ch = Channel.empty()
-	
+	final java.util.Random rnd = new java.util.Random(0L);
 
 	
 	def n_samples= (params.n_samples as int)
 	ch1 = Channel.of(0..<n_samples).map{n->[id:"S"+(n+1)]}
+	
+	ch1 = ch1
+		.collate(3)
+		.map{
+			if(it.size()!=3) return it;
+			def c = it[0].plus(["sex":(rnd.nextBoolean()?"male":"female")  ,"father":it[1].id, "mother":it[2].id])
+			def f = it[1].plus(["sex":"male"  ,"father":"0",      "mother":"0"])
+			def m = it[2].plus(["sex":"female","father":"0",      "mother":"0"])
+			return [c,f,m];
+			}
+		.flatMap()
+		.map{h->h.plus("status":(rnd.nextBoolean()?"case":"control"))}
+		.map{h->h.plus("collection":"collection"+rnd.nextInt(3))}
+	
 	
 	WGSIM(fasta,ch1)
 	versions = versions.mix(WGSIM.out.versions)
@@ -65,6 +77,11 @@ workflow {
 			meta.id,
 			"${params.outdir}/FASTQ/${params.prefix}${R1.name}",
 			"${params.outdir}/FASTQ/${params.prefix}${R2.name}",
+			meta.sex,
+			meta.father,
+			meta.mother,
+			meta.status,
+			meta.collection
 			]}
 		.map{it.join(",")}
 		.collect()
@@ -92,7 +109,7 @@ output:
 script:
 """
 
-echo 'sample,fastq_1,fastq_2' > jeter.csv
+echo 'sample,fastq_1,fastq_2,sex,father,mother,status,collection' > jeter.csv
 cat << EOF >> jeter.csv
 ${L.join("\n")}
 EOF

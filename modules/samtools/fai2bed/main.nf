@@ -22,43 +22,31 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-process WGSIM {
+process FAI2BED {
 tag "${meta.id?:""}"
 label "process_single"
-afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-    tuple val(meta1),path(fasta)
-    val(meta)
+    tuple val(meta ),path(fai)
 output:
-    tuple val(meta),path("*.R1.fq.gz"),path("*.R2.fq.gz"),emit:fastq
-    tuple val(meta),path("*.tsv"),emit:variants
+    tuple val(meta),path("*.bed"),emit:bed
     path("versions.yml"),emit:versions
 script:
-    def args1 = task.ext.args1?:""
+    def awk_expr = task.ext.awk_expr?:""
+    def prefix = task.ext.prefix?:fai.baseName+".bed"
 """
-mkdir -p TMP
 
-wgsim ${args1} ${fasta} TMP/${meta.id}.R1.fq TMP/${meta.id}.R2.fq > TMP/{meta.id}.variants.tsv
-
-gzip  TMP/${meta.id}.R1.fq
-gzip  TMP/${meta.id}.R2.fq
-
-mv -v TMP/*.gz ./
-mv -v TMP/*.tsv ./
+awk -F '\t' '${awk_expr}{printf("%s\t0\t%s\\n",\$1,\$2);}' "${fai}" > "${prefix.bed}"
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	wgsim: "todo"
+	awk: todo
 END_VERSIONS
 """
 
-
 stub:
 """
-touch ${meta.id}.R1.fq.gz
-touch ${meta.id}.R2.fq.gz
-touch ${meta.id}.variants.tsv
+touch ${fai.baseName}.bed
 touch versions.yml
 """
 }
