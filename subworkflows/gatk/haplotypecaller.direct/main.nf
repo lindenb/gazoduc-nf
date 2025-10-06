@@ -33,6 +33,7 @@ workflow HAPLOTYPECALLER_DIRECT {
 		fai
 		dict
 		dbsnp
+		pedigree
 		beds
 		bams
 	main:
@@ -50,6 +51,7 @@ workflow HAPLOTYPECALLER_DIRECT {
 			fai,
 			dict,
 			dbsnp,
+			pedigree,
 			ch1
 			)
 		version_ch = version_ch.mix(HAPCALLER.out.versions)

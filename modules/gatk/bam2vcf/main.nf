@@ -32,7 +32,8 @@ input:
 	tuple val(meta2),path("_reference.fa.fai")
 	tuple val(meta3),path("_reference.dict")
 	tuple val(meta4),path(dbsnp),path(dbsnp_tbi)
-	tuple val(meta5),path("REFS/*")	
+	tuple val(meta5),path(pedigree)
+	tuple val(meta6),path("REFS/*")	
 	tuple val(meta),path("BAMS/*"),path(bed)
 output:
 	tuple  val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),path(bed),emit:vcf
@@ -114,9 +115,9 @@ do
 
 	if test "\${SAMPLE2}" != "\${SAMPLE}"
 	then
-		gatk --java-options "${jvm}"  RenameSampleInVcf \
-				-INPUT "TMP/jeter.\${i}.g.vcf.gz" \
-				-OUTPUT TMP/jeter2.g.vcf.gz \
+		gatk --java-options "${jvm}"  RenameSampleInVcf \\
+				-INPUT "TMP/jeter.\${i}.g.vcf.gz" \\
+				-OUTPUT TMP/jeter2.g.vcf.gz \\
 				-NEW_SAMPLE_NAME "\${SAMPLE2}"
 
 		bcftools index  --threads ${task.cpus}  --force --tbi TMP/jeter2.g.vcf.gz
@@ -184,6 +185,8 @@ gatk --java-options "${jvm}" \\
 	GenotypeGVCFs \\
 	-R "${fasta}" \\
 	-L "${bed}" \\
+        ${dbsnp?"--dbsnp \"${dbsnp}\"":""} \\
+        ${pedigree?"--pedigree \"${pedigree}\"":""} \\
 	${args4} \\
 	-O TMP/genotyped.vcf.gz \\
 	-V TMP/combined.all.g.vcf.gz \\

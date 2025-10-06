@@ -38,6 +38,7 @@ take:
     dict
     all_references// meta,fasta_files
     dbsnp // meta,vcf,tbi
+    pedigree // meda,ped
     beds // meta,bed
     bams // meta,bam,bai
 main:

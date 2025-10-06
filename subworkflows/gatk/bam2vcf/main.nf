@@ -40,6 +40,7 @@ workflow GATK_BAM2VCF {
     fai
     dict
     dbsnp
+    pedigree
     references //[meta, [ref files fa fai dict...]] all known reference
     beds // [meta,bed]
     bams // [meta,bam,bai]
@@ -50,6 +51,7 @@ main:
         fai,
         dict,
         dbsnp,
+        pedigree,
         references,
         bams.combine(beds)
             .map{meta1,bam,bai,meta2,bed->[

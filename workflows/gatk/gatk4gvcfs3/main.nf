@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -39,6 +39,7 @@ include {BCFTOOLS_STATS                      } from '../../../modules/bcftools/s
 include {HAPLOTYPECALLER                     } from '../../../subworkflows/gatk/haplotypecaller'
 include {HAPLOTYPECALLER_DIRECT              } from '../../../subworkflows/gatk/haplotypecaller.direct'
 include {SAMTOOLS_SAMPLES                    } from '../../../modules/samtools/samples'
+include {META_TO_PED                         } from '../../../subworkflows/pedigree/meta2ped'
 
 
 // Print help message, supply typical command line usage for the pipeline
@@ -161,7 +162,11 @@ workflow {
         .view()
         .map{
             throw new IllegalArgumentException("Check the samplesheet. There is a duplicate sample name");
-            }    
+            }
+    
+    /** build pedigree from meta data */
+    META_TO_PED(ref_hash, bams_ch.map{it[0]})
+    versions = versions.mix(META_TO_PED.out.versions)
 
     if(params.bed==null) {
         SCATTER_TO_BED(ref_hash,fasta,fai,dict)
@@ -195,6 +200,7 @@ workflow {
             dict,
             all_references,
             dbsnp,
+            META_TO_PED.out.pedigree_gatk,
             beds_ch,
             bams_ch
             )
@@ -207,6 +213,7 @@ workflow {
             fai,
             dict,
             dbsnp,
+            META_TO_PED.out.pedigree_gatk,
             all_references, //[meta, [ref files fa fai dict...]] all known reference
             beds_ch, // [meta,bed]
             bams_ch, // [meta,bam,bai]
@@ -221,6 +228,7 @@ workflow {
             fai,
             dict,
             dbsnp,
+            META_TO_PED.out.pedigree_gatk,
             beds_ch,
             bams_ch
             )

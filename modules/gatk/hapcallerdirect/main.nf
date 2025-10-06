@@ -33,6 +33,7 @@ input:
     tuple val(meta2),path(fai)
     tuple val(meta3),path(dict)
     tuple val(meta4),path(dbsnp),path(dbsnptbi)
+    tuple val(meta5),path(pedigree)
     tuple val(meta ),path("BAMS/*"),path(optional_bed)
 output:
     tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),path(optional_bed),emit:vcf
@@ -61,6 +62,7 @@ test ! -s TMP/bad.txt
 gatk --java-options "${jvm}" HaplotypeCaller \\
     ${optional_bed?"-L TMP/${optional_bed.name}":""} \\
     ${dbsnp?"--dbsnp \"${dbsnp}\"":""} \\
+    ${pedigree?"--pedigree \"${pedigree}\"":""} \\
     -R "\${REF}" \\
     -I TMP/bams.list \\
     ${args1} ${args2}\\
