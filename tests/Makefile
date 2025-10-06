@@ -29,6 +29,7 @@ reference.config: REF/$(BUILD).fa
 
 nproc.cfg:
 	nproc --all | awk '{N=int($$0);printf("process {\nmaxForks=%d\n}\n",(N<3?1:N-3));}' > $@
+	cat $@
 
 
 reference: REF/$(BUILD).fa REF/$(BUILD).fa.fai REF/$(BUILD).dict
