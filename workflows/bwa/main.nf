@@ -67,7 +67,7 @@ workflow {
 	ch0 = Channel.fromPath(params.samplesheet)
         .splitCsv(header:true)
         .map{assertKeyExistsAndNotEmpty(it,"sample")}
-        .map{h->hasKey(h,"id")?h:h.plus(id:it.sample)}
+        .map{h->hasKey(h,"id")?h:h.plus(id:h.sample)}
         .branch {
         	fastq :  hasKey(it,"fastq_1") && !hasKey(it,"ora") && !hasKey(it,"bam")
         	ora   : !hasKey(it,"fastq_1") &&  hasKey(it,"ora") && !hasKey(it,"bam")
