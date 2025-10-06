@@ -78,7 +78,7 @@ workflow {
      
      
      ORA_TO_FASTQ(
-     	hash_ref,
+     	Channel.of(hash_ref),
      	ch0.ora.map{[cleanupHash(it),file(it.ora)]}
      	)
      versions = versions.mix(ORA_TO_FASTQ.out.versions)
