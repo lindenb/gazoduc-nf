@@ -60,4 +60,11 @@ ${task.process}:
 EOF
 """
 
+stub:
+"""
+touch "${meta.id}.markdup.bam"
+touch "${meta.id}.markdup.bam.bai"
+touch "${meta.id}.marked_dup_metrics.txt"
+touch versions.yml
+"""
 }

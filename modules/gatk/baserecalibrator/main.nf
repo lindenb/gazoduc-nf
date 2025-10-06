@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -50,9 +50,15 @@ gatk --java-options "${jvm}" BaseRecalibrator \\
 	-O "${prefix}.table" \\
 	-R "${fasta}"
 
-cat << EOF > version.yml
+cat << EOF > versions.yml
 ${task.process}:
     gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
 EOF
+"""
+
+stub:
+"""
+touch "${meta.prefix}.table"
+touch versions.yml
 """
 }

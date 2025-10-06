@@ -44,4 +44,9 @@ done |\\
     cut -f2,3 |\\
     awk 'BEGIN{printf("process\tversions\\n");} {print}' > versions_mqc.tsv
 """
+
+stub:
+"""
+touch versions_mqc.tsv
+"""
 }

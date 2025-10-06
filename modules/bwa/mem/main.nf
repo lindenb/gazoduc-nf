@@ -95,8 +95,17 @@ mv "TMP/jeter.bam" "${prefix}.sorted.bam"
 mv "TMP/jeter.bam.bai" "${prefix}.sorted.bam.bai"
 
 ##################
-cat << EOF > versions.yml
-EOF
+cat << END_VERSIONS > versions.yml
+${task.process}:
+    bwa : todo
+END_VERSIONS
+"""
+
+stub:
+"""
+touch "${meta.id}.sorted.bam"
+touch "${meta.id}.sorted.bam.bai"
+touch versions.yml
 """
 }
 

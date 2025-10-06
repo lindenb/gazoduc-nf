@@ -37,4 +37,10 @@ ${task.process}:
     multiqc: \$( multiqc --version | sed -e "s/multiqc, version //g" )
 EOF
 """
+
+stub:
+"""
+touch multiqc.zip
+touch versions.yml
+"""
 }

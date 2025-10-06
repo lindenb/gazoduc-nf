@@ -21,4 +21,16 @@ ${task.process}:
     bwa : todo
 END_VERSIONS
 """
+
+stub:
+"""
+mkdir -p TMP
+touch TMP/${fasta.baseName}.amb
+touch TMP/${fasta.baseName}.ann
+touch TMP/${fasta.baseName}.bwt
+touch TMP/${fasta.baseName}.pac
+touch TMP/${fasta.baseName}.sa
+mv TMP "${fasta.baseName}BWAIndex"
+touch versions.yml
+"""
 }

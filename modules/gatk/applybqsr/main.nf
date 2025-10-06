@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -25,7 +25,7 @@ SOFTWARE.
 
 process APPLY_BQSR {
 label "process_short"
-tag "${row.sample} ${row.bam}"
+tag "${meta.id} ${bam.name}"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript 'rm -rf TMP'
 input:
@@ -34,7 +34,7 @@ input:
 	tuple val(meta3),path(dict)
 	tuple val(meta),path(bam),path(bai),path(table)
 output:
-    tuple val(row),path("*.bam"),path("*.bai"),emit:bam
+    tuple val(meta),path("*.bam"),path("*.bai"),emit:bam
     path("versions.yml"),emit:versions
 script:
 	def prefix = task.ext.prefix?:bam.baseName+".bqsr"
@@ -56,5 +56,14 @@ cat << EOF > version.yml
 ${task.process}:
     gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
 EOF
+"""
+
+
+
+stub:
+"""
+touch "${meta.prefix}.bqsr.bam"
+touch "${meta.prefix}.bqsr.bam.bai"
+touch versions.yml
 """
 }

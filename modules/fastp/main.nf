@@ -75,4 +75,18 @@ cat <<-END_VERSIONS > versions.yml
     fastp: \$(fastp --version 2>&1 | sed -e "s/fastp //g")
 END_VERSIONS
 """
+
+
+stub:
+
+"""
+touch ${fastqs[0].baseName}.fastp.fq.gz
+if ${fastqs.size()>1}
+then
+	touch ${fastqs[1].baseName}.fastp.fq.gz
+fi
+touch versions.yml
+touch "${meta.id}.json"
+touch "${meta.id}.html"
+"""
 }

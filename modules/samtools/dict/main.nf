@@ -43,4 +43,10 @@ cat << END_VERSIONS > versions.yml
 	samtools: "\$(samtools version | awk '(NR==1) {print \$NF;}')"
 END_VERSIONS
 """
+
+stub:
+"""
+touch "${fasta.baseName}.dict"
+touch versions.yml
+"""
 }
