@@ -47,7 +47,7 @@ if( params.help ) {
 
 
 boolean hasKey(def h, def id) {
-	return h!=null && h.id!=null && !(h.id.trim().isEmpty() || h.id.equals("."));
+	return h!=null && h[id]!=null && !(h[id].trim().isEmpty() || h[id].equals("."));
 	}
 
 Map cleanupHash(Map h) {
