@@ -18,3 +18,4 @@ dependencies:
   - ucsc-bedtobigbed
   - ucsc-liftover
   - ucsc-bigwigtowig
+  - r-base
