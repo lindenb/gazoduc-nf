@@ -62,5 +62,12 @@ cat << EOF > versions.yml
     samtools:\$(samtools  --version | head -n 1| cut -d ' ' -f2)
 EOF
 """
+
+stub:
+"""
+touch ${meta.id}.cram
+touch ${meta.id}.cram.crai
+touch versions.yml
+"""
 }
 

@@ -30,6 +30,7 @@ include {MARK_DUPLICATES                 } from '../../../modules/gatk/markdupli
 include {SAMTOOLS_MERGE                  } from '../../../modules/samtools/merge'
 include {BQSR                            } from '../../gatk/bqsr'
 include {SAMBAMBA_MARKDUP                } from '../../../modules/sambamba/markdup'
+include {BAM_TO_CRAM                     } from '../../../modules/samtools/bam2cram'
 
 workflow MAP_BWA {
 	take:
@@ -135,6 +136,12 @@ workflow MAP_BWA {
 				)
 			versions = versions.mix(BQSR.out.versions)
 			out_bams = BQSR.out.bams
+			}
+		
+		if(meta.with_cram==null || meta.with_cram==true) {
+			BAM_TO_CRAM(fasta,fai,out_bams);
+			versions = versions.mix(BAM_TO_CRAM.out.versions)
+			out_bams = BAM_TO_CRAM.out.bams
 			}
 		
 	emit:
