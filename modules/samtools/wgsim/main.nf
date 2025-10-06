@@ -52,4 +52,12 @@ cat << END_VERSIONS > versions.yml
 	wgsim: "todo"
 END_VERSIONS
 """
+
+
+stub:
+"""
+touch ${meta.id}.R1.fq.gz
+touch ${meta.id}.R2.fq.gz
+touch versions.yml
+"""
 }
