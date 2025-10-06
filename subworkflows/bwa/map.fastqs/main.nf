@@ -139,12 +139,12 @@ workflow MAP_BWA {
 			}
 		
 		if(meta.with_cram==null || meta.with_cram==true) {
-			BAM_TO_CRAM(fasta,fai,out_bams);
+			BAM_TO_CRAM(fasta,fai,out_bams.map{meta,bam,bai->[meta,bam]});
 			versions = versions.mix(BAM_TO_CRAM.out.versions)
-			out_bams = BAM_TO_CRAM.out.bams
+			out_bams = BAM_TO_CRAM.out.bam
 			}
 		
 	emit:
 		versions
-		bam = out_bams
+		bams = out_bams
 	}

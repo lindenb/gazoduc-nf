@@ -29,14 +29,15 @@ include {dumpParams                 } from '../../modules/utils/functions.nf'
 include {testKeyExistsAndNotEmpty   } from '../../modules/utils/functions.nf'
 include {assertKeyExistsAndNotEmpty } from '../../modules/utils/functions.nf'
 include {FASTQC                     } from '../../modules/fastqc'
-include {MULTIQC                    } from '../../modules/multiqc'
-include {COMPILE_VERSIONS           } from '../../modules/versions'
 include {MAP_BWA                    } from '../../subworkflows/bwa/map.fastqs'
 include {BWA_INDEX                  } from '../../modules/bwa/index'
 include {runOnComplete              } from '../../modules/utils/functions.nf'
 include {PREPARE_REFERENCE          } from '../../subworkflows/samtools/prepare.ref'
 include {ORA_TO_FASTQ               } from '../../subworkflows/ora/ora2fastq'
 include {BAM_TO_FASTQ               } from '../../modules/samtools/bam2fastq'
+include {META_TO_PED                } from '../../subworkflows/pedigree/meta2ped'
+include {MULTIQC                    } from '../../subworkflows/multiqc'
+include {BAM_QC                     } from '../../subworkflows/bamqc'
 
 if( params.help ) {
     dumpParams(params);
@@ -68,7 +69,11 @@ workflow {
         .splitCsv(header:true)
         .map{assertKeyExistsAndNotEmpty(it,"sample")}
         .map{h->hasKey(h,"id")?h:h.plus(id:h.sample)}
-        .branch {
+        
+     META_TO_PED(hash_ref,ch0)
+     versions = versions.mix(META_TO_PED.out.versions)
+        
+     ch0 = ch0.branch {
         	fastq :  hasKey(it,"fastq_1") && !hasKey(it,"ora") && !hasKey(it,"bam")
         	ora   : !hasKey(it,"fastq_1") &&  hasKey(it,"ora") && !hasKey(it,"bam")
         	bam   : !hasKey(it,"fastq_1") && !hasKey(it,"ora") &&  hasKey(it,"bam") && hasKey(it,"fasta")
@@ -156,16 +161,27 @@ workflow {
 			.mix(ORA_TO_FASTQ.out.fastqs)
 			.mix(BAM_TO_FASTQ.out.fastq.flatMap{[
 				[it[0],it[1],it[2]],
-				[it[0],it[3]],
-				[it[0],it[4]]
+				[it[0],it[3],[]],
+				[it[0],it[4],[]]
 				]})
 		)
 	versions = versions.mix(MAP_BWA.out.versions)
 
-	COMPILE_VERSIONS(versions.collect().map{it.sort()})
-    multiqc_ch = multiqc_ch.mix(COMPILE_VERSIONS.out.multiqc.map{[[id:"versions"],it]})
-    // in case of problem multiqc_ch.filter{!(it instanceof List) || it.size()!=2}.view{"### FIX ME ${it} MULTIQC"}
-    MULTIQC(multiqc_ch.map{it[1]}.collect().map{[[id:"mapbwa"],it]})
+	BAM_QC(
+		hash_ref,
+		fasta,
+		fai,
+		dict,
+		bed,
+		MAP_BWA.out.bams
+		)
+
+	MULTIQC(
+		hash_ref.plus("id":"bwa"),
+		META_TO_PED.out.sample2collection,
+		versions,
+		multiqc_ch
+		)
     }
 
 

@@ -249,6 +249,13 @@ mv TMP/${prefix}.png ./
 
 touch versions.yml
 """
+
+stub:
+"""
+touch versions.yml
+touch ${meta.id}.tsv
+touch ${meta.id}.png
+"""
 }
 
 
@@ -300,6 +307,13 @@ fi
 
 touch versions.yml
 """
+
+stub:
+"""
+touch versions.yml
+touch ${meta.id}.${meta.treshold}.bed.gz
+touch ${meta.id}.${meta.treshold}.bed.gz.tbi
+"""
 }
 
 
@@ -328,5 +342,13 @@ mv TMP/jeter.bed.gz.tbi "${prefix}.bed.gz.tbi"
 
 
 touch versions.yml
+"""
+
+
+stub:
+"""
+touch versions.yml
+touch ${meta.id}.${meta.treshold}.bed.gz
+touch ${meta.id}.${meta.treshold}.bed.gz.tbi
 """
 }

@@ -38,7 +38,7 @@ output:
 	tuple val(meta),path(bam),path(bai),path("*.table"),emit:table
 	path("versions.yml"),emit:versions
 script:
-	def prefix = task.ext.prefix?:meta.id+(optional_bed?"."+optional_bed.baseName:"")+".recal"
+	def prefix = task.ext.prefix?:"${meta.id}.recal"
 	def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP"
 """
 hostname 1>&2
@@ -58,7 +58,7 @@ EOF
 
 stub:
 """
-touch "${meta.prefix}.table"
+touch "${meta.prefix}.recal.table"
 touch versions.yml
 """
 }

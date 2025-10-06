@@ -27,6 +27,8 @@ tag "${meta.id?:interval_list.name}"
 label "process_single"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+when:
+    task.ext.when == null || task.ext.when
 input:
 	tuple val(meta1),path(dict)
 	tuple val(meta),path(bed)
@@ -35,9 +37,10 @@ output:
     path("versions.yml"),emit:versions
 script:
 	def prefix = task.ext.prefix?:bed.baseName
+	def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
 """
 mkdir -p TMP
-gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" BedToIntervalList \\
+gatk --java-options "${jvm}" BedToIntervalList \\
     --INPUT "${bed}" \\
     --SD "${dict}" \\
     --O ${prefix}.interval_list
@@ -47,5 +50,10 @@ cat << END_VERSIONS > versions.yml
 "${task.process}":
 	gatk: "\$(gatk --version 2>&1  | paste -s -d ' ' | tr -c -d 'A-Za-z0-9._-' )"
 END_VERSIONS
+"""
+
+stub:
+"""
+touch versions.yml ${meta.id}.interval_list
 """
 }

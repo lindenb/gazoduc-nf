@@ -39,7 +39,7 @@ output:
 			path("*.paired.R2.fq.gz"),
 			path("*.singleton.fq.gz"),
 			path("*.other.fq.gz"),emit:fastq
-	path("version.yml"),emit:versions
+	path("versions.yml"),emit:versions
 script:
 	def has_bed = optional_bed?true:false
 	def fetch_pairs = task.attempt==1?" --fetch-pairs ":""
@@ -92,6 +92,14 @@ cat << END_VERSIONS > versions.yml
 "${task.process}":
 	samtools: "\$(samtools version | awk '(NR==1) {print \$NF;}')"
 END_VERSIONS
+"""
+stub:
+"""
+touch ${meta.id}.paired.R1.fq.gz
+touch ${meta.id}.paired.R2.fq.gz
+touch ${meta.id}.singleton.fq.gz
+touch ${meta.id}.other.fq.gz
+touch versions.yml
 """
 }
 

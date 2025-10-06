@@ -66,4 +66,13 @@ cat <<-END_VERSIONS > versions.yml
 END_VERSIONS
 """
 
+stub:
+"""
+touch versions.yml
+touch ${meta.id}.global.dist.txt
+echo "chrom\tmean" > ${meta.id}.summary.txt
+touch ${meta.id}.region.dist.txt
+touch ${meta.id}.region.bed.bed.gz
+touch ${meta.id}.region.bed.bed.gz.csi
+"""
 }

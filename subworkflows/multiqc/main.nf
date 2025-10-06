@@ -22,46 +22,20 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-process INTERVAL_LIST_TO_BED {
-tag "${meta.id?:interval_list.name}"
-label "process_single"
-afterScript "rm -rf TMP"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-when:
-    task.ext.when == null || task.ext.when
-input:
-	tuple val(meta),path(interval_list)
-output:
-    tuple val(meta),path("*.bed"),emit:bed
-    path("versions.yml"),emit:versions
-script:
-	def prefix = task.ext.prefix?:interval_list.baseName
-    def expr = task.ext.awk_filter?:""
-    def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
-"""
-mkdir -p TMP
-gatk --java-options "${jvm}" IntervalListToBed \\
-    --INPUT "${interval_list}" \\
-    --OUTPUT "TMP/jeter.bed" \\
-    --SORT true
 
-if ${!expr.trim().isEmpty()}
-then
-    awk -F '\t' '(${expr})' "TMP/jeter.bed" > "TMP/jeter2.bed"
-    mv "TMP/jeter2.bed" "TMP/jeter.bed"
-fi
+include {MULTIQC  as MQC            } from '../../modules/multiqc'
+include {COMPILE_VERSIONS           } from '../../modules/versions'
 
-mv TMP/jeter.bed ./${prefix}.bed
+workflow MULTIQC {
+take:
+	meta
+	sample2collection
+	versions 
+	multiqc_ch
+main:
+	COMPILE_VERSIONS(versions.collect().map{it.sort()})
+    multiqc_ch = multiqc_ch.mix(COMPILE_VERSIONS.out.multiqc.map{[[id:"versions"],it]})
+    // in case of problem multiqc_ch.filter{!(it instanceof List) || it.size()!=2}.view{"### FIX ME ${it} MULTIQC"}
+    MQC(multiqc_ch.map{it[1]}.collect().map{[meta,it]})
 
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-	gatk: "\$(gatk --version 2>&1  | paste -s -d ' ' | tr -c -d 'A-Za-z0-9._-' )"
-END_VERSIONS
-"""
-
-stub:
-"""
-touch ${meta.id}.bed
-touch versions.yml
-"""
 }

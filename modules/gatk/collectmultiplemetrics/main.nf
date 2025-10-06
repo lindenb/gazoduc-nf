@@ -70,4 +70,15 @@ cat << END_VERSIONS > versions.yml
 	gatk: "\$(gatk --version 2>&1  | paste -s -d ' ' | tr -c -d 'A-Za-z0-9._-' )"
 END_VERSIONS
 """
+
+
+stub:
+"""
+touch versions.yml
+touch ${meta.id}.alignment_summary_metrics
+touch ${meta.id}.base_distribution_by_cycle_metrics
+touch ${meta.id}.insert_size_metrics
+touch ${meta.id}.quality_by_cycle_metrics
+touch ${meta.id}.quality_distribution_metrics
+"""
 }

@@ -42,6 +42,7 @@ main:
 	tmp = Channel.empty().ifEmpty([[id:"noped"],[]]).first()
 emit:
 	pedigree_gatk = tmp
+	sample2collection = Channel.empty()
 	versions = MAKE_PED.out.versions
 }
 
@@ -60,6 +61,13 @@ EOF
 
 python ${moduleDir}/ped.py raw.ped > /dev/null
 
+touch versions.yml
+"""
+
+stub:
+
+
+"""
 touch versions.yml
 """
 }

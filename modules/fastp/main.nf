@@ -81,9 +81,9 @@ stub:
 
 """
 touch ${fastqs[0].baseName}.fastp.fq.gz
-if ${fastqs.size()>1}
+if ${fastqs.size()>1 && fastqs[1]!=null}
 then
-	touch ${fastqs[1].baseName}.fastp.fq.gz
+	touch ${fastqs.size()>1 && fastqs[1]!=null ? fastqs[1].baseName:""}.fastp.fq.gz
 fi
 touch versions.yml
 touch "${meta.id}.json"
