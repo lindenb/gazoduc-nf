@@ -56,7 +56,7 @@ samtools index --threads ${task.cpus} TMP/${prefix}.bam
 mv -v "TMP/${prefix}.bam" ./
 mv -v "TMP/${prefix}.bam.bai" "${prefix}.bam.bai"
 
-cat << EOF > version.yml
+cat << EOF > versions.yml
 ${task.process}:
     gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
 EOF
