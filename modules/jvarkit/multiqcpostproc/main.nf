@@ -23,46 +23,37 @@ SOFTWARE.
 
 */
 
-process JVARKIT_VCF_POLYX {
+process JVARKIT_MULTIQCPOSTPROC {
 	label "process_single"
 	conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 	afterScript "rm -rf TMP"
 	tag "${meta.id?:vcf.name}"
 	input:
-		tuple val(meta1),path(fasta)
-		tuple val(meta2),path(fai)
-		tuple val(meta3),path(dict)
-		tuple val(meta ),path(vcf),path(idx)
+		tuple val(meta1),path(sample2pop)
+		tuple val(meta ),path(multiqc_data_dir)
 	output:
-		tuple val(meta ),path("*.bcf"),path("*.bcf.csi"),emit:vcf
+		tuple val(meta ),path("*.json",arity:"0..*"),emit:json
 		path("versions.yml"),emit:versions
 	script:
-		def size  = task.ext.size?:10
-		def args1 = task.ext.args1?:""
-		def args2 = task.ext.args2?:""
-		def prefix  = task.ext.prefix?:vcf.baseName+".polyx"
-		def tag = task.ext.tag?:"POLYX"
-	"""
-	hostname 1>&2
-	set -o pipefail
+		def jvm= task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
+"""
+mkdir -P TMP/OUT
+jvarkit ${jvm} \\
+	multiqcpostproc \\
+	--sample2collection "${sample2pop}" \\
+	-o TMP/OUT \\
+	${multiqc_data_dir}/
 
-	mkdir -p TMP
-
-	bcftools view  ${args1} "${vcf}" |\\
-	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfpolyx \\
-			-n '${size}' \\
-			--reference '${fasta}' \\
-			--tag "${tag}"   |\\
-	bcftools view ${args2} --write-index -O b -o TMP/${prefix}.bcf
-
-	mv TMP/${prefix}.bcf ./
-	mv TMP/${prefix}.bcf.csi ./
+if ls TMP/OUT/*.json
+then
+	mv TMP/OUT/*.json ./
+fi
 
 cat << EOF > versions.yml
 ${task.process}:
 	jvarkit: "\$(jvarkit --version)"
 EOF
-	"""
+"""
 	
 stub:
 """

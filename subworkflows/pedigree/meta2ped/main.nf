@@ -47,6 +47,8 @@ emit:
 }
 
 process MAKE_PED {
+label "process_single"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	val(meta)
 	val(L)
@@ -59,7 +61,7 @@ cat << EOF | sort | uniq > raw.ped
 ${L.join("\n")}
 EOF
 
-python ${moduleDir}/ped.py raw.ped > /dev/null
+python3 ${moduleDir}/ped.py raw.ped > /dev/null
 
 touch versions.yml
 """
