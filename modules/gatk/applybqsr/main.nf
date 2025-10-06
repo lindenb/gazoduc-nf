@@ -51,8 +51,10 @@ gatk --java-options "${jvm}" ApplyBQSR \
 	-bqsr "${table}" \\
 	-O "TMP/${prefix}.bam"
 
+samtools index --threads ${task.cpus} TMP/${prefix}.bam
+
 mv -v "TMP/${prefix}.bam" ./
-mv -v "TMP/*.bai" "${prefix}.bam.bai"
+mv -v "TMP/${prefix}.bam.bai" "${prefix}.bam.bai"
 
 cat << EOF > version.yml
 ${task.process}:

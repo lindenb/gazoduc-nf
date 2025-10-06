@@ -16,6 +16,7 @@ workflow BQSR {
         beds_ch = CONTIGS_IN_BAM(fasta,fai,dict,bam)
 		versions = versions.mix(beds_ch.versions)
 
+
 		GATK4_BASE_RECALIBRATOR(
             fasta,
             fai,

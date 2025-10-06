@@ -133,7 +133,7 @@ workflow {
         []
         ]}
 
-	bed = Channel.of([[id:"nobed"],[]])
+	bed = Channel.of([[id:"nobed"],[]]).first()
 	
 	PREPARE_REFERENCE(hash_ref,fasta)
 	versions = versions.mix(PREPARE_REFERENCE.out.versions)
@@ -167,13 +167,14 @@ workflow {
 			with_bqsr: (params.known_sites==null || params.with_bqsr==false?false:true),
 			with_cram : params.with_cram,
 			with_markdup: params.with_markdup,
-			markdup_method : params.markdup_method
+			markdup_method : params.markdup_method,
+			with_seqkit_split : params.with_seqkit_split
 			),
 		fasta,
 		fai,
 		dict,
 		BWADir,
-		vcf_for_bqsr,
+		vcf_for_bqsr.first(),
 		bed,
 		ch2a
 			.mix(ch2b)
@@ -195,14 +196,32 @@ workflow {
 		bed4qc = Channel.of([hash_ref,file(params.capture)])
 	  }
 
+	
+	MAKE_SAMPLESHEET(MAP_BWA.out.crams.ifEmpty(MAP_BWA.out.bams)
+		.map{meta,bam,bai->[
+			meta.id,
+			"${params.outdir}/BAMS/${meta.id}/${params.prefix?:""}${bam.name}",
+			"${params.outdir}/BAMS/${meta.id}/${params.prefix?:""}${bai.name}",
+			meta.sex?:"",
+			meta.father?:"",
+			meta.mother?:"",
+			meta.status?:"",
+			meta.collection?:"",
+			"${params.fasta}"
+			]}
+		.map{it.join(",")}
+		.collect()
+		)
+	versions = versions.mix(MAKE_SAMPLESHEET.out.versions)
 
+	
 	BAM_QC(
 		hash_ref,
 		fasta,
 		fai,
 		dict,
 		bed4qc,
-		MAP_BWA.out.crams
+		MAP_BWA.out.crams.ifEmpty(MAP_BWA.out.bams)
 		)
 
 	MULTIQC(
@@ -216,3 +235,31 @@ workflow {
 
 runOnComplete(workflow);
 
+
+
+
+process MAKE_SAMPLESHEET {
+tag "N=${L.size()}"
+input:
+	val(L)
+output:
+	path("samplesheet.csv"),emit:samplesheet
+	path("versions.yml"),emit:versions
+script:
+"""
+
+echo 'sample,bam,bai,sex,father,mother,status,collection,fasta' > jeter.csv
+cat << EOF >> jeter.csv
+${L.join("\n")}
+EOF
+
+mv jeter.csv samplesheet.csv
+
+touch versions.yml
+"""
+
+stub:
+"""
+touch versions.yml samplesheet.csv
+"""
+}

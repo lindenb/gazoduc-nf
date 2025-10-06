@@ -78,9 +78,11 @@ workflow MAP_BWA {
 			}
 		
 
-
+		
 		BWA_MEM(fasta,fai,BWADir,bed,fastqs)
 		versions = versions.mix(BWA_MEM.out.versions)
+		
+		
 	
 		if(meta.with_markdup==null || meta.with_markdup==true) {
 			if(meta.markdup_method==null || meta.markdup_method.equals("markduplicates")) {

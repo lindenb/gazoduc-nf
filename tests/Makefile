@@ -6,8 +6,11 @@ BUILD=GRCh38
 
 all: test_wgsim test_fastqc test_bwa
 
-test_bwa : results/FASTQ/samplesheet.csv base.config reference.config nproc.cfg REF/$(BUILD).dbsnp.vcf.gz
-	$(NEXTFLOW) -c base.config -c reference.config  -c nproc.cfg run ../workflows/bwa/main.nf --samplesheet $< --known_sites REF/$(BUILD).dbsnp.vcf.gz
+test_bwa : DATA/FASTQ/samplesheet2.csv
+
+DATA/FASTQ/samplesheet2.csv : results/FASTQ/samplesheet.csv base.config reference.config nproc.cfg REF/$(BUILD).dbsnp.vcf.gz
+	$(NEXTFLOW) -c base.config -c reference.config  -c nproc.cfg run ../workflows/bwa/main.nf --outdir BWA --samplesheet $< --known_sites REF/$(BUILD).dbsnp.vcf.gz
+	
 
 test_fastqc: results/FASTQ/samplesheet.csv nproc.cfg
 
