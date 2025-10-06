@@ -6,19 +6,19 @@ BUILD=GRCh38
 
 all: test_wgsim test_fastqc test_bwa
 
-test_bwa : results/FASTQ/samplesheet.csv base.config reference.config
+test_bwa : results/FASTQ/samplesheet.csv base.config reference.config nproc.cfg
 	which wgsim || true
 	echo 'params.wgsim=20' > local.cfg
-	$(NEXTFLOW) -c base.config -c reference.config -c local.cfg run ../workflows/bwa/main.nf --samplesheet $<
+	$(NEXTFLOW) -c base.config -c reference.config -c local.cfg -c nproc.cfg run ../workflows/bwa/main.nf --samplesheet $<
 	rm local.cfg
 
-test_fastqc: results/FASTQ/samplesheet.csv
-	$(NEXTFLOW) -c base.config run ../workflows/fastqc/main.nf --samplesheet $<
+test_fastqc: results/FASTQ/samplesheet.csv nproc.cfg
+	$(NEXTFLOW) -c base.config -c nproc.cfg run ../workflows/fastqc/main.nf --samplesheet $<
 
 test_wgsim: results/FASTQ/samplesheet.csv
 
-results/FASTQ/samplesheet.csv: base.config reference.config
-	$(NEXTFLOW) -c base.config -c reference.config  run ../workflows/wgsim/main.nf --n_samples 10 --samplesheet $<
+results/FASTQ/samplesheet.csv: base.config reference.config nproc.cfg
+	$(NEXTFLOW) -c base.config -c reference.config  -c nproc.cfg run ../workflows/wgsim/main.nf --n_samples 10 --samplesheet $<
 
 reference.config: REF/$(BUILD).fa 
 	echo 'params {' > $@
@@ -26,6 +26,9 @@ reference.config: REF/$(BUILD).fa
 	echo '  ucsc_name="hg38"' >> $@
 	echo '  bwa_index_directory=null' >> $@
 	echo '}'  >> $@
+
+nproc.cfg:
+	nproc --all | awk '{N=int($$0);printf("process {\nmaxForks=%d\n}\n",(N<3?1:N-3));}' > $@
 
 
 reference: REF/$(BUILD).fa REF/$(BUILD).fa.fai REF/$(BUILD).dict
@@ -74,7 +77,7 @@ REF/$(BUILD).gtf.gz:
 
 REF/$(BUILD).fa:
 	mkdir -p $(dir $@) && \
-		wget -O - "https://hgdownload.soe.ucsc.edu/goldenpath/hg38/chromosomes/chr22.fa.gz" |\
+		wget -qO - "https://hgdownload.soe.ucsc.edu/goldenpath/hg38/chromosomes/chr22.fa.gz" |\
 		gunzip -c  > $@
 
 

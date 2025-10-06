@@ -50,6 +50,9 @@ boolean hasKey(def h, def id) {
 	return h!=null && h.id!=null && !(h.id.trim().isEmpty() || h.id.equals("."));
 	}
 
+Map cleanupHash(Map h) {
+	return h.findAll{k,v->!k.matches("fasta|fai|dict|bam|bai|ora|fastq_1|fastq_2|bed")}
+	}
 
 workflow {
   def hash_ref= [
@@ -72,18 +75,18 @@ workflow {
         	other : true
         	}
      
-     ch0.other.map{throw new IllegalArhumentException("undefined input ${it}.");}
+     ch0.other.map{throw new IllegalArgumentException("undefined input ${it}.");}
      
      
      ORA_TO_FASTQ(
      	hash_ref,
-     	ch0.ora.map{[it,file(it.ora)]}
+     	ch0.ora.map{[cleanupHash(it),file(it.ora)]}
      	)
      versions = versions.mix(ORA_TO_FASTQ.out.versions)
      
      BAM_TO_FASTQ(
      	ch0.bam.map{[
-     		it,
+     		cleanupHash(it),
      		file(it.bam),
      		(hasKey(it,"bai")?file(it.bai): file(it.bam+(it.bam.endsWith(".bam")?".bai":".crai"))),
      		file(it.fasta),
@@ -109,14 +112,16 @@ workflow {
                 }
         
     
-    ch2a = ch1.paired.map{assertKeyExistsAndNotEmpty(it,"fastq_2")}.map{[
-        [id:it.sample, single_end:false, paired_end:true],
-        file(it.fastq_1),
-        file(it.fastq_2)
-        ]}
+    ch2a = ch1.paired
+    	.map{assertKeyExistsAndNotEmpty(it,"fastq_2")}
+    	.map{[
+		    cleanupHash(it),
+		    file(it.fastq_1),
+		    file(it.fastq_2)
+		    ]}
 
     ch2b = ch1.single.map{[
-        [id:it.sample,single_end:true, paired_end:false],
+        cleanupHash(it),
         file(it.fastq_1),
         file([])
         ]}
@@ -149,7 +154,7 @@ workflow {
 		ch2a
 			.mix(ch2b)
 			.mix(ORA_TO_FASTQ.out.fastqs)
-			.mix(BAM_TO_FASTQ.out.flatMap{[
+			.mix(BAM_TO_FASTQ.out.fastq.flatMap{[
 				[it[0],it[1],it[2]],
 				[it[0],it[3]],
 				[it[0],it[4]]
