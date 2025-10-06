@@ -34,6 +34,7 @@ include {COMPILE_VERSIONS           } from '../../modules/versions'
 include {MAP_BWA                    } from '../../subworkflows/bwa/map.fastqs'
 include {BWA_INDEX                  } from '../../modules/bwa/index'
 include {runOnComplete              } from '../../modules/utils/functions.nf'
+include {PREPARE_REFERENCE          } from '../../subworkflows/samtools/prepare.ref'
 include {ORA_TO_FASTQ               } from '../../subworkflows/ora/ora2fastq'
 include {BAM_TO_FASTQ               } from '../../modules/samtools/bam2fastq'
 
