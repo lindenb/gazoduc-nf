@@ -2,7 +2,7 @@ process CALL_FREEBAYES {
 tag "${optional_bed?:optiona_bed.name}"
 label "process_single"
 afterScript "rm -rf TMP"
-array 100
+
 conda "${moduleDir}/../../../conda/freebayes.yml"
 input:
     tuple val(meta1),path(fasta)
@@ -43,5 +43,11 @@ cat << END_VERSIONS > versions.yml
 ${task.process}:
     freebayes: todo
 END_VERSIONS
+"""
+
+stub:
+"""
+MD5=\$(find BAMS/ && echo  ${optional_bed?optional_bed:""} | md5sum | cut -d ' ' -f1)
+touch versions.yml "\${MD5}.bcf" "\${MD5}.bcf.csi" 
 """
 }

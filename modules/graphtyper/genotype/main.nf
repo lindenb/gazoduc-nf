@@ -26,7 +26,6 @@ process GRAPHTYPER {
 tag "${bed.name}"
 label "process_single"
 afterScript "rm -rf TMP TMP2"
-array 100
 conda "${moduleDir}/../../../conda/graphtyper.yml"
 input:
     tuple val(meta1),path(fasta)

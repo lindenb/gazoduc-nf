@@ -298,7 +298,7 @@ process GATK_GVCF {
 tag "${sample} ${par_bed.name} ${contig} ${par} ${fasta.name} ${sex}"
 label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
-array 100
+
 afterScript "rm -rf TMP"
 input:
 	tuple val(sample), path(bam), path(bai), val(sex),path(fasta), path(fai), path(dict), val(par), path(par_bed), val(contig)
@@ -434,7 +434,7 @@ tag "${sample} ${sex} ${bed.name} ${contigs}"
 label "process_single"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
-array 100
+
 input:
 	tuple val(sample),path(bam), path(bai),val(sex),path(fasta),path(fai),path(dict),path(bed),val(contigs)
 output:

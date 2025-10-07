@@ -109,7 +109,7 @@ process EXTRACT_BAM {
 	tag "${meta.id?:bam.name}"
 	label "process_single"
 	conda "${moduleDir}/../../../conda/somalier.yml"
-	array 100
+
 	input:
 		tuple val(meta1),path(sites),path(sites_idx)
 		tuple val(meta),path(bam),path(bai),path(fasta),path(fai)

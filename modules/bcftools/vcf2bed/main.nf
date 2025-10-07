@@ -26,7 +26,7 @@ SOFTWARE.
 
 process VCF_TO_BED {
 label "process_single"
-array 100
+
 tag "${meta.id?:""}"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:

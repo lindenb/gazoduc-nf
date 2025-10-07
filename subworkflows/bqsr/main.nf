@@ -46,7 +46,7 @@ workflow BQSR {
 
 process CONTIGS_IN_BAM {
 tag "${meta.id?:bam.name}"
-array 100
+
 input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)

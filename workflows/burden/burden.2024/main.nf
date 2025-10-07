@@ -514,7 +514,7 @@ afterScript "rm -rf TMP"
 tag "${condition.id} ${roi.name}"
 conda "${moduleDir}/environment.01.yml"
 memory "3g"
-array 100
+
 errorStrategy "retry"
 maxRetries 2
 input:

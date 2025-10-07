@@ -4,7 +4,7 @@ process NOT_EMPTY_VCF {
     label "process_single"
     tag "${meta.id}"
     conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-    array 100
+
     when:
         task.ext.when == null || task.ext.when
     input:

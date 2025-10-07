@@ -29,8 +29,6 @@ label "process_single"
 tag "${vcf.name} ${meta.id?:""}"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
-array 100
-
 input:
     tuple val(meta1),path(fasta)
     tuple val(meta2),path(fai)
@@ -74,5 +72,12 @@ cat << END_VERSIONS > versions.yml
     bcftools: \$(bcftools version | awk '(NR==1)  {print \$NF}')
     build: \${BUILD}
 END_VERSIONS
+"""
+
+stub:
+"""
+echo '${meta.id}\t$todo' > ${meta.id}.ploidy.txt
+touch  ${meta.id}.ploidy.png
+touch versions.yml
 """
 }

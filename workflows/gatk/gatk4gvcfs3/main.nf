@@ -27,8 +27,6 @@ include {assertKeyExistsAndNotEmpty          } from '../../../modules/utils/func
 include {testKeyExistsAndNotEmpty            } from '../../../modules/utils/functions.nf'
 include {assertKeyMatchRegex                 } from '../../../modules/utils/functions.nf'
 include {VCF_STATS                           } from '../../../subworkflows/vcfstats'
-include {COMPILE_VERSIONS                    } from '../../../modules/versions/main.nf'
-include {MULTIQC                             } from '../../../modules/multiqc'
 include {SCATTER_TO_BED                      } from '../../../subworkflows/gatk/scatterintervals2bed'
 include {BEDTOOLS_MAKEWINDOWS                } from '../../../modules/bedtools/makewindows'
 include {BED_CLUSTER                         } from '../../../modules/jvarkit/bedcluster'
@@ -41,6 +39,7 @@ include {HAPLOTYPECALLER_DIRECT              } from '../../../subworkflows/gatk/
 include {SAMTOOLS_SAMPLES                    } from '../../../modules/samtools/samples'
 include {META_TO_PED                         } from '../../../subworkflows/pedigree/meta2ped'
 include {PREPARE_REFERENCE                   } from '../../../subworkflows/samtools/prepare.ref'
+include {MULTIQC                             } from '../../../subworkflows/multiqc'
 
 
 // Print help message, supply typical command line usage for the pipeline
@@ -247,7 +246,7 @@ workflow {
     else
         {
         throw new IllegalArgumentException("undefined params.method=${params.method}")
-
+        }
  
  /***************************************************
    *
@@ -273,14 +272,15 @@ workflow {
     vcf_ch.map{[it[0],[it[1],it[2]]]}
     )
   versions = versions.mix(BCFTOOLS_GUESS_PLOIDY.out.versions)
-        }
 
 
-    COMPILE_VERSIONS(versions.collect().map{it.sort()})
-    multiqc = multiqc.mix(COMPILE_VERSIONS.out.multiqc.map{[[id:"versions"],it]})
-    // in case of problem multiqc_ch.filter{!(it instanceof List) || it.size()!=2}.view{"### FIX ME ${it} MULTIQC"}
-    MULTIQC(multiqc.map{it[1]}.collect().map{[[id:"hapcaller"],it]})
 
+	MULTIQC(
+		ref_hash.plus("id":"hapcaller"),
+		META_TO_PED.out.sample2collection,
+		versions,
+		multiqc
+		)
     
 }
 

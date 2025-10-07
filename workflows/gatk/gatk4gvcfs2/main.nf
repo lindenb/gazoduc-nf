@@ -499,7 +499,6 @@ rm -rf TMP
 
 process GLNEXUS {
     tag "${bed.name}"
-     array 100
     label 'process_single'
 	conda "${moduleDir}/../../../conda/glnexus.yml"
     afterScript "rm -rf GLnexus.DB TMP"

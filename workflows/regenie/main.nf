@@ -244,7 +244,7 @@ mv TMP/sample2pop.txt pedigree.sample2population.tsv
 
 process WGSELECT {
 label "process_single"
-array 100
+
 tag "${contig}:${start1}-${end} ${vcf.name}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
