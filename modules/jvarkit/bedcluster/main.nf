@@ -64,4 +64,11 @@ ${task.process}:
 	jvarkit: "\$(jvarkit --version)"
 EOF
 	"""
-	}
+	
+stub:
+"""
+mkdir BEDS
+split --additional-suffix=.bed --lines=1 "${bed}" BEDS/cluster
+touch versions.yml
+"""	
+}

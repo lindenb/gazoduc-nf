@@ -82,4 +82,11 @@ ${task.process}:
 	jvarkit: "\$(jvarkit --version)"
 EOF
 """
+
+stub:
+def prefix =  task.ext.prefix?:"${meta.id?:""}.blocks"
+"""
+touch ${prefix}.bed
+touch versions.yml
+"""
 }

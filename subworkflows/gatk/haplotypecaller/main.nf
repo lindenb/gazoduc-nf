@@ -148,4 +148,10 @@ done
 
 touch versions.yml
 """
+stub:
+"""
+mkdir -p BEDS
+touch BEDS/a.bed BEDS/b.bed BEDS/c.bed
+touch versions.yml
+"""
 }

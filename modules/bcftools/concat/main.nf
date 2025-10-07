@@ -221,4 +221,9 @@ cat << END_VERSIONS > versions.yml
 	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
 END_VERSIONS
 """
+
+stub:
+"""
+touch versions.yml ${meta.id}.bcf  ${meta.id}.bcf.csi
+"""
 }

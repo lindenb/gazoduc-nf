@@ -61,7 +61,7 @@ END_VERSIONS
 
 stub:
 """
-touch ${meta.id}.bed
+awk -F '\t' '/^@/{next;} {printf("%s\t%d\t%s\\n",\$1,int(\$2)-1,\$3);}' "${interval_list}" > "${meta.id}.bed"
 touch versions.yml
 """
 }

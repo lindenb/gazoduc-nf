@@ -75,4 +75,10 @@ ${task.process}:
     gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
 EOF
 """
+
+stub:
+	def prefix="stub"
+"""
+touch "${prefix}.g.vcf.gz" "${prefix}.g.vcf.gz.tbi" versions.yml
+"""
 }

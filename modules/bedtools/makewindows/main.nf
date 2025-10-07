@@ -27,4 +27,10 @@ cat << END_VERSIONS > versions.yml
     bcftools: \$(bedtools --version | awk '(NR==1)  {print \$NF}')
 END_VERSIONS
 """
+
+stub:
+"""
+cp "${bed}" "${bed.baseName}.makeWindows.bed"
+touch versions.yml
+"""
 }

@@ -40,6 +40,7 @@ include {HAPLOTYPECALLER                     } from '../../../subworkflows/gatk/
 include {HAPLOTYPECALLER_DIRECT              } from '../../../subworkflows/gatk/haplotypecaller.direct'
 include {SAMTOOLS_SAMPLES                    } from '../../../modules/samtools/samples'
 include {META_TO_PED                         } from '../../../subworkflows/pedigree/meta2ped'
+include {PREPARE_REFERENCE                   } from '../../../subworkflows/samtools/prepare.ref'
 
 
 // Print help message, supply typical command line usage for the pipeline
@@ -61,11 +62,17 @@ workflow {
 		ucsc_name : params.ucsc_name?:"undefined"
 		]
 
-	fasta = [ref_hash,file(params.fasta)]
-	fai   = [ref_hash,file(params.fai)]
-	dict  = [ref_hash,file(params.dict)]
 
-    if(params.dbsnp!=null)
+	fasta = [ref_hash,file(params.fasta)]
+
+    PREPARE_REFERENCE(ref_hash, fasta)
+    versions = versions.mix(PREPARE_REFERENCE.out.versions)
+	fai   = PREPARE_REFERENCE.out.fai
+	dict  = PREPARE_REFERENCE.out.dict
+
+
+
+    if(params.dbsnp==null)
             {
             dbsnp =     [ref_hash, [] ,[] ]
             }
@@ -86,21 +93,21 @@ workflow {
 			.splitCsv(header:true,sep:',')
 
 
-    references = Channel.of([file(params.fasta),file(params.fai),file(params.dict)])
 
-    references = references.mix(
-            bams_and_ref
-            .filter{it.containsKey("fasta")}
-            .filter{testKeyExistsAndNotEmpty(it,"fasta")}
-            .map{assertKeyMatchRegex(it,"fasta",".*\\.(fasta|fa|fna)")}
-           
-            .map{it.fai ? it : it.plus(["fai":it.fasta+".fai"])}
-            .map{it.dict?it : it.plus(["dict":it.fasta.replaceAll("\\.(fasta|fa|fna)\$",".dict")])}
-            .map{[file(it.fasta),file(it.fai),file(it.dict)]}
-        )
+  
     
-    all_references = references
+    all_references =  bams_and_ref
+        .filter{it.containsKey("fasta")}
+        .filter{testKeyExistsAndNotEmpty(it,"fasta")}
+        .map{assertKeyMatchRegex(it,"fasta",".*\\.(fasta|fa|fna)")}
+        .map{it.fai!=null? it : it.plus(["fai":it.fasta+".fai"])}
+        .map{it.dict!=null?it : it.plus(["dict":it.fasta.replaceAll("\\.(fasta|fa|fna)\$",".dict")])}
+        .map{[file(it.fasta),file(it.fai),file(it.dict)]}
         .flatMap()
+        .mix(Channel.of(fasta).map{it[1]})
+        .mix(PREPARE_REFERENCE.out.fai.map{it[1]})
+        .mix(PREPARE_REFERENCE.out.dict.map{it[1]})
+        .map{fn->fn.toRealPath()}
         .unique()
         .collect()
         .map{[ref_hash,it]}
@@ -168,6 +175,7 @@ workflow {
     META_TO_PED(ref_hash, bams_ch.map{it[0]})
     versions = versions.mix(META_TO_PED.out.versions)
 
+
     if(params.bed==null) {
         SCATTER_TO_BED(ref_hash,fasta,fai,dict)
         versions = versions.mix(SCATTER_TO_BED.out.versions)
@@ -175,6 +183,7 @@ workflow {
     } else {
         bed = Channel.of([ref_hash, file(params.bed)])
     }
+  
   
    /* cut the bed/genome into parts for SV calling per region */
    BEDTOOLS_MAKEWINDOWS(bed)
@@ -238,7 +247,6 @@ workflow {
     else
         {
         throw new IllegalArgumentException("undefined params.method=${params.method}")
-        }
 
  
  /***************************************************
@@ -265,13 +273,13 @@ workflow {
     vcf_ch.map{[it[0],[it[1],it[2]]]}
     )
   versions = versions.mix(BCFTOOLS_GUESS_PLOIDY.out.versions)
+        }
 
 
     COMPILE_VERSIONS(versions.collect().map{it.sort()})
     multiqc = multiqc.mix(COMPILE_VERSIONS.out.multiqc.map{[[id:"versions"],it]})
     // in case of problem multiqc_ch.filter{!(it instanceof List) || it.size()!=2}.view{"### FIX ME ${it} MULTIQC"}
     MULTIQC(multiqc.map{it[1]}.collect().map{[[id:"hapcaller"],it]})
-
 
     
 }

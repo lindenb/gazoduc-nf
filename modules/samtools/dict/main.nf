@@ -46,7 +46,7 @@ END_VERSIONS
 
 stub:
 """
-touch "${fasta.baseName}.dict"
+awk 'BEGIN {printf("@HD\tVN:1.5\tSO:unsorted\\n");} />/{if(N>0) {printf("%s\\n",T);} printf("@SQ\tSN:%s\tLN:",substr(\$1,2));N++;T=0;} END {if(N>0) {printf("%s\\n",T);}} {T+=length(\$0);}'  ${fasta} >  "${fasta.baseName}.dict"
 touch versions.yml
 """
 }

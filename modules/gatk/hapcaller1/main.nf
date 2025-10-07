@@ -122,4 +122,12 @@ ${task.process}:
     gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
 EOF
 """
+
+
+stub:
+   def prefix = (meta.id?:"${bam.name}")+(optional_bed?"."+optional_bed.baseName:"")
+
+"""
+touch versions.yml ${prefix}.g.vcf.gz ${prefix}.g.vcf.gz.tbi
+"""
 }

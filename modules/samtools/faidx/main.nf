@@ -45,7 +45,7 @@ END_VERSIONS
 
 stub:
 """
-touch ${fasta.baseName}.fai
+awk '/>/{if(N>0) {printf("\t%s\t%s\t50\t51\\n",T,T2);} printf("%s",substr(\$1,2));N++;T=0;} END {if(N>0) {printf("\t%s\t%s\t50\t51\\n",T,T2);}} {T+=length(\$0);T2+=T;}'  ${fasta} >  ${fasta.baseName}.fai
 touch versions.yml
 """
 }

@@ -63,6 +63,12 @@ END_VERSIONS
 
 stub:
 """
-touch versions.yml "${meta1.id}.interval_list"
+cp "${dict}" "${meta1.id}.interval_list"
+
+if test "${task.ext.output_type}" != "N"
+then
+	awk -F '\t' '{printf("%s\t1\t%s\\n",\$1,\$2);}' "${fai}" >> "${meta1.id}.interval_list"
+fi
+touch versions.yml 
 """
 }
