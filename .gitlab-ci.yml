@@ -21,7 +21,7 @@ test-job:
     - make -C tests
   artifacts:
     paths:
-        - .nextflow.log
+        - tests/.nextflow.log
 
 
 
