@@ -15,13 +15,28 @@ before_script:
 stages:
   - test
 
-test-job:
+wgsim:
   stage: test
   script:
-    - make -C tests
-  artifacts:
-    paths:
-        - tests/.nextflow.log
+    - make -C tests test_wgsim
 
+fastqc:
+  stage: test
+  needs: ["wgsim"]
+  script:
+    - make -C tests test_fastqc
+
+bwa:
+  stage: test
+  needs: ["wgsim"]
+  script:
+    - make -C tests test_bwa
+
+
+hapcaller:
+  stage: test
+  needs: ["bwa"]
+  script:
+    - make -C tests test_hapcaller
 
 

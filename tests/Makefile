@@ -6,28 +6,26 @@ BUILD=GRCh38
 
 all: test_wgsim test_fastqc test_bwa test_hapcaller
 
-test_hapcaller: DATA/BWA/samplesheet.csv
-	$(NEXTFLOW) run -profile gitlabci -c reference.config  -c nproc.cfg  ../workflows/gatk/gatk4gvcfs3/main.nf --outdir HC --samplesheet $<
-	find results/ -type f
+test_hapcaller: BWA/samplesheet.csv
+	$(NEXTFLOW) run -work-dir work/HC -profile gitlabci -c reference.config  -c nproc.cfg  ../workflows/gatk/gatk4gvcfs3/main.nf --outdir ${PWD}/HC --samplesheet $<
+	find HC/ -type f
 
 
-test_bwa : DATA/BWA/samplesheet.csv
+test_bwa : BWA/samplesheet.csv
 
 	
-DATA/BWA/samplesheet.csv : results/FASTQ/samplesheet.csv  reference.config nproc.cfg REF/$(BUILD).dbsnp.vcf.gz
-	$(NEXTFLOW) run -profile gitlabci -c reference.config  -c nproc.cfg  ../workflows/bwa/main.nf --outdir BWA --samplesheet $< --known_sites REF/$(BUILD).dbsnp.vcf.gz
+BWA/samplesheet.csv : results/FASTQ/samplesheet.csv  reference.config nproc.cfg REF/$(BUILD).dbsnp.vcf.gz
+	$(NEXTFLOW) run -work-dir work/BWA -profile gitlabci -c reference.config  -c nproc.cfg  ../workflows/bwa/main.nf --outdir ${PWD}/BWA --samplesheet $< --known_sites REF/$(BUILD).dbsnp.vcf.gz
 	find BWA -type f
 	
 test_fastqc: results/FASTQ/samplesheet.csv nproc.cfg
-	$(NEXTFLOW) run -profile gitlabci -c nproc.cfg  ../workflows/fastqc/main.nf --samplesheet $<
+	$(NEXTFLOW) run -work-dir work/FASTQC -profile gitlabci -c nproc.cfg  --outdir FASTQC ../workflows/fastqc/main.nf --samplesheet $<
 
 	
 test_wgsim: results/FASTQ/samplesheet.csv
 
 results/FASTQ/samplesheet.csv: reference.config nproc.cfg
-	echo 'params.wgsim=20' > local.cfg
-	$(NEXTFLOW) run -profile gitlabci  -c reference.config  -c nproc.cfg  ../workflows/wgsim/main.nf --n_samples 10 --samplesheet $<
-	rm local.cfg
+	$(NEXTFLOW) run  -work-dir work/WGSIM -profile gitlabci  -c reference.config  -c nproc.cfg   --outdir results  ../workflows/wgsim/main.nf --n_samples 15 --samplesheet $<
 	
 reference.config: REF/$(BUILD).fa 
 	echo 'params {' > $@
