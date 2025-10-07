@@ -51,4 +51,10 @@ cat << END_VERSIONS > versions.yml
 	samtools: "\$(samtools version | awk '(NR==1) {print \$NF;}')"
 END_VERSIONS
 """
+
+stub:
+"""
+find \${PWD}/BAMS/ -name "*am" | sort -V | awk '{printf("S%d\t%s\t%s\\n",NR,\$0,"${params.fasta?:"."}");}'  > samplesheet.tsv
+touch versions.yml
+"""
 }
