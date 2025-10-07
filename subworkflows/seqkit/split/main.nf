@@ -51,7 +51,6 @@ workflow SEQKIT_SPLIT {
 		versions = Channel.empty()
 		
 		ch1 = fastqs
-			.view()
 			.branch{
 				all: meta.sektq_split_args!=null && !meta.sektq_split_args.trim().isEmpty()
 				seqtk: it[0].sektq_split_args!=null && !it[0].sektq_split_args.trim().isEmpty()
@@ -74,7 +73,6 @@ workflow SEQKIT_SPLIT {
 		
 		
 		ch2 = SEQKIT_SPLIT2.out.fastqs
-			.view()
 			.flatMap{meta,fastqs->restorePairs(meta,fastqs)}
 
 		out_fq = out_fq.mix(ch2)

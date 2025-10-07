@@ -23,11 +23,13 @@ SOFTWARE.
 
 */
 
+
 include {BASE_RECALIBRATOR       } from '../../../modules/gatk/baserecalibrator'
 include {APPLY_BQSR              } from '../../../modules/gatk/applybqsr'
 include {FAI2BED                 } from '../../../modules/samtools/fai2bed'
 include {BED_CLUSTER             } from '../../../modules/jvarkit/bedcluster'
 include {GATK4_GATHER_BQSR       } from '../../../modules/gatk/gatherbqsr'
+
 
 
 workflow BQSR {
@@ -40,11 +42,10 @@ take:
 	bams
 main:
 	versions = Channel.empty()
-
+	out_bams = Channel.empty()
 
 	FAI2BED(fai)
 	versions = versions.mix( FAI2BED.out.versions)
-	
 	BED_CLUSTER(fasta,fai,dict,FAI2BED.out.bed)
 	versions = versions.mix( BED_CLUSTER.out.versions)
 
@@ -52,8 +53,7 @@ main:
 		.map{meta,beds->beds}
 		.map{beds->(beds instanceof List?beds:[beds])}
 		.flatMap()
-		
-
+	
 	BASE_RECALIBRATOR(
 		fasta,
 		fai,
@@ -70,7 +70,6 @@ main:
 		)
 	versions = versions.mix( GATK4_GATHER_BQSR.out.versions)
 	
-	
 	APPLY_BQSR(
 		fasta,
 		fai,
@@ -78,6 +77,8 @@ main:
 		bams.join(GATK4_GATHER_BQSR.out.table,failOnMismatch:true)
 		);
 	versions = versions.mix( APPLY_BQSR.out.versions)
+	
+	
 emit:
 	versions
 	bams = APPLY_BQSR.out.bam

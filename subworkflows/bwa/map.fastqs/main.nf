@@ -67,7 +67,7 @@ workflow MAP_BWA {
 			}
 		
 
-	
+		
 		if(meta.with_seqkit_split==null || meta.with_seqkit_split==true) {
 			SEQKIT_SPLIT(
 				meta,
@@ -127,7 +127,8 @@ workflow MAP_BWA {
 				throw new IllegalArgumentException("Boum MAP_BWA undefined meta.markdup_method: ${meta.markdup_method}");
 				}
 			}
-		
+
+
 		if(meta.with_bqsr==null || meta.with_bqsr==true) {
 			BQSR(
 				meta,
@@ -140,6 +141,7 @@ workflow MAP_BWA {
 			versions = versions.mix(BQSR.out.versions)
 			out_bams = BQSR.out.bams
 			}
+			
 		out_crams  =Channel.empty()
 		if(meta.with_cram==null || meta.with_cram==true) {
 			BAM_TO_CRAM(fasta,fai,out_bams.map{meta,bam,bai->[meta,bam]});

@@ -43,10 +43,4 @@ cat << END_VERSIONS > versions.yml
 	awk: todo
 END_VERSIONS
 """
-
-stub:
-"""
-touch ${fai.baseName}.bed
-touch versions.yml
-"""
 }

@@ -77,11 +77,11 @@ workflow {
 			meta.id,
 			"${params.outdir}/FASTQ/${params.prefix}${R1.name}",
 			"${params.outdir}/FASTQ/${params.prefix}${R2.name}",
-			meta.sex,
-			meta.father,
-			meta.mother,
-			meta.status,
-			meta.collection
+			meta.sex?:"",
+			meta.father?:"",
+			meta.mother?:"",
+			meta.status?:"",
+			meta.collection?:""
 			]}
 		.map{it.join(",")}
 		.collect()

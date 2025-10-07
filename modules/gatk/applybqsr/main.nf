@@ -66,8 +66,8 @@ EOF
 
 stub:
 """
-touch "${meta.prefix}.bqsr.bam"
-touch "${meta.prefix}.bqsr.bam.bai"
+touch "${meta.id}.bqsr.bam"
+touch "${meta.id}.bqsr.bam.bai"
 touch versions.yml
 """
 }

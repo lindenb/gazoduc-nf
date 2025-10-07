@@ -185,6 +185,7 @@ workflow {
 				[it[0],it[4],[]]
 				]})
 		)
+
 	versions = versions.mix(MAP_BWA.out.versions)
 	multiqc_ch = multiqc_ch.mix(MAP_BWA.out.multiqc)
 
@@ -214,6 +215,7 @@ workflow {
 		)
 	versions = versions.mix(MAKE_SAMPLESHEET.out.versions)
 
+
 	
 	BAM_QC(
 		hash_ref,
@@ -224,12 +226,16 @@ workflow {
 		MAP_BWA.out.crams.ifEmpty(MAP_BWA.out.bams)
 		)
 
+	versions = versions.mix(BAM_QC.out.versions)
+	multiqc_ch = multiqc_ch.mix(BAM_QC.out.multiqc)
+
 	MULTIQC(
 		hash_ref.plus("id":"bwa"),
 		META_TO_PED.out.sample2collection,
 		versions,
 		multiqc_ch
 		)
+		
     }
 
 
@@ -256,10 +262,5 @@ EOF
 mv jeter.csv samplesheet.csv
 
 touch versions.yml
-"""
-
-stub:
-"""
-touch versions.yml samplesheet.csv
 """
 }
