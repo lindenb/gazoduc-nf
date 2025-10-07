@@ -50,7 +50,7 @@ main:
 
 	by_bed = BED_CLUSTER.out.bed
 		.map{meta,beds->beds}
-		.map{beds->(beds instanceof List?beds:[beds]);
+		.map{beds->(beds instanceof List?beds:[beds])}
 		.flatMap()
 		
 
