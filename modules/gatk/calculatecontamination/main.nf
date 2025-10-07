@@ -23,14 +23,14 @@ SOFTWARE.
 
 */
 
-process GATK4_GATHER_BQSR {
+process CALCULATE_CONTAMINATION {
 tag "${meta.id?:""}"
 label "process_single"
 afterScript 'rm -rf TMP'
 input:
-	tuple val(meta),path("TABLES/*")
+    tuple val(meta),path(table1),path(opt_table2)
 output:
-    tuple val(meta),path("*.recal.table"),emit:table
+    tuple val(meta),path("*.table"),emit:table
     path("versions.yml"),emit:versions
 when:
     task.ext.when == null || task.ext.when
@@ -40,12 +40,12 @@ script:
 hostname 1>&2
 mkdir -p TMP
 
-find TABLES/ -name "*.table" |\\
-	awk '{printf("-I %s\\n",\$0);}' > TMP/arguments.list
+gatk --java-options "${jvm}" CalculateContamination \\
+    -I "${table1}" \\
+    ${opt_table2?"-matched \"${table2}\"":""} \\
+    -O TMP/jeter.contamination.table
 
-gatk --java-options "${jvm}" GatherBQSRReports \
-	--arguments_file  TMP/arguments.list \\
-	-O "${meta.id}.recal.table" 
+mv TMP/jeter.contamination.table "${meta.id}.contamination.table"
 
 cat << EOF > version.yml
 ${task.process}:
@@ -54,6 +54,6 @@ EOF
 """
 stub:
 """
-touch versions.yml "${meta.id}.recal.table" 
+touch versions.yml "${meta.id}.contamination.table"
 """
 }

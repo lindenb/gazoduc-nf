@@ -27,13 +27,13 @@ tag "${meta.id?:""}"
 label "process_short"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
-when:
-    task.ext.when == null || task.ext.when
 input:
 	tuple val(meta),path("VCFS/*")
 output:
 	tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:vcf
     path("versions.yml"),emit:versions
+when:
+    task.ext.when == null || task.ext.when
 script:
     def prefix = task.ext.prefix?:"\${MD5}.gathervcfs"
 """
@@ -58,5 +58,10 @@ cat << END_VERSIONS > versions.yml
 	gatk: todo
 	bcftools: todo
 END_VERSIONS
+"""
+
+stub:
+"""
+touch versions.yml "${meta.id}.gb.vcf.gz" "${meta.id}.gb.vcf.gz.tbi"
 """
 }

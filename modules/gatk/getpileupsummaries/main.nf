@@ -23,14 +23,19 @@ SOFTWARE.
 
 */
 
-process GATK4_GATHER_BQSR {
+process GET_PILEUP_SUMMARIES {
 tag "${meta.id?:""}"
 label "process_single"
 afterScript 'rm -rf TMP'
 input:
-	tuple val(meta),path("TABLES/*")
+    tuple val(meta1),path(fasta)
+    tuple val(meta2),path(fai)
+    tuple val(meta3),path(dict)
+    tuple val(meta4 ),path(vcf),path(vcfidx)
+    tuple val(meta5 ),path(opt_file),path(opt_file_idx)//whatever kind of file used for option '-L'
+	tuple val(meta ),path(bam),path(bai)
 output:
-    tuple val(meta),path("*.recal.table"),emit:table
+    tuple val(meta),path(".table"),emit:table
     path("versions.yml"),emit:versions
 when:
     task.ext.when == null || task.ext.when
@@ -40,12 +45,13 @@ script:
 hostname 1>&2
 mkdir -p TMP
 
-find TABLES/ -name "*.table" |\\
-	awk '{printf("-I %s\\n",\$0);}' > TMP/arguments.list
+gatk --java-options "${jvm}" GetPileupSummaries \\
+    -I ${bam} \\
+    -V ${vcf} \\
+    -L ${opt_file?opt_file:vcf} \\
+    -O TMP/jeter.pileups.table
 
-gatk --java-options "${jvm}" GatherBQSRReports \
-	--arguments_file  TMP/arguments.list \\
-	-O "${meta.id}.recal.table" 
+mv TMP/jeter.pileups.table "${meta.id}.pileups.table"
 
 cat << EOF > version.yml
 ${task.process}:
@@ -54,6 +60,6 @@ EOF
 """
 stub:
 """
-touch versions.yml "${meta.id}.recal.table" 
+touch versions.yml "${meta.id}.pileups.table"
 """
 }

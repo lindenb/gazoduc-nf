@@ -24,7 +24,7 @@ SOFTWARE.
 */
 
 process BASE_RECALIBRATOR {
-tag "${meta.id?:bam.nam}"
+tag "${meta.id?:bam.name} ${optional_bed?:""}"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript 'rm -rf TMP'
@@ -33,7 +33,7 @@ input:
 	tuple val(meta2),path(fai)
 	tuple val(meta3),path(dict)
 	tuple val(meta4),path("VCFS/*")
-	tuple val(meta ),path(bam),path(bai)
+	tuple val(meta ),path(bam),path(bai),path(optional_bed)
 output:
 	tuple val(meta),path(bam),path(bai),path("*.table"),emit:table
 	path("versions.yml"),emit:versions
@@ -49,6 +49,7 @@ find VCFS \\( -name "*.vcf.gz" -o -name "*.vcf"  \\) | grep vcf -q || echo "VCF 
 
 gatk --java-options "${jvm}" BaseRecalibrator \\
 	-I "${bam}" \\
+	${optional_bed?"-L \"${optional_bed}\"":""} \\
 	 `find VCFS \\( -name "*.vcf.gz" -o -name "*.vcf"  \\) -printf " --known-sites %p " ` \\
 	-O "${prefix}.table" \\
 	-R "${fasta}"
