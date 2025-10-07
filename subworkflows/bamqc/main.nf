@@ -40,7 +40,8 @@ take:
 main:
 	versions_ch = Channel.empty()
 	reports_ch  = Channel.empty()
-
+	metadata_ch = Channel.empty()
+	
   /***************************************************
    *
    *  MOSDEPTH
@@ -62,8 +63,11 @@ main:
 		.mix(mosdepth_summary)
 		.mix(mosdepth_regions)
 
+	
 	/** PLOT chrX / chrY */
-	ch1 = mosdepth_summary.splitCsv(header:true,sep:'\t')
+	mosdepth_ch = mosdepth_summary.splitCsv(header:true,sep:'\t')
+	
+	ch1 = mosdepth_ch
 		.filter{it[1].chrom.matches("(chr)?[XY]_region")}
 		.map{[it[1].chrom.replaceAll("_region",""), it[0].id, (it[1].mean?:it[1].median)]}
 		.branch{v->
@@ -75,10 +79,27 @@ main:
 		ch1.chrX.join(ch1.chrY, by:1) 
 			.map{[it[0],it[2],it[4]]}//sample,depthX,depthY
 			.map{it.join("\t")}
+			.filter{!it.trim().isEmpty()} // when running tests
 			.toSortedList()
+			.filter{!it.isEmpty()} // when running tests
 			.map{[[id:"xy"],it]}
 		)
 	versions_ch = versions_ch.mix(PLOT_CHR_XY.out.versions)
+
+	// depth [id, mean depth]
+	depth_all  = mosdepth_ch.filter{it[1].chrom.equals("total_region")}.map{[it[0].id,(it[1].mean?:it[1].median)]}
+	depth_chrX = mosdepth_ch.filter{it[1].chrom.matches("(chr)?X_region")}.map{[it[0].id,(it[1].mean?:it[1].median)]}
+	depth_chrY = mosdepth_ch.filter{it[1].chrom.matches("(chr)?Y_region")}.map{[it[0].id,(it[1].mean?:it[1].median)]}
+	depth_ch = depth_all.join(depth_chrX,remainder: true)//id,dp,dpX
+			.join(depth_chrY,remainder: true)//id,dp,dpX,dpY
+			.map{[
+				it[0],
+				[
+					depth:it[1],
+					depthX:(it[2]==null?"":it[2]),
+					depthY:(it[3]==null?"":it[3])
+				]]}
+			.view{"MOSDEPTH METADATA : ${it}"}
 
 	/** outliers of DEPTH */
 	treshold_ch = Channel.of(100,1000);

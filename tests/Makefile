@@ -8,20 +8,19 @@ all: test_wgsim test_fastqc test_bwa
 
 test_bwa : DATA/FASTQ/samplesheet2.csv
 
-DATA/FASTQ/samplesheet2.csv : results/FASTQ/samplesheet.csv base.config reference.config nproc.cfg REF/$(BUILD).dbsnp.vcf.gz
-	$(NEXTFLOW) -c base.config -c reference.config  -c nproc.cfg run ../workflows/bwa/main.nf --outdir BWA --samplesheet $< --known_sites REF/$(BUILD).dbsnp.vcf.gz
+DATA/FASTQ/samplesheet2.csv : results/FASTQ/samplesheet.csv  reference.config nproc.cfg REF/$(BUILD).dbsnp.vcf.gz
+	$(NEXTFLOW) -profile gitlabci -c reference.config  -c nproc.cfg run ../workflows/bwa/main.nf --outdir BWA --samplesheet $< --known_sites REF/$(BUILD).dbsnp.vcf.gz
 	
-
 test_fastqc: results/FASTQ/samplesheet.csv nproc.cfg
 
-	$(NEXTFLOW) -c base.config -c nproc.cfg run ../workflows/fastqc/main.nf --samplesheet $<
+	$(NEXTFLOW) -profile gitlabci -c nproc.cfg run ../workflows/fastqc/main.nf --samplesheet $<
 
 	
 test_wgsim: results/FASTQ/samplesheet.csv
 
-results/FASTQ/samplesheet.csv: base.config reference.config nproc.cfg
+results/FASTQ/samplesheet.csv: reference.config nproc.cfg
 	echo 'params.wgsim=20' > local.cfg
-	$(NEXTFLOW) -c base.config -c reference.config  -c nproc.cfg run ../workflows/wgsim/main.nf --n_samples 10 --samplesheet $<
+	$(NEXTFLOW) -profile gitlabci  -c reference.config  -c nproc.cfg run ../workflows/wgsim/main.nf --n_samples 10 --samplesheet $<
 	rm local.cfg
 	
 reference.config: REF/$(BUILD).fa 
