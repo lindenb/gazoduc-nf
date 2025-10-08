@@ -29,8 +29,8 @@ conda "${moduleDir}/../../conda/multiqc.yml"
 input:
 	tuple val(meta),path(multiqc_files, stageAs: "?/*")
 output:
-	tuple val(meta),path("*.zip"),emit:zip
-	tuple val(meta),path("*multiqc/*_data"),emit:datadir
+	tuple val(meta),path("*.zip"),optional:true,emit:zip
+	tuple val(meta),path("*multiqc/*_data"),optional:true,emit:datadir
     path("versions.yml"),emit:versions
 script:
 	def prefix = task.ext.prefix?:""
