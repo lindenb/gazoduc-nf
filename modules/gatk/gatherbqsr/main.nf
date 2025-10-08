@@ -46,7 +46,7 @@ gatk --java-options "${jvm}" GatherBQSRReports \\
 	--arguments_file  TMP/arguments.list \\
 	-O "${meta.id}.recal.table" 
 
-cat << EOF > version.yml
+cat << EOF > versions.yml
 ${task.process}:
     gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
 EOF
