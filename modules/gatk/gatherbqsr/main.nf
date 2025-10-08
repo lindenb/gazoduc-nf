@@ -27,6 +27,7 @@ process GATK4_GATHER_BQSR {
 tag "${meta.id?:""}"
 label "process_single"
 afterScript 'rm -rf TMP'
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
 	tuple val(meta),path("TABLES/*")
 output:
