@@ -32,17 +32,21 @@ include {MULTIQC                    } from '../../modules/multiqc'
 include {COMPILE_VERSIONS           } from '../../modules/versions'
 
 
-if( params.help ) {
-    dumpParams(params);
-    exit 0
-}  else {
-    dumpParams(params);
-}
 
 
 
 workflow {
-  def hash_ref= [
+
+	if( params.help ) {
+    	dumpParams(params);
+    	exit 0
+		} 
+	else {
+		dumpParams(params);
+		}
+
+
+   def hash_ref= [
       id: file(params.fasta).baseName,
       name: file(params.fasta).baseName,
       ucsc_name: (params.ucsc_name?:"undefined")
@@ -50,7 +54,7 @@ workflow {
 	def fasta = [ hash_ref, file(params.fasta)]
 	versions = Channel.empty()
 	multiqc_ch = Channel.empty()
-	final java.util.Random rnd = new java.util.Random(0L);
+	def rnd = new java.util.Random(0L);
 
 	
 	def n_samples= (params.n_samples as int)

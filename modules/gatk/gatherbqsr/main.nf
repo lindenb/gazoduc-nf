@@ -27,14 +27,12 @@ process GATK4_GATHER_BQSR {
 tag "${meta.id?:""}"
 label "process_single"
 afterScript 'rm -rf TMP'
-conda "${moduleDir}/../../conda/bioinfo.02.yml"
+conda "${moduleDir}/../../../conda/bioinfo.02.yml"
 input:
 	tuple val(meta),path("TABLES/*")
 output:
     tuple val(meta),path("*.recal.table"),emit:table
     path("versions.yml"),emit:versions
-when:
-    task.ext.when == null || task.ext.when
 script:
     def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP"
 """
@@ -44,7 +42,7 @@ mkdir -p TMP
 find TABLES/ -name "*.table" |\\
 	awk '{printf("-I %s\\n",\$0);}' > TMP/arguments.list
 
-gatk --java-options "${jvm}" GatherBQSRReports \
+gatk --java-options "${jvm}" GatherBQSRReports \\
 	--arguments_file  TMP/arguments.list \\
 	-O "${meta.id}.recal.table" 
 
