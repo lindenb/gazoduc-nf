@@ -34,6 +34,7 @@ input:
 	tuple val(meta1),path(optional_bed)
 output:
     tuple val(meta),path("*.{bcf,vcf.gz}"),path("*.{csi,tbi}"),optional:true,emit:vcf
+    tuple val(meta),path("*.md5"),optional:true,emit:md5
 	path("versions.yml"),emit:versions
 script:
 	def args1 = task.ext.args1?:""
@@ -45,6 +46,7 @@ script:
 	def suffix2 = (suffix.endsWith("bcf")?"bcf":"vcf.gz")
 	def suffix3 = (suffix.endsWith("bcf")?"bcf.csi":"vcf.gz.tbi")
 	def by_contig = (task.ext.by_chromosome?:false) as boolean
+	def with_md5 = (task.ext.with_md5?:true) as boolean
 """	
 	hostname 1>&2
 	mkdir -p TMP
@@ -216,6 +218,13 @@ script:
 		mv TMP/jeter.${suffix3} ${prefix}.${suffix3}
 	fi
 
+
+# Generate MD5 if needed
+if ${with_md5}
+do 
+	md5sum ${prefix}.${suffix2} > ${prefix}.${suffix2}.md5
+done
+
 cat << END_VERSIONS > versions.yml
 "${task.process}":
 	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
@@ -224,6 +233,6 @@ END_VERSIONS
 
 stub:
 """
-touch versions.yml ${meta.id}.bcf  ${meta.id}.bcf.csi
+touch versions.yml ${meta.id}.bcf  ${meta.id}.bcf.csi   ${meta.id}.bcf.md5
 """
 }

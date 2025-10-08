@@ -9,15 +9,25 @@ def read_tsv(filename):
             if not line:
                 continue
             cols = line.split("\t")
-            if len(cols) != 5:
-                raise ValueError(f"Expected 5 columns, got {len(cols)}: {line}")
+            if len(cols) != 6:
+                raise ValueError(f"Expected 6 columns, got {len(cols)}: {line}")
             rows.append(cols)
     return rows
 
+def update_status(status):
+    status = status.lower()
+    if status == "affected":
+        return "case"
+    elif status == "unaffected":
+        return "control"
+    else:
+        return status   
+
 def update_sex(sex):
-    if sex == "XX":
+    sex = sex.upper()
+    if sex == "XX" or sex == "F":
         return "female"
-    elif sex == "XY":
+    elif sex == "XY" or sex == "M":
         return "male"
     else:
         return sex
@@ -26,7 +36,7 @@ def process_table(rows):
     # Check for duplicate IDs
     id_to_row = {}
     for row in rows:
-        id, father, mother, sex, status = row
+        id, father, mother, sex, status , pop = row
         if id in id_to_row:
             raise ValueError(f"Duplicate id found: {id}")
         id_to_row[id] = row
@@ -34,27 +44,32 @@ def process_table(rows):
     # First, update sex values
     for row in rows:
         row[3] = update_sex(row[3])
+        row[4] = update_status(row[4])
+        if is_empty(row[1]):
+            row[1] = "0"
+        if is_empty(row[2]):
+            row[2] = "0"
 
     # Second, update father/mother if absent
     ids = set(id_to_row.keys())
     for row in rows:
-        id, father, mother, sex, status = row
+        id, father, mother, sex, status, pop = row
         # father
-        if father != "0" and father not in ids:
+        if is_empty(father)==False or father not in ids:
             row[1] = "0"
         # mother
-        if mother != "0" and mother not in ids:
+        if is_empty(mother)==False or mother not in ids:
             row[2] = "0"
 
     # Third, check father/mother sex
     for row in rows:
-        id, father, mother, sex, status = row
-        if father != "0":
+        id, father, mother, sex, status, pop = row
+        if is_empty(father)==False:
             father_row = id_to_row[father]
             father_sex = father_row[3]
             if father_sex == "female":
                 raise ValueError(f"Father {father} for individual {id} has sex 'female'")
-        if mother != "0":
+        if is_empty(mother)==False:
             mother_row = id_to_row[mother]
             mother_sex = mother_row[3]
             if mother_sex == "male":
@@ -62,10 +77,9 @@ def process_table(rows):
 
     return rows
 
-def write_tsv(rows,filename):
-    with open(filename,"w") as f:
-        for row in rows:
-            print("\t".join(row))
+
+def is_empty(s):
+    return s=="" or s=="." or s=="0"
 
 def main():
     if len(sys.argv) != 2:
@@ -74,7 +88,61 @@ def main():
     filename = sys.argv[1]
     rows = read_tsv(filename)
     updated_rows = process_table(rows)
-    write_tsv(updated_rows,"gatk.ped")
 
+    samples = [row[0] for row in rows if row[3] == "male"]
+    if samples:
+        with open("males.txt", "w") as f:
+            for sample_id in samples:
+                f.write(sample_id + "\n")
+    samples = [row[0] for row in rows if row[3] == "female"]
+    if samples:
+        with open("females.txt", "w") as f:
+            for sample_id in samples:
+                f.write(sample_id + "\n")
+    samples = [row[0] for row in rows if row[4] == "case"]
+    if samples:
+        with open("cases.txt", "w") as f:
+            for sample_id in samples:
+                f.write(sample_id + "\n")
+    samples = [row[0] for row in rows if row[4] == "control"]
+    if samples:
+        with open("control.txt", "w") as f:
+            for sample_id in samples:
+                f.write(sample_id + "\n")
+    with open("sample2collection.tsv", "w") as f:
+        for row in rows:
+            if is_empty(row[3]) == False:
+                f.write(row[0] + "\t" + row[3] + "\n")
+            if is_empty(row[4]) == False:
+                 f.write(row[0] + "\t" + row[4] + "\n")
+            if is_empty(row[5]) == False:
+                 f.write(row[0] + "\t" + row[5] + "\n")
+    # write pedigree for GATK
+    def write_tsv(rows,filename):
+        with open("pedigree4gatk.ped","w") as f:
+            for row in rows:
+                f.write(row[0])
+                f.write("\n")
+                f.write(row[0])
+                f.write("\t")
+                f.write(row[1])
+                f.write("\t")
+                f.write(row[2])
+                f.write("\t")
+                if row[3]=="male":
+                    f.write("1")
+                elif row[3]=="female":
+                    f.write("2")
+                else:
+                    f.write("0")
+                if row[4]=="case":
+                    f.write("2")
+                elif row[4]=="control":
+                    f.write("1")
+                else:
+                    f.write("0")
+                f.write("\t")
+                f.write(row[4])
+                f.write("\n")
 if __name__ == "__main__":
     main()

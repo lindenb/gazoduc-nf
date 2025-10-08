@@ -39,10 +39,10 @@ main:
     multiqc_ch = multiqc_ch.mix(COMPILE_VERSIONS.out.multiqc.map{[[id:"versions"],it]})
     // in case of problem multiqc_ch.filter{!(it instanceof List) || it.size()!=2}.view{"### FIX ME ${it} MULTIQC"}
     MQC1(multiqc_ch.map{it[1]}.collect().map{[meta,it]})
+	
+    JVARKIT_MULTIQCPOSTPROC(sample2collection.filter{meta,sample2pop->(sample2pop?true:false)}, MQC1.out.datadir)
     
-    JVARKIT_MULTIQCPOSTPROC(sample2collection, MQC1.out.datadir)
-    
-    MQC2(JVARKIT_MULTIQCPOSTPROC.out.json.map{m,json->[m.plus("id",m.id+".sample2pop"),json]})
+    MQC2(JVARKIT_MULTIQCPOSTPROC.out.json.map{m,json->[m.plus("id":m.id+".sample2pop"),json]})
     
 
 }

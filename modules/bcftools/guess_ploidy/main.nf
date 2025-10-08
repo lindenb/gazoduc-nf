@@ -76,7 +76,7 @@ END_VERSIONS
 
 stub:
 """
-echo '${meta.id}\t$todo' > ${meta.id}.ploidy.txt
+echo '${meta.id}\ttodo' > ${meta.id}.ploidy.txt
 touch  ${meta.id}.ploidy.png
 touch versions.yml
 """

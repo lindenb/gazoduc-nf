@@ -57,5 +57,13 @@ cat <<-END_VERSIONS > versions.yml
         fastqc: \$( fastqc --version | sed '/FastQC v/!d; s/.*v//' )
 END_VERSIONS
 """
+
+stub:
+"""
+touch versions.yml
+mkdir -p OUT
+touch OUT/${meta.id}.zip
+touch OUT/${meta.id}.html
+"""
 }
 

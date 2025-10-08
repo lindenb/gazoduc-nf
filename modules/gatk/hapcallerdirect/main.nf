@@ -79,4 +79,10 @@ ${task.process}:
     gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
 EOF
 """
+
+stub:
+ def prefix = (meta.id?:(optional_bed?optional_bed.name:""))
+"""
+touch versions.yml ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi
+"""
 }

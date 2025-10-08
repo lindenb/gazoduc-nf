@@ -1,10 +1,37 @@
 SHELL=/bin/bash
 NEXTFLOW?=nextflow
 BUILD=GRCh38
-.PHONY=all reference test_wgsim test_fastqc test_bwa test_hapcaller
+.PHONY=all hard_tests reference test_wgsim test_fastqc test_bwa test_hapcaller stub
 
+all: stub
 
-all: test_wgsim test_fastqc test_bwa test_hapcaller
+stub: data/rotavirus_rf.fa data/rotavirus_rf.vcf.gz
+	mkdir -p STUB
+	$(NEXTFLOW) run ../workflows/wgsim/main.nf  -work-dir STUB/WGSIM  -resume -stub --outdir STUB/WGSIM/results --fasta $<
+	$(NEXTFLOW) run ../workflows/fastqc/main.nf  -work-dir STUB/FASTQC  -resume -stub --outdir STUB/FASTQC/results  --samplesheet STUB/WGSIM/results/FASTQ/samplesheet.csv
+	$(NEXTFLOW) run ../workflows/bwa/main.nf  -work-dir STUB/BWA  -resume -stub --outdir STUB/BWA/results  \
+		--samplesheet STUB/WGSIM/results/FASTQ/samplesheet.csv \
+		--fasta $< \
+		--known_sites data/rotavirus_rf.vcf.gz
+	# combinegvcfs
+	$(NEXTFLOW) run ../workflows/gatk/gatk4gvcfs3/main.nf  -work-dir STUB/HC  -resume -stub --outdir STUB/HC/results  \
+		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv \
+		--fasta $< \
+		--dbsnp data/rotavirus_rf.vcf.gz
+	# glnexus
+	$(NEXTFLOW) run ../workflows/gatk/gatk4gvcfs3/main.nf  -work-dir STUB/HC  -resume -stub --outdir STUB/HC/results  \
+		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv \
+		--fasta $< \
+		--gvcf_merge_method glnexus \
+		--dbsnp data/rotavirus_rf.vcf.gz
+	# method bam2vcf
+	$(NEXTFLOW) run ../workflows/gatk/gatk4gvcfs3/main.nf  -work-dir STUB/HC  -resume -stub --outdir STUB/HC/results  \
+		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv \
+		--fasta $< \
+		--method bam2vcf \
+		--dbsnp data/rotavirus_rf.vcf.gz
+
+hard_tests: test_wgsim test_fastqc test_bwa test_hapcaller stub
 
 test_hapcaller: BWA/samplesheet.csv
 	$(NEXTFLOW) run -work-dir work/HC -profile gitlabci -c reference.config  -c nproc.cfg  ../workflows/gatk/gatk4gvcfs3/main.nf --outdir ${PWD}/HC --samplesheet $<
@@ -61,6 +88,10 @@ REF/$(BUILD).xxfa.bwt:
 		mv $(BUILD)_no_alt_analysis_set.fna.pac $(BUILD).fa.pac && \
 		mv $(BUILD)_no_alt_analysis_set.fna.sa $(BUILD).fa.sa
 
+
+REF/rotavirus_rf.fa:
+	mkdir -p $(dir $@)
+	
 
 REF/$(BUILD).gff.gz.tbi: REF/$(BUILD).gff.gz
 	tabix -p gff -f $<

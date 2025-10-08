@@ -27,7 +27,6 @@ include {assertKeyExistsAndNotEmpty          } from '../../../modules/utils/func
 include {testKeyExistsAndNotEmpty            } from '../../../modules/utils/functions.nf'
 include {assertKeyMatchRegex                 } from '../../../modules/utils/functions.nf'
 include {VCF_STATS                           } from '../../../subworkflows/vcfstats'
-include {SCATTER_TO_BED                      } from '../../../subworkflows/gatk/scatterintervals2bed'
 include {BEDTOOLS_MAKEWINDOWS                } from '../../../modules/bedtools/makewindows'
 include {BED_CLUSTER                         } from '../../../modules/jvarkit/bedcluster'
 include {GATK_BAM2VCF                        } from '../../../subworkflows/gatk/bam2vcf'
@@ -106,7 +105,8 @@ workflow {
         .mix(Channel.of(fasta).map{it[1]})
         .mix(PREPARE_REFERENCE.out.fai.map{it[1]})
         .mix(PREPARE_REFERENCE.out.dict.map{it[1]})
-        .map{fn->fn.toRealPath()}
+        .map{fn->[fn.name,fn.toRealPath()]} // group files by names. prevent file collisiton; FAI might have same name because PREPARE_REFERENCE.out.fai
+        .map{name,fns->fns.sort()[0]}
         .unique()
         .collect()
         .map{[ref_hash,it]}
@@ -146,21 +146,19 @@ workflow {
             .map{bam,sample_name,meta->meta.plus("sample":sample_name)}
 
     bams_ch = fix_sample_name.mix(bams_ch1.has_sample)
+    		.map{
+    			if(it.id==null) return it.plus(id:it.sample);
+    			return it;
+    			}
 			.map{it.bai?it: (it.bam.endsWith(".bam") ? it.plus(["bai":it.bam+".bai"]):  it.plus(["bai":it.bam+".crai"]))}
             .filter{assertKeyExistsAndNotEmpty(it,"sample")}
-            .map{
-		def meta = [id:it.sample];
-		for(k in ["group","sex","father","mother","family","status","collection"])
-			{
-			if(!it.containsKey(k)) continue;
-			def v = it.get(k);
-			if(v.isEmpty()) continue;
-			if(v.equals(".")) continue;
-			meta=meta.plus([k:v]);
-			}
-		return [meta, file(it.bam),file(it.bai)];
-		}
-        
+            .map{[
+            	it.findAll{k,v->k.matches("(id|sample|sex|father|mother|status|population|family|collection)") && v!=null && !v.isEmpty()},
+            	file(it.bam),
+            	file(it.bai)
+            	];
+				}
+
     /* check no duplicate samples */
     bams_ch.map{meta,bam,bai->meta.id}.unique().count()
         .combine(bams_ch.map{meta,bam,bai->meta.id}.count())
@@ -176,9 +174,7 @@ workflow {
 
 
     if(params.bed==null) {
-        SCATTER_TO_BED(ref_hash,fasta,fai,dict)
-        versions = versions.mix(SCATTER_TO_BED.out.versions)
-        bed = SCATTER_TO_BED.out.bed
+        bed = PREPARE_REFERENCE.out.scatter_bed
     } else {
         bed = Channel.of([ref_hash, file(params.bed)])
     }
@@ -202,7 +198,7 @@ workflow {
 
     if(params.method.equalsIgnoreCase("gvcf")) {
         HAPLOTYPECALLER(
-            [id:"hapcaller"],
+            [id:"hapcaller",gvcf_merge_method:params.gvcf_merge_method],
             fasta,
             fai,
             dict,
@@ -213,6 +209,7 @@ workflow {
             bams_ch
             )
         versions = versions.mix(HAPLOTYPECALLER.out.versions)
+        vcf_ch = HAPLOTYPECALLER.out.vcf
         }
     else if(params.method.equalsIgnoreCase("bam2vcf")) {
         GATK_BAM2VCF(
@@ -255,7 +252,7 @@ workflow {
    */
   BCFTOOLS_GUESS_PLOIDY(fasta, fai,vcf_ch)
   versions = versions.mix(BCFTOOLS_GUESS_PLOIDY.out.versions)
-
+  multiqc = multiqc.mix(BCFTOOLS_GUESS_PLOIDY.out.output)
 
 
   /***************************************************
@@ -271,8 +268,8 @@ workflow {
     [[:],[]],//samples,
     vcf_ch.map{[it[0],[it[1],it[2]]]}
     )
-  versions = versions.mix(BCFTOOLS_GUESS_PLOIDY.out.versions)
-
+  versions = versions.mix(BCFTOOLS_STATS.out.versions)
+  multiqc = multiqc.mix(BCFTOOLS_STATS.out.stats)
 
 
 	MULTIQC(

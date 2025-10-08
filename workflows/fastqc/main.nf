@@ -28,9 +28,8 @@ include {dumpParams;runOnComplete   } from '../../modules/utils/functions.nf'
 include {testKeyExistsAndNotEmpty   } from '../../modules/utils/functions.nf'
 include {assertKeyExistsAndNotEmpty } from '../../modules/utils/functions.nf'
 include {FASTQC                     } from '../../modules/fastqc'
-include {MULTIQC                    } from '../../modules/multiqc'
-include {COMPILE_VERSIONS           } from '../../modules/versions'
-
+include {MULTIQC                    } from '../../subworkflows/multiqc'
+include {META_TO_PED                } from '../../subworkflows/pedigree/meta2ped'
 
 if( params.help ) {
     dumpParams(params);
@@ -45,9 +44,14 @@ if( params.help ) {
 workflow {
 	versions = Channel.empty()
 	multiqc_ch = Channel.empty()
-	ch1 = Channel.fromPath(params.samplesheet)
-        .splitCsv(header:true)
-        .map{assertKeyExistsAndNotEmpty(it,"sample")}
+	ch0 = Channel.fromPath(params.samplesheet)
+        .splitCsv(header:true,sep:",")
+        
+    META_TO_PED([id:"fastqc"],ch0)
+    versions = versions.mix(META_TO_PED.out.versions)    
+        
+        
+    ch1 = ch0.map{assertKeyExistsAndNotEmpty(it,"sample")}
         .map{
             if(it.fastq_1==null && it.R1!=null) return it.plus(fastq_1:it.R1);
             return it;
@@ -61,7 +65,9 @@ workflow {
                 paired: it.fastq_2!=null &&  !it.fastq_2.isEmpty() &&  !it.fastq_2.equals(".")
                 single: true
                 }
-        
+    
+    
+    
     
     ch2a = ch1.paired.map{assertKeyExistsAndNotEmpty(it,"fastq_2")}.map{[
         [id:it.sample],
@@ -72,17 +78,20 @@ workflow {
         [id:it.sample],
         [file(it.fastq_1)]
         ]}
+	
+	
 
-
-    FASTQC( ch2a.mix(ch2b).view() )
+    FASTQC( ch2a.mix(ch2b) )
     versions = versions.mix(FASTQC.out.versions)
     multiqc_ch = multiqc_ch.mix(FASTQC.out.zip)
     multiqc_ch = multiqc_ch.mix(FASTQC.out.html)
 
-    COMPILE_VERSIONS(versions.collect().map{it.sort()})
-    multiqc_ch = multiqc_ch.mix(COMPILE_VERSIONS.out.multiqc.map{[[id:"versions"],it]})
-    // in case of problem multiqc_ch.filter{!(it instanceof List) || it.size()!=2}.view{"### FIX ME ${it} MULTIQC"}
-    MULTIQC(multiqc_ch.map{it[1]}.collect().map{[[id:"fastqc"],it]})
+    MULTIQC(
+		["id":"multiqc"],
+		META_TO_PED.out.sample2collection,
+		versions,
+		multiqc_ch
+		)
     }
 
 

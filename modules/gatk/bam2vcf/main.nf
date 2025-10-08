@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -38,8 +38,6 @@ input:
 output:
 	tuple  val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),path(bed),emit:vcf
 	path("versions.yml"),emit:versions
-when:
-    task.ext.when == null || task.ext.when
 script:
 	def fasta = "_reference.fa";
 	def fai = "${fasta}.fai";
@@ -202,5 +200,11 @@ cat << EOF > versions.yml
 ${task.process}:
     gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
 EOF
+"""
+
+stub:
+def prefix = task.ext.prefix?:"${bed.name}"
+"""
+touch versions.yml "${prefix}.vcf.gz" "${prefix}.vcf.gz.tbi"
 """
 }

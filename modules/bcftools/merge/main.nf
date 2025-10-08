@@ -91,4 +91,12 @@ ${task.process}:
     bcftools: \$(bcftools version | awk '(NR==1)  {print \$NF}')
 END_VERSIONS
 """
+
+stub:
+ def prefix = task.ext.prefix?:"zozo"+(meta.id?meta.id.md5().substring(0,7):"")+ ((optional_bed?true:false)?optional_bed.baseName:"")
+ // "f"+(meta.id?"."+meta.id.md5():"") + (optional_bed?"."+optional_bed.baseName:"")
+"""
+find VCFS/ \\( -name "*.vcf.gz" -o -name "*.bcf"  \\) 
+touch versions.yml ${prefix}.bcf ${prefix}.bcf.csi
+"""
 }

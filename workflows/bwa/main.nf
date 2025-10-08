@@ -38,7 +38,7 @@ include {BAM_TO_FASTQ               } from '../../modules/samtools/bam2fastq'
 include {META_TO_PED                } from '../../subworkflows/pedigree/meta2ped'
 include {MULTIQC                    } from '../../subworkflows/multiqc'
 include {BAM_QC                     } from '../../subworkflows/bamqc'
-include {SCATTER_TO_BED             } from '../../subworkflows/gatk/scatterintervals2bed'
+
 
 
 if( params.help ) {
@@ -190,15 +190,18 @@ workflow {
 	multiqc_ch = multiqc_ch.mix(MAP_BWA.out.multiqc)
 
 	if(params.capture==null) {
-		SCATTER_TO_BED(hash_ref,fasta,fai,dict)
-		versions = versions.mix(SCATTER_TO_BED.out.versions)
-		bed4qc = SCATTER_TO_BED.out.bed
+		bed4qc = bed = PREPARE_REFERENCE.out.scatter_bed
 	  } else {
 		bed4qc = Channel.of([hash_ref,file(params.capture)])
 	  }
 
+	bams_out = MAP_BWA.out.bams
+	if(params.with_cram) {
+		bams_out = MAP_BWA.out.crams
+		}
 	
-	MAKE_SAMPLESHEET(MAP_BWA.out.crams.ifEmpty(MAP_BWA.out.bams)
+	MAKE_SAMPLESHEET(
+		bams_out
 		.map{meta,bam,bai->[
 			meta.id,
 			"${params.outdir}/BAMS/${meta.id}/${params.prefix?:""}${bam.name}",

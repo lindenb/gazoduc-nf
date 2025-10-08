@@ -40,11 +40,13 @@ workflow HAPLOTYPECALLER_DIRECT {
 
 		version_ch = Channel.empty()
 
-		ch1 = bams.map{meta,bam,bai->[(meta.group?:meta.id), [bam, bai]]}
+
+
+		ch1 = bams.map{meta,bam,bai->["${meta.group?:meta.id}", [bam, bai]]}
 			.groupTuple()
 			.map{group,bam_files->[[id:group],bam_files.flatten().sort()]}
 			.combine(beds.map{meta,bed->bed})
-
+			
 		
 		HAPCALLER(
 			fasta,
@@ -56,24 +58,26 @@ workflow HAPLOTYPECALLER_DIRECT {
 			)
 		version_ch = version_ch.mix(HAPCALLER.out.versions)
 
-		BCFTOOLS_MERGE(
-			HAPCALLER.out.vcf
+
+		
+		to_merge = HAPCALLER.out.vcf
 				.map{meta,vcf,tbi,bed->[bed.toRealPath().toString(),[vcf,tbi]]}
 				.groupTuple()
 				.map{name,vcf_files->[[id:name.md5()],vcf_files.flatten().sort(),[]]}
-			)
+				
+				
+		BCFTOOLS_MERGE(to_merge)
 		version_ch = version_ch.mix(BCFTOOLS_MERGE.out.versions)
-
 
 		BCFTOOLS_CONCAT(
 			meta,
 			[[id:"nobed"],[]],
-			BCFTOOLS_MERGE.out.vcf
+			BCFTOOLS_MERGE.out.vcf.map{meta,vcf,tbi,bed->[meta,vcf,tbi]}
 			)
 		version_ch = version_ch.mix(BCFTOOLS_CONCAT.out.versions)
 		
 		
-		vcf_out = Channel.empty()
+		vcf_out = BCFTOOLS_CONCAT.out.vcf
 
 	emit:
 		versions = version_ch

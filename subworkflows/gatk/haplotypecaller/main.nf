@@ -27,7 +27,8 @@ include { HAPLOTYPECALLER as HAPCALLER         }  from '../../../modules/gatk/ha
 include { BCFTOOLS_CONCAT                      }  from '../../../modules/bcftools/concat'
 include { COMBINE_GENOTYPE_GVCFS               }  from '../combinegenotypegvcfs'
 include { makeKey                              }  from '../../../modules/utils/functions.nf'
-include {FIND_GVCF_BLOCKS                      }  from '../../../modules/jvarkit/findgvcfblocks'
+include { FIND_GVCF_BLOCKS                     }  from '../../../modules/jvarkit/findgvcfblocks'
+include { GLNEXUS_GENOTYPE                     }  from '../../../modules/glnexus/genotype'
 
 
 workflow HAPLOTYPECALLER {
@@ -78,22 +79,54 @@ main:
         .combine(HAPCALLER.out.gvcf) // I tried to use 'join' but it doesn't work / Nasty bug ? So combine+filter
         .filter{srcbed1,bed,meta,vcf,tbi,srcbed2->srcbed1.toRealPath().equals(srcbed2.toRealPath())}
         .map{srcbed1,bed,meta,vcf,tbi,srcbed2->[meta,vcf,tbi,bed]}
-
-
-    COMBINE_GENOTYPE_GVCFS(
-            meta,
-            fasta,
-            fai,
-            dict,
-	        dbsnp,
-            gvcfs_ch
-            )
-
-    versions  = versions.mix(COMBINE_GENOTYPE_GVCFS.out.versions)
-
+	
+	
+	vcf_out = Channel.empty()
+	if(meta.gvcf_merge_method==null  || meta.gvcf_merge_method.equalsIgnoreCase("combinegvcfs")) {
+		COMBINE_GENOTYPE_GVCFS(
+		        meta,
+		        fasta,
+		        fai,
+		        dict,
+			    dbsnp,
+		        gvcfs_ch
+		        )
+		versions  = versions.mix(COMBINE_GENOTYPE_GVCFS.out.versions)
+		vcf_out = COMBINE_GENOTYPE_GVCFS.out.vcf
+		}
+	else if(meta.gvcf_merge_method.equalsIgnoreCase("glnexus")) {
+		ch2 = gvcfs_ch
+			.map{meta,gvcf,tbi,bed->
+				[
+				bed.toRealPath(),
+				[gvcf,tbi]
+				]}
+			.groupTuple()
+			.map{bed,vcf_files->[bed,vcf_files.flatten().sort()]}//need sort here to have the same key below
+			.map{bed,vcf_files->[
+				[id:makeKey([bed,vcf_files])],
+				bed,
+				vcf_files
+				]}
+			.multiMap{meta,bed_file,vcf_files->
+				bed: [meta,bed_file]
+				vcf: [meta,vcf_files]
+				}
+		GLNEXUS_GENOTYPE(
+		        ch2.bed,
+		       	[[id:"noconfig"],[]],
+		        ch2.vcf
+		        )
+		versions  = versions.mix(GLNEXUS_GENOTYPE.out.versions)
+		vcf_out = GLNEXUS_GENOTYPE.out.vcf
+		}
+	else
+		{
+		throw new IllegalArgumentException("unknown meta.gvcf_merge_method = ${meta.gvcf_merge_method}.");
+		}
 
     BCFTOOLS_CONCAT(
-        COMBINE_GENOTYPE_GVCFS.out.vcf
+        vcf_out
             .map{meta,vcf,tbi,bed->[vcf,tbi]}//gvcf,tbi
              .collect()
              .map{[[id:"gatkhapcaller"],it]},

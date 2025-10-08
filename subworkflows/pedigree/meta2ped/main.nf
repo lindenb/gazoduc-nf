@@ -29,20 +29,24 @@ take:
 main:
 	MAKE_PED(
 		meta,
-		metas.map{[
-			it.id,
-			it.father?:"0",
-			it.mother?:"0",
-			it.sex?:"0",
-			it.status?:"0"
+		metas
+			.map{[ /* weird bug, if I don't use quote, just it?:something, it doesn't work... */
+			"${it.id?:(it.sample?:"")}",
+			"${it.father?:""}",
+			"${it.mother?:""}",
+			"${it.sex?:""}",
+			"${it.status?:""}",
+			"${it.collection?:(it.population?:"")}"
 			]}
 		.map{it.join("\t")}
 		.collect()
 		)
-	tmp = Channel.empty().ifEmpty([[id:"noped"],[]]).first()
+
+	sample2collection = MAKE_PED.out.sample2col.ifEmpty( [[id:"nosn2col"],[]])
+	pedigree_gatk  = MAKE_PED.out.gatk.ifEmpty( [[id:"nogatkped"],[]])
 emit:
-	pedigree_gatk = tmp
-	sample2collection = Channel.empty()
+	pedigree_gatk
+	sample2collection
 	versions = MAKE_PED.out.versions
 }
 
@@ -53,23 +57,29 @@ input:
 	val(meta)
 	val(L)
 output:
-	tuple val(meta),path("*.gatk.ped"),optional:true,emit:gatk
+	tuple val(meta),path("pedigree4gatk.ped"),optional:true,emit:gatk
+	tuple val(meta),path("males.txt"),optional:true,emit:males
+	tuple val(meta),path("females.txt"),optional:true,emit:females
+	tuple val(meta),path("cases.txt"),optional:true,emit:cases
+	tuple val(meta),path("controls.txt"),optional:true,emit:controls
+	tuple val(meta),path("sample2collection.tsv"),optional:true,emit:sample2col
 	path("versions.yml"),emit:versions
 script:
 """
-cat << EOF | sort | uniq > raw.ped
+cat << EOF | sort -T . | uniq > raw.ped
 ${L.join("\n")}
 EOF
 
 python3 ${moduleDir}/ped.py raw.ped > /dev/null
 
-touch versions.yml
-"""
+for F in males.txt females.txt cases.txt controls.txt sample2collection.tsv pedigree4gatk.ped
+do
+	if test ! -s "\${F}"
+	then
+		rm -fv "\${F}"
+	fi
+done
 
-stub:
-
-
-"""
 touch versions.yml
 """
 }

@@ -96,5 +96,10 @@ cat << EOF > versions.yml
 EOF
 
 """
+stub:
+def prefix = task.ext.prefix?:(meta.id?:"glnexus")+(optional_bed?"."+optional_bed.baseName:"")+".glnexus"
+"""
+touch versions.yml ${prefix}.bcf ${prefix}.bcf.csi
+"""
 }
 

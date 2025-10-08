@@ -11,6 +11,7 @@ before_script:
   - export PATH="${PWD}/bin:${PATH}"
   - eval "$(./bin/micromamba shell hook -s posix)"
   - export NXF_ANSI_LOG=false
+  - df -h
 
 stages:
   - test
@@ -18,7 +19,7 @@ stages:
 test-job:
   stage: test
   script:
-    - make -C tests
+    - make -C tests stub hard_tests 
   artifacts:
     paths:
         - tests/.nextflow.log

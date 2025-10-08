@@ -25,6 +25,8 @@ SOFTWARE.
 include {SAMTOOLS_DICT   } from '../../../modules/samtools/dict'
 include {SAMTOOLS_FAIDX  } from '../../../modules/samtools/faidx'
 include {FAI2BED         } from '../../../modules/samtools/fai2bed'
+include {SCATTER_TO_BED  } from '../../../subworkflows/gatk/scatterintervals2bed'
+
 
 workflow PREPARE_REFERENCE {
 take:
@@ -41,9 +43,19 @@ main:
 	
 	FAI2BED(SAMTOOLS_FAIDX.out.fai)
 	versions = versions.mix(FAI2BED.out.versions)
+	
+	SCATTER_TO_BED(
+		meta,
+		fasta,
+		SAMTOOLS_FAIDX.out.fai,
+		SAMTOOLS_DICT.out.dict
+		)
+    versions = versions.mix(SCATTER_TO_BED.out.versions)
+	
 emit:
 	versions
 	fai = SAMTOOLS_FAIDX.out.fai
 	dict = SAMTOOLS_DICT.out.dict
 	bed = FAI2BED.out.bed
+	scatter_bed = SCATTER_TO_BED.out.bed
 }
