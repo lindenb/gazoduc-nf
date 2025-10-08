@@ -42,4 +42,10 @@ cat << EOF > versions.yml
 	batik: "${url}"
 EOF
 """
+stub:
+"""
+touch versions.yml
+mkdir -p batik-1.19
+touch "batik-1.19/batik-rasterizer-1.19.jar"
+"""
 }

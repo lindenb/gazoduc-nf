@@ -52,7 +52,7 @@ emit:
 
 process MAKE_PED {
 label "process_single"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/multiqc.yml"
 input:
 	val(meta)
 	val(L)

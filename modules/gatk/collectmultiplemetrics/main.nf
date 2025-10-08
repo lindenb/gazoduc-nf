@@ -26,7 +26,7 @@ process COLLECT_MULTIPLE_METRICS {
 tag "${meta.id?:""}"
 label "process_single"
 afterScript "rm -rf TMP"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.02.yml"
 when:
     task.ext.when == null || task.ext.when
 input:

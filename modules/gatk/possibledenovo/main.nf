@@ -25,7 +25,7 @@ SOFTWARE.
 process GATK_POSSIBLE_DENOVO {
     label "process_single"
     tag "${meta.id}"
-    conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+    conda "${moduleDir}/../../../conda/bioinfo.02.yml"
     afterScript "rm -rf TMP"
     when:
         task.ext.when == null || task.ext.when

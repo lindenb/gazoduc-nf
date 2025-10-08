@@ -23,9 +23,9 @@ SOFTWARE.
 
 */
 
-include {SOMALIER_DOWNLOAD_SITES} from '../../../modules/somalier/download.sites/main.nf'
-
-
+include {SOMALIER_DOWNLOAD_SITES} from '../../../modules/somalier/download.sites'
+include {EXTRACT_BAM            } from '../../../modules/somalier/extract'
+include {RELATE                 } from '../../../modules/somalier/relate'
 
 
 workflow SOMALIER_BAMS {
@@ -86,149 +86,25 @@ workflow SOMALIER_BAMS {
 		EXTRACT_BAM(sites_vcf, ch2)
 		version_ch = version_ch.mix(EXTRACT_BAM.out.versions.first())
 	
-		RELATE_SOMALIER(
+		RELATE(
 			fasta2,fai,dict,
 			EXTRACT_BAM.out.output.map{it[1]}.collect().map{[[id:"somalier"],it]},
 			pedigree
 			)
-		version_ch = version_ch.mix(RELATE_SOMALIER.out.versions)
+		version_ch = version_ch.mix(RELATE.out.versions)
 
-		PLOT_MATRIX(RELATE_SOMALIER.out.output.map{[it[0],it[1].find{v->v.name.endsWith(".pairs.tsv")}]})
+		PLOT_MATRIX(RELATE.out.output.map{[it[0],it[1].find{v->v.name.endsWith(".pairs.tsv")}]})
 		version_ch = version_ch.mix(PLOT_MATRIX.out.versions)
 
 	emit:
-		output = RELATE_SOMALIER.out.output
+		output = RELATE.out.output
 		versions = version_ch
-		zip = RELATE_SOMALIER.out.zip
-		qc = RELATE_SOMALIER.out.qc
+		zip = RELATE.out.zip
+		multiqc = RELATE.out.multiqc
 
 }
 
 
-process EXTRACT_BAM {
-	tag "${meta.id?:bam.name}"
-	label "process_single"
-	conda "${moduleDir}/../../../conda/somalier.yml"
-
-	input:
-		tuple val(meta1),path(sites),path(sites_idx)
-		tuple val(meta),path(bam),path(bai),path(fasta),path(fai)
-	output:
-		tuple val(meta),path("extracted/*.somalier"),emit:output
-		path("versions.yml"),emit:versions
-	script:
-		def prefix = meta.id?:"${bam.name}"
-	"""
-	hostname 1>&2
-	mkdir -p extracted
-	somalier extract -d extracted --sites "${sites}" -f "${fasta}" "${bam}"
-	
-	test -s extracted/*.somalier
-
-	# change name if needed
-	if ! test -f extracted/${prefix}.somalier
-	then
-		mv  -v extracted/*.somalier "extracted/${prefix}.somalier"
-	fi
-
-
-cat << EOF > versions.yml
-${task.process}:
-    somalier: todo
-EOF
-	"""
-	}
-
-
-process RELATE_SOMALIER {
-label "process_medium"
-afterScript "rm -rf extracted TMP"
-conda  "${moduleDir}/../../../conda/somalier.yml"
-input:
-	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai)
-	tuple val(meta3),path(dict)
-	tuple val(meta),path("EXTRACT/*")
-	tuple val(meta4),path(pedigree)
-output:
-	tuple val(meta),path("somalier.bams/*"),emit:output
-	tuple val(meta),path("somalier.bams.zip"),emit:zip
-	tuple val(meta),path("somalier_mqc.html"),emit:qc
-	path("versions.yml"),emit:versions
-script:
-	def max_rows_html = 50
-	def prefix=task.ext.prefix?:""
-"""
-hostname 1>&2
-set -x
-
-mkdir -p TMP
-mkdir -p "${prefix}somalier.bams"
-
-somalier relate --output-prefix=${prefix}somalier.bams/${prefix}bams \\
-	${pedigree?"-p '${pedigree}'":""} \\
-	EXTRACT/*.somalier
-
-# may not exist
-touch "${prefix}somalier.bams/${prefix}bams.groups.tsv"
-zip -9 -r "${prefix}somalier.bams.zip" "${prefix}somalier.bams"
-
-set +o pipefail
-
-cat << EOF > TMP/jeter.html
-<!--
-id: '${prefix}'
-section_name: 'Somalier'
-description: 'Somalier: relatedness among samples from extracted, genotype-like information'
--->
-<div>
-<table class="table">
-<caption>${max_rows_html} higher relatedness</caption>
-<thead>
-	<th>sample1</th>
-	<th>sample2</th>
-	<th>relatedness</th>
-</thead>
-<tbody>
-EOF
-
-cut -f1,2,3  "${prefix}somalier.bams"/*.pairs.tsv |\
-	tail -n+2 |\
-	LC_ALL=C sort -T TMP -t '\t' -k3,3gr |\
-	head -n '${max_rows_html}' |\
-	awk -F '\t' '{printf("<tr><td>%s</td><td>%s</td><td>%s</td></tr>\\n",\$1,\$2,\$3);}' >> TMP/jeter.html
-cat << EOF >> TMP/jeter.html
-</tbody>
-</table>
-<br/>
-
-<table class="table">
-<caption>mean relatedness by sample</caption>
-<thead>
-        <th>sample</th>
-        <th>AVG(relatedness)</th>
-</thead>
-<tbody>
-EOF
-
-awk '(NR>1) {P[\$1]+=1.0*(\$3);P[\$2]+=1.0*(\$3);C[\$1]++;C[\$2]++;} END{for(S in P) printf("%s\t%f\\n",S,P[S]/C[S]);}' "${prefix}somalier.bams"/*.pairs.tsv  |\
-	LC_ALL=C sort -T TMP -t \$'\\t' -k2,2gr |\
-	awk -F '\t' '{printf("<tr><td>%s</td><td>%s</td></tr>\\n",\$1,\$2);}'  >> TMP/jeter.html
-
-cat << EOF >> TMP/jeter.html
-</tbody>
-</table>
-</div>
-EOF
-
-mv -v  TMP/jeter.html "${prefix}somalier_mqc.html"
-
-cat << EOF > versions.yml
-${task.process}:
-    somalier: todo
-EOF
-"""
-}
 
 
 process PLOT_MATRIX {
@@ -305,5 +181,9 @@ dev.off()
 __EOF__
 
 touch versions.yml
+"""
+stub:
+"""
+touch versions.yml ${meta.id}.pdf
 """
 }

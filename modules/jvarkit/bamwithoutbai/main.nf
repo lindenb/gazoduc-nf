@@ -72,4 +72,9 @@ ${task.process}:
 	jvarkit: "\$(jvarkit --version)"
 EOF
 """
+stub:
+def prefix =  task.ext.prefix?:"${meta.id?:""}.${meta.contig}_${meta.start}_${meta.end}"
+"""
+touch versions.yml ${prefix}.bam ${prefix}.bam.bai
+"""
 }

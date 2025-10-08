@@ -23,38 +23,41 @@ SOFTWARE.
 
 */
 
-process GATK4_GATHER_BQSR {
-tag "${meta.id?:""}"
-label "process_single"
-afterScript 'rm -rf TMP'
-conda "${moduleDir}/../../conda/bioinfo.02.yml"
-input:
-	tuple val(meta),path("TABLES/*")
-output:
-    tuple val(meta),path("*.recal.table"),emit:table
-    path("versions.yml"),emit:versions
-when:
-    task.ext.when == null || task.ext.when
-script:
-    def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP"
-"""
-hostname 1>&2
-mkdir -p TMP
+process EXTRACT_BAM {
+	tag "${meta.id?:bam.name}"
+	label "process_single"
+	conda "${moduleDir}/../../../conda/somalier.yml"
 
-find TABLES/ -name "*.table" |\\
-	awk '{printf("-I %s\\n",\$0);}' > TMP/arguments.list
+	input:
+		tuple val(meta1),path(sites),path(sites_idx)
+		tuple val(meta),path(bam),path(bai),path(fasta),path(fai)
+	output:
+		tuple val(meta),path("extracted/*.somalier"),emit:output
+		path("versions.yml"),emit:versions
+	script:
+		def prefix = meta.id?:"${bam.name}"
+	"""
+	hostname 1>&2
+	mkdir -p extracted
+	somalier extract -d extracted --sites "${sites}" -f "${fasta}" "${bam}"
+	
+	test -s extracted/*.somalier
 
-gatk --java-options "${jvm}" GatherBQSRReports \
-	--arguments_file  TMP/arguments.list \\
-	-O "${meta.id}.recal.table" 
+	# change name if needed
+	if ! test -f extracted/${prefix}.somalier
+	then
+		mv  -v extracted/*.somalier "extracted/${prefix}.somalier"
+	fi
 
-cat << EOF > version.yml
+
+cat << EOF > versions.yml
 ${task.process}:
-    gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
+    somalier: todo
 EOF
-"""
+	"""
 stub:
 """
-touch versions.yml "${meta.id}.recal.table" 
+mkdir extracted
+touch versions.yml "extracted/${meta.id}.somalier" 
 """
 }

@@ -49,4 +49,9 @@ ${task.process}:
 	batik: "todo"
 EOF
 """
+
+stub:
+"""
+touch versions.yml ${svg.baseName}.pdf
+"""
 }

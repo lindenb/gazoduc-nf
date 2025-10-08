@@ -27,7 +27,7 @@ process HAPLOTYPECALLER_DIRECT {
 tag "${meta.id?:""} ${optional_bed?optional_bed.name:""}"
 label "process_single"
 afterScript "rm -rf TMP"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.02.yml"
 input:
     tuple val(meta1),path(fasta)
     tuple val(meta2),path(fai)

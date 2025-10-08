@@ -24,10 +24,10 @@ def update_status(status):
         return status   
 
 def update_sex(sex):
-    sex = sex.upper()
-    if sex == "XX" or sex == "F":
+    sex2 = sex.upper()
+    if sex2 == "XX" or sex2 == "F"  or sex2 == "2":
         return "female"
-    elif sex == "XY" or sex == "M":
+    elif sex2 == "XY" or sex2 == "M" or sex2 == "1":
         return "male"
     else:
         return sex
@@ -46,19 +46,20 @@ def process_table(rows):
         row[3] = update_sex(row[3])
         row[4] = update_status(row[4])
         if is_empty(row[1]):
-            row[1] = "0"
+           row[1] = "0"
         if is_empty(row[2]):
             row[2] = "0"
 
     # Second, update father/mother if absent
     ids = set(id_to_row.keys())
     for row in rows:
-        id, father, mother, sex, status, pop = row
+        parent = row[1]
         # father
-        if is_empty(father)==False or father not in ids:
+        if is_empty(parent) or parent not in ids:
             row[1] = "0"
         # mother
-        if is_empty(mother)==False or mother not in ids:
+        parent = row[2]
+        if is_empty(parent) or parent not in ids:
             row[2] = "0"
 
     # Third, check father/mother sex
@@ -118,31 +119,29 @@ def main():
             if is_empty(row[5]) == False:
                  f.write(row[0] + "\t" + row[5] + "\n")
     # write pedigree for GATK
-    def write_tsv(rows,filename):
-        with open("pedigree4gatk.ped","w") as f:
-            for row in rows:
-                f.write(row[0])
-                f.write("\n")
-                f.write(row[0])
-                f.write("\t")
-                f.write(row[1])
-                f.write("\t")
-                f.write(row[2])
-                f.write("\t")
-                if row[3]=="male":
-                    f.write("1")
-                elif row[3]=="female":
-                    f.write("2")
-                else:
-                    f.write("0")
-                if row[4]=="case":
-                    f.write("2")
-                elif row[4]=="control":
-                    f.write("1")
-                else:
-                    f.write("0")
-                f.write("\t")
-                f.write(row[4])
-                f.write("\n")
+    with open("pedigree4gatk.ped","w") as f:
+        for row in rows:
+            f.write(row[0])
+            f.write("\t")
+            f.write(row[0])
+            f.write("\t")
+            f.write(row[1])
+            f.write("\t")
+            f.write(row[2])
+            f.write("\t")
+            if row[3]=="male":
+                f.write("1")
+            elif row[3]=="female":
+                f.write("2")
+            else:
+                f.write("0")
+            f.write("\t")
+            if row[4]=="case":
+                f.write("2")
+            elif row[4]=="control":
+                f.write("1")
+            else:
+                f.write("0")
+            f.write("\n")
 if __name__ == "__main__":
     main()

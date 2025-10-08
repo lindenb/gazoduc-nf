@@ -26,7 +26,7 @@ process GATHER_VCFS {
 tag "${meta.id?:""}"
 label "process_short"
 afterScript "rm -rf TMP"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../conda/bioinfo.02.yml"
 input:
 	tuple val(meta),path("VCFS/*")
 output:

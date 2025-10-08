@@ -44,18 +44,26 @@ main:
 	FAI2BED(SAMTOOLS_FAIDX.out.fai)
 	versions = versions.mix(FAI2BED.out.versions)
 	
-	SCATTER_TO_BED(
-		meta,
-		fasta,
-		SAMTOOLS_FAIDX.out.fai,
-		SAMTOOLS_DICT.out.dict
-		)
-    versions = versions.mix(SCATTER_TO_BED.out.versions)
+	
+	if(meta.skip_scatter==null || meta.skip_scatter==false) {
+		SCATTER_TO_BED(
+			meta,
+			fasta,
+			SAMTOOLS_FAIDX.out.fai,
+			SAMTOOLS_DICT.out.dict
+			)
+		versions = versions.mix(SCATTER_TO_BED.out.versions)
+		scatter_bed = SCATTER_TO_BED.out.bed
+		}
+	else
+		{
+		scatter_bed = Channel.of([[id:"noscatterbed"],[]])
+		}
 	
 emit:
 	versions
 	fai = SAMTOOLS_FAIDX.out.fai
 	dict = SAMTOOLS_DICT.out.dict
 	bed = FAI2BED.out.bed
-	scatter_bed = SCATTER_TO_BED.out.bed
+	scatter_bed
 }

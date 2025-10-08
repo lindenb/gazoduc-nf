@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,65 +24,120 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-include { validateParameters; paramsHelp; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
+//include { validateParameters; paramsHelp; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
 
-include {runOnComplete;} from '../../../modules/utils/functions.nf'
+
 
 
 // Print help message, supply typical command line usage for the pipeline
 if (params.help) {
-   log.info paramsHelp("nextflow run my_pipeline --input input_file.csv")
+   //log.info paramsHelp("nextflow run my_pipeline --input input_file.csv")
    exit 0
 }
 // validate parameters
-validateParameters()
+//validateParameters()
 
 // Print summary of supplied parameters
-log.info paramsSummaryLog(workflow)
+//log.info paramsSummaryLog(workflow)
 
 
 
-include {SOMALIER_BAMS    } from  '../../../subworkflows/somalier/bams'
-include {MULTIQC          } from '../../../subworkflows/multiqc/multiqc.nf'
+include {SOMALIER_BAMS              } from  '../../../subworkflows/somalier/bams'
+include {MULTIQC                    } from '../../../subworkflows/multiqc'
+include {PREPARE_REFERENCE          } from '../../../subworkflows/samtools/prepare.ref'
+include {assertKeyExistsAndNotEmpty } from '../../../modules/utils/functions.nf'
+include {runOnComplete              } from '../../../modules/utils/functions.nf'
+include {META_TO_PED                } from '../../../subworkflows/pedigree/meta2ped'
+include {SOMALIER_FIND_SITES        } from '../../../modules/somalier/find.sites'
 
-
-
-
-workflow {
-	def hash_ref= [
-		id: file(params.fasta).baseName,
-		name: file(params.fasta).baseName
-		]
-	def fasta = [ hash_ref, file(params.fasta)]
-	def fai   = [ hash_ref, file(params.fai)]
-	def dict  = [ hash_ref, file(params.dict)]
-	def sites    = (params.user_sites==null ? [ hash_ref, []]:[hash_ref,file(params.user_sites)])
-	def pedigree = (params.pedigree==null   ? [ hash_ref, []]:[hash_ref,file(params.pedigree  )])
-
-	SOMALIER_BAMS(
-		[:],
-		Channel.of(fasta),
-		fai,
-		dict,
-		Channel.fromPath(params.samplesheet)
-			.splitCsv(header:true,sep:',')
-			.map{
-				if(!it.containsKey("sample")) throw new IllegalArgumentException("sample missing");
-				if(!it.containsKey("bam")) throw new IllegalArgumentException("bam missing");
-				if(!it.containsKey("bai")) throw new IllegalArgumentException("bai missing");
-				def key=  [id:it.sample];
-				if(it.containsKey("fasta") && !it.fasta.trim().isEmpty()) {
-					def fasta2 = it.fasta
-					def fai2 = (it.containsKey("fai") && !it.fasta.trim().isEmpty()? it.fai : fasta2 +".fai")
-					return [key,file(it.bam),file(it.bai),file(fasta2),file(fai2)]
-					}
-				return [key,file(it.bam),file(it.bai)]
-				},
-		pedigree,
-		sites
-		)
-	//multiqc =  MULTIQC(somalier_ch.output.mix(somalier_ch.qc).flatten().collect())
+boolean hasKey(def h, def id) {
+	return h!=null && h[id]!=null && !(h[id].trim().isEmpty() || h[id].equals("."));
 	}
 
 
-//runOnComplete(workflow)
+workflow {
+	def versions = Channel.empty()
+	def multiqc = Channel.empty()
+	def hash_ref= [
+		id: file(params.fasta).baseName,
+		name: file(params.fasta).baseName,
+		ucsc_name : "${params.ucsc_name?:"undefined"}"
+		]
+	
+	
+	def fasta = [ hash_ref, file(params.fasta)]
+	
+	PREPARE_REFERENCE(
+		hash_ref.plus(skip_scatter:true), 
+		fasta
+		)
+    versions = versions.mix(PREPARE_REFERENCE.out.versions)
+
+	
+	ch0 = Channel.fromPath(params.samplesheet)
+		.splitCsv(header:true,sep:',')
+		.map{assertKeyExistsAndNotEmpty(it,"sample")}
+		.map{assertKeyExistsAndNotEmpty(it,"bam")}
+		.map{
+			if(hasKey(it,"bai")) return it;
+			return it;
+			}
+		.map{it.bai?it: (it.bam.endsWith(".bam") ? it.plus(["bai":it.bam+".bai"]):  it.plus(["bai":it.bam+".crai"]))}
+		.map{it.id?it:it.plus(id:it.sample)}
+		
+	
+	META_TO_PED(hash_ref, ch0)
+    versions = versions.mix(META_TO_PED.out.versions)
+		
+	if(params.pedigree==null) {
+		pedigree = META_TO_PED.out.pedigree_gatk
+		}
+	else
+		{
+		pedigree = Channel.of([hash_ref,file(params.pedigree)] )
+		}
+		
+	if(params.population_vcf!=null) {
+		SOMALIER_FIND_SITES([hash_ref,file(params.population_vcf),file(population_vcf+".tbi")] )
+		versions = versions.mix(SOMALIER_FIND_SITES.out.versions)
+		sites = SOMALIER_FIND_SITES.out.vcf
+		}	
+	else if(params.user_sites!=null) {
+		sites = Channel.of([hash_ref,file(params.user_sites)])
+		}
+	else
+		{
+		sites = Channel.of([ hash_ref, []] )
+		}
+
+
+
+	SOMALIER_BAMS(
+		hash_ref,
+		Channel.of(fasta),
+		PREPARE_REFERENCE.out.fai,
+		PREPARE_REFERENCE.out.dict,
+		ch0.map{
+			def key=  [id:it.id];
+			if(hasKey(it,"fasta")) {
+				def fasta2 = it.fasta
+				def fai2 = (hasKey(it,"fai")? it.fai : fasta2 +".fai")
+				return [key,file(it.bam),file(it.bai),file(fasta2),file(fai2)]
+				}
+			return [key,file(it.bam),file(it.bai)]
+			},
+		pedigree,
+		sites
+		)
+	multiqc = multiqc.mix(SOMALIER_BAMS.out.multiqc)
+	
+	MULTIQC(
+		hash_ref.plus("id":"somalier"),
+		META_TO_PED.out.sample2collection,
+		versions,
+		multiqc
+		)
+	}
+
+
+runOnComplete(workflow)

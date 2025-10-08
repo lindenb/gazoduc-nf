@@ -78,4 +78,8 @@ ${task.process}:
 	jvarkit: todo
 EOF
 """
+stub:
+"""
+touch versions.yml sites.vcf.gz sites.vcf.gz.tbi
+"""
 }

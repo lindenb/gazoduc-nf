@@ -30,6 +30,25 @@ stub: data/rotavirus_rf.fa data/rotavirus_rf.vcf.gz
 		--fasta $< \
 		--method bam2vcf \
 		--dbsnp data/rotavirus_rf.vcf.gz
+	# method direct
+	$(NEXTFLOW) run ../workflows/gatk/gatk4gvcfs3/main.nf  -work-dir STUB/HC  -resume -stub --outdir STUB/HC/results  \
+		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv \
+		--fasta $< \
+		--method direct \
+		--dbsnp data/rotavirus_rf.vcf.gz
+	# somalier
+	$(NEXTFLOW) run ../workflows/somalier/somalier.bams/main.nf  -work-dir STUB/SOMALIER -resume -stub --outdir STUB/SOMALIER/results \
+		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv  \
+		--fasta data/rotavirus_rf.fa
+	# sashimi encode
+	touch jeter.gtf.gz jeter.gtf.gz.tbi
+	echo -e 'RF01\t1\t1000' > jeter.bed
+	$(NEXTFLOW) run ../workflows/sashimi.encode/main.nf  -work-dir STUB/ENCODE -stub --outdir STUB/ENCODE \
+		--bed jeter.bed \
+		--gtf jeter.gtf.gz \
+		--fasta data/rotavirus_rf.fa \
+		--ucsc_name "hg38" 
+
 
 hard_tests: test_wgsim test_fastqc test_bwa test_hapcaller stub
 
@@ -128,3 +147,5 @@ REF/$(BUILD).dbsnp.vcf.gz:
 		awk '/^#CHROM/ {printf("##contig=<ID=chr22,length=50818468>\n");}{print;}'|\
 		sed 's/^22/chr22/' | bcftools view -O z -o $@ && bcftools index -f -t $@
 
+clean:
+	rm -rf STUB
