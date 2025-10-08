@@ -37,7 +37,7 @@ process JVARKIT_MULTIQCPOSTPROC {
 	script:
 		def jvm= task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
 """
-mkdir -P TMP/OUT
+mkdir -p TMP/OUT
 jvarkit ${jvm} \\
 	multiqcpostproc \\
 	--sample2collection "${sample2pop}" \\
