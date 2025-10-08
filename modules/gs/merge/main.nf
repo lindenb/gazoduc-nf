@@ -45,6 +45,14 @@ gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -dPDFSETTINGS=/prepress -sOutputFile=T
 
 mv -v TMP/jeter.pdf "${prefix}.pdf"
 
-touch versions.yml
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+	gs: "\$(gs --version )"
+END_VERSIONS
+"""
+
+stub:
+"""
+touch "${meta.id}.pdf" versions.yml
 """
 }
