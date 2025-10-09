@@ -52,26 +52,26 @@ stub: data/rotavirus_rf.fa data/rotavirus_rf.vcf.gz
 
 hard_tests: test_wgsim test_fastqc test_bwa test_hapcaller stub
 
-test_hapcaller: BWA/samplesheet.csv
-	$(NEXTFLOW) run -work-dir work/HC -profile gitlabci -c reference.config  -c nproc.cfg  ../workflows/gatk/gatk4gvcfs3/main.nf --outdir ${PWD}/HC --samplesheet $<
-	find HC/ -type f
+test_hapcaller: work/BWA/results/samplesheet.csv
+	$(NEXTFLOW) run -work-dir work/HC -profile gitlabci -c reference.config  -c nproc.cfg  ../workflows/gatk/gatk4gvcfs3/main.nf --outdir work/HC/results --samplesheet $<
+	find work/HC/ -type f
 
 
-test_bwa : BWA/samplesheet.csv
+test_bwa : work/BWA/results/samplesheet.csv
 
 	
-BWA/samplesheet.csv : results/FASTQ/samplesheet.csv  reference.config nproc.cfg REF/$(BUILD).dbsnp.vcf.gz
-	$(NEXTFLOW) run -work-dir work/BWA -profile gitlabci -c reference.config  -c nproc.cfg  ../workflows/bwa/main.nf --outdir ${PWD}/BWA --samplesheet $< --known_sites REF/$(BUILD).dbsnp.vcf.gz
-	find BWA -type f
+work/BWA/results/samplesheet.csv : work/WGSIM/results/FASTQ/samplesheet.csv  reference.config nproc.cfg REF/$(BUILD).dbsnp.vcf.gz
+	$(NEXTFLOW) run -work-dir work/BWA -profile gitlabci -c reference.config  -c nproc.cfg  ../workflows/bwa/main.nf --outdir work/BWA/results --samplesheet $< --known_sites REF/$(BUILD).dbsnp.vcf.gz
+	find work/BWA/results -type f
 	
-test_fastqc: results/FASTQ/samplesheet.csv nproc.cfg
+test_fastqc: work/WGSIM/results/FASTQ/samplesheet.csv nproc.cfg
 	$(NEXTFLOW) run -work-dir work/FASTQC -profile gitlabci -c nproc.cfg  --outdir FASTQC ../workflows/fastqc/main.nf --samplesheet $<
 
 	
-test_wgsim: results/FASTQ/samplesheet.csv
+test_wgsim: work/WGSIM/results/FASTQ/samplesheet.csv
 
-results/FASTQ/samplesheet.csv: reference.config nproc.cfg
-	$(NEXTFLOW) run  -work-dir work/WGSIM -profile gitlabci  -c reference.config  -c nproc.cfg   --outdir results  ../workflows/wgsim/main.nf --n_samples 15 --samplesheet $<
+work/WGSIM/results/FASTQ/samplesheet.csv: reference.config nproc.cfg
+	$(NEXTFLOW) run  -work-dir work/WGSIM -profile gitlabci  -c reference.config  -c nproc.cfg   --outdir work/WGSIM/results  ../workflows/wgsim/main.nf --n_samples 15 --samplesheet $<
 	
 reference.config: REF/$(BUILD).fa 
 	echo 'params {' > $@
