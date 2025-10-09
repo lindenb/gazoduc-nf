@@ -47,27 +47,27 @@ stub: data/rotavirus_rf.fa data/rotavirus_rf.vcf.gz
 		--bed jeter.bed \
 		--gtf jeter.gtf.gz \
 		--fasta data/rotavirus_rf.fa \
-		--ucsc_name "hg38" 
+		--ucsc_name "hg38"
 
 
 hard_tests: test_wgsim test_fastqc test_bwa test_hapcaller stub
 
-test_hapcaller: work/BWA/results/samplesheet.csv
+test_hapcaller: work/BWA/results/BAMS/samplesheet.csv
 	$(NEXTFLOW) run -work-dir work/HC -profile gitlabci -c reference.config  -c nproc.cfg  ../workflows/gatk/gatk4gvcfs3/main.nf --outdir work/HC/results --samplesheet $<
 	find work/HC/ -type f
 
 
-test_bwa : work/BWA/results/samplesheet.csv
+test_bwa : work/BWA/results/BAMS/samplesheet.csv
 
-	
-work/BWA/results/samplesheet.csv : work/WGSIM/results/FASTQ/samplesheet.csv  reference.config nproc.cfg REF/$(BUILD).dbsnp.vcf.gz
+
+work/BWA/results/BAMS/samplesheet.csv : work/WGSIM/results/FASTQ/samplesheet.csv  reference.config nproc.cfg REF/$(BUILD).dbsnp.vcf.gz
 	$(NEXTFLOW) run -work-dir work/BWA -profile gitlabci -c reference.config  -c nproc.cfg  ../workflows/bwa/main.nf --outdir work/BWA/results --samplesheet $< --known_sites REF/$(BUILD).dbsnp.vcf.gz
 	find work/BWA/results -type f
-	
+
 test_fastqc: work/WGSIM/results/FASTQ/samplesheet.csv nproc.cfg
 	$(NEXTFLOW) run -work-dir work/FASTQC -profile gitlabci -c nproc.cfg  --outdir FASTQC ../workflows/fastqc/main.nf --samplesheet $<
 
-	
+
 test_wgsim: work/WGSIM/results/FASTQ/samplesheet.csv
 
 work/WGSIM/results/FASTQ/samplesheet.csv: reference.config nproc.cfg
