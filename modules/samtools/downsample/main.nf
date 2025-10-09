@@ -41,7 +41,7 @@ process DOWNSAMPLE {
    		def depth = (meta.depth as int)
 		def dps = String.format("%03d",depth)
 		def mapq = task.ext.mapq?:1
-		def prefix  =  task.ext.prefix?: "${meta.id}.DP${depth}"
+		def prefix  =  task.ext.prefix?: "${meta.id}.DP${dps}"
 		def args1 = task.ext.args1?:"-q 1 -F 3844"
    """
    hostname 1>&2
@@ -52,7 +52,7 @@ process DOWNSAMPLE {
    do
 	FRAC=`awk -F '\t' -vC=\$C '(\$1==sprintf("%s_region",C)) {D=(\$4*1.0);if(D==0) D=1E-6; F=(${depth}*1.0)/D ; if(F>0 && F<1.0) print F;}' '${mosdepth_summary}'  `
 
-	echo "${sample} \${C} FRAC=\${FRAC}" >&2 
+	echo "${meta.id} \${C} FRAC=\${FRAC}" >&2 
 
 	awk -F '\t' -vC=\$C '(\$1==C)' "${bed}" > TMP/jeter.bed
 
@@ -73,10 +73,14 @@ process DOWNSAMPLE {
    samtools merge --threads ${task.cpus} --reference ${fasta} TMP/merged.bam TMP/_chunck.*.bam
 
 
-	samtools addreplacerg -r "ID:${meta.id}.DP${dps}" "ID:${meta.id}.DP${dps}" -m overwrite_all --threads 24 -o input.RG.bam input.bam
+   samtools addreplacerg -r "ID:${prefix}"  -r "SM:${prefix}" -r "SO:${meta.id}" -m overwrite_all --threads ${task.cpus} -o TMP/jeter.bam TMP/merged.bam
 
 
-   samtools index -@ ${task.cpus} "${sample}.DP${depth}.bam"
+   samtools index -@ ${task.cpus} TMP/jeter.bam
+
+
+   mv TMP/jeter.bam "${prefix}.bam"
+   mv TMP/jeter.bam.bai "${prefix}.bam.bai"
 
 
 cat << EOF > versions.yml

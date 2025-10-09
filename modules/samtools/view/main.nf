@@ -53,7 +53,7 @@ process SAMTOOLS_VIEW {
 		${args1} ${args2} ${args3} \\
 		${fasta?"--reference \"${fasta}\"":""} \\
 		--threads ${task.cpus} \\
-		${optional_bed?"--L \"${optional_bed}\"":""} \\
+		${optional_bed?"-L \"${optional_bed}\"":""} \\
 		${optional_read_names?"--qname-file \"${optional_read_names}\"":""} \\
 		--output-fmt "${fmt}" \\
 		-o TMP/jeter.${suffix1} \\

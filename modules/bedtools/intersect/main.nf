@@ -26,7 +26,7 @@ SOFTWARE.
 
 process BEDTOOLS_INTERSECT {
 label "process_single"
-tag "${meta.id?:""}"
+tag "${meta.id?:""} ${file1.name} ${file2.name}"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:

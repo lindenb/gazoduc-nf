@@ -59,6 +59,7 @@ main:
 
 	
 	ch3 = SAMTOOLS_SAMPLES.out.samplesheet
+		.map{it[1]}
 		.splitCsv(sep:'\t',header:false)
 		.map{if(isBlank(it[0])) throw new IllegalArgumentException("No sample name for ${it}"); return it;}
 		.map{if(it.size()< 2 || isBlank(it[2])) throw new IllegalArgumentException("Not same reference for ${it}"); return it;}

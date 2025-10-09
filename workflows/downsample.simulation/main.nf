@@ -76,15 +76,16 @@ workflow {
   		else
   			{
   			BEDTOOLS_INTERSECT(
-  				REPARE_REFERENCE.out.fai,
+  				PREPARE_REFERENCE.out.fai,
   				PREPARE_REFERENCE.out.scatter_bed.combine(Channel.of(params.bed))
   				)
   			versions = versions.mix(BEDTOOLS_INTERSECT.out.versions)
-  			bed  = BEDTOOLS_INTERSECT.out.bed
+  			bed  = BEDTOOLS_INTERSECT.out.bed.first()
   			}
   		
   		/*  will force the original BAM to be filtered as the downsampled one */
-	    SAMTOOLS_VIEW(fasta,PREPARE_REFERENCE.out.fai,bed, [[id:"no_reads"],[]], bams_ch);
+	    	
+		SAMTOOLS_VIEW(fasta,PREPARE_REFERENCE.out.fai,bed, [[id:"no_reads"],[]], bams_ch);
   		versions = versions.mix(SAMTOOLS_VIEW.out.versions)
   		
   		bams_ch = SAMTOOLS_VIEW.out.bam
@@ -192,8 +193,8 @@ workflow {
 
 
 process GENOTYPE_CONCORDANCE {
-   tag "${sample} N=${vcf.name}"
-   conda "${moduleDir}/../../../conda/bioinfo.02.yml"
+   tag "${meta.id} N=${vcf.name}"
+   conda "${moduleDir}/../../conda/bioinfo.02.yml"
    afterScript "rm -rf TMP"
    input:
         tuple val(meta),path(vcf),path(tbi),path(bed)
@@ -210,15 +211,15 @@ process GENOTYPE_CONCORDANCE {
    bcftools query -l "${vcf}" | awk '(\$1!="${meta.i}")' | while read S
    do
 
-   gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" GenotypeConcordance \
-	--TRUTH_VCF "${vcf}" \
-	--TRUTH_SAMPLE "${meta.i}" \
-	--CALL_VCF "${vcf}" \
-	--CALL_SAMPLE "\${S}" \
+   gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" GenotypeConcordance \\
+	--TRUTH_VCF "${vcf}" \\
+	--TRUTH_SAMPLE "${meta.id}" \\
+	--CALL_VCF "${vcf}" \\
+	--CALL_SAMPLE "\${S}" \\
 	--O "\${S}"
 
-    grep -E '^(SNP|INDEL)' "\${S}.genotype_concordance_summary_metrics"  |\
-	grep -E '^(SNP|INDEL)' | cut -f 1,13 |\
+    grep -E '^(SNP|INDEL)' "\${S}.genotype_concordance_summary_metrics"  |\\
+	grep -E '^(SNP|INDEL)' | cut -f 1,13 |\\
 	awk -vS=\$S '{printf("%s\t%s\\n", gensub(/.*\\.DP[0]*/,"\\\\1","g",S) ,\$0);}' >> concordances.txt
    done
 
@@ -277,6 +278,9 @@ touch versions.yml ${meta.id}.concordances.txt ${meta.id}.GQ.pdf
 }
 
 process PLOT {
+label "process_single"
+   conda "${moduleDir}/../../conda/bioinfo.01.yml"
+
 input:
 
 	tuple val(meta),path("FILES/*")
@@ -286,10 +290,9 @@ output:
 script:
 """
 hostname 1>&2
-${moduleLoad("r")}
 
-
-cat ${files.join(" ")} > jeter.tsv
+find FILES/ -name "*.txt" > jeter.tsv
+test -s jeter.tsv
 
 cat << '__EOF__' > jeter.R
 

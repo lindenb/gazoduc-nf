@@ -71,6 +71,7 @@ test_bwa : work/BWA/results/BAMS/samplesheet.csv
 work/BWA/results/BAMS/samplesheet.csv : work/WGSIM/results/FASTQ/samplesheet.csv  reference.config nproc.cfg REF/$(BUILD).dbsnp.vcf.gz
 	$(NEXTFLOW) run -work-dir work/BWA -profile gitlabci -c reference.config  -c nproc.cfg  ../workflows/bwa/main.nf --outdir work/BWA/results --samplesheet $< --known_sites REF/$(BUILD).dbsnp.vcf.gz
 	find work/BWA/results -type f
+	cat $@
 
 test_fastqc: work/WGSIM/results/FASTQ/samplesheet.csv nproc.cfg
 	$(NEXTFLOW) run -work-dir work/FASTQC -profile gitlabci -c nproc.cfg  --outdir FASTQC ../workflows/fastqc/main.nf --samplesheet $<

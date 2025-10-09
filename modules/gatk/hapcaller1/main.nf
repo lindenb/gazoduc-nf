@@ -46,6 +46,8 @@ script:
 """
 hostname 1>&2
 mkdir -p TMP
+# if not build because no other ref
+mkdir -p REFS
 echo "${fasta}" > TMP/references.txt
 find ./REFS/ \\( -name "*.fasta" -o -name "*.fa" -o -name "*.fna" \\) >> TMP/references.txt
 
