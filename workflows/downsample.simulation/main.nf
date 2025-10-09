@@ -33,11 +33,21 @@ include {META_TO_BAMS                        } from '../../subworkflows/samtools
 include {runOnComplete                       } from '../../modules/utils/functions.nf'
 include {MOSDEPTH as MOSDEPTH1               } from '../../modules/mosdepth'
 include {MOSDEPTH as MOSDEPTH2               } from '../../modules/mosdepth'
+include {BEDTOOLS_INTERSECT                  } from '../../modules/bedtools/intersect'
+include {DOWNSAMPLE                          } from '../../modules/samtools/downsample'
+include {SAMTOOLS_VIEW                       } from '../../modules/samtools/view'
+include {HAPLOTYPECALLER                     } from '../../modules/gatk/hapcaller1'
+include {GENOTYPEGVCFS                       } from '../../modules/gatk/genotypegvcfs'
+include {COMBINEGVCFS                        } from '../../modules/gatk/combinegvcfs'
+include {GHOSTSCRIPT_MERGE                   } from '../../modules/gs/merge'
 
 workflow {
         versions = Channel.empty()
         multiqc  = Channel.empty()
-		each_depths = Channel.of(meta.depths.split("[,]")).flatMap().map{T->(T as int)}
+		each_depths = Channel.of(params.depths.split("[,]"))
+			.flatMap()
+			.map{T->(T as int)}
+			.filter{it>0}
 		
         def hash_ref= [
                 id: file(params.fasta).baseName,
@@ -56,43 +66,121 @@ workflow {
                 Channel.fromPath(params.samplesheet).splitCsv(header:true, sep:',')
                 )
         versions = versions.mix(META_TO_BAMS.out.versions)
+	    bams_ch = META_TO_BAMS.out.bams
 
-        bams_ch = META_TO_BAMS.out.bams
+		
 
-		META_TO_PED(hash_ref, bams_ch.map{it[0]})
-        versions = versions.mix(META_TO_PED.out.versions)
-
-  
-  		MOSDEPTH1(fasta, fai, bams_ch.combine(bed).map{meta,bam,bai,meta2,bed->[meta,bam,bai,bed]}
+  		if(params.bed==null) {
+  			bed = PREPARE_REFERENCE.out.scatter_bed
+  			}
+  		else
+  			{
+  			BEDTOOLS_INTERSECT(
+  				REPARE_REFERENCE.out.fai,
+  				PREPARE_REFERENCE.out.scatter_bed.combine(Channel.of(params.bed))
+  				)
+  			versions = versions.mix(BEDTOOLS_INTERSECT.out.versions)
+  			bed  = BEDTOOLS_INTERSECT.out.bed
+  			}
+  		
+  		/*  will force the original BAM to be filtered as the downsampled one */
+	    SAMTOOLS_VIEW(fasta,PREPARE_REFERENCE.out.fai,bed, [[id:"no_reads"],[]], bams_ch);
+  		versions = versions.mix(SAMTOOLS_VIEW.out.versions)
+  		
+  		bams_ch = SAMTOOLS_VIEW.out.bam
+  		
+  		MOSDEPTH1(fasta, PREPARE_REFERENCE.out.fai, bams_ch.combine(bed).map{meta,bam,bai,meta2,bed->[meta,bam,bai,bed]})
   		versions = versions.mix(MOSDEPTH1.out.versions)
   		
+  
   		ch1 = bams_ch.map{meta,bam,bai->[meta.id,meta,bam,bai]}
   		ch2 = MOSDEPTH1.out.summary_txt.map{meta,summary->[meta.id,summary]}
   		
-  
+  		
   		ch1 = ch1.join(ch2)
-  			.map{meta_id,meta,bam,bai,summary->[meta1,bam,bai,summary]}
+  			.map{meta_id,meta,bam,bai,summary->[meta,bam,bai,summary]}
   			.combine(each_depths)
-  			
+  			.map{meta,bam,bai,summary,dp->[meta.plus(depth:dp),bam,bai,summary]}
   			
   		DOWNSAMPLE(
   			fasta,
-  			fai,
+  			PREPARE_REFERENCE.out.fai,
   			bed,
   			ch1
   			)
   	   versions = versions.mix(DOWNSAMPLE.out.versions)
   		
-       MOSDEPTH2(fasta, fai, DOWNSAMPLE.out.bam}
-  	  versions = versions.mix(MOSDEPTH2.out.versions)
-
-
-
-	ch1_ch = DOWNSAMPLE_SIMULATION(params, params.reference, params.bams, params.bed)
-	html = VERSION_TO_HTML(params, ch1_ch.version)
+       MOSDEPTH2(fasta, PREPARE_REFERENCE.out.fai, DOWNSAMPLE.out.bam.combine(bed).map{meta,bam,bai,meta2,bed->[meta,bam,bai,bed]})
+  	   versions = versions.mix(MOSDEPTH2.out.versions)
 	
+	
+		bams_ch=  SAMTOOLS_VIEW.out.bam
+		   		.mix(DOWNSAMPLE.out.bam)
+		   		.map{meta,bam,bai->{[
+		   			meta.plus(collection: (meta.depth?"DP"+meta.depth:"RAW"), original_sample: meta.id), // ADD COLLECTION, SRC SAMPLE
+		   			bam,
+		   			bai
+		   			]}}
+		   		.map{meta,bam,bai->{[
+		   			meta.plus(id: meta.id+(meta.depth?".DP"+meta.depth:"")), // MODIFY ID for GATK
+		   			bam,
+		   			bai
+		   			]}}
+		 
+		META_TO_PED(hash_ref, bams_ch.map{it[0]})
+        versions = versions.mix(META_TO_PED.out.versions)
+		 
+	
+	   HAPLOTYPECALLER(
+		   fasta,
+		   PREPARE_REFERENCE.out.fai,
+		   PREPARE_REFERENCE.out.dict,
+		   [[id:"noref"],[]],
+		   bams_ch
+		   		.combine(bed)
+		   		.map{meta,bam,bai,meta2,bed->[meta,bam,bai,bed]}
+		   )
+	  versions = versions.mix(HAPLOTYPECALLER.out.versions)
+	  
+	  
+
+	  gvcf_ch = HAPLOTYPECALLER.out.gvcf
+		    	.map{meta,vcf,tbi,bed->[meta.original_sample,[vcf,tbi],bed]}
+		    	.groupTuple()
+		    	.map{sn,vcf_files,beds->[[id:sn],vcf_files.flatten().sort(),beds[0]]}
+		    	
+
+	  COMBINEGVCFS(
+			fasta,
+			PREPARE_REFERENCE.out.fai,
+		    PREPARE_REFERENCE.out.dict,
+		    gvcf_ch
+		    )
+	  versions = versions.mix(COMBINEGVCFS.out.versions)
+	  GENOTYPEGVCFS(
+	  		fasta,
+			PREPARE_REFERENCE.out.fai,
+		    PREPARE_REFERENCE.out.dict,
+		    [[id:"nodbsnp"],[],[]],
+		    COMBINEGVCFS.out.gvcf
+	  		)
+	  versions = versions.mix(GENOTYPEGVCFS.out.versions)
+	
+	
+	GENOTYPE_CONCORDANCE(GENOTYPEGVCFS.out.vcf)
+	versions = versions.mix(GENOTYPE_CONCORDANCE.out.versions)
+
+	
+
+	PLOT(GENOTYPE_CONCORDANCE.out.output.map{it[1]}.collect().sort().map{[[id:"lowpass"],it]})
+	versions = versions.mix(PLOT.out.versions)
+
+/*	
+	GHOSTSCRIPT_MERGE(PLOT.out.pdf.collect().sort().map{[[id:"lowpass"],it]})
+	versions = versions.mix(GHOSTSCRIPT_MERGE.out.versions)
+	*/
 	MULTIQC(
-            hash_ref.plus("id":"delly2"),
+            hash_ref.plus("id":"downsample"),
             META_TO_PED.out.sample2collection,
             versions,
             multiqc
@@ -100,293 +188,32 @@ workflow {
 	}
 
 
-workflow DOWNSAMPLE_SIMULATION {
-take:
-	meta
-	reference
-	bams
-	bed
-main:
-	version_ch  = Channel.empty()
-
-	each_depths= Channel.from(meta.depths.split("[,]")).flatMap().map{T->(T as int)}
-
-	
-	
-	sample_bam = bams_ch.output.splitCsv(header:false,sep:'\t').map{T->[T[0],T[2]]}
-
-	cov01_ch = GET_COVERAGE(meta, reference, mosdepth_ch.executable, bed, sample_bam )
-	version_ch = version_ch.mix(cov01_ch.version)
-
-	cov02_ch = DOWNSAMPLE(meta, reference, mosdepth_ch.executable, bed, cov01_ch.output.combine(each_depths) )
-	version_ch = version_ch.mix(cov02_ch.version)
-
-	gvcf_ch = HAPLOTYPE_CALLER01(meta, reference, bed, 
-		sample_bam.map{T->["RAW",T[0],T[1]]}.mix(cov02_ch.output)
-		)
-	version_ch = version_ch.mix(gvcf_ch.version)
 
 
-	genotyped_ch = HAPLOTYPE_CALLER02(meta, reference, bed, gvcf_ch.output.map{T->[T[1],T[2]]}.groupTuple())
-	version_ch = version_ch.mix(genotyped_ch.version)
-
-
-	gtc_ch = GENOTYPE_CONCORDANCE(meta, genotyped_ch.output)
-	version_ch = version_ch.mix(gtc_ch.version)
-
-	plot_ch=PLOT(meta,gtc_ch.output.collect())
-	version_ch = version_ch.mix(plot_ch.version)
-
-
-	pdf_ch = GS_SIMPLE_01(meta, plot_ch.pdf.mix(gtc_ch.pdf).map{T->["all",T]}.groupTuple())
-	version_ch = version_ch.mix(pdf_ch.version)
-
-	version_ch = MERGE_VERSION(meta, "DownSample", "DownSample",version_ch.collect())
-emit:
-	version = version_ch
-	pdf = pdf_ch.output
-}
-
-process GET_COVERAGE {
-   tag "${sample} / ${file(bam).name}"
-   cpus 5
-   afterScript "rm *.global.dist.txt *.region.dist.txt *.regions.bed.gz *.regions.bed.gz.csi"
-   input:
-		val(meta)
-		val(reference)
-		path(mosdepth)
-		path(bed)
-		tuple val(sample),val(bam)
-   output:
-		tuple val(sample),val(bam),path("${sample}.before.mosdepth.summary.txt"),emit:output
-		path("version.xml"),emit:version
-   script:
-   """
-   hostname 1>&2
-
-   ${mosdepth.toRealPath()} --no-per-base -t ${task.cpus} --by "${bed}" --fasta "${reference}" \
-		--mapq ${meta.mapq} "${sample}.before" "${bam}"
-	
-###############################################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">get bam depth</entry>
-        <entry key="sample">${sample}</entry>
-        <entry key="versions"></entry>
-</properties>
-EOF
-   """
-}
-
-process DOWNSAMPLE {
-   tag "${sample} / ${file(bam).name} DP=${depth}"
-   memory '5g'
-   afterScript "rm -rf TMP"
-   input:
-	val(meta)
-	val(reference)
-	path(mosdepth)
-	path(bed)
-	tuple val(sample),val(bam),path(summary),val(depth)
-   output:
-	tuple val(depth),val(sample),path("${sample}.DP${depth}.bam"),emit:output
-	path("version.xml"),emit:version
-   script:
-	def dps = String.format("%03d",depth)
-   """
-   hostname 1>&2
-   ${moduleLoad("samtools gatk/0.0.0")}
-   mkdir -p TMP
-
-   cut -f 1  "${bed}" | uniq | sort | uniq | while read C
-   do
-	FRAC=`awk -F '\t' -vC=\$C '(\$1==sprintf("%s_region",C)) {D=(\$4*1.0);if(D==0) D=1E-6; F=(${depth}*1.0)/D ; if(F>0 && F<1.0) print F;}' '${summary}'  `
-
-	echo "${sample} \${C} FRAC=\${FRAC}" >&2 
-
-	awk -F '\t' -vC=\$C '(\$1==C)' "${bed}" > TMP/jeter.bed
-
-
-	if [ "\${FRAC}" != "" ] ; then
-
-   		samtools view -M -L TMP/jeter.bed --threads ${task.cpus} -q ${meta.mapq} -F 3844 -u --reference "${reference}" "${bam}"  |\
-			samtools view -s \${FRAC} -O BAM -o "TMP/_chunck.\${C}.bam"
-
-	else
-
-   		samtools view -M -L TMP/jeter.bed --threads ${task.cpus} -q ${meta.mapq} -F 3844 -u --reference "${reference}" \
-			-O BAM -o "TMP/_chunck.\${C}.bam" "${bam}"
-      
-	fi
-   done
-
-   samtools merge --threads ${task.cpus} --reference ${params.reference} TMP/merged.bam TMP/_chunck.*.bam
-
-   gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" AddOrReplaceReadGroups \
-	     I=TMP/merged.bam \
-	     O="${sample}.DP${depth}.bam" \
-	     RGID=${sample}.DP${dps} \
-	     RGLB=${sample}.DP${dps} \
-	     RGSM=${sample}.DP${dps} \
-	     RGPL=ILLUMINA \
-	     RGPU=unit1
-
-   samtools index -@ ${task.cpus} "${sample}.DP${depth}.bam"
-
-   ${mosdepth.toRealPath()} --no-per-base -t ${task.cpus} --by ${bed} --fasta ${reference} \
-		--mapq ${params.mapq} TMP/${sample}.after.DP${depth} ${sample}.DP${depth}.bam
-
-   mv "TMP/${sample}.after.DP${depth}.mosdepth.summary.txt" ./
-
-###############################################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">downsample BAM</entry>
-        <entry key="sample">${sample}</entry>
-        <entry key="depth">${depth}</entry>
-        <entry key="versions">${getVersionCmd("samtools")}</entry>
-</properties>
-EOF
-   """
-   }
-
-
-process HAPLOTYPE_CALLER01 {
-   tag "${sample} ${bam.name}"
-   memory '5g'
-   afterScript "rm -rf TMP"
-   input:
-	val(meta)
-        val(reference)
-	path(bed)
-	tuple val(depth),val(sample),path(bam)
-   output:
-	tuple val(depth),val(sample),path("genotype.g.vcf.gz"),emit:output
-	path("version.xml"),emit:version
-   script:
-   """ 
-   hostname
-   set -o pipefail
-   ${moduleLoad("gatk/0.0.0 samtools")}
-   mkdir -p TMP
-
-
-   # will force the original BAM to be filtered as the downsampled one
-   samtools view -M -L "${bed}"  -q ${meta.mapq} -F 3844  --reference ${reference} \
-			-O BAM -o "TMP/jeter.bam" ${bam.toRealPath()} 
-
-   samtools index TMP/jeter.bam
-
-   gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" HaplotypeCaller \
-	     -I "TMP/jeter.bam" \
-	     -ERC GVCF \
-	     -L "${bed}" \
-	     -R "${reference}" \
-	     --minimum-mapping-quality  ${meta.mapq} \
-	     --verbosity ERROR \
-	     -O "genotype.g.vcf.gz"
-	
-
-###############################################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">downsample BAM</entry>
-        <entry key="sample">${sample}</entry>
-        <entry key="bam">${bam}</entry>
-        <entry key="versions">${getVersionCmd("gatk")}</entry>
-</properties>
-EOF
-
-   """
-}
-
-
-
-process HAPLOTYPE_CALLER02 {
-   tag "${sample} N=${L.size()}"
-   cache "lenient"
-   memory '5g'
-   afterScript "rm -rf TMP"
-   input:
-	val(meta)
-        val(reference)
-	path(bed)
-	tuple val(sample),val(L)
-   output:
-	tuple val(sample),path("${sample}.vcf.gz"),emit:output
-	path("version.xml"),emit:version
-   script:
-   """ 
-   hostname
-   set -o pipefail
-   ${moduleLoad("gatk/0.0.0 bcftools")}
-   mkdir -p TMP
-
-cat << EOF > TMP/jeter.list
-${L.join("\n")}
-EOF
-
-   gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" CombineGVCFs \
-	-R "${reference}" \
-	-L "${bed}" \
-	--verbosity ERROR \
-	-V TMP/jeter.list \
-	-O TMP/combined.g.vcf.gz
-
-   gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" GenotypeGVCFs \
-        -R "${reference}" \
-        -L "${bed}" \
-        --verbosity ERROR \
-        -V TMP/combined.g.vcf.gz \
-        -O TMP/jeter.vcf.gz \
-	-G StandardAnnotation -G AS_StandardAnnotation
-
-   bcftools view -O b -o "${sample}.vcf.gz" TMP/jeter.vcf.gz
-   bcftools index -t "${sample}.vcf.gz"
-	
-
-###############################################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">call BAMs</entry>
-        <entry key="sample">${sample}</entry>
-        <entry key="bams">${L.size()}</entry>
-        <entry key="versions">${getVersionCmd("gatk")}</entry>
-</properties>
-EOF
-   """
-}
 
 process GENOTYPE_CONCORDANCE {
    tag "${sample} N=${vcf.name}"
-   cache "lenient"
-   memory '5g'
+   conda "${moduleDir}/../../../conda/bioinfo.02.yml"
    afterScript "rm -rf TMP"
    input:
-        val(meta)
-        tuple val(sample),path(vcf)
+        tuple val(meta),path(vcf),path(tbi),path(bed)
    output:
-	path("concordances.txt"),emit:output
-	path("${sample}.GQ.pdf"),emit:pdf
-        path("version.xml"),emit:version
+		tuple val(meta),path("${meta.id}.concordances.txt"),emit:output
+		tuple val(meta),path("${meta.id}.GQ.pdf"),emit:pdf
+        path("versions.yml"),emit:versions
    script:
    """
    hostname 1>&2
    set -o pipefail
-   ${moduleLoad("gatk/0.0.0 bcftools r")}
    mkdir -p TMP
 
-   bcftools query -l "${vcf}" | awk '(\$1!="${sample}")' | while read S
+   bcftools query -l "${vcf}" | awk '(\$1!="${meta.i}")' | while read S
    do
 
    gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" GenotypeConcordance \
-	--TRUTH_VCF "${vcf.toRealPath()}" \
-	--TRUTH_SAMPLE "${sample}" \
-	--CALL_VCF "${vcf.toRealPath()}" \
+	--TRUTH_VCF "${vcf}" \
+	--TRUTH_SAMPLE "${meta.i}" \
+	--CALL_VCF "${vcf}" \
 	--CALL_SAMPLE "\${S}" \
 	--O "\${S}"
 
@@ -411,7 +238,7 @@ cat << '__EOF__' >> TMP/jeter.R
 )
 n <- 1
 colors <- rainbow(length(filenames),alpha=0.8)
-pdf("${sample}.GQ.pdf")
+pdf("${meta.id}.GQ.pdf")
 list1 <- list()
 list2 <- c()
 maxy <- 1E-6
@@ -424,10 +251,10 @@ for(filename in filenames) {
 for(filename in filenames) {
 	T1 <- table(scan(filename, comment.char = "."))
 	X <- data.frame(T1)
-	list2 <- append(list2,gsub("${sample}.DP","",gsub(".dist","",basename(filename))))
+	list2 <- append(list2,gsub("${meta.id}.DP","",gsub(".dist","",basename(filename))))
 
 	if(n==1) {
-		plot(x=as.integer(as.character(X\$Var1)),y=X\$Freq,type='l',main="${sample} : density of Genotype Quality",xlab="Genotype Quality",ylab="Count",col=colors[n],ylim=c(0,maxy),xlim=c(0,100))
+		plot(x=as.integer(as.character(X\$Var1)),y=X\$Freq,type='l',main="${meta.id} : density of Genotype Quality",xlab="Genotype Quality",ylab="Count",col=colors[n],ylim=c(0,maxy),xlim=c(0,100))
 	} else	{		
 		lines(x=as.integer(as.character(X\$Var1)),y=X\$Freq,col=colors[n],ylim=c(0,maxy),xlim=c(0,100))
 		}
@@ -439,28 +266,23 @@ dev.off()
 __EOF__
 
 R --vanilla < TMP/jeter.R
-
+mv concordances.txt "${meta.id}.concordances.txt"
 ###############################################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">Genotype Concordance</entry>
-        <entry key="sample">${sample}</entry>
-        <entry key="vcf">${vcf}</entry>
-        <entry key="versions">${getVersionCmd("gatk bcftools")}</entry>
-</properties>
-EOF
+touch versions.yml
+"""
+stub:
+"""
+touch versions.yml ${meta.id}.concordances.txt ${meta.id}.GQ.pdf
 """
 }
 
 process PLOT {
-tag "${files.size()}"
 input:
-	val(meta)
-	val(files)
+
+	tuple val(meta),path("FILES/*")
 output:
-	path("${meta.prefix?:""}concordance.pdf"),emit:pdf
-	path("version.xml"),emit:version
+	tuple val(meta),path("*concordance.pdf"),emit:pdf
+	path("versions.yml"),emit:versions
 script:
 """
 hostname 1>&2
@@ -490,9 +312,9 @@ for(depth in depths) {
 }
 
 
-pdf("${meta.prefix?:""}concordance.pdf")
+pdf("${meta.id?:""}concordance.pdf")
 
-boxplot(list1,names=list2,main="${meta.prefix?:""}concordance",xlab="depth",ylab="type",col=list3,las=2)
+boxplot(list1,names=list2,main="${meta.id?:""}concordance",xlab="depth",ylab="type",col=list3,las=2)
 
 legend("topright",legend=c("SNP","INDEL"),fill=c("blue","yellow"))
 
@@ -502,15 +324,12 @@ __EOF__
 
 R --vanilla < jeter.R
 
-###############################################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">plot Genotype Concordance</entry>
-        <entry key="n.data">${files.size()}</entry>
-        <entry key="versions">${getVersionCmd("R")}</entry>
-</properties>
-EOF
+touch versions.yml
+"""
+
+stub:
+"""
+touch versions.yml "${meta.id?:""}concordance.pdf"
 """
 }
 

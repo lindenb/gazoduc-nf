@@ -24,22 +24,25 @@ SOFTWARE.
 */
 
 process DOWNSAMPLE {
-   tag "${meta.id} / ${bam.name} DP=${depth}"
+   tag "${meta.id} / ${bam.name} DP=${meta.depth}"
    label "process_single"
    afterScript "rm -rf TMP"
    conda "${moduleDir}/../../../conda/bioinfo.01.yml"
    input:
 		tuple val(meta1),path(fasta)
 		tuple val(meta2),path(fai)
-		tuple val(meta3),path(dict)
 		tuple val(meta4),path(bed)
-	    tuple val(meta),path(bam),path(mosdepth_summary),val(depth)
+	    tuple val(meta),path(bam),path(bai),path(mosdepth_summary)
    output:
 		tuple val(meta),path("*.bam"),path("*.bai"),emit:bam
 		path("versions.yml"),emit:versions
    script:
+   		if(meta.depth==null) throw new IllegalArgumentException("meta.depth is missing in ${task.process}");
+   		def depth = (meta.depth as int)
 		def dps = String.format("%03d",depth)
 		def mapq = task.ext.mapq?:1
+		def prefix  =  task.ext.prefix?: "${meta.id}.DP${depth}"
+		def args1 = task.ext.args1?:"-q 1 -F 3844"
    """
    hostname 1>&2
   
@@ -56,12 +59,12 @@ process DOWNSAMPLE {
 
 	if [ "\${FRAC}" != "" ] ; then
 
-   		samtools view -M -L TMP/jeter.bed --threads ${task.cpus} -q ${mapq} -F 3844 -u --reference "${fasta}" "${bam}"  |\
+   		samtools view -M -L TMP/jeter.bed --threads ${task.cpus} ${args1} -u --reference "${fasta}" "${bam}"  |\
 			samtools view -s \${FRAC} -O BAM -o "TMP/_chunck.\${C}.bam"
 
 	else
 
-   		samtools view -M -L TMP/jeter.bed --threads ${task.cpus} -q ${mapq} -F 3844 -u --reference "${fasta}" \
+   		samtools view -M -L TMP/jeter.bed --threads ${task.cpus} ${args1} -u --reference "${fasta}" \
 			-O BAM -o "TMP/_chunck.\${C}.bam" "${bam}"
       
 	fi
@@ -69,21 +72,12 @@ process DOWNSAMPLE {
 
    samtools merge --threads ${task.cpus} --reference ${fasta} TMP/merged.bam TMP/_chunck.*.bam
 
-   gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" AddOrReplaceReadGroups \
-	     I=TMP/merged.bam \
-	     O="${sample}.DP${depth}.bam" \
-	     RGID=${sample}.DP${dps} \
-	     RGLB=${sample}.DP${dps} \
-	     RGSM=${sample}.DP${dps} \
-	     RGPL=ILLUMINA \
-	     RGPU=unit1
+
+	samtools addreplacerg -r "ID:${meta.id}.DP${dps}" "ID:${meta.id}.DP${dps}" -m overwrite_all --threads 24 -o input.RG.bam input.bam
+
 
    samtools index -@ ${task.cpus} "${sample}.DP${depth}.bam"
 
-   ${mosdepth.toRealPath()} --no-per-base -t ${task.cpus} --by ${bed} --fasta ${reference} \
-		--mapq ${params.mapq} TMP/${sample}.after.DP${depth} ${sample}.DP${depth}.bam
-
-   mv "TMP/${sample}.after.DP${depth}.mosdepth.summary.txt" ./
 
 cat << EOF > versions.yml
 "${task.process}":
@@ -92,6 +86,9 @@ EOF
    """
    
    stub:
+   		if(meta.depth==null) throw new IllegalArgumentException("meta.depth is missing in ${task.process}");
+   		def depth = (meta.depth as int)
+   		def prefix  =  task.ext.prefix?: "${meta.id}.DP${depth}"
    """
    touch versions.yml ${prefix}.bam ${prefix}.bam.bai
    """

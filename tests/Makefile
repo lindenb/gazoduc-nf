@@ -52,7 +52,12 @@ stub: data/rotavirus_rf.fa data/rotavirus_rf.vcf.gz
 	$(NEXTFLOW) run ../workflows/delly2/main.nf  -work-dir STUB/DELLY -stub --outdir STUB/DELLY \
 		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv  \
 		--fasta data/rotavirus_rf.fa
+	# downsample
+	$(NEXTFLOW) run ../workflows/downsample.simulation/main.nf -work-dir STUB/LOWPASS -stub -resume --outdir STUB/LOWPASS \
+		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv  \
+		--fasta data/rotavirus_rf.fa
 
+	
 hard_tests: test_wgsim test_fastqc test_bwa test_hapcaller stub
 
 test_hapcaller: work/BWA/results/BAMS/samplesheet.csv

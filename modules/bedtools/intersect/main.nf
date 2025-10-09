@@ -65,4 +65,11 @@ ${task.process}:
 	bedtools: "\$(bedtools --version | awk '{print \$NF}')"
 EOF
 """
+
+stub:
+def prefix="intersection"
+"""
+cp ${file1} "${prefix}.bed"
+touch versions.yml
+"""
 }

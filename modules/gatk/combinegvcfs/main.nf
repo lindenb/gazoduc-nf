@@ -77,8 +77,9 @@ EOF
 """
 
 stub:
-	def prefix="stub"
+	def prefix="\${MD5}"
 """
+MD5=`(find VCFS/ -name "*.g.vcf.gz" ; echo  "${optional_bed?"${optional_bed}":""}") | md5sum | cut -d ' ' -f1`
 touch "${prefix}.g.vcf.gz" "${prefix}.g.vcf.gz.tbi" versions.yml
 """
 }
