@@ -22,10 +22,82 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {k1_signature      } from '../../modules/utils/k1.nf'
-include {SCATTER_TO_BED    } from '../gatk/scatterintervals2bed'
+include {isBlank                       } from '../../modules/utils/functions.nf'
+include {CALL_DELLY                    } from '../../modules/delly2/call'
+include {CALL_DELLY  as GENOTYPE_DELLY } from '../../modules/delly2/call'
+include {MERGE_DELLY                   } from '../../modules/delly2/merge'
+include {MERGE_GENOTYPES               } from '../../modules/delly2/mergegt'
+include {FILTER_DELLY                  } from '../../modules/delly2/filter'
 
 workflow DELLY {
+take:
+	meta
+	fasta
+	fai
+	dict
+    exclude //meta,bed
+	bams_ch
+main:
+    versions = Channel.empty()
+
+     /* if there is no meta.status, treat everyone as case */
+    bams_ch.map{meta,bam,bai->[
+            !isBlank(meta.status)? meta : meta.plus("status":"case"),
+            bam,
+            bai
+            ]}.
+            branch{
+                controls : !isBlank(it[0].status) && it[0].status.equals("control")
+                cases : true
+            }.set{bams_status_ch}
+
+    CALL_DELLY(
+        fasta,
+        fai, 
+        exclude ,
+        [[id:"nogenotype"],[],[]],
+        bams_status_ch.cases
+        )
+    versions = versions.mix(CALL_DELLY.out.versions)
+
+    MERGE_DELLY(
+        fasta,
+        fai,
+        CALL_DELLY.out.vcf.
+            map{meta,bcf,csi->[bcf,csi]}.
+            flatten().
+            collect().
+            map{[[id:"merge"],it]}
+        )
+    versions = versions.mix(MERGE_DELLY.out.versions)
+
+    GENOTYPE_DELLY(
+        fasta,
+        fai, 
+        exclude ,
+        MERGE_DELLY.out.vcf,
+        bams_status_ch.cases.mix(bams_status_ch.controls)
+        )
+    versions = versions.mix(GENOTYPE_DELLY.out.versions)
+
+    MERGE_GENOTYPES(
+        GENOTYPE_DELLY.out.vcf.
+            map{meta,bcf,csi->[bcf,csi]}.
+            flatten().
+            collect().
+            map{[[id:"merge"],it]}
+        )
+    versions = versions.mix(MERGE_GENOTYPES.out.versions)
+
+
+    FILTER_DELLY(fasta,fai,MERGE_GENOTYPES.out.vcf)
+    versions = versions.mix(FILTER_DELLY.out.versions)
+emit:
+    vcf = FILTER_DELLY.out.vcf
+    versions
+}
+
+workflow DELLYx {
 take:
 	meta
 	fasta
@@ -240,202 +312,8 @@ END_VERSIONS
 }
 
 
-process CALL_DELLY {
-    tag "${meta.id}"
-    label "process_single" // INCREASE MEMORY IN CONFIG !
-    afterScript "rm -rf TMP"
-    conda "${moduleDir}/../../conda/delly.yml"
-    when:
-        task.ext.when == null || task.ext.when
-    input:
-        tuple val(meta1),path(fasta)
-        tuple val(meta2),path(fai)
-        tuple val(meta3),path(exclude)
-        tuple val(meta),path(bam),path(bai)
-    output:
-    	tuple val(meta),path(bam),path(bai),path("${meta.id}.bcf"),path("${meta.id}.bcf.csi"),emit:output
-        path("versions.yml"),emit:versions
-    script:
-	    def args1 = exclude?"--exclude ${exclude}":""
-        def mapq = task.ext.mapq?:1
-        def name = meta.id
-        def status = meta.status?:"case"
-	"""
-	mkdir -p TMP
-	export TMPDIR=\${PWD}/TMP
-
-	delly call ${args1} \\
-        --map-qual ${mapq} \\
-		--outfile "TMP/${name}.bcf" \\
-		--genome "${fasta}" \\
-		"${bam}" 1>&2
-
-	mv -v TMP/${name}.* ./
-
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-    delly: \$( delly --version 2>&1 |  awk '(NR==1) {print \$NF;}' )
-END_VERSIONS
-	"""
-    }
-
-//  merge many files: https://github.com/dellytools/delly/issues/158
-process MERGE_DELLY {
-    tag "${fasta.name}"
-    label "process_single"
-    afterScript "rm -rf TMP"
-    conda "${moduleDir}/../../conda/delly.yml"
-    input:
-	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai)
-	tuple val(meta),path("VCFS/*")
-    output:
-	    tuple val(meta),path("*.bcf"),path("*.bcf.csi"),emit:vcf
-        path("versions.yml"),emit:versions
-    script:
-	    def with_bnd = task.ext.with_bnd?:true
-        def prefix = task.ext.prefix?:"merged"
-    """
-    hostname 1>&2
-    export LC_ALL=C
-    mkdir -p TMP
-
-    # see https://github.com/dellytools/delly/issues/158
-    find VCFS/ -name "*.bcf" > TMP/jeter.tsv
-    test -s TMP/jeter.tsv    
-
-    delly merge -o TMP/${prefix}.bcf TMP/jeter.tsv 1>&2
-
-	if ${!with_bnd} ; then
-        bcftools view -e 'INFO/SVTYPE="BND"' -O b -o  ${prefix}.bcf TMP/${prefix}.bcf
-		bcftools index -f ${prefix}.bcf
-	else
-		mv TMP/${prefix}.bcf ./
-		mv TMP/${prefix}.bcf.csi ./
-	fi
-
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-    delly: \$( delly --version 2>&1 |  awk '(NR==1) {print \$NF;}' )
-    bcftools: \$(bcftools version | awk '(NR==1) {print \$NF;}')
-END_VERSIONS
-    """
-    }
-
-process GENOTYPE_DELLY {
-    label "process_single" // INCREASE MEMORY IN CONFIG !
-    tag "${meta.id}"
-    afterScript 'rm -rf TMP'
-    conda "${moduleDir}/../../conda/delly.yml"
-
-    input:
-	    tuple val(meta1),path(fasta)
-	    tuple val(meta2),path(fai)
-        tuple val(meta3),path(genotype_vcf),path(genotype_vcf_idx)
-        tuple val(meta4),path(exclude)
-        tuple val(meta ),path(bam),path(bai)
-    output:
-        tuple val(meta),path("*bcf",arity:"1"),path("*.csi",arity:"1"),emit:output
-        path("versions.yml"),emit:versions
-    script:
-        def name= meta.id;
-        def mapq = task.ext.mapq?:1
-    """
-    hostname 1>&2
-    mkdir -p TMP
-    export TMPDIR=\${PWD}/TMP
-
-    delly call \\
-        --map-qual ${mapq} \\
-        --vcffile "${genotype_vcf}" \\
-		--exclude "${exclude}" \\
-		--outfile "TMP/jeter.bcf" \\
-		--genome "${fasta}" \\
-		"${bam}" 1>&2
-
-    mv -v TMP/jeter.bcf "${name}.gt.bcf"
-    mv -v TMP/jeter.bcf.csi "${name}.gt.bcf.csi"
 
 
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-    delly: \$(delly --version 2>&1 |  awk '(NR==1) {print \$NF;}')
-END_VERSIONS
-"""
-}
-
-
-process MERGE_GENOTYPES {
-    tag "${meta.id}"
-    label "process_short"
-    afterScript "rm -rf TMP"
-    conda "${moduleDir}/../../conda/delly.yml"
-    input:
-	    tuple val(meta),path("VCFS/*")
-    output:
-	    tuple val(meta),path("*.bcf",arity:"1"),path("*.csi",arity:"1"),emit:vcf
-        path("versions.yml"),emit:versions
-    script:
-        def prefix = task.ext.prefix?:(meta.id?:"merged")
-    // note to self , cd gazoduc-nf if not enough memory
-    """
-    hostname 1>&2
-    ulimit -s unlimited || true
-    mkdir -p TMP
-    find VCFS/ -name "*.bcf" | sort > TMP/jeter.list
-    test -s TMP/jeter.list
-
-    bcftools merge --force-single --threads ${task.cpus} -m id -O b9 -o TMP/${prefix}.bcf --file-list TMP/jeter.list
-    bcftools index --threads ${task.cpus} --csi TMP/${prefix}.bcf 
-    
-    mv TMP/${prefix}.bcf ./
-    mv TMP/${prefix}.bcf.csi ./
-
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-    bcftools: \$(bcftools version | awk '(NR==1) {print \$NF;}')
-END_VERSIONS
-    """
-    }
-
-process FILTER_DELLY {
-    tag "${meta.id}"
-    conda "${moduleDir}/../../conda/delly.yml"
-    label "process_single"
-    input:
-	    tuple val(meta1),path(fasta)
-        tuple val(meta2),path(fai)
-        tuple val(meta),path("genotypes.bcf"),path("genotypes.bcf.csi")
-    output:
-	    tuple val(meta),path("*.bcf",arity:"1"),path("*.csi",arity:"1"),emit:vcf
-        path("versions.yml"),emit:versions
-    script:
-        def args1 = task.ext.args1?:"-t -f germline"
-        def prefix = task.ext.prefix?:(meta.id?:"filtered")
-    """
-    export LC_ALL=C
-    mkdir -p TMP
-
-    delly filter ${args1}  -o TMP/jeter.bcf "genotypes.bcf" 1>&2
-
-    bcftools sort --max-mem "${task.memory.giga}G" -T TMP -O v -o "TMP/jeter1.vcf" TMP/jeter.bcf
-
-    bcftools  +fill-tags --threads ${task.cpus} -O v  -o TMP/jeter2.vcf TMP/jeter1.vcf  -- -t AN,AC,AF,AC_Hom,AC_Het,AC_Hemi,NS
-    mv TMP/jeter2.vcf TMP/jeter1.vcf
-
-    bcftools view --threads ${task.cpus} -O b9 -o "TMP/${prefix}.bcf" TMP/jeter1.vcf
-    bcftools index --threads ${task.cpus} -f "TMP/${prefix}.bcf"
-
-    mv TMP/${prefix}.bcf ./
-    mv TMP/${prefix}.bcf.csi ./
-
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-    delly: \$( delly --version 2>&1 |  awk '(NR==1) {print \$NF;}' )
-    bcftools: \$(bcftools version | awk '(NR==1) {print \$NF;}')
-END_VERSIONS
-    """
-    }
 
 
 process CALL_CNV {

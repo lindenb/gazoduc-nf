@@ -105,6 +105,7 @@ workflow {
         .mix(Channel.of(fasta).map{it[1]})
         .mix(PREPARE_REFERENCE.out.fai.map{it[1]})
         .mix(PREPARE_REFERENCE.out.dict.map{it[1]})
+        .filter{fn->fn.exists()} // when running in stub mode...
         .map{fn->[fn.name,fn.toRealPath()]} // group files by names. prevent file collisiton; FAI might have same name because PREPARE_REFERENCE.out.fai
         .map{name,fns->fns.sort()[0]}
         .unique()

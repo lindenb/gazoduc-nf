@@ -48,7 +48,10 @@ stub: data/rotavirus_rf.fa data/rotavirus_rf.vcf.gz
 		--gtf jeter.gtf.gz \
 		--fasta data/rotavirus_rf.fa \
 		--ucsc_name "hg38"
-
+	# delly
+	$(NEXTFLOW) run ../workflows/delly2/main.nf  -work-dir STUB/DELLY -stub --outdir STUB/DELLY \
+		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv  \
+		--fasta data/rotavirus_rf.fa
 
 hard_tests: test_wgsim test_fastqc test_bwa test_hapcaller stub
 

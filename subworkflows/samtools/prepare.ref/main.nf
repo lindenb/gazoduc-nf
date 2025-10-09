@@ -22,10 +22,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {SAMTOOLS_DICT   } from '../../../modules/samtools/dict'
-include {SAMTOOLS_FAIDX  } from '../../../modules/samtools/faidx'
-include {FAI2BED         } from '../../../modules/samtools/fai2bed'
-include {SCATTER_TO_BED  } from '../../../subworkflows/gatk/scatterintervals2bed'
+include {SAMTOOLS_DICT         } from '../../../modules/samtools/dict'
+include {SAMTOOLS_FAIDX        } from '../../../modules/samtools/faidx'
+include {FAI2BED               } from '../../../modules/samtools/fai2bed'
+include {SCATTER_TO_BED        } from '../../../subworkflows/gatk/scatterintervals2bed'
+include {BEDTOOLS_COMPLEMENT   } from '../../../modules/bedtools/complement'
 
 
 workflow PREPARE_REFERENCE {
@@ -45,6 +46,7 @@ main:
 	versions = versions.mix(FAI2BED.out.versions)
 	
 	
+	complement_bed =  Channel.of([[id:"nocomplement"],[]])
 	if(meta.skip_scatter==null || meta.skip_scatter==false) {
 		SCATTER_TO_BED(
 			meta,
@@ -54,16 +56,29 @@ main:
 			)
 		versions = versions.mix(SCATTER_TO_BED.out.versions)
 		scatter_bed = SCATTER_TO_BED.out.bed
+
+		if(meta.skip_complement=null || meta.skip_complement==false) {
+			BEDTOOLS_COMPLEMENT(
+				SAMTOOLS_FAIDX.out.fai,
+				SCATTER_TO_BED.out.bed
+				)
+			complement_bed = BEDTOOLS_COMPLEMENT.out.bed
+			versions = versions.mix(BEDTOOLS_COMPLEMENT.out.versions)
+			}
 		}
 	else
 		{
 		scatter_bed = Channel.of([[id:"noscatterbed"],[]])
 		}
 	
+
+	
+
 emit:
 	versions
 	fai = SAMTOOLS_FAIDX.out.fai
 	dict = SAMTOOLS_DICT.out.dict
 	bed = FAI2BED.out.bed
 	scatter_bed
+	complement_bed
 }

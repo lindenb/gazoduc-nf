@@ -22,38 +22,36 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-process BEDTOOLS_MAKEWINDOWS {
-tag "${bed.name}"
-label "process_quick"
-afterScript "rm -rf TMP"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+process GET_MAPPABILITY {
+label "process_single"
+tag "${fasta.name}"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
-    tuple val(meta),path(bed)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta3),path(fai)
 output:
-    tuple val(meta),path("*.bed"),emit:bed
-    path("versions.yml"),emit:versions
+	tuple path("blacklist.*"),optional:true,emit:output
+	path("versions.yml"),emit:versions
 script:
-    def option1= (bed.name.endsWith(".fai")?"-g":"-b")
-    def args = task.ext.args?:""
-    if(args.trim().isEmpty()) throw new IllegalArgumentException("args empty for ${task.process}")
-    def prefix = task.ext.prefix?:bed.baseName+".makewindows"
+	def url0 = meta.ucsc_name.equals("hg19")
+			? "https://gear-genomics.embl.de/data/delly/Homo_sapiens.GRCh37.dna.primary_assembly.fa.r101.s501.blacklist.gz"
+			: (meta.ucsc_name.equals("hg38")
+			? "https://gear-genomics.embl.de/data/delly/Homo_sapiens.GRCh38.dna.primary_assembly.fa.r101.s501.blacklist.gz"
+			: "")
+	def url = task.ext.url?:url0
+	def prefix = task.ext.prefix?:"blacklist"
 """
 mkdir -p TMP
-bedtools makewindows ${option1} "${bed}" ${args} |\\
-    sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter.bed
-
-mv TMP/jeter.bed "${prefix}.bed"
 
 
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-    bcftools: \$(bedtools --version | awk '(NR==1)  {print \$NF}')
-END_VERSIONS
-"""
+if test ! -z "\${url}"
+then
+	wget -O TMP/${prefix}.gz "\${URL}"
+	wget -O TMP/${prefix}.gz.fai "\${URL}.fai"
+	wget -O TMP/${prefix}.gz.gzi "\${URL}.gzi"
+	mv TMP  mappability
+fi
 
-stub:
-"""
-cp "${bed}" "${bed.baseName}.makeWindows.bed"
-touch versions.yml
 """
 }

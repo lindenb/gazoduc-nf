@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -23,9 +23,77 @@ SOFTWARE.
 
 */
 nextflow.enable.dsl=2
-include {ANNOTATE_SV_VCF_01} from "../../subworkflows/annotation/annotation.sv.01.nf"
+//include {ANNOTATE_SV_VCF_01} from "../../subworkflows/annotation/annotation.sv.01.nf"
+include {assertKeyExistsAndNotEmpty          } from '../../modules/utils/functions.nf'
+include {PREPARE_REFERENCE                   } from '../../subworkflows/samtools/prepare.ref'
+include {META_TO_PED                         } from '../../subworkflows/pedigree/meta2ped'
+include {MULTIQC                             } from '../../subworkflows/multiqc'
+include {META_TO_BAMS                        } from '../../subworkflows/samtools/meta2bams1'
+include {DELLY                               } from '../../subworkflows/delly2'
+include {runOnComplete                       } from '../../modules/utils/functions.nf'
 
 workflow {
+        versions = Channel.empty()
+        multiqc  = Channel.empty()
+
+		 def hash_ref= [
+      		id: file(params.fasta).baseName,
+      		name: file(params.fasta).baseName,
+      		ucsc_name: (params.ucsc_name?:"undefined")
+      		]
+        def fasta = [ hash_ref, file(params.fasta)]
+  		PREPARE_REFERENCE(hash_ref,fasta)
+  		versions = versions.mix(PREPARE_REFERENCE.out.versions)
+  		
+  		
+  		META_TO_BAMS(
+  			hash_ref,
+  			Channel.of(fasta),
+  			PREPARE_REFERENCE.out.fai,
+  			Channel.fromPath(params.samplesheet).splitCsv(header:true, sep:',')
+  			)
+  		versions = versions.mix(META_TO_BAMS.out.versions)
+  		
+  		bams_ch = META_TO_BAMS.out.bams
+  		
+  		META_TO_PED(hash_ref, bams_ch.map{it[0]})
+    	versions = versions.mix(META_TO_PED.out.versions)
+    	
+		exclude_bed = PREPARE_REFERENCE.out.complement_bed
+
+		DOWNLOAD_EXCLUDE(
+			fasta,
+			PREPARE_REFERENCE.out.fai,
+			exclude_bed
+			)
+		ersions = versions.mix(DOWNLOAD_EXCLUDE.out.versions)
+
+    	DELLY(
+			hash_ref,
+			fasta,
+			PREPARE_REFERENCE.out.fai,
+			PREPARE_REFERENCE.out.dict,
+			DOWNLOAD_EXCLUDE.out.bed,
+			bams_ch
+			)
+		versions = versions.mix(DELLY.out.versions)
+    	
+
+
+    	MULTIQC(
+            hash_ref.plus("id":"delly2"),
+            META_TO_PED.out.sample2collection,
+            versions,
+            multiqc
+            )
+		}
+
+runOnComplete(workflow)
+
+
+
+
+workflow xxxx{
 		def reference = Channel.fromPath([params.fasta,params.fai,params.dict]).collect()
 		delly2_ch = DOWNLOAD_DELLY2()
 		gaps_ch = SCATTER_TO_BED(reference)
@@ -122,54 +190,6 @@ workflow XX {
 	}
 }
 
-process DOWNLOAD_DELLY2 {
-	label "process_single"
-	output:
-		path("delly"),emit:output
-	script:
-		def version = params.delly2_version?:"1.3.3"
-		def url = "https://github.com/dellytools/delly/releases/download/v${version}/delly_v${version}_linux_x86_64bit"
-	"""
-	hostname 1>&2
-	wget -O delly "${url}"
-	touch -c delly
-	chmod a+x delly
-	"""
-	}
-
-
-
-process SCATTER_TO_BED {
-label "process_single"
-afterScript "rm -rf TMP"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-input:
-	path(reference)
-output:
-    path("exclude.bed"),emit:output
-script:
-	def fasta = reference.find{it.name.endsWith("a")}.first()
-"""
-mkdir -p TMP
-
-gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" ScatterIntervalsByNs \\
-            --REFERENCE "${fasta}" \\
-            --MAX_TO_MERGE "1" \\
-            --OUTPUT "TMP/jeter.interval_list" \\
-            --OUTPUT_TYPE "N"
-
-test -s TMP/jeter.interval_list
-
-gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" IntervalListToBed \\
-            --INPUT "TMP/jeter.interval_list" \\
-            --OUTPUT "TMP/jeter.bed" \\
-            --SORT true
-
-mv TMP/jeter.bed ./exclude.bed
-test -s ./exclude.bed
-"""
-}
-
 
 process GET_MAPPABILITY {
 label "process_single"
@@ -210,68 +230,56 @@ fi
 
 
 
-process GET_EXCLUDE {
+process DOWNLOAD_EXCLUDE {
 label "process_single"
 afterScript "rm -f jeter.bed jeter2.bed jeter.interval_list"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
-	path(reference)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta ),path(complement_bed)
 output:
-	path("exclude2.bed"),optional:true,emit:output /* exclude2.bed otherwise collision with bed from scatter_bed */
+	tuple val(meta ),path("*.bed"),optional:true,emit:bed
+	path("versions.yml"),emit:versions
 script:
-	def fasta = reference.find{it.name.endsWith("a")}
-	def fai = reference.find{it.name.endsWith(".fai")}
+	def url_hg19="https://raw.githubusercontent.com/hall-lab/speedseq/master/annotations/ceph18.b37.lumpy.exclude.2014-01-15.bed"
+	def url_hg38=" http://cf.10xgenomics.com/supp/genome/GRCh38/sv_blacklist.bed"
+	def url0 =(
+		meta1.ucsc_name.equals("hg19")
+		?url_hg19
+		:meta1.ucsc_name.equals("hg38")
+			?url_hg38
+			:""
+		)
+	def url= task.ext.url?:url0
+	def prefix = task.ext.prefix?:"exclude"
 """
 hostname 1>&2
-set -o pipefail
-
 mkdir -p TMP
-	
-cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:249250621	https://raw.githubusercontent.com/hall-lab/speedseq/master/annotations/ceph18.b37.lumpy.exclude.2014-01-15.bed
-EOF
 
+cp ${complement_bed} TMP/exclude.bed 
 
-awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
+if ${!url.isEmpty()}
+then
 
-join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv | sort | uniq > TMP/jeter.url
-
-
-url1=`cat  TMP/jeter.url`
-
-
-if [ ! -z "\${url1}" ] ; then
-	wget -O - "\${url1}" |\\
+	curl -L "\${url}" |\\
 		cut -f 1,2,3|\\
-		jvarkit bedrenamechr -R "${fasta}" --column 1 --convert SKIP > exclude2.bed 
+		jvarkit bedrenamechr -R "${fasta}" --column 1 --convert SKIP >> TMP/exclude.bed 
+
 fi
 
+sort -T TMP -t '\t' -k1,1 -k2,2n TMP/exclude.bed |\
+	bedtools merge > "${prefix}.bed"
+
+touch versions.yml
+"""
+stub:
+	def prefix = task.ext.prefix?:"exclude"
+"""
+touch versions.yml ${prefix}.bed
 """
 }
 
-process MERGE_EXCLUDE {
-label "process_short"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-input:
-	path(reference)
-	path(xcludes)
-output:
-	path("exclude_merged.bed"),emit:output
-script:
-	def fai = reference.find{it.name.endsWith(".fai")}
-"""
-hostname 1>&2
-
-awk -F '\t' '(!(\$1 ~ /${params.exclude_contig_regex}/)) {printf("%s\t0\t%s\\n",\$1,\$2);}'  "${fai}" > jeter2.bed
-
-cut -f1-3 ${xcludes} jeter2.bed | \
-	LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n |\
-	bedtools merge > exclude_merged.bed
-
-test -s exclude_merged.bed
-rm jeter2.bed
-"""
-}
 
 
 process CALL_DELLY {
@@ -455,7 +463,7 @@ process FILTER_DELLY {
     delly filter ${tag} -f germline -o TMP/jeter.bcf "${vcfin}" 1>&2
 
     bcftools sort --max-mem "${task.memory.giga}G" -T TMP -O v -o "TMP/jeter1.vcf" TMP/jeter.bcf
-
+	               
 cat << EOF > TMP/jeter.tsv
 ${cases_ctrl_list.join("\n")}
 EOF

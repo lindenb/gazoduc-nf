@@ -22,25 +22,29 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-process BEDTOOLS_MAKEWINDOWS {
+process BEDTOOLS_COMPLEMENT {
 tag "${bed.name}"
 label "process_quick"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-    tuple val(meta),path(bed)
+	tuple val(meta1),path(fai)
+    tuple val(meta ),path(bed)
 output:
     tuple val(meta),path("*.bed"),emit:bed
     path("versions.yml"),emit:versions
 script:
-    def option1= (bed.name.endsWith(".fai")?"-g":"-b")
-    def args = task.ext.args?:""
-    if(args.trim().isEmpty()) throw new IllegalArgumentException("args empty for ${task.process}")
-    def prefix = task.ext.prefix?:bed.baseName+".makewindows"
+    def args1 = task.args1?:""
+    def prefix = task.ext.prefix?:"${bed.baseName}.complement"
+    def awkargs =
 """
 mkdir -p TMP
-bedtools makewindows ${option1} "${bed}" ${args} |\\
-    sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter.bed
+cut -f1,2 "${fai}" > TMP/sizes.txt
+
+sort -T TMP -t '\t' -k1,1 -k2,2n "${bed}" |\\
+	bedtools complement -i - -g TMP/sizes.txt ${args} |\\
+    sort -T TMP -t '\t' -k1,1 -k2,2n |\\
+    awk -F '\t' '(int(\$2) < int(\$3) ${awkargs})' > TMP/jeter.bed
 
 mv TMP/jeter.bed "${prefix}.bed"
 
@@ -52,8 +56,9 @@ END_VERSIONS
 """
 
 stub:
+def prefix = task.ext.prefix?:"${bed.baseName}.complement"
 """
-cp "${bed}" "${bed.baseName}.makeWindows.bed"
+touch "${prefix}.bed"
 touch versions.yml
 """
 }

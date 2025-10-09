@@ -122,8 +122,9 @@ boolean isHg38(String reference) {
 	return false;
 	}
 
-boolean isBlank(def s) {
-	return s==null || s.toString().trim().isEmpty();
+
+boolean isBlank(String s) {
+	return s==null || s.trim().isEmpty() || s.equals(".");
 	}
 
 boolean isUrl(Object o) {
