@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -25,35 +25,79 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference();
-
-gazoduc.make("bams","NO_FILE").
-        description("file containing the path to multiple bam files").
-        required().
-        existingFile().
-        put()
-
-gazoduc.make("mapq",10).
-        description("min mapping quality").
-        setInteger().
-        put()
-
-gazoduc.make("depths","1,2,5,10,15,20").
-        description("downsampling depths. comma separated").
-        put()
-
-
-include {SAMTOOLS_SAMPLES_01} from '../../subworkflows/samtools/samtools.samples.01.nf'
-include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
-include {moduleLoad;runOnComplete;parseBoolean;getVersionCmd} from '../../modules/utils/functions.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
-include {MOSDEPTH_DOWNLOAD_01} from '../../modules/mosdepth/mosdepth.downoad.01.nf'
-include {GS_SIMPLE_01} from '../../modules/gs/gs.simple.01.nf'
+include {assertKeyExistsAndNotEmpty          } from '../../modules/utils/functions.nf'
+include {PREPARE_REFERENCE                   } from '../../subworkflows/samtools/prepare.ref'
+include {META_TO_PED                         } from '../../subworkflows/pedigree/meta2ped'
+include {MULTIQC                             } from '../../subworkflows/multiqc'
+include {META_TO_BAMS                        } from '../../subworkflows/samtools/meta2bams1'
+include {runOnComplete                       } from '../../modules/utils/functions.nf'
+include {MOSDEPTH as MOSDEPTH1               } from '../../modules/mosdepth'
+include {MOSDEPTH as MOSDEPTH2               } from '../../modules/mosdepth'
 
 workflow {
+        versions = Channel.empty()
+        multiqc  = Channel.empty()
+		each_depths = Channel.of(meta.depths.split("[,]")).flatMap().map{T->(T as int)}
+		
+        def hash_ref= [
+                id: file(params.fasta).baseName,
+                name: file(params.fasta).baseName,
+                ucsc_name: (params.ucsc_name?:"undefined")
+                ]
+        def fasta = [ hash_ref, file(params.fasta)]
+        PREPARE_REFERENCE(hash_ref,fasta)
+        versions = versions.mix(PREPARE_REFERENCE.out.versions)
+
+
+        META_TO_BAMS(
+                hash_ref,
+                Channel.of(fasta),
+                PREPARE_REFERENCE.out.fai,
+                Channel.fromPath(params.samplesheet).splitCsv(header:true, sep:',')
+                )
+        versions = versions.mix(META_TO_BAMS.out.versions)
+
+        bams_ch = META_TO_BAMS.out.bams
+
+		META_TO_PED(hash_ref, bams_ch.map{it[0]})
+        versions = versions.mix(META_TO_PED.out.versions)
+
+  
+  		MOSDEPTH1(fasta, fai, bams_ch.combine(bed).map{meta,bam,bai,meta2,bed->[meta,bam,bai,bed]}
+  		versions = versions.mix(MOSDEPTH1.out.versions)
+  		
+  		ch1 = bams_ch.map{meta,bam,bai->[meta.id,meta,bam,bai]}
+  		ch2 = MOSDEPTH1.out.summary_txt.map{meta,summary->[meta.id,summary]}
+  		
+  
+  		ch1 = ch1.join(ch2)
+  			.map{meta_id,meta,bam,bai,summary->[meta1,bam,bai,summary]}
+  			.combine(each_depths)
+  			
+  			
+  		DOWNSAMPLE(
+  			fasta,
+  			fai,
+  			bed,
+  			ch1
+  			)
+  	   versions = versions.mix(DOWNSAMPLE.out.versions)
+  		
+       MOSDEPTH2(fasta, fai, DOWNSAMPLE.out.bam}
+  	  versions = versions.mix(MOSDEPTH2.out.versions)
+
+
+
 	ch1_ch = DOWNSAMPLE_SIMULATION(params, params.reference, params.bams, params.bed)
 	html = VERSION_TO_HTML(params, ch1_ch.version)
-}
+	
+	MULTIQC(
+            hash_ref.plus("id":"delly2"),
+            META_TO_PED.out.sample2collection,
+            versions,
+            multiqc
+            )
+	}
 
 
 workflow DOWNSAMPLE_SIMULATION {
@@ -67,11 +111,7 @@ main:
 
 	each_depths= Channel.from(meta.depths.split("[,]")).flatMap().map{T->(T as int)}
 
-	bams_ch = SAMTOOLS_SAMPLES_01(["with_header":false,"allow_multiple_references":false,"allow_duplicate_samples":false], reference, file("NO_FILE"), bams)	
-	version_ch = version_ch.mix(bams_ch.version)
-
-	mosdepth_ch = MOSDEPTH_DOWNLOAD_01(meta)
-	version_ch = version_ch.mix(mosdepth_ch.version)
+	
 	
 	sample_bam = bams_ch.output.splitCsv(header:false,sep:'\t').map{T->[T[0],T[2]]}
 
