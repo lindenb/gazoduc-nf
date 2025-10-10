@@ -35,6 +35,7 @@ process DOWNSAMPLE {
 	    tuple val(meta),path(bam),path(bai),path(mosdepth_summary)
    output:
 		tuple val(meta),path("*.bam"),path("*.bai"),emit:bam
+		path("*.md5"),emit:md5
 		path("versions.yml"),emit:versions
    script:
    		if(meta.depth==null) throw new IllegalArgumentException("meta.depth is missing in ${task.process}");
@@ -73,7 +74,14 @@ process DOWNSAMPLE {
    samtools merge --threads ${task.cpus} --reference ${fasta} TMP/merged.bam TMP/_chunck.*.bam
 
 
-   samtools addreplacerg -r "ID:${prefix}"  -r "SM:${prefix}" -r "SO:${meta.id}" -m overwrite_all --threads ${task.cpus} -o TMP/jeter.bam TMP/merged.bam
+   samtools addreplacerg \\
+	-r "ID:${prefix}" \\
+	-r "SM:${prefix}" \\
+	-r "SO:${meta.id}" \\
+	-m overwrite_all \\
+	--threads ${task.cpus} \\
+	-o TMP/jeter.bam \\
+	TMP/merged.bam
 
 
    samtools index -@ ${task.cpus} TMP/jeter.bam
@@ -81,7 +89,7 @@ process DOWNSAMPLE {
 
    mv TMP/jeter.bam "${prefix}.bam"
    mv TMP/jeter.bam.bai "${prefix}.bam.bai"
-
+   md5sum "${prefix}.bam" > "${prefix}.bam.md5"
 
 cat << EOF > versions.yml
 "${task.process}":
@@ -94,6 +102,6 @@ EOF
    		def depth = (meta.depth as int)
    		def prefix  =  task.ext.prefix?: "${meta.id}.DP${depth}"
    """
-   touch versions.yml ${prefix}.bam ${prefix}.bam.bai
+   touch versions.yml ${prefix}.bam ${prefix}.bam.bai ${prefix}.bam.md5
    """
    }

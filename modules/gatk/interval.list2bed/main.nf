@@ -27,8 +27,6 @@ tag "${meta.id?:interval_list.name}"
 label "process_single"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.02.yml"
-when:
-    task.ext.when == null || task.ext.when
 input:
 	tuple val(meta),path(interval_list)
 output:

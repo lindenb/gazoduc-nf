@@ -36,15 +36,15 @@ output:
 script:
     def args1 = task.args1?:""
     def prefix = task.ext.prefix?:"${bed.baseName}.complement"
-    def awkargs =
+    def awkargs =  task.ext.awkargs?:"(1==1)"
 """
 mkdir -p TMP
 cut -f1,2 "${fai}" > TMP/sizes.txt
 
 sort -T TMP -t '\t' -k1,1 -k2,2n "${bed}" |\\
 	bedtools complement -i - -g TMP/sizes.txt ${args} |\\
-    sort -T TMP -t '\t' -k1,1 -k2,2n |\\
-    awk -F '\t' '(int(\$2) < int(\$3) ${awkargs})' > TMP/jeter.bed
+    awk -F '\t' '(int(\$2) < int(\$3) || ${awkargs})' |\\
+     sort -T TMP -t '\t' -k1,1 -k2,2n  > TMP/jeter.bed
 
 mv TMP/jeter.bed "${prefix}.bed"
 

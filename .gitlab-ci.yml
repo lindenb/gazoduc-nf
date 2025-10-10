@@ -21,7 +21,7 @@ stages:
 test-job:
   stage: test
   script:
-    - make -C tests stub hard_tests 
+    - (cd tests && make stub hard_tests)
   artifacts:
     paths:
         - tests/.nextflow.log

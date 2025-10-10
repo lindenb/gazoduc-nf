@@ -31,6 +31,7 @@ include {SCATTER_TO_BED                                            } from '../..
 include {MULTIQC                                                   } from '../../modules/multiqc'
 include {COMPILE_VERSIONS                                          } from '../../modules/versions/main.nf'
 include {PREPARE_REFERENCE                                         } from '../../subworkflows/samtools/prepare.ref'
+
 // Print help message, supply typical command line usage for the pipeline
 if (params.help) {
    log.info paramsHelp("nextflow run my_pipeline --input input_file.csv")

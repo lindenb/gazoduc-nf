@@ -1,11 +1,7 @@
 BASH=/bin/bash
-.PHONY:doc
-define M4DOC
-cd "$1" && m4 -P README.m4 > README.md && git add README.md
-endef
+.PHONY:test tests
 
-all: doc
 
-doc:
-	$(call M4DOC,workflows/wgselect/basic)
-	$(call M4DOC,workflows/burden/burden.coding.01)
+tests:test
+test:
+	cd tests && $(MAKE) stub hard_tests

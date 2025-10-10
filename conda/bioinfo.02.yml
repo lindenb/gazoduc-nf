@@ -7,3 +7,4 @@ dependencies:
   - bioconda::htslib>=1.20
   - bioconda::gatk4>=4.6.1.0
   - r-base
+  - bioconda::glnexus=1.4.1

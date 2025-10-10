@@ -40,8 +40,16 @@ include {HAPLOTYPECALLER                     } from '../../modules/gatk/hapcalle
 include {GENOTYPEGVCFS                       } from '../../modules/gatk/genotypegvcfs'
 include {COMBINEGVCFS                        } from '../../modules/gatk/combinegvcfs'
 include {GHOSTSCRIPT_MERGE                   } from '../../modules/gs/merge'
+include {PREPARE_USER_BED                    } from '../../subworkflows/bedtools/prepare.user.bed'
 
 workflow {
+		if(params.samplesheet==null) {
+			throw new IllegalArgumentException("--samplesheet not defined");
+			}
+		if(params.fasta==null) {
+			throw new IllegalArgumentException("--fasta not defined");
+			}
+
         versions = Channel.empty()
         multiqc  = Channel.empty()
 		each_depths = Channel.of(params.depths.split("[,]"))
@@ -54,40 +62,56 @@ workflow {
                 name: file(params.fasta).baseName,
                 ucsc_name: (params.ucsc_name?:"undefined")
                 ]
-        def fasta = [ hash_ref, file(params.fasta)]
-        PREPARE_REFERENCE(hash_ref,fasta)
+        PREPARE_REFERENCE(
+			hash_ref.plus(skip_complement:true),
+			Channel.of( [ hash_ref, file(params.fasta)])
+			)
         versions = versions.mix(PREPARE_REFERENCE.out.versions)
-
+		fasta = PREPARE_REFERENCE.out.fasta.first()
+		fai = PREPARE_REFERENCE.out.fai.first()
+		dict = PREPARE_REFERENCE.out.dict.first()
 
         META_TO_BAMS(
-                hash_ref,
-                Channel.of(fasta),
-                PREPARE_REFERENCE.out.fai,
-                Channel.fromPath(params.samplesheet).splitCsv(header:true, sep:',')
-                )
+			hash_ref,
+			fasta,
+			fai,
+			Channel.fromPath(params.samplesheet)
+				.splitCsv(header:true, sep:',')
+			)
         versions = versions.mix(META_TO_BAMS.out.versions)
 	    bams_ch = META_TO_BAMS.out.bams
 
-		
+		if(params.bed==null) {
+			bed = Channel.empty()
+			}
+		else
+			{
+			bed = Channel.of([[id:file(params.bed).baseName],file(params.bed)])
+			}
 
-  		if(params.bed==null) {
-  			bed = PREPARE_REFERENCE.out.scatter_bed
-  			}
-  		else
-  			{
-  			BEDTOOLS_INTERSECT(
-  				PREPARE_REFERENCE.out.fai,
-  				PREPARE_REFERENCE.out.scatter_bed.combine(Channel.of(params.bed))
-  				)
-  			versions = versions.mix(BEDTOOLS_INTERSECT.out.versions)
-  			bed  = BEDTOOLS_INTERSECT.out.bed.first()
-  			}
+		PREPARE_USER_BED(
+			hash_ref,
+			fasta,
+			fai,
+			dict,
+			PREPARE_REFERENCE.out.scatter_bed.first(),
+			bed
+			)
+		versions = versions.mix(PREPARE_USER_BED.out.versions)
+		multiqc = multiqc.mix(PREPARE_USER_BED.out.multiqc)
+		bed = PREPARE_USER_BED.out.bed.first()
   		
   		/*  will force the original BAM to be filtered as the downsampled one */
 	    		
 		if(params.use_original_bam!=true) {
 
-			SAMTOOLS_VIEW(fasta,PREPARE_REFERENCE.out.fai,bed, [[id:"no_reads"],[]], bams_ch);
+			SAMTOOLS_VIEW(
+				fasta,
+				fai,
+				bed,
+				[[id:"no_reads"],[]],
+				bams_ch
+				);
 			versions = versions.mix(SAMTOOLS_VIEW.out.versions)
 			
 			bams_ch = SAMTOOLS_VIEW.out.bam
@@ -95,8 +119,10 @@ workflow {
   		
   		MOSDEPTH1(
 			fasta,
-			PREPARE_REFERENCE.out.fai,
-			bams_ch.combine(bed).map{meta,bam,bai,meta2,bed->[meta,bam,bai,bed]}
+			fai,
+			bams_ch
+				.combine(bed)
+				.map{meta,bam,bai,meta2,bed->[meta,bam,bai,bed]}
 			)
   		versions = versions.mix(MOSDEPTH1.out.versions)
 		multiqc = multiqc
@@ -115,7 +141,7 @@ workflow {
   			
   		DOWNSAMPLE(
   			fasta,
-  			PREPARE_REFERENCE.out.fai,
+  			fai,
   			bed,
   			ch1
   			)
@@ -123,8 +149,10 @@ workflow {
   		
        MOSDEPTH2(
 		fasta,
-		PREPARE_REFERENCE.out.fai,
-		DOWNSAMPLE.out.bam.combine(bed).map{meta,bam,bai,meta2,bed->[meta,bam,bai,bed]}
+		fai,
+		DOWNSAMPLE.out.bam
+			.combine(bed)
+			.map{meta,bam,bai,meta2,bed->[meta,bam,bai,bed]}
 		)
   	   versions = versions.mix(MOSDEPTH2.out.versions)
 	   multiqc = multiqc
@@ -151,8 +179,8 @@ workflow {
 	
 	   HAPLOTYPECALLER(
 		   fasta,
-		   PREPARE_REFERENCE.out.fai,
-		   PREPARE_REFERENCE.out.dict,
+		   fai,
+		   dict,
 		   [[id:"noref"],[]],
 		   bams_ch
 		   		.combine(bed)
@@ -170,15 +198,15 @@ workflow {
 
 	  COMBINEGVCFS(
 			fasta,
-			PREPARE_REFERENCE.out.fai,
-		    PREPARE_REFERENCE.out.dict,
+			fai,
+		    dict,
 		    gvcf_ch
 		    )
 	  versions = versions.mix(COMBINEGVCFS.out.versions)
 	  GENOTYPEGVCFS(
 	  		fasta,
-			PREPARE_REFERENCE.out.fai,
-		    PREPARE_REFERENCE.out.dict,
+			fai,
+		    dict,
 		    [[id:"nodbsnp"],[],[]],
 		    COMBINEGVCFS.out.gvcf
 	  		)

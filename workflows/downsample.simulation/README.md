@@ -37,3 +37,48 @@ nextflow run  -resume -work-dir work /path/to/gazoduc-nf/workflows/downsample.si
         --bed gene.bed
 
 ```
+## Output
+
+output folder contains each bam downsampled, the bam index, the outputs of mosdepth.
+multiqc directory,  and pipeline infos from nextflow.
+
+```
+/results/
+|-- 20251009.downsample.GRCh38.lowpass.pdf
+|-- BAMS
+|   |-- 01-055-C
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.DP001.bam
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.DP001.bam.bai
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.DP001.bam.md5
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.DP002.bam
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.DP002.bam.bai
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.DP002.bam.md5
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.DP005.bam
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.DP005.bam.bai
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.DP005.bam.md5
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.DP010.bam
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.DP010.bam.bai
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.DP010.bam.md5
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.DP015.bam
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.DP015.bam.bai
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.DP015.bam.md5
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.DP020.bam
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.DP020.bam.bai
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.DP020.bam.md5
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.gene.checked.vcf.gz
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.gene.checked.vcf.gz.md5
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.gene.checked.vcf.gz.tbi
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.mosdepth.global.dist.txt
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.mosdepth.region.dist.txt
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.mosdepth.summary.txt
+|   |   |-- 20251009.downsample.GRCh38.01-055-C.regions.bed.gz
+|   |   `-- 20251009.downsample.GRCh38.01-055-C.regions.bed.gz.csi
+(...)
+|-- multiqc
+|   `-- all
+|       `-- 20251009.downsample.GRCh38.multiqc.zip
+`-- pipeline_info
+    |-- execution_report_2025-10-10_16-55-02.html
+    |-- execution_report_2025-10-10_16-55-44.html
+    |-- execution_report_2025-10-10_16-57-50.html
+```

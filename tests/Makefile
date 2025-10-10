@@ -90,7 +90,7 @@ work/WGSIM/results/FASTQ/samplesheet.csv: reference.config nproc.cfg
 	
 reference.config: REF/$(BUILD).fa 
 	echo 'params {' > $@
-	echo '  fasta="REF/$(BUILD).fa"' >> $@
+	echo "  fasta='$${PWD}/REF/$(BUILD).fa'" >> $@
 	echo '  ucsc_name="hg38"' >> $@
 	echo '  bwa_index_directory=null' >> $@
 	echo '}'  >> $@

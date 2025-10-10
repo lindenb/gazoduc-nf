@@ -36,14 +36,14 @@ input:
     tuple val(meta ),path(vcf),path(vcf_idx),path(optional_bed)
 output:
     tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),path(optional_bed),emit:vcf
+    path("*.md5"),optional:true,emit:md5
     path("versions.yml"),emit:versions
-when:
-    task.ext.when == null || task.ext.when
 script:
    def prefix0 = (meta.id?:"${vcf.name}")+(optional_bed?"."+optional_bed.baseName:"")
    def prefix= task.ext.prefix?:prefix0
    def args1 = task.ext.args1?:""
    def jvm = task.ext.jvm?:"-XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
+   def with_md5 = (task.ext.with_md5?:true) as boolean
 """
 hostname 1>&2
 mkdir -p TMP
@@ -62,6 +62,11 @@ bcftools index --threads ${task.cpus} --force --tbi "TMP/${prefix}.vcf.gz"
 mv TMP/${prefix}.vcf.gz ./
 mv TMP/${prefix}.vcf.gz.tbi ./
 
+if ${with_md5}
+then
+	md5sum ${prefix}.vcf.gz > ${prefix}.vcf.gz.md5
+fi
+
 cat << EOF > versions.yml
 ${task.process}:
     gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
@@ -71,6 +76,6 @@ EOF
 stub:
 def prefix = (meta.id?:"${vcf.name}")+(optional_bed?"."+optional_bed.baseName:"")
 """
-touch versions.yml "${prefix}.vcf.gz" "${prefix}.vcf.gz.tbi"
+touch versions.yml "${prefix}.vcf.gz" "${prefix}.vcf.gz.tbi" ${prefix}.vcf.gz.md5
 """
 }

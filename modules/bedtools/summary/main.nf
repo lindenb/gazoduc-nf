@@ -36,13 +36,14 @@ output:
 	path("versions.yml"),emit:versions
 script:	
     def prefix = task.ext.prefix?:bed.baseName+".summary"
-    def awk_expr = task.ext.awk_expr:?""
+    def awk_expr = task.ext.awk_expr?:""
 """
 hostname 1>&2
 set -o pipefail
 mkdir -p TMP
 
-awk '${awk_expr}{printf("%s\t%s\\n",\$1,\$2);}' > TMP/genome.tsv
+awk '${awk_expr}{printf("%s\t%s\\n",\$1,\$2);}' '${fai}' |\\
+    sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/genome.tsv
 
 bedtools summary \\
     -i ${bed} \\
@@ -53,5 +54,11 @@ cat << EOF > versions.yml
 ${task.process}:
 	bedtools: "\$(bedtools --version | awk '{print \$NF}')"
 EOF
+"""
+
+stub:
+def prefix = task.ext.prefix?:bed.baseName+".summary"
+"""
+touch "${prefix}.tsv" versions.yml
 """
 }

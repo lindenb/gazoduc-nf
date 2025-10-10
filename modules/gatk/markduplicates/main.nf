@@ -24,7 +24,7 @@ SOFTWARE.
 */
 
 process MARK_DUPLICATES {
-tag "${meta.id?:bam.nam}"
+tag "${meta.id?:bam.name}"
 conda "${moduleDir}/../../../conda/bioinfo.02.yml"
 label "process_short"
 afterScript 'rm -rf TMP'
