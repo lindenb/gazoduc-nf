@@ -16,7 +16,7 @@ See [Installation](../../README.md]
 
 ## Optional
 
-  * `--depth` : comma separated or wanted file. default is `1,2,5,10,15,20`
+  * `--depths` : comma separated or wanted file. default is `1,2,5,10,15,20`
   * `--bed`: limit to that BED file.
   * `--prefix` : files prefix
   * `--outdir`:  where to write results.
