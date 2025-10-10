@@ -16,6 +16,7 @@ See [Installation](../../README.md]
 
 ## Optional
 
+  * `--depth` : comma separated or wanted file. default is `1,2,5,10,15,20`
   * `--bed`: limit to that BED file.
   * `--prefix` : files prefix
   * `--outdir`:  where to write results.
@@ -31,7 +32,8 @@ nextflow run  -resume -work-dir work /path/to/gazoduc-nf/workflows/downsample.si
         -profile "micromamba,${SLURM_CLUSTERS},GRCh38" \
         --prefix "20251009.downsample." \
         --outdir "results" \
+        --depths "5,15" \
         --samplesheet samplesheet.csv \
-        --bed ene.bed
+        --bed gene.bed
 
 ```
