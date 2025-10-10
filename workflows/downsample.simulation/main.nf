@@ -84,15 +84,25 @@ workflow {
   			}
   		
   		/*  will force the original BAM to be filtered as the downsampled one */
-	    	
-		SAMTOOLS_VIEW(fasta,PREPARE_REFERENCE.out.fai,bed, [[id:"no_reads"],[]], bams_ch);
-  		versions = versions.mix(SAMTOOLS_VIEW.out.versions)
+	    		
+		if(params.use_original_bam!=true) {
+
+			SAMTOOLS_VIEW(fasta,PREPARE_REFERENCE.out.fai,bed, [[id:"no_reads"],[]], bams_ch);
+			versions = versions.mix(SAMTOOLS_VIEW.out.versions)
+			
+			bams_ch = SAMTOOLS_VIEW.out.bam
+			}
   		
-  		bams_ch = SAMTOOLS_VIEW.out.bam
-  		
-  		MOSDEPTH1(fasta, PREPARE_REFERENCE.out.fai, bams_ch.combine(bed).map{meta,bam,bai,meta2,bed->[meta,bam,bai,bed]})
+  		MOSDEPTH1(
+			fasta,
+			PREPARE_REFERENCE.out.fai,
+			bams_ch.combine(bed).map{meta,bam,bai,meta2,bed->[meta,bam,bai,bed]}
+			)
   		versions = versions.mix(MOSDEPTH1.out.versions)
-  		
+		multiqc = multiqc
+				.mix(MOSDEPTH1.out.summary_txt)
+				.mix(MOSDEPTH1.out.global_txt)
+				.mix(MOSDEPTH1.out.global_txt)
   
   		ch1 = bams_ch.map{meta,bam,bai->[meta.id,meta,bam,bai]}
   		ch2 = MOSDEPTH1.out.summary_txt.map{meta,summary->[meta.id,summary]}
@@ -111,11 +121,18 @@ workflow {
   			)
   	   versions = versions.mix(DOWNSAMPLE.out.versions)
   		
-       MOSDEPTH2(fasta, PREPARE_REFERENCE.out.fai, DOWNSAMPLE.out.bam.combine(bed).map{meta,bam,bai,meta2,bed->[meta,bam,bai,bed]})
+       MOSDEPTH2(
+		fasta,
+		PREPARE_REFERENCE.out.fai,
+		DOWNSAMPLE.out.bam.combine(bed).map{meta,bam,bai,meta2,bed->[meta,bam,bai,bed]}
+		)
   	   versions = versions.mix(MOSDEPTH2.out.versions)
+	   multiqc = multiqc
+				.mix(MOSDEPTH2.out.summary_txt)
+				.mix(MOSDEPTH2.out.global_txt)
+				.mix(MOSDEPTH2.out.global_txt)
 	
-	
-		bams_ch=  SAMTOOLS_VIEW.out.bam
+		bams_ch= bams_ch
 		   		.mix(DOWNSAMPLE.out.bam)
 		   		.map{meta,bam,bai->{[
 		   			meta.plus(collection: (meta.depth?"DP"+meta.depth:"RAW"), original_sample: meta.id), // ADD COLLECTION, SRC SAMPLE
@@ -176,10 +193,10 @@ workflow {
 	PLOT(GENOTYPE_CONCORDANCE.out.output.map{it[1]}.collect().sort().map{[[id:"lowpass"],it]})
 	versions = versions.mix(PLOT.out.versions)
 
-/*	
-	GHOSTSCRIPT_MERGE(PLOT.out.pdf.collect().sort().map{[[id:"lowpass"],it]})
+
+	GHOSTSCRIPT_MERGE(PLOT.out.pdf.mix(GENOTYPE_CONCORDANCE.out.pdf).map{it[1]}.collect().sort().map{[[id:"lowpass"],it]})
 	versions = versions.mix(GHOSTSCRIPT_MERGE.out.versions)
-	*/
+	
 	MULTIQC(
             hash_ref.plus("id":"downsample"),
             META_TO_PED.out.sample2collection,
@@ -188,7 +205,7 @@ workflow {
             )
 	}
 
-
+runOnComplete(workflow)
 
 
 
@@ -199,19 +216,20 @@ process GENOTYPE_CONCORDANCE {
    input:
         tuple val(meta),path(vcf),path(tbi),path(bed)
    output:
-		tuple val(meta),path("${meta.id}.concordances.txt"),emit:output
-		tuple val(meta),path("${meta.id}.GQ.pdf"),emit:pdf
+		tuple val(meta),path("*.concordances.txt"),emit:output
+		tuple val(meta),path("*.GQ.pdf"),emit:pdf
         path("versions.yml"),emit:versions
    script:
+	def jvm= task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
    """
    hostname 1>&2
    set -o pipefail
    mkdir -p TMP
 
-   bcftools query -l "${vcf}" | awk '(\$1!="${meta.i}")' | while read S
+   bcftools query -l "${vcf}" | grep -v -x '${meta.id}' | while read S
    do
 
-   gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" GenotypeConcordance \\
+   gatk --java-options "${jvm}" GenotypeConcordance \\
 	--TRUTH_VCF "${vcf}" \\
 	--TRUTH_SAMPLE "${meta.id}" \\
 	--CALL_VCF "${vcf}" \\
@@ -219,15 +237,15 @@ process GENOTYPE_CONCORDANCE {
 	--O "\${S}"
 
     grep -E '^(SNP|INDEL)' "\${S}.genotype_concordance_summary_metrics"  |\\
-	grep -E '^(SNP|INDEL)' | cut -f 1,13 |\\
-	awk -vS=\$S '{printf("%s\t%s\\n", gensub(/.*\\.DP[0]*/,"\\\\1","g",S) ,\$0);}' >> concordances.txt
+	cut -f 1,13 |\\
+	awk -vS=\$S '{printf("%s\t%s\\n", gensub(/.*\\.DP[0]*/,"\\\\1","g",S) ,\$0);}' >> TMP/concordances.txt
    done
 
 
    bcftools query -l "${vcf}" | while read S
    do
-      bcftools view -O u --samples "\${S}" "${vcf}" |\
-	bcftools query -f '[%GQ\\n]' | sed 's/^\\.\$/-1/' | LC_ALL=C sort -n >> "TMP/\${S}.dist"
+      bcftools view -O u --samples "\${S}" "${vcf}" |\\
+		bcftools query -f '[%GQ\\n]' | sed 's/^\\.\$/-1/' | LC_ALL=C sort -n >> "TMP/\${S}.dist"
    done
 
 
@@ -267,7 +285,7 @@ dev.off()
 __EOF__
 
 R --vanilla < TMP/jeter.R
-mv concordances.txt "${meta.id}.concordances.txt"
+mv TMP/concordances.txt "${meta.id}.concordances.txt"
 ###############################################################################
 touch versions.yml
 """
@@ -278,25 +296,25 @@ touch versions.yml ${meta.id}.concordances.txt ${meta.id}.GQ.pdf
 }
 
 process PLOT {
-label "process_single"
+   label "process_single"
    conda "${moduleDir}/../../conda/bioinfo.01.yml"
-
+   afterScript "rm -rf TMP"
 input:
-
 	tuple val(meta),path("FILES/*")
 output:
-	tuple val(meta),path("*concordance.pdf"),emit:pdf
+	tuple val(meta),path("concordance.pdf"),emit:pdf
 	path("versions.yml"),emit:versions
 script:
 """
 hostname 1>&2
+mkdir -p TMP
 
-find FILES/ -name "*.txt" > jeter.tsv
-test -s jeter.tsv
+find FILES/ -name "*.txt" -exec cat '{}' ';' > TMP/jeter.tsv
+test -s TMP/jeter.tsv
 
-cat << '__EOF__' > jeter.R
+cat << '__EOF__' > TMP/jeter.R
 
-T1 <- read.table("jeter.tsv",sep="\t",header=FALSE)
+T1 <- read.table("TMP/jeter.tsv",sep="\t",header=FALSE)
 depths <- sort(as.integer(unique(T1\$V1)), decreasing = TRUE)
 types <- unique(T1\$V2)
 
@@ -315,9 +333,9 @@ for(depth in depths) {
 }
 
 
-pdf("${meta.id?:""}concordance.pdf")
+pdf("TMP/concordance.pdf")
 
-boxplot(list1,names=list2,main="${meta.id?:""}concordance",xlab="depth",ylab="type",col=list3,las=2)
+boxplot(list1,names=list2,main="concordance",xlab="depth",ylab="type",col=list3,las=2)
 
 legend("topright",legend=c("SNP","INDEL"),fill=c("blue","yellow"))
 
@@ -325,14 +343,15 @@ dev.off()
 
 __EOF__
 
-R --vanilla < jeter.R
+R --vanilla < TMP/jeter.R
 
+mv TMP/concordance.pdf ./
 touch versions.yml
 """
 
 stub:
 """
-touch versions.yml "${meta.id?:""}concordance.pdf"
+touch versions.yml "concordance.pdf"
 """
 }
 

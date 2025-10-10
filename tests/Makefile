@@ -1,7 +1,7 @@
 SHELL=/bin/bash
 NEXTFLOW?=nextflow
 BUILD=GRCh38
-.PHONY=all hard_tests reference test_wgsim test_fastqc test_bwa test_hapcaller stub
+.PHONY=all hard_tests reference test_wgsim test_fastqc test_bwa test_hapcaller test_downsample stub
 
 all: stub
 
@@ -58,7 +58,13 @@ stub: data/rotavirus_rf.fa data/rotavirus_rf.vcf.gz
 		--fasta data/rotavirus_rf.fa
 
 	
-hard_tests: test_wgsim test_fastqc test_bwa test_hapcaller stub
+hard_tests: test_wgsim test_fastqc test_bwa test_hapcaller test_downsample stub 
+
+
+test_downsample: work/BWA/results/BAMS/samplesheet.csv
+	$(NEXTFLOW) run -work-dir work/LOWPASS -profile gitlabci -c reference.config  -c nproc.cfg  \
+		../workflows/downsample.simulation/main.nf \
+		--outdir work/LOWPASS/results --samplesheet $<
 
 test_hapcaller: work/BWA/results/BAMS/samplesheet.csv
 	$(NEXTFLOW) run -work-dir work/HC -profile gitlabci -c reference.config  -c nproc.cfg  ../workflows/gatk/gatk4gvcfs3/main.nf --outdir work/HC/results --samplesheet $<
@@ -71,7 +77,7 @@ test_bwa : work/BWA/results/BAMS/samplesheet.csv
 work/BWA/results/BAMS/samplesheet.csv : work/WGSIM/results/FASTQ/samplesheet.csv  reference.config nproc.cfg REF/$(BUILD).dbsnp.vcf.gz
 	$(NEXTFLOW) run -work-dir work/BWA -profile gitlabci -c reference.config  -c nproc.cfg  ../workflows/bwa/main.nf --outdir work/BWA/results --samplesheet $< --known_sites REF/$(BUILD).dbsnp.vcf.gz
 	find work/BWA/results -type f
-	cat $@
+	cut -d, -f 1-8 $@ > $(addsuffix .tmp,$@) && mv $(addsuffix .tmp,$@) $@
 
 test_fastqc: work/WGSIM/results/FASTQ/samplesheet.csv nproc.cfg
 	$(NEXTFLOW) run -work-dir work/FASTQC -profile gitlabci -c nproc.cfg  --outdir FASTQC ../workflows/fastqc/main.nf --samplesheet $<
