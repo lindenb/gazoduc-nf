@@ -39,6 +39,7 @@ include {SAMTOOLS_SAMPLES                    } from '../../../modules/samtools/s
 include {META_TO_PED                         } from '../../../subworkflows/pedigree/meta2ped'
 include {PREPARE_REFERENCE                   } from '../../../subworkflows/samtools/prepare.ref'
 include {MULTIQC                             } from '../../../subworkflows/multiqc'
+include {PREPARE_USER_BED                    } from '../../../subworkflows/bedtools/prepare.user.bed'
 
 
 // Print help message, supply typical command line usage for the pipeline
@@ -54,35 +55,36 @@ workflow {
 	versions = Channel.empty()
 	multiqc = Channel.empty()
 
-	ref_hash = [
+	workflow_metadata = [
 		id:   file(params.fasta).simpleName,
 		name: file(params.fasta).simpleName,
 		ucsc_name : params.ucsc_name?:"undefined"
 		]
 
 
-	fasta = [ref_hash,file(params.fasta)]
+	fasta = [workflow_metadata,file(params.fasta)]
 
-    PREPARE_REFERENCE(ref_hash, fasta)
+    PREPARE_REFERENCE(workflow_metadata, Channel.of(fasta))
     versions = versions.mix(PREPARE_REFERENCE.out.versions)
-	fai   = PREPARE_REFERENCE.out.fai
-	dict  = PREPARE_REFERENCE.out.dict
+    fasta   = PREPARE_REFERENCE.out.fasta.first()
+	fai   = PREPARE_REFERENCE.out.fai.first()
+	dict  = PREPARE_REFERENCE.out.dict.first()
 
 
 
     if(params.dbsnp==null)
             {
-            dbsnp =     [ref_hash, [] ,[] ]
+            dbsnp =     [workflow_metadata, [] ,[] ]
             }
     else
             {
-            dbsnp =     [ ref_hash, file(params.dbsnp), file(params.dbsnp+".tbi") ]
+            dbsnp =     [ workflow_metadata, file(params.dbsnp), file(params.dbsnp+".tbi") ]
             }
 
-    def gtf     = [ref_hash,[],[]]
+    def gtf     = [workflow_metadata,[],[]]
   
     if(params.gtf!=null) {
-        gtf = [ref_hash,file(params.gtf),file(params.gtf+".tbi")]
+        gtf = [workflow_metadata,file(params.gtf),file(params.gtf+".tbi")]
     }
 
 
@@ -102,7 +104,7 @@ workflow {
         .map{it.dict!=null?it : it.plus(["dict":it.fasta.replaceAll("\\.(fasta|fa|fna)\$",".dict")])}
         .map{[file(it.fasta),file(it.fai),file(it.dict)]}
         .flatMap()
-        .mix(Channel.of(fasta).map{it[1]})
+        .mix(fasta.map{it[1]})
         .mix(PREPARE_REFERENCE.out.fai.map{it[1]})
         .mix(PREPARE_REFERENCE.out.dict.map{it[1]})
         .filter{fn->fn.exists()} // when running in stub mode...
@@ -110,7 +112,7 @@ workflow {
         .map{name,fns->fns.sort()[0]}
         .unique()
         .collect()
-        .map{[ref_hash,it]}
+        .map{[workflow_metadata,it]}
 
 
 
@@ -170,16 +172,26 @@ workflow {
             }
     
     /** build pedigree from meta data */
-    META_TO_PED(ref_hash, bams_ch.map{it[0]})
+    META_TO_PED(workflow_metadata, bams_ch.map{it[0]})
     versions = versions.mix(META_TO_PED.out.versions)
 
 
     if(params.bed==null) {
-        bed = PREPARE_REFERENCE.out.scatter_bed
+       bed = Channel.empty()
     } else {
-        bed = Channel.of([ref_hash, file(params.bed)])
-    }
-  
+		bed = Channel.of([[id:file(params.bed).baseName],file(params.bed)])
+        }
+    PREPARE_USER_BED(
+        workflow_metadata,
+        fasta,
+        fai,
+        dict,
+        PREPARE_REFERENCE.out.scatter_bed.first(),
+        bed
+        )
+    versions = versions.mix(PREPARE_USER_BED.out.versions)
+    multiqc = multiqc.mix(PREPARE_USER_BED.out.multiqc)
+    bed = PREPARE_USER_BED.out.bed.first()
   
    /* cut the bed/genome into parts for SV calling per region */
    BEDTOOLS_MAKEWINDOWS(bed)
@@ -214,7 +226,7 @@ workflow {
         }
     else if(params.method.equalsIgnoreCase("bam2vcf")) {
         GATK_BAM2VCF(
-            ref_hash,
+            workflow_metadata,
             fasta,
             fai,
             dict,
@@ -229,7 +241,7 @@ workflow {
         }
     else if(params.method.equalsIgnoreCase("direct")) {
         HAPLOTYPECALLER_DIRECT(
-            ref_hash,
+            workflow_metadata,
             fasta,
             fai,
             dict,
@@ -274,7 +286,7 @@ workflow {
 
 
 	MULTIQC(
-		ref_hash.plus("id":"hapcaller"),
+		workflow_metadata.plus("id":"hapcaller"),
 		META_TO_PED.out.sample2collection,
 		versions,
 		multiqc

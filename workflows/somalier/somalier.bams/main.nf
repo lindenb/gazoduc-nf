@@ -69,8 +69,9 @@ workflow {
 	
 	PREPARE_REFERENCE(
 		hash_ref.plus(skip_scatter:true), 
-		fasta
+		Channel.of(fasta)
 		)
+	fasta= PREPARE_REFERENCE.out.fasta.first()
     versions = versions.mix(PREPARE_REFERENCE.out.versions)
 
 	
@@ -114,9 +115,9 @@ workflow {
 
 	SOMALIER_BAMS(
 		hash_ref,
-		Channel.of(fasta),
-		PREPARE_REFERENCE.out.fai,
-		PREPARE_REFERENCE.out.dict,
+		fasta,
+		PREPARE_REFERENCE.out.fai.first(),
+		PREPARE_REFERENCE.out.dict.first(),
 		ch0.map{
 			def key=  [id:it.id];
 			if(hasKey(it,"fasta")) {

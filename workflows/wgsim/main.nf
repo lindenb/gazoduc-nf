@@ -76,8 +76,10 @@ workflow {
 	
 	WGSIM(fasta,ch1)
 	versions = versions.mix(WGSIM.out.versions)
-	
-	MAKE_SAMPLESHEET(WGSIM.out.fastq.map{meta,R1,R2->[
+
+	MAKE_SAMPLESHEET(
+		WGSIM.out.fastq
+		.map{meta,R1,R2->[
 			meta.id,
 			"${params.outdir}/FASTQ/${params.prefix}${R1.name}",
 			"${params.outdir}/FASTQ/${params.prefix}${R2.name}",

@@ -135,10 +135,11 @@ workflow {
 
 	bed = Channel.of([[id:"nobed"],[]]).first()
 	
-	PREPARE_REFERENCE(hash_ref,fasta)
+	PREPARE_REFERENCE(hash_ref,Channel.of(fasta))
 	versions = versions.mix(PREPARE_REFERENCE.out.versions)
-	fai = PREPARE_REFERENCE.out.fai
-	dict = PREPARE_REFERENCE.out.dict
+	fasta = PREPARE_REFERENCE.out.fasta.first()
+	fai = PREPARE_REFERENCE.out.fai.first()
+	dict = PREPARE_REFERENCE.out.dict.first()
 	
 	if(params.bwa_index_directory!=null) {
 		BWADir = [[id:"bwaindex"],file(params.bwa_index_directory)];

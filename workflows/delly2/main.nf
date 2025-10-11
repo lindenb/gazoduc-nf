@@ -42,14 +42,15 @@ workflow {
       		ucsc_name: (params.ucsc_name?:"undefined")
       		]
         def fasta = [ hash_ref, file(params.fasta)]
-  		PREPARE_REFERENCE(hash_ref,fasta)
+  		PREPARE_REFERENCE(hash_ref,Channel.of(fasta))
+		fasta = PREPARE_REFERENCE.out.fasta.first()
   		versions = versions.mix(PREPARE_REFERENCE.out.versions)
   		
   		
   		META_TO_BAMS(
   			hash_ref,
-  			Channel.of(fasta),
-  			PREPARE_REFERENCE.out.fai,
+  			fasta,
+  			PREPARE_REFERENCE.out.fai.first(),
   			Channel.fromPath(params.samplesheet).splitCsv(header:true, sep:',')
   			)
   		versions = versions.mix(META_TO_BAMS.out.versions)
@@ -59,11 +60,11 @@ workflow {
   		META_TO_PED(hash_ref, bams_ch.map{it[0]})
     	versions = versions.mix(META_TO_PED.out.versions)
     	
-		exclude_bed = PREPARE_REFERENCE.out.complement_bed
+		exclude_bed = PREPARE_REFERENCE.out.complement_bed.first()
 
 		DOWNLOAD_EXCLUDE(
 			fasta,
-			PREPARE_REFERENCE.out.fai,
+			PREPARE_REFERENCE.out.fai.first(),
 			exclude_bed
 			)
 		ersions = versions.mix(DOWNLOAD_EXCLUDE.out.versions)
@@ -71,8 +72,8 @@ workflow {
     	DELLY(
 			hash_ref,
 			fasta,
-			PREPARE_REFERENCE.out.fai,
-			PREPARE_REFERENCE.out.dict,
+			PREPARE_REFERENCE.out.fai.first(),
+			PREPARE_REFERENCE.out.dict.first(),
 			DOWNLOAD_EXCLUDE.out.bed,
 			bams_ch
 			)

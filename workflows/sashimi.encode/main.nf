@@ -46,7 +46,8 @@ workflow {
 		ensembl_name: "GRCh38"
 		]
 	def fasta = [ hash_ref, file(params.fasta)]
-	PREPARE_REFERENCE(hash_ref,fasta)
+	PREPARE_REFERENCE(hash_ref,Channel.of(fasta))
+	fasta = PREPARE_REFERENCE.out.fasta.first()
 	version_ch = version_ch.mix(PREPARE_REFERENCE.out.versions)
 	
 	def gtf = [hash_ref,file(params.gtf),file(params.gtf+".tbi")]
@@ -85,7 +86,7 @@ workflow {
 	version_ch = version_ch.mix(FETCH_GENES.out.versions)
 
 	JVARKIT_BAM_WITHOUT_BAI(
-		PREPARE_REFERENCE.out.dict,
+		PREPARE_REFERENCE.out.dict.first(),
 		ch1.combine(ch2).map{
 		[
 		it[0].plus(it[2]),
@@ -151,8 +152,8 @@ workflow {
 	BAM_QC(
 		hash_ref,
 		fasta,
-		PREPARE_REFERENCE.out.fai,
-		PREPARE_REFERENCE.out.dict,
+		PREPARE_REFERENCE.out.fai.first(),
+		PREPARE_REFERENCE.out.dict.first(),
 		GET_EXONS.out.bed.first(),
 		all_bams
 		)
