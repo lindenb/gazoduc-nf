@@ -38,3 +38,5 @@ jeter*
 # eclipse
 .classpath
 .project
+
+tests/STUB

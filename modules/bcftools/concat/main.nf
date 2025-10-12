@@ -30,10 +30,9 @@ tag "${meta.id?:""}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.02.yml"
 input:
-	tuple val(meta ),path("VCFS/*") 
-	tuple val(meta1),path(optional_bed)
+	tuple val(meta ),path("VCFS/*"),path(optional_bed)
 output:
-    tuple val(meta),path("*.{bcf,vcf.gz}"),path("*.{csi,tbi}"),optional:true,emit:vcf
+    tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),path(optional_bed),emit:vcf
     tuple val(meta),path("*.md5"),optional:true,emit:md5
 	path("versions.yml"),emit:versions
 script:
@@ -42,15 +41,13 @@ script:
 	def args3 = optional_bed?"--regions-file \"${optional_bed}\"":""
 	def limit = task.ext.limit?:10
 	def prefix = task.ext.prefix?:(meta.id?:"variants")+".\${MD5}.concat"
-	def suffix = task.ext.suffix?:".bcf"
-	def suffix2 = (suffix.endsWith("bcf")?"bcf":"vcf.gz")
-	def suffix3 = (suffix.endsWith("bcf")?"bcf.csi":"vcf.gz.tbi")
+	
 	def by_contig = (task.ext.by_chromosome?:false) as boolean
 	def with_md5 = (task.ext.with_md5?:true) as boolean
 """	
 	hostname 1>&2
 	mkdir -p TMP
-	find VCFS/ -name "*.vcf.gz" -o -name "*.bcf" | sort -V -T TMP > TMP/jeter.list
+	find VCFS/ \\( -name "*.vcf.gz" -o -name "*.bcf" \\) | sort -V -T TMP > TMP/jeter.list
 	MD5=\$(cat TMP/jeter.list ${optional_bed?optional_bed:""} | md5sum | cut -d ' ' -f1)
 
 	set -x
@@ -100,14 +97,13 @@ script:
 					then
 
 						bcftools concat \\
-							${suffix.endsWith("bcf")?"--write-index":""} \\
 							--threads ${task.cpus} \\
 							${args1} \\
 							${args2} \\
 							--regions-file "TMP/\${CONTIG}.ctg.bed" \\
-							-O ${suffix.endsWith("bcf")?"b9":"z9"} \\
+							-O z9 \\
 							--file-list TMP/jeter2.vcf.list \\
-							-o "TMP/jeter.${suffix2}" 
+							-o "TMP/jeter.vcf.gz" 
 
 					else
 						
@@ -132,27 +128,25 @@ script:
 						done
 
 						bcftools concat \\
-							${suffix.endsWith("bcf")?"--write-index":""} \\
 							--threads ${task.cpus} \\
 							${args1} \\
 							${args2} \\
 							--regions-file "TMP/\${CONTIG}.ctg.bed" \\
-							-O ${suffix.endsWith("bcf")?"b9":"z9"} \\
+							-O z9 \\
 							--file-list TMP/jeter3.list \\
-							-o "TMP/jeter.${suffix2}" 
+							-o "TMP/jeter.vcf.gz" 
 
 						rm -vf "TMP/*.delete.me.bcf"
 						rm -vf "TMP/*.delete.me.bcf.csi"
 					fi
 
 					# default write index is CSI, not TBI for vcf.gz
-					if ${!suffix.endsWith("bcf")}
-					then
-						bcftools index -f -t --threads ${task.cpus} TMP/jeter.${suffix2}
-					fi
+				
+					bcftools index -f -t --threads ${task.cpus} TMP/jeter.vcf.gz
+					
 
-					mv -v TMP/jeter.${suffix2} "${prefix}.\${CONTIG}.${suffix2}"
-					mv -v TMP/jeter.${suffix3} "${prefix}.\${CONTIG}.${suffix3}"
+					mv -v TMP/jeter.vcf.gz "${prefix}.\${CONTIG}.vcf.gz"
+					mv -v TMP/jeter.vcf.gz.tbi "${prefix}.\${CONTIG}.vcf.gz.tbi"
 
 		done
 		# end of loop over each chromosome
@@ -165,25 +159,23 @@ script:
 		then
 
 			bcftools view \\
-				${suffix.endsWith("bcf")?"--write-index":""} \\
 				--threads ${task.cpus} \\
 				${args3} \\
-				-O ${suffix.endsWith("bcf")?"b9":"z9"} \\
-				-o "TMP/jeter.${suffix2}" \\
+				-O z9 \\
+				-o "TMP/jeter.vcf.gz" \\
 				`cat TMP/jeter.list`
 
 		elif test  `wc -l < TMP/jeter.list` -le ${limit}
 		then
 
 			bcftools concat \\
-				${suffix.endsWith("bcf")?"--write-index":""} \\
 				--threads ${task.cpus} \\
 				${args1} \\
 				${args2} \\
 				${args3} \\
-				-O ${suffix.endsWith("bcf")?"b9":"z9"} \\
+				-O z9 \\
 				--file-list TMP/jeter.list \\
-				-o "TMP/jeter.${suffix2}" 
+				-o "TMP/jeter.vcf.gz
 
 		else
 		
@@ -208,32 +200,28 @@ script:
 			done
 
 			bcftools concat \\
-				${suffix.endsWith("bcf")?"--write-index":""} \\
 				--threads ${task.cpus} \\
 				${args1} \\
 				${args2} \\
 				${args3} \\
-				-O ${suffix.endsWith("bcf")?"b9":"z9"} \\
+				-O z9 \\
 				--file-list TMP/jeter2.list \\
-				-o "TMP/jeter.${suffix2}" 
+				-o "TMP/jeter.vcf.gz
 
 		fi
 
 		# default write index is CSI, not TBI for vcf.gz
-		if ${!suffix.endsWith("bcf")}
-		then
-			bcftools index -f -t --threads ${task.cpus} TMP/jeter.${suffix2}
-		fi
+		bcftools index -f -t --threads ${task.cpus} TMP/jeter.vcf.gz
 
-		mv TMP/jeter.${suffix2} ${prefix}.${suffix2}
-		mv TMP/jeter.${suffix3} ${prefix}.${suffix3}
+		mv TMP/jeter.vcf.gz ${prefix}.vcf.gz
+		mv TMP/jeter.vcf.gz.tbi ${prefix}.vcf.gz.tbi
 	fi
 
 
 # Generate MD5 if needed
 if ${with_md5}
 then 
-	md5sum ${prefix}.${suffix2} > ${prefix}.${suffix2}.md5
+	md5sum ${prefix}.vcf.gz > ${prefix}.vcf.gz.md5
 fi
 
 cat << END_VERSIONS > versions.yml
@@ -243,7 +231,9 @@ END_VERSIONS
 """
 
 stub:
+
 """
-touch versions.yml ${meta.id}.bcf  ${meta.id}.bcf.csi   ${meta.id}.bcf.md5
+find VCFS/ \\( -name "*.vcf.gz" -o -name "*.bcf" \\) | sort -V -T . 1>&2
+touch versions.yml ${meta.id}.vcf.gz  ${meta.id}.vcf.gz.tbi   ${meta.id}.vcf.gz.md5
 """
 }

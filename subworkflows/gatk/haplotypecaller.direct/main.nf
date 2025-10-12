@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -23,7 +23,7 @@ SOFTWARE.
 */
 //include {makeKey                } from '../../../modules/utils/functions.nf'
 include {HAPLOTYPECALLER_DIRECT as HAPCALLER  } from '../../../modules/gatk/hapcallerdirect'
-include {BCFTOOLS_CONCAT                      } from '../../../subworkflows/bcftools/concat'
+include {BCFTOOLS_CONCAT                      } from '../../../modules/bcftools/concat'
 include {BCFTOOLS_MERGE                       } from '../../../modules/bcftools/merge'
 
 workflow HAPLOTYPECALLER_DIRECT {
@@ -70,15 +70,19 @@ workflow HAPLOTYPECALLER_DIRECT {
 		version_ch = version_ch.mix(BCFTOOLS_MERGE.out.versions)
 
 		BCFTOOLS_CONCAT(
-			meta,
-			[[id:"nobed"],[]],
-			BCFTOOLS_MERGE.out.vcf.map{meta,vcf,tbi,bed->[meta,vcf,tbi]}
+			BCFTOOLS_MERGE.out.vcf
+				.map{meta,vcf,tbi,bed->[vcf,tbi]}
+				.flatMap()
+				.collect()
+				.map{[
+					[id:meta.id],
+					it,
+					[]
+					]}
 			)
 		version_ch = version_ch.mix(BCFTOOLS_CONCAT.out.versions)
 		
-		
-		vcf_out = BCFTOOLS_CONCAT.out.vcf
-
+		vcf_out = BCFTOOLS_CONCAT.out.vcf.map{meta,vcf,tbi,bed->[meta,vcf,tbi,[]]}
 	emit:
 		versions = version_ch
 		vcf = vcf_out

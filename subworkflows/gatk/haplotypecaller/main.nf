@@ -84,13 +84,13 @@ main:
 	vcf_out = Channel.empty()
 	if(meta.gvcf_merge_method==null  || meta.gvcf_merge_method.equalsIgnoreCase("combinegvcfs")) {
 		COMBINE_GENOTYPE_GVCFS(
-		        meta,
-		        fasta,
-		        fai,
-		        dict,
-			    dbsnp,
-		        gvcfs_ch
-		        )
+			meta,
+			fasta,
+			fai,
+			dict,
+			dbsnp,
+			gvcfs_ch
+			)
 		versions  = versions.mix(COMBINE_GENOTYPE_GVCFS.out.versions)
 		vcf_out = COMBINE_GENOTYPE_GVCFS.out.vcf
 		}
@@ -124,19 +124,23 @@ main:
 		{
 		throw new IllegalArgumentException("unknown meta.gvcf_merge_method = ${meta.gvcf_merge_method}.");
 		}
-
     BCFTOOLS_CONCAT(
         vcf_out
             .map{meta,vcf,tbi,bed->[vcf,tbi]}//gvcf,tbi
-             .collect()
-             .map{[[id:"gatkhapcaller"],it]},
-        [[:],[]] //bed
+			.flatMap()
+            .collect()
+            .map{[
+				[id:"gatkhapcaller"],
+				it,
+				[] // bed
+				]}
         )
     versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
-
+	vcf_out = BCFTOOLS_CONCAT.out.vcf
+		.map{meta,vcf,tbi,bed->[meta,vcf,tbi]}
 emit:
     versions
-    vcf = BCFTOOLS_CONCAT.out.vcf
+    vcf = vcf_out
 }
 
 

@@ -24,7 +24,7 @@ SOFTWARE.
 */
 
 include {GATK_BAM2VCF as BAM2VCF                    } from '../../../modules/gatk/bam2vcf'
-include {BCFTOOLS_CONCAT                            } from '../../../subworkflows/bcftools/concat'
+include {BCFTOOLS_CONCAT                            } from '../../../modules/bcftools/concat'
 include {makeKey                                    } from '../../../modules/utils/functions.nf'
 
 
@@ -60,15 +60,18 @@ main:
 
 
     BCFTOOLS_CONCAT(
-        meta,
-         [[id:"nobed"],[]],
-        BAM2VCF.out.vcf.map{[[id:"hapcaller"],it[1],it[2]]}
+         BAM2VCF.out.vcf.map{[
+            [id:"hapcaller"],
+            it[1],
+            it[2],
+            []
+            ]}
          )
     versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
 
 emit:
     versions
     vcf_chunks = concat
-    vcf = BCFTOOLS_CONCAT.out.vcf
+    vcf = BCFTOOLS_CONCAT.out.vcf.map{meta,vcf,idx,bed->[meta,vcf,idx]}
 }
 

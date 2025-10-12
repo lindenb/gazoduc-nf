@@ -28,7 +28,7 @@ include {BAM2VCF_DIVIDE_AND_CONQUER as  DIVIDE_AND_CONQUER3 } from './sub.nf'
 include {BAM2VCF_DIVIDE_AND_CONQUER as  DIVIDE_AND_CONQUER4 } from './sub.nf'
 include {BAM2VCF_DIVIDE_AND_CONQUER as  DIVIDE_AND_CONQUER5 } from './sub.nf'
 include {BAM2VCF_DIVIDE_AND_CONQUER as  DIVIDE_AND_CONQUER6 } from './sub.nf'
-include {BCFTOOLS_CONCAT                                    } from '../../../subworkflows/bcftools/concat'
+include {BCFTOOLS_CONCAT                                    } from '../../../modules/bcftools/concat'
 
 
 
@@ -156,12 +156,10 @@ main:
 
       
     BCFTOOLS_CONCAT(
-        meta,
-        Channel.of([[id:"nobed"],[]]),
-        concat.map{meta,vcf,tbi,bed->[meta,vcf,tbi]}
+        concat.map{meta,vcf,tbi,bed->[meta,vcf,tbi,[]]}
         )
     versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
-    out_vcf = BCFTOOLS_CONCAT.out.vcf
+    out_vcf = BCFTOOLS_CONCAT.out.vcf.map{meta,vcf,tbi,bed->[meta,vcf,tbi,[]]}
 
 emit:
     versions
