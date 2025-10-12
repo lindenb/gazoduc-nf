@@ -28,8 +28,8 @@ label "process_quick"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-	tuple val(meta1),path(fai)
-    tuple val(meta ),path(bed)
+     tuple val(meta1),path(fai)
+     tuple val(meta ),path(bed)
 output:
     tuple val(meta),path("*.bed"),emit:bed
     path("versions.yml"),emit:versions
@@ -42,11 +42,11 @@ mkdir -p TMP
 cut -f1,2 "${fai}" > TMP/sizes.txt
 
 sort -T TMP -t '\t' -k1,1 -k2,2n "${bed}" |\\
-	bedtools complement -i - -g TMP/sizes.txt ${args} |\\
+	bedtools complement -i - -g TMP/sizes.txt ${args1} |\\
     awk -F '\t' '(int(\$2) < int(\$3) || ${awkargs})' |\\
      sort -T TMP -t '\t' -k1,1 -k2,2n  > TMP/jeter.bed
 
-mv TMP/jeter.bed "${prefix}.bed"
+mv -v TMP/jeter.bed "${prefix}.bed"
 
 
 cat << END_VERSIONS > versions.yml

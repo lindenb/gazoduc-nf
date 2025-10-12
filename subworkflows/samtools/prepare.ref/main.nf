@@ -85,7 +85,6 @@ main:
 					fai: [meta1,fai]
 					bed:  [meta2,bed]
 				}
-
 			BEDTOOLS_COMPLEMENT(
 				ch1.fai,
 				ch1.bed
