@@ -54,61 +54,48 @@ take:
 main:
 
 	versions = Channel.empty()
-	
+
+
 	ch1 = vcfs
 		.map{meta,vcf,idx->[meta.id,[vcf,idx]]}
 		.groupTuple()
 		.flatMap{group_id,vcf_files->makeSQRT(group_id,vcf_files)}
-		.map{[[id:it[0],old_id:it[0]], it[1].flatten().sort()]}
+		.map{meta_id,vcf_files->[[id:meta_id,old_id:meta_id], vcf_files.flatten().sort()]}
 
 	CONCAT1(ch1,bed)
 	versions = versions.mix(CONCAT1.out.versions)
 
-	vcf_out = Channel.empty()
+	
 
 	ch2 = CONCAT1.out.vcf
 		.map{meta,vcf,tbi->[meta,(vcf instanceof List?vcf:[vcf]),(tbi instanceof List?tbi:[tbi]) ]}
-		.map{[it[0].id,it[1].plus(it[2])]}
+		.map{meta,vcfs,tbis->[meta.id,vcfs.plus(tbis)]}
 		.groupTuple()
-		.branch{
-			done: it[1].size()==1 // ONE array containing [vcf,idx]
-			need_concat2 : true
-			}
-
-	
-
-
-	vcf_out= ch2.done.map{[
-		[id:it[0]],
-		it[1][0].find{f->f.name.endsWith(".bcf") || f.name.endsWith(".vcf.gz")},
-		it[1][0].find{f->f.name.endsWith(".csi") || f.name.endsWith(".tbi")}
-		]}
-
+		
 
 	CONCAT2(
-		ch2.need_concat2
-			.map{[
-				[id:it[0]],
-				it[1].flatten().sort()
+		ch2.map{bedid,vcffiles->[
+				[id:bedid],
+				vcffiles.flatten().sort()
 				]},
 		bed
 		)
 	versions = versions.mix(CONCAT2.out.versions)
 
-	vcf_out = vcf_out.mix(
-		CONCAT2.out.vcf
-			.map{meta,vcf,tbi->[meta,(vcf instanceof List?vcf:[vcf]),(tbi instanceof List?tbi:[tbi]) ]}
-			.flatMap{meta,vcfs,tbis->{
-				def L=[];
-				def X1 = vcfs.sort();
-				def X2 = tbis.sort();
-				for(int i=0;i< X1.size();i++) {
-					L.add([meta,X1[i],X2[i]]);
-					}
-				return L;
-				}}
-		)
+	vcf_out = CONCAT2.out.vcf
+		.map{meta,vcf,tbi->[meta,(vcf instanceof List?vcf:[vcf]),(tbi instanceof List?tbi:[tbi]) ]}
+		.flatMap{meta,vcfs,tbis->{
+			def L=[];
+			def X1 = vcfs.sort();
+			def X2 = tbis.sort();
+			for(int i=0;i< X1.size();i++) {
+				L.add([meta,X1[i],X2[i]]);
+				}
+			return L;
+			}}
+		
+	
 emit:	
 	versions
-	vcf = vcf_out
+	vcf = vcf_out //meta,vcf,tbi
 }

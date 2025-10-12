@@ -38,6 +38,7 @@ include {BAM_TO_FASTQ               } from '../../modules/samtools/bam2fastq'
 include {META_TO_PED                } from '../../subworkflows/pedigree/meta2ped'
 include {MULTIQC                    } from '../../subworkflows/multiqc'
 include {BAM_QC                     } from '../../subworkflows/bamqc'
+include {IF_EMPTY                   } from '../../subworkflows/nf/if_empty'
 
 
 
@@ -191,7 +192,7 @@ workflow {
 	multiqc_ch = multiqc_ch.mix(MAP_BWA.out.multiqc)
 
 	if(params.capture==null) {
-		bed4qc = bed = PREPARE_REFERENCE.out.scatter_bed
+		bed4qc = bed = PREPARE_REFERENCE.out.scatter_bed.first()
 	  } else {
 		bed4qc = Channel.of([hash_ref,file(params.capture)])
 	  }
@@ -227,7 +228,7 @@ workflow {
 		fai,
 		dict,
 		bed4qc,
-		MAP_BWA.out.crams.ifEmpty(MAP_BWA.out.bams)
+		IF_EMPTY(MAP_BWA.out.crams,MAP_BWA.out.bams)
 		)
 
 	versions = versions.mix(BAM_QC.out.versions)

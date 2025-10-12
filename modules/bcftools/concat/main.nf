@@ -28,7 +28,7 @@ process BCFTOOLS_CONCAT {
 label "process_short"
 tag "${meta.id?:""}"
 afterScript "rm -rf TMP"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.02.yml"
 input:
 	tuple val(meta ),path("VCFS/*") 
 	tuple val(meta1),path(optional_bed)
@@ -161,7 +161,18 @@ script:
 	else
 		# do NOT group by chromosome
 		
-		if test  `wc -l < TMP/jeter.list` -le ${limit}
+		if test  `wc -l < TMP/jeter.list` -eq 1
+		then
+
+			bcftools view \\
+				${suffix.endsWith("bcf")?"--write-index":""} \\
+				--threads ${task.cpus} \\
+				${args3} \\
+				-O ${suffix.endsWith("bcf")?"b9":"z9"} \\
+				-o "TMP/jeter.${suffix2}" \\
+				`cat TMP/jeter.list`
+
+		elif test  `wc -l < TMP/jeter.list` -le ${limit}
 		then
 
 			bcftools concat \\
@@ -221,9 +232,9 @@ script:
 
 # Generate MD5 if needed
 if ${with_md5}
-do 
+then 
 	md5sum ${prefix}.${suffix2} > ${prefix}.${suffix2}.md5
-done
+fi
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":

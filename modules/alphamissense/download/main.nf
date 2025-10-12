@@ -47,34 +47,40 @@ script:
     } else if(meta1.ucsc_name.equals("hg19")) {
         url = base+"hg19.tsv.gz";
     } else {
-        throw new IllegalArgumentException("${task.process} unknown ucsc_name");
+        url=""
         }
 """
 hostname 1>&2
 set -o pipefail
 mkdir -p TMP
 
+if ${url.isEmpty()}
+then
+	touch TMP/${TAG}.tsv
+	bgzip TMP/${TAG}.tsv
+else
 
-curl -L -o TMP/jeter.tsv.gz "${url}"
+	curl -L -o TMP/jeter.tsv.gz "${url}"
 
-gunzip -c TMP/jeter.tsv.gz  |\\
-	grep -v '^#' |\\
-	cut -f 1 | uniq | LC_ALL=C sort -T TMP | uniq |\\
-	awk '{printf("%s\t%s\\n",\$1,\$1);}' |\\
-	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedrenamechr -f "${fasta}" --column 2 --convert SKIP |\\
-	awk -F '\t' '{printf("s|^%s\t|%s\t|\\n",\$1,\$2);}' > TMP/jeter.sed
+	gunzip -c TMP/jeter.tsv.gz  |\\
+		grep -v '^#' |\\
+		cut -f 1 | uniq | LC_ALL=C sort -T TMP | uniq |\\
+		awk '{printf("%s\t%s\\n",\$1,\$1);}' |\\
+		jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedrenamechr -f "${fasta}" --column 2 --convert SKIP |\\
+		awk -F '\t' '{printf("s|^%s\t|%s\t|\\n",\$1,\$2);}' > TMP/jeter.sed
 
 
-gunzip -c TMP/jeter.tsv.gz |\
-	grep -v '^#'  |\
-	cut -f 1-4,9,10 |\
-	sed -f TMP/jeter.sed |\
-	LC_ALL=C sort --buffer-size=1000M -T TMP -t '\t' -k1,1 -k2,2n |\
-	uniq |\
-	bgzip >  TMP/${TAG}.tsv.gz && \
+	gunzip -c TMP/jeter.tsv.gz |\\
+		grep -v '^#'  |\\
+		cut -f 1-4,9,10 |\\
+		sed -f TMP/jeter.sed |\\
+		LC_ALL=C sort --buffer-size=${task.memory.mega}M -T TMP -t '\t' -k1,1 -k2,2n |\\
+		uniq |\\
+		bgzip >  TMP/${TAG}.tsv.gz 
+
+fi
 
 tabix -s 1 -b 2 -e 2  TMP/${TAG}.tsv.gz
-
 mv TMP/${TAG}.tsv.gz ./
 mv TMP/${TAG}.tsv.gz.tbi ./
 
@@ -89,6 +95,13 @@ EOF
 cat << EOF > versions.yml
 ${task.process}:
 	jvarkit: TODO
+	url : ${url}
 EOF
+"""
+
+stub:
+	def TAG = task.ext.tag?:"ALPHAMISSENSE" 
+"""
+touch versions.xml ${TAG}.header ${TAG}.tsv.gz ${TAG}.tsv.gz.tbi ${TAG}.md
 """
 }

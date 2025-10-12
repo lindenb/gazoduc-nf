@@ -30,6 +30,7 @@ include {VCF_STATS                           } from '../../../subworkflows/vcfst
 include {BEDTOOLS_MAKEWINDOWS                } from '../../../modules/bedtools/makewindows'
 include {BED_CLUSTER                         } from '../../../modules/jvarkit/bedcluster'
 include {GATK_BAM2VCF                        } from '../../../subworkflows/gatk/bam2vcf'
+include {GATK_BAM2VCF_DNC                    } from '../../../subworkflows/gatk/bam2vcf.dnc'
 include {runOnComplete; dumpParams           } from '../../../modules/utils/functions.nf'
 include {BCFTOOLS_GUESS_PLOIDY               } from '../../../modules/bcftools/guess_ploidy'
 include {BCFTOOLS_STATS                      } from '../../../modules/bcftools/stats'
@@ -166,7 +167,6 @@ workflow {
     bams_ch.map{meta,bam,bai->meta.id}.unique().count()
         .combine(bams_ch.map{meta,bam,bai->meta.id}.count())
         .filter{c1,c2->c1!=c2}
-        .view()
         .map{
             throw new IllegalArgumentException("Check the samplesheet. There is a duplicate sample name");
             }
@@ -225,19 +225,33 @@ workflow {
         vcf_ch = HAPLOTYPECALLER.out.vcf
         }
     else if(params.method.equalsIgnoreCase("bam2vcf")) {
-        GATK_BAM2VCF(
-            workflow_metadata,
-            fasta,
-            fai,
-            dict,
-            dbsnp,
-            META_TO_PED.out.pedigree_gatk,
-            all_references, //[meta, [ref files fa fai dict...]] all known reference
-            beds_ch, // [meta,bed]
-            bams_ch, // [meta,bam,bai]
+        if(params.divide_and_conquer==true) {
+            GATK_BAM2VCF_DNC(
+                workflow_metadata,
+                fasta,
+                fai,
+                dict,
+                dbsnp,
+                META_TO_PED.out.pedigree_gatk,
+                all_references, //[meta, [ref files fa fai dict...]] all known reference
+                beds_ch, // [meta,bed]
+                bams_ch // [meta,bam,bai]
             )
-        versions = versions.mix(GATK_BAM2VCF.out.versions)
-        vcf_ch = GATK_BAM2VCF.out.vcf
+        } else {
+            GATK_BAM2VCF(
+                workflow_metadata,
+                fasta,
+                fai,
+                dict,
+                dbsnp,
+                META_TO_PED.out.pedigree_gatk,
+                all_references, //[meta, [ref files fa fai dict...]] all known reference
+                beds_ch, // [meta,bed]
+                bams_ch // [meta,bam,bai]
+                )
+            versions = versions.mix(GATK_BAM2VCF.out.versions)
+            vcf_ch = GATK_BAM2VCF.out.vcf
+            }
         }
     else if(params.method.equalsIgnoreCase("direct")) {
         HAPLOTYPECALLER_DIRECT(

@@ -22,7 +22,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {k1_signature} from '../../utils/k1.nf'
 
 process BCFTOOLS_GUESS_PLOIDY {
 label "process_single"
@@ -34,38 +33,36 @@ input:
     tuple val(meta2),path(fai)
     tuple val(meta),path(vcf),path(idx)
 output:
-    tuple val(meta),path("*.ploidy.txt"), emit:output
+    tuple val(meta),path("*.ploidy.txt"),optional:true,  emit:output
     tuple val(meta),path("*.png"), optional:true, emit:image
     path("versions.yml"),emit:versions
 when:
     task.ext.when == null || task.ext.when
 script:
-    def k1 = k1_signature()
+    def ucsc = meta1.ucsc_name?:"undefined"
     def prefix = task.ext.prefix?:(meta.id?:vcf.simpleName)
     def args = task.ext.args?:""
 """
 mkdir -p TMP
 
-cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:${k1.hg38}\tb38
-1:${k1.hg19}\tb37
-chr1:${k1.hg38}\thg38
-chr1:${k1.hg19}\thg19
-EOF
+if ${ucsc.equals("hg19") || ucsc.equals("hg38")}
+then
+    if grep -q '^chr' "${fai}"
+    then
+        echo '${ucsc}' > TMP/jeter.build
+    else
+        echo '${ucsc}' |  sed 's/^hg/b/' > TMP/jeter.build
+    fi
 
-awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' |\\
-    sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
 
-join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv |\\
-    sort |\\
-    uniq > TMP/jeter.build
+    BUILD=`cat  TMP/jeter.build`
+    test ! -z "\${BUILD}"
 
-BUILD=`cat  TMP/jeter.build`
-test ! -z "\${BUILD}"
+    bcftools +guess-ploidy ${args} ${vcf} -g "\${BUILD}" > ${prefix}.ploidy.txt
 
-bcftools +guess-ploidy ${args} ${vcf} -g "\${BUILD}" > ${prefix}.ploidy.txt
+    guess-ploidy.py "${prefix}.ploidy.txt" ${prefix}.ploidy.img || true
 
-guess-ploidy.py "${prefix}.ploidy.txt" ${prefix}.ploidy.img || true
+fi
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":

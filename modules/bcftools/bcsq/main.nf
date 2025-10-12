@@ -40,7 +40,8 @@ output:
     tuple val(meta ),path("*.bcf") ,path("*.csi"),emit:vcf
     path("versions.yml"),emit:versions
 script:
-    def prefix=task.ext.prefix?:vcf.baseName+".bcsq"
+    def prefix=task.ext.prefix?:"${meta.id}.bcsq"
+    def args1 = task.ext.args1?:"--local-csq  --force --ncsq 10000"
 """
 hostname 1>&2
 mkdir -p TMP
@@ -48,9 +49,7 @@ mkdir -p TMP
 bcftools csq \\
     --threads ${task.cpus} \\
     -O b \\
-    --force \\
-    --local-csq \\
-    --ncsq 10000 \\
+    ${args1} \\
     --fasta-ref "${fasta}" \\
     --gff-annot "${gff3}" \\
     -o TMP/${prefix}.bcf \\
@@ -67,5 +66,10 @@ cat << END_VERSIONS > versions.yml
 "${task.process}":
 	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
 END_VERSIONS
+"""
+stub:
+    def prefix = task.ext.prefix?:"${meta.id}.bcsq"
+"""
+touch versions.yml ${prefix}.bcf ${prefix}.bcf.csi
 """
 }
