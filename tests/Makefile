@@ -11,51 +11,51 @@ stub: data/rotavirus_rf.fa data/rotavirus_rf.vcf.gz
 	$(NEXTFLOW) run ../workflows/fastqc/main.nf  -work-dir STUB/FASTQC  -resume -stub --outdir STUB/FASTQC/results  --samplesheet STUB/WGSIM/results/FASTQ/samplesheet.csv
 	$(NEXTFLOW) run ../workflows/bwa/main.nf  -work-dir STUB/BWA  -resume -stub --outdir STUB/BWA/results  \
 		--samplesheet STUB/WGSIM/results/FASTQ/samplesheet.csv \
-		--fasta $< \
-		--known_sites data/rotavirus_rf.vcf.gz
+		--fasta $${PWD}/data/rotavirus_rf.fa \
+		--known_$${PẄD}/sites data/rotavirus_rf.vcf.gz
 	# combinegvcfs
-	$(NEXTFLOW) run ../workflows/gatk/gatk4gvcfs3/main.nf  -work-dir STUB/HC  -resume -stub --outdir STUB/HC/results  \
+	$(NEXTFLOW) run ../workflows/gatk/gatk4gvcfs3/main.nf  -work-dir STUB/HC  -resume -stub --outdir $${PWD}/STUB/HC/results  \
 		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv \
-		--fasta $< \
-		--dbsnp data/rotavirus_rf.vcf.gz
+		--fasta $${PWD}/data/rotavirus_rf.fa \
+		--dbsnp $${PWD}/data/rotavirus_rf.vcf.gz
 	# glnexus
-	$(NEXTFLOW) run ../workflows/gatk/gatk4gvcfs3/main.nf  -work-dir STUB/HC  -resume -stub --outdir STUB/HC/results  \
+	$(NEXTFLOW) run ../workflows/gatk/gatk4gvcfs3/main.nf  -work-dir STUB/HC  -resume -stub --outdir $${PWD}/STUB/HC/results  \
 		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv \
-		--fasta $< \
+		--fasta $${PWD}/data/rotavirus_rf.fa \
 		--gvcf_merge_method glnexus \
 		--dbsnp data/rotavirus_rf.vcf.gz
 	# method bam2vcf
-	$(NEXTFLOW) run ../workflows/gatk/gatk4gvcfs3/main.nf  -work-dir STUB/HC  -resume -stub --outdir STUB/HC/results  \
+	$(NEXTFLOW) run ../workflows/gatk/gatk4gvcfs3/main.nf  -work-dir STUB/HC  -resume -stub --outdir $${PWD}/STUB/HC/results  \
 		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv \
-		--fasta $< \
+		--fasta $${PWD}/data/rotavirus_rf.fa \
 		--method bam2vcf \
 		--dbsnp data/rotavirus_rf.vcf.gz
 	# method direct
-	$(NEXTFLOW) run ../workflows/gatk/gatk4gvcfs3/main.nf  -work-dir STUB/HC  -resume -stub --outdir STUB/HC/results  \
+	$(NEXTFLOW) run ../workflows/gatk/gatk4gvcfs3/main.nf  -work-dir STUB/HC  -resume -stub --outdir $${PWD}/STUB/HC/results  \
 		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv \
-		--fasta $< \
+		--fasta $${PWD}/data/rotavirus_rf.fa \
 		--method direct \
-		--dbsnp data/rotavirus_rf.vcf.gz
+		--dbsnp $${PWD}/data/rotavirus_rf.vcf.gz
 	# somalier
-	$(NEXTFLOW) run ../workflows/somalier/somalier.bams/main.nf  -work-dir STUB/SOMALIER -resume -stub --outdir STUB/SOMALIER/results \
+	$(NEXTFLOW) run ../workflows/somalier/somalier.bams/main.nf  -work-dir STUB/SOMALIER -resume -stub --outdir $${PWD}/STUB/SOMALIER/results \
 		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv  \
-		--fasta data/rotavirus_rf.fa
+		--fasta $${PWD}/data/rotavirus_rf.fa
 	# sashimi encode
 	touch jeter.gtf.gz jeter.gtf.gz.tbi
 	echo -e 'RF01\t1\t1000' > jeter.bed
-	$(NEXTFLOW) run ../workflows/sashimi.encode/main.nf  -work-dir STUB/ENCODE -stub --outdir STUB/ENCODE \
+	$(NEXTFLOW) run ../workflows/sashimi.encode/main.nf  -work-dir STUB/ENCODE -stub --outdir $${PWD}/STUB/ENCODE \
 		--bed jeter.bed \
 		--gtf jeter.gtf.gz \
-		--fasta data/rotavirus_rf.fa \
+		--fasta $${PWD}/data/rotavirus_rf.fa \
 		--ucsc_name "hg38"
 	# delly
 	$(NEXTFLOW) run ../workflows/delly2/main.nf  -work-dir STUB/DELLY -stub --outdir STUB/DELLY \
 		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv  \
-		--fasta data/rotavirus_rf.fa
+		--fasta $${PWD}data/rotavirus_rf.fa
 	# downsample
-	$(NEXTFLOW) run ../workflows/downsample.simulation/main.nf -work-dir STUB/LOWPASS -stub -resume --outdir STUB/LOWPASS \
+	$(NEXTFLOW) run ../workflows/downsample.simulation/main.nf -work-dir STUB/LOWPASS -stub -resume --outdir $${PWD}/STUB/LOWPASS \
 		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv  \
-		--fasta data/rotavirus_rf.fa
+		--fasta $${PWD}/data/rotavirus_rf.fa
 
 	
 hard_tests: test_wgsim test_fastqc test_bwa test_hapcaller test_downsample stub 
@@ -64,10 +64,10 @@ hard_tests: test_wgsim test_fastqc test_bwa test_hapcaller test_downsample stub
 test_downsample: work/BWA/results/BAMS/samplesheet.csv
 	$(NEXTFLOW) run -work-dir work/LOWPASS -profile gitlabci -c reference.config  -c nproc.cfg  \
 		../workflows/downsample.simulation/main.nf \
-		--outdir work/LOWPASS/results --samplesheet $<
+		--outdir $${PWD}/work/LOWPASS/results --samplesheet $<
 
 test_hapcaller: work/BWA/results/BAMS/samplesheet.csv
-	$(NEXTFLOW) run -work-dir work/HC -profile gitlabci -c reference.config  -c nproc.cfg  ../workflows/gatk/gatk4gvcfs3/main.nf --outdir work/HC/results --samplesheet $<
+	$(NEXTFLOW) run -work-dir work/HC -profile gitlabci -c reference.config  -c nproc.cfg  ../workflows/gatk/gatk4gvcfs3/main.nf --outdir $${PWD}/work/HC/results --samplesheet $<
 	find work/HC/ -type f
 
 
@@ -75,7 +75,7 @@ test_bwa : work/BWA/results/BAMS/samplesheet.csv
 
 
 work/BWA/results/BAMS/samplesheet.csv : work/WGSIM/results/FASTQ/samplesheet.csv  reference.config nproc.cfg REF/$(BUILD).dbsnp.vcf.gz
-	$(NEXTFLOW) run -work-dir work/BWA -profile gitlabci -c reference.config  -c nproc.cfg  ../workflows/bwa/main.nf --outdir $${PWD}/work/BWA/results --samplesheet $< --known_sites REF/$(BUILD).dbsnp.vcf.gz
+	$(NEXTFLOW) run -work-dir work/BWA -profile gitlabci -c reference.config  -c nproc.cfg  ../workflows/bwa/main.nf --outdir $${PWD}/work/BWA/results --samplesheet $< --known_sites $${PWD}/REF/$(BUILD).dbsnp.vcf.gz
 	find work/BWA/results -type f
 	cut -d, -f 1-8 $@ > $(addsuffix .tmp,$@) && mv $(addsuffix .tmp,$@) $@
 
