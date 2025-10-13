@@ -75,7 +75,7 @@ test_bwa : work/BWA/results/BAMS/samplesheet.csv
 
 
 work/BWA/results/BAMS/samplesheet.csv : work/WGSIM/results/FASTQ/samplesheet.csv  reference.config nproc.cfg REF/$(BUILD).dbsnp.vcf.gz
-	$(NEXTFLOW) run -work-dir work/BWA -profile gitlabci -c reference.config  -c nproc.cfg  ../workflows/bwa/main.nf --outdir work/BWA/results --samplesheet $< --known_sites REF/$(BUILD).dbsnp.vcf.gz
+	$(NEXTFLOW) run -work-dir work/BWA -profile gitlabci -c reference.config  -c nproc.cfg  ../workflows/bwa/main.nf --outdir $${PWD}/work/BWA/results --samplesheet $< --known_sites REF/$(BUILD).dbsnp.vcf.gz
 	find work/BWA/results -type f
 	cut -d, -f 1-8 $@ > $(addsuffix .tmp,$@) && mv $(addsuffix .tmp,$@) $@
 
