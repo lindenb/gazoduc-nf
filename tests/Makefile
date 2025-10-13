@@ -12,7 +12,7 @@ stub: data/rotavirus_rf.fa data/rotavirus_rf.vcf.gz
 	$(NEXTFLOW) run ../workflows/bwa/main.nf  -work-dir STUB/BWA  -resume -stub --outdir STUB/BWA/results  \
 		--samplesheet STUB/WGSIM/results/FASTQ/samplesheet.csv \
 		--fasta $${PWD}/data/rotavirus_rf.fa \
-		--known_$${PẄD}/sites data/rotavirus_rf.vcf.gz
+		--known_sites  $${PWD}/data/rotavirus_rf.vcf.gz
 	# combinegvcfs
 	$(NEXTFLOW) run ../workflows/gatk/gatk4gvcfs3/main.nf  -work-dir STUB/HC  -resume -stub --outdir $${PWD}/STUB/HC/results  \
 		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv \
@@ -29,7 +29,7 @@ stub: data/rotavirus_rf.fa data/rotavirus_rf.vcf.gz
 		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv \
 		--fasta $${PWD}/data/rotavirus_rf.fa \
 		--method bam2vcf \
-		--dbsnp data/rotavirus_rf.vcf.gz
+		--dbsnp  $${PWD}/data/rotavirus_rf.vcf.gz
 	# method direct
 	$(NEXTFLOW) run ../workflows/gatk/gatk4gvcfs3/main.nf  -work-dir STUB/HC  -resume -stub --outdir $${PWD}/STUB/HC/results  \
 		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv \
