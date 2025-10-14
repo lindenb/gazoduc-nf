@@ -32,8 +32,6 @@ input:
 output:
 	tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:vcf
     path("versions.yml"),emit:versions
-when:
-    task.ext.when == null || task.ext.when
 script:
     def prefix = task.ext.prefix?:"\${MD5}.gathervcfs"
 """

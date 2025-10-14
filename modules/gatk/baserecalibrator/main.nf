@@ -37,8 +37,6 @@ input:
 output:
 	tuple val(meta),path(bam),path(bai),path("*.table"),emit:table
 	path("versions.yml"),emit:versions
-when:
-    task.ext.when == null || task.ext.when
 script:
 	def prefix = task.ext.prefix?:"${meta.id}.${optional_bed?"${optional_bed.baseName}":""}.recal"
 	def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP"

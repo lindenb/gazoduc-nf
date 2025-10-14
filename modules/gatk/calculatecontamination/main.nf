@@ -32,8 +32,6 @@ input:
 output:
     tuple val(meta),path("*.table"),emit:table
     path("versions.yml"),emit:versions
-when:
-    task.ext.when == null || task.ext.when
 script:
     def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP"
 """

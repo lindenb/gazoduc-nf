@@ -38,7 +38,7 @@ include {HAPLOTYPECALLER                     } from '../../../subworkflows/gatk/
 include {HAPLOTYPECALLER_DIRECT              } from '../../../subworkflows/gatk/haplotypecaller.direct'
 include {SAMTOOLS_SAMPLES                    } from '../../../modules/samtools/samples'
 include {META_TO_PED                         } from '../../../subworkflows/pedigree/meta2ped'
-include {PREPARE_REFERENCE                   } from '../../../subworkflows/samtools/prepare.ref'
+include {PREPARE_ONE_REFERENCE                   } from '../../../subworkflows/samtools/prepare.one.ref'
 include {MULTIQC                             } from '../../../subworkflows/multiqc'
 include {PREPARE_USER_BED                    } from '../../../subworkflows/bedtools/prepare.user.bed'
 
@@ -65,11 +65,11 @@ workflow {
 
 	fasta = [workflow_metadata,file(params.fasta)]
 
-    PREPARE_REFERENCE(workflow_metadata, Channel.of(fasta))
-    versions = versions.mix(PREPARE_REFERENCE.out.versions)
-    fasta   = PREPARE_REFERENCE.out.fasta.first()
-	fai   = PREPARE_REFERENCE.out.fai.first()
-	dict  = PREPARE_REFERENCE.out.dict.first()
+    PREPARE_ONE_REFERENCE(workflow_metadata, Channel.of(fasta))
+    versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
+    fasta  = PREPARE_ONE_REFERENCE.out.fasta
+    fai    = PREPARE_ONE_REFERENCE.out.fai
+    dict   = PREPARE_ONE_REFERENCE.out.dict
 
 
 
@@ -107,10 +107,10 @@ workflow {
         .filter{fa,fai,dict->fa.exists() && fai.exists() && dict.exists()}
         .flatMap()
         .mix(fasta.map{it[1]})
-        .mix(PREPARE_REFERENCE.out.fai.map{it[1]})
-        .mix(PREPARE_REFERENCE.out.dict.map{it[1]})
+        .mix(PREPARE_ONE_REFERENCE.out.fai.map{it[1]})
+        .mix(PREPARE_ONE_REFERENCE.out.dict.map{it[1]})
         .filter{fn->fn.exists()} // when running in stub mode...
-        .map{fn->[fn.name,fn.toRealPath()]} // group files by names. prevent file collisiton; FAI might have same name because PREPARE_REFERENCE.out.fai
+        .map{fn->[fn.name,fn.toRealPath()]} // group files by names. prevent file collisiton; FAI might have same name because PREPARE_ONE_REFERENCE.out.fai
         .map{name,fns->fns.sort()[0]}
         .unique()
         .collect()
@@ -187,7 +187,7 @@ workflow {
         fasta,
         fai,
         dict,
-        PREPARE_REFERENCE.out.scatter_bed.first(),
+        PREPARE_ONE_REFERENCE.out.scatter_bed,
         bed
         )
     versions = versions.mix(PREPARE_USER_BED.out.versions)

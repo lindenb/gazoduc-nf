@@ -27,8 +27,6 @@ process GATK_POSSIBLE_DENOVO {
     tag "${meta.id}"
     conda "${moduleDir}/../../../conda/bioinfo.02.yml"
     afterScript "rm -rf TMP"
-    when:
-        task.ext.when == null || task.ext.when
     input:
         tuple val(meta1),path(fasta)
         tuple val(meta2),path(fai)

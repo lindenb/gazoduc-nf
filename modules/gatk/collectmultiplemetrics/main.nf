@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -27,15 +27,12 @@ tag "${meta.id?:""}"
 label "process_single"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.02.yml"
-when:
-    task.ext.when == null || task.ext.when
 input:
-	tuple val(meta1),path(fasta)
+    tuple val(meta1),path(fasta)
     tuple val(meta2),path(fai)
     tuple val(meta3),path(dict)
     tuple val(meta4),path(optional_refflat)
     tuple val(meta5),path(optional_intervals)
-
     tuple val(meta),path(bam),path(bai)
 output:
 	tuple val(meta),path("*.alignment_summary_metrics"),optional:true,emit:alignment_summary_metrics

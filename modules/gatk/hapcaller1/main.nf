@@ -48,10 +48,9 @@ hostname 1>&2
 mkdir -p TMP
 # if not build because no other ref
 mkdir -p REFS
-echo "${fasta}" > TMP/references.txt
 find \${PWD}/REFS/ \\( -name "*.fasta" -o -name "*.fa" -o -name "*.fna" \\) >> TMP/references.txt
 
-samtools samples -F TMP/references.txt "${bam}" | cut -f1,3 | head -n1 | while read SAMPLE REF
+samtools samples -f "${fasta}" -F TMP/references.txt "${bam}" | cut -f1,3 | head -n1 | while read SAMPLE REF
     do
 
         # test fasta is known

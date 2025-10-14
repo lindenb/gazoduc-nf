@@ -54,13 +54,12 @@ mkdir -p TMP
 set -x
 
 touch TMP/samples.txt
-echo "${fasta}" > TMP/references.list
 find \${PWD}/REFS/ \\( -name "*.fa" -o  -name "*.fna" -o -name "*.fasta" \\) | sort -T TMP -V >> TMP/references.list
 
 find ./BAMS/ \\( -name "*.bam" -o -name "*.cram" \\) | sort -T TMP -V > TMP/bams.list
 
 i=1
-cat TMP/bams.list | samtools samples -F  TMP/references.list | while read SAMPLE BAM FASTA
+cat TMP/bams.list | samtools samples -f "${fasta}" -F TMP/references.list | while read SAMPLE BAM FASTA
 do
 
 	# test fasta is known
