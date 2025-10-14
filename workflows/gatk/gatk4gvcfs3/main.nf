@@ -104,6 +104,7 @@ workflow {
         .map{it.fai!=null? it : it.plus(["fai":it.fasta+".fai"])}
         .map{it.dict!=null?it : it.plus(["dict":it.fasta.replaceAll("\\.(fasta|fa|fna)\$",".dict")])}
         .map{[file(it.fasta),file(it.fai),file(it.dict)]}
+        .filter{fa,fai,dict->fa.exists() && fai.exists() && dict.exists()}
         .flatMap()
         .mix(fasta.map{it[1]})
         .mix(PREPARE_REFERENCE.out.fai.map{it[1]})
