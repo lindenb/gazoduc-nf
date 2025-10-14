@@ -24,7 +24,7 @@ SOFTWARE.
 */
 
 process LIFTOVER_VCF {
-tag "${meta.id?:vcf.name}"
+tag "${meta.id?:vcf.name} ${chain.name}"
 conda "${moduleDir}/../../../conda/bioinfo.02.yml"
 label "process_short"
 afterScript 'rm -rf TMP'
@@ -35,12 +35,12 @@ input:
     tuple val(meta4),path(chain)
 	tuple val(meta ),path(vcf),path(idx)
 output:
-	tuple val(meta),path("*.lift.vcf.gz"),path("*.lift.gz"),emit:vcf
-    tuple val(meta),path("*.fail.vcf.gz"),path("*.fail.gz"),emit:fail
+	tuple val(meta),path("*.lift.vcf.gz"),path("*.lift.vcf.gz.tbi"),emit:vcf
+    tuple val(meta),path("*.fail.vcf.gz"),path("*.fail.vcf.gz.tbi"),emit:fail
 	path("versions.yml"),emit:versions
 script:
 	def prefix = task.ext.prefix?:"${meta.id}"
-    def prefix2 = ${prefix}${meta1.ucsc_name?".${meta1.ucsc_name}":""}"
+    def prefix2 = "${prefix}${meta1.ucsc_name?".${meta1.ucsc_name}":""}"
 	def args1 =  task.ext.args1?:""
     def args2 =  task.ext.args1?:""
 	def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP" 

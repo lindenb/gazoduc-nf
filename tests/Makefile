@@ -93,7 +93,8 @@ test_wgsim: work/WGSIM/results/FASTQ/samplesheet.csv
 
 work/WGSIM/results/FASTQ/samplesheet.csv: reference.config nproc.cfg
 	$(NEXTFLOW) run  -work-dir work/WGSIM -profile gitlabci  -c reference.config  -c nproc.cfg   \
-		--outdir $${PWD}/work/WGSIM/results  ../workflows/wgsim/main.nf --n_samples 15
+		--outdir $${PWD}/work/WGSIM/results  ../workflows/wgsim/main.nf --n_samples 7
+	cat $@
 	
 reference.config: REF/$(BUILD).fa 
 	echo 'params {' > $@
@@ -101,6 +102,7 @@ reference.config: REF/$(BUILD).fa
 	echo '  ucsc_name="hg38"' >> $@
 	echo '  bwa_index_directory=null' >> $@
 	echo '}'  >> $@
+	cat $@
 
 nproc.cfg:
 	nproc --all | awk '{N=int($$0);printf("process {\nmaxForks=%d\n}\n",(N<3?1:N-3));}' > $@

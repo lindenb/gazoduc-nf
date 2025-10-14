@@ -148,6 +148,14 @@ script:
 					mv -v TMP/jeter.vcf.gz "${prefix}.\${CONTIG}.vcf.gz"
 					mv -v TMP/jeter.vcf.gz.tbi "${prefix}.\${CONTIG}.vcf.gz.tbi"
 
+					# Generate MD5 if needed
+					if ${with_md5}
+					then 
+						md5sum "${prefix}.\${CONTIG}.vcf.gz" > "${prefix}.\${CONTIG}.vcf.gz.md5"
+					fi
+
+
+
 		done
 		# end of loop over each chromosome
 
@@ -175,7 +183,7 @@ script:
 				${args3} \\
 				-O z9 \\
 				--file-list TMP/jeter.list \\
-				-o "TMP/jeter.vcf.gz
+				-o "TMP/jeter.vcf.gz"
 
 		else
 		
@@ -206,7 +214,7 @@ script:
 				${args3} \\
 				-O z9 \\
 				--file-list TMP/jeter2.list \\
-				-o "TMP/jeter.vcf.gz
+				-o "TMP/jeter.vcf.gz"
 
 		fi
 
@@ -215,14 +223,17 @@ script:
 
 		mv TMP/jeter.vcf.gz ${prefix}.vcf.gz
 		mv TMP/jeter.vcf.gz.tbi ${prefix}.vcf.gz.tbi
+
+
+		# Generate MD5 if needed
+		if ${with_md5}
+		then 
+			md5sum ${prefix}.vcf.gz > ${prefix}.vcf.gz.md5
+		fi
+
 	fi
 
 
-# Generate MD5 if needed
-if ${with_md5}
-then 
-	md5sum ${prefix}.vcf.gz > ${prefix}.vcf.gz.md5
-fi
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
