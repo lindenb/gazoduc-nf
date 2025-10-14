@@ -49,6 +49,7 @@ mkdir -p TMP
 # if not build because no other ref
 mkdir -p REFS
 find \${PWD}/REFS/ \\( -name "*.fasta" -o -name "*.fa" -o -name "*.fna" \\) >> TMP/references.txt
+find REFS/ 1>&2
 
 samtools samples -f "${fasta}" -F TMP/references.txt "${bam}" | cut -f1,3 | head -n1 | while read SAMPLE REF
     do
