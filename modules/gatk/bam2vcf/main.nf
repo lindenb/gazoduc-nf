@@ -55,7 +55,7 @@ set -x
 
 touch TMP/samples.txt
 echo "${fasta}" > TMP/references.list
-find ./REFS/ \\( -name "*.fa" -o  -name "*.fna" -o -name "*.fasta" \\) | sort -T TMP -V >> TMP/references.list
+find \${PWD}/REFS/ \\( -name "*.fa" -o  -name "*.fna" -o -name "*.fasta" \\) | sort -T TMP -V >> TMP/references.list
 
 find ./BAMS/ \\( -name "*.bam" -o -name "*.cram" \\) | sort -T TMP -V > TMP/bams.list
 

@@ -75,18 +75,25 @@ test_bwa : work/BWA/results/BAMS/samplesheet.csv
 
 
 work/BWA/results/BAMS/samplesheet.csv : work/WGSIM/results/FASTQ/samplesheet.csv  reference.config nproc.cfg REF/$(BUILD).dbsnp.vcf.gz
-	$(NEXTFLOW) run -work-dir work/BWA -profile gitlabci -c reference.config  -c nproc.cfg  ../workflows/bwa/main.nf --outdir $${PWD}/work/BWA/results --samplesheet $< --known_sites $${PWD}/REF/$(BUILD).dbsnp.vcf.gz
+	$(NEXTFLOW) run -work-dir work/BWA -profile gitlabci -c reference.config  -c nproc.cfg \
+		../workflows/bwa/main.nf \
+		--outdir $${PWD}/work/BWA/results \
+		--samplesheet $< --known_sites $${PWD}/REF/$(BUILD).dbsnp.vcf.gz
 	find work/BWA/results -type f
 	cut -d, -f 1-8 $@ > $(addsuffix .tmp,$@) && mv $(addsuffix .tmp,$@) $@
+	cat $@
 
 test_fastqc: work/WGSIM/results/FASTQ/samplesheet.csv nproc.cfg
-	$(NEXTFLOW) run -work-dir work/FASTQC -profile gitlabci -c nproc.cfg  --outdir FASTQC ../workflows/fastqc/main.nf --samplesheet $<
+	$(NEXTFLOW) run -work-dir work/FASTQC -profile gitlabci -c nproc.cfg  \
+		--outdir $${PWD}/work/FASTQC ../workflows/fastqc/main.nf \
+		--samplesheet $<
 
 
 test_wgsim: work/WGSIM/results/FASTQ/samplesheet.csv
 
 work/WGSIM/results/FASTQ/samplesheet.csv: reference.config nproc.cfg
-	$(NEXTFLOW) run  -work-dir work/WGSIM -profile gitlabci  -c reference.config  -c nproc.cfg   --outdir work/WGSIM/results  ../workflows/wgsim/main.nf --n_samples 15 --samplesheet $<
+	$(NEXTFLOW) run  -work-dir work/WGSIM -profile gitlabci  -c reference.config  -c nproc.cfg   \
+		--outdir $${PWD}/work/WGSIM/results  ../workflows/wgsim/main.nf --n_samples 15
 	
 reference.config: REF/$(BUILD).fa 
 	echo 'params {' > $@
