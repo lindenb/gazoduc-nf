@@ -99,7 +99,6 @@ main:
 					depthX:(it[2]==null?"":it[2]),
 					depthY:(it[3]==null?"":it[3])
 				]]}
-			.view{"MOSDEPTH METADATA : ${it}"}
 
 	/** outliers of DEPTH */
 	treshold_ch = Channel.of(100,1000);

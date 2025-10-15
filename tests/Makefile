@@ -1,6 +1,7 @@
 SHELL=/bin/bash
 NEXTFLOW?=nextflow
 BUILD=GRCh38
+PROFILE=
 .PHONY=all hard_tests reference test_wgsim test_fastqc test_bwa test_hapcaller test_downsample stub
 
 all: stub
@@ -62,12 +63,12 @@ hard_tests: test_wgsim test_fastqc test_bwa test_hapcaller test_downsample stub
 
 
 test_downsample: work/BWA/results/BAMS/samplesheet.csv
-	$(NEXTFLOW) run -work-dir work/LOWPASS -profile gitlabci -c reference.config  -c nproc.cfg  \
+	$(NEXTFLOW) run -resume -work-dir work/LOWPASS $(PROFILE) -c reference.config  -c nproc.cfg  \
 		../workflows/downsample.simulation/main.nf \
 		--outdir $${PWD}/work/LOWPASS/results --samplesheet $<
 
 test_hapcaller: work/BWA/results/BAMS/samplesheet.csv
-	$(NEXTFLOW) run -work-dir work/HC -profile gitlabci -c reference.config  -c nproc.cfg  ../workflows/gatk/gatk4gvcfs3/main.nf --outdir $${PWD}/work/HC/results --samplesheet $<
+	$(NEXTFLOW) run -resume -work-dir work/HC $(PROFILE) -c reference.config  -c nproc.cfg  ../workflows/gatk/gatk4gvcfs3/main.nf --outdir $${PWD}/work/HC/results --samplesheet $<
 	find work/HC/ -type f
 
 
@@ -75,7 +76,7 @@ test_bwa : work/BWA/results/BAMS/samplesheet.csv
 
 
 work/BWA/results/BAMS/samplesheet.csv : work/WGSIM/results/FASTQ/samplesheet.csv  reference.config nproc.cfg REF/$(BUILD).dbsnp.vcf.gz
-	$(NEXTFLOW) run -work-dir work/BWA -profile gitlabci -c reference.config  -c nproc.cfg \
+	$(NEXTFLOW) run -resume -work-dir work/BWA $(PROFILE) -c reference.config  -c nproc.cfg \
 		../workflows/bwa/main.nf \
 		--outdir $${PWD}/work/BWA/results \
 		--samplesheet $< --known_sites $${PWD}/REF/$(BUILD).dbsnp.vcf.gz
@@ -84,7 +85,7 @@ work/BWA/results/BAMS/samplesheet.csv : work/WGSIM/results/FASTQ/samplesheet.csv
 	cat $@
 
 test_fastqc: work/WGSIM/results/FASTQ/samplesheet.csv nproc.cfg
-	$(NEXTFLOW) run -work-dir work/FASTQC -profile gitlabci -c nproc.cfg  \
+	$(NEXTFLOW) run -resume -work-dir work/FASTQC $(PROFILE) -c nproc.cfg  \
 		--outdir $${PWD}/work/FASTQC ../workflows/fastqc/main.nf \
 		--samplesheet $<
 
@@ -92,7 +93,7 @@ test_fastqc: work/WGSIM/results/FASTQ/samplesheet.csv nproc.cfg
 test_wgsim: work/WGSIM/results/FASTQ/samplesheet.csv
 
 work/WGSIM/results/FASTQ/samplesheet.csv: reference.config nproc.cfg
-	$(NEXTFLOW) run  -work-dir work/WGSIM -profile gitlabci  -c reference.config  -c nproc.cfg   \
+	$(NEXTFLOW) run -resume -work-dir work/WGSIM $(PROFILE) -c reference.config  -c nproc.cfg   \
 		--outdir $${PWD}/work/WGSIM/results  ../workflows/wgsim/main.nf --n_samples 7
 	cat $@
 	
