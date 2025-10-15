@@ -266,7 +266,7 @@ process GENOTYPE_CONCORDANCE {
 
     grep -E '^(SNP|INDEL)' "\${S}.genotype_concordance_summary_metrics"  |\\
 	cut -f 1,13 |\\
-	awk -vS=\$S '{printf("%s\t%s\\n", gensub(/.*\\.DP[0]*/,"\\\\1","g",S) ,\$0);}' >> TMP/concordances.txt
+	awk -vS=\$S '{printf("%s\t%s\\n", gsub(/.*\\.DP[0]*/,"\\\\1","g",S) ,\$0);}' >> TMP/concordances.txt
    done
 
 

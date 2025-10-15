@@ -68,8 +68,35 @@ test_downsample: work/BWA/results/BAMS/samplesheet.csv
 		--outdir $${PWD}/work/LOWPASS/results --samplesheet $<
 
 test_hapcaller: work/BWA/results/BAMS/samplesheet.csv
-	$(NEXTFLOW) run -resume -work-dir work/HC $(PROFILE) -c reference.config  -c nproc.cfg  ../workflows/gatk/gatk4gvcfs3/main.nf --outdir $${PWD}/work/HC/results --samplesheet $<
-	find work/HC/ -type f
+	$(NEXTFLOW) run -resume -work-dir work/HC $(PROFILE) -c reference.config  -c nproc.cfg  ../workflows/gatk/gatk4gvcfs3/main.nf \
+		--outdir $${PWD}/work/HC/results \
+		--samplesheet $<
+	find work/HC/results -type f
+	#
+	$(NEXTFLOW) run -resume -work-dir work/HC $(PROFILE) -c reference.config  -c nproc.cfg  ../workflows/gatk/gatk4gvcfs3/main.nf \
+		--outdir $${PWD}/work/HC/results \
+		--gvcf_merge_method glnexus \
+		--samplesheet $<
+	find work/HC/results -type f
+	#
+	$(NEXTFLOW) run -resume -work-dir work/HC $(PROFILE) -c reference.config  -c nproc.cfg  ../workflows/gatk/gatk4gvcfs3/main.nf \
+		--outdir $${PWD}/work/HC/results \
+		--method direct \
+		--samplesheet $<
+	find work/HC/results -type f
+	#
+	$(NEXTFLOW) run -resume -work-dir work/HC $(PROFILE) -c reference.config  -c nproc.cfg  ../workflows/gatk/gatk4gvcfs3/main.nf \
+		--outdir $${PWD}/work/HC/results \
+		--method bam2vcf \
+		--samplesheet $<
+	find work/HC/results -type f
+	#
+	$(NEXTFLOW) run -resume -work-dir work/HC $(PROFILE) -c reference.config  -c nproc.cfg  ../workflows/gatk/gatk4gvcfs3/main.nf \
+		--outdir $${PWD}/work/HC/results \
+		--method bam2vcf --gvcf_merge_method glnexus \
+		--samplesheet $<
+	find work/HC/results -type f
+
 
 
 test_bwa : work/BWA/results/BAMS/samplesheet.csv
