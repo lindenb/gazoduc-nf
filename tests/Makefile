@@ -1,7 +1,7 @@
 SHELL=/bin/bash
 NEXTFLOW?=nextflow
 BUILD=GRCh38
-PROFILE=
+PROFILE?= -profile gitlabci
 .PHONY=all hard_tests reference test_wgsim test_fastqc test_bwa test_hapcaller test_downsample stub
 
 all: stub
