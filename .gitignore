@@ -34,7 +34,7 @@ timeline.html*
 trace.txt*
 jeter*
 /bin/
-
+*.old
 # eclipse
 .classpath
 .project

@@ -54,7 +54,7 @@ workflow {
 	def fasta = [ hash_ref, file(params.fasta)]
 	versions = Channel.empty()
 	multiqc_ch = Channel.empty()
-	def rnd = new java.util.Random(0L);
+	def rnd = new java.util.Random((params.random_seed as long));
 
 	
 	def n_samples= (params.n_samples as int)

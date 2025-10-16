@@ -32,7 +32,7 @@ output:
     tuple val(meta),path("*.dict"),emit:dict
     path("versions.yml"),emit:versions
 script:
-    def args1 = task.ext.args1?:"-A"
+    def args1 = task.ext.args1?:"" // no aliases by default: put a mess in jvarkit
     def args2 = task.ext.args2?:(meta.uscsc_name?"-a ${meta.uscsc_name}":"")
 """
 

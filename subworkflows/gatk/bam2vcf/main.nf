@@ -60,12 +60,11 @@ main:
 
 
     BCFTOOLS_CONCAT(
-         BAM2VCF.out.vcf.map{[
-            [id:"hapcaller"],
-            it[1],
-            it[2],
-            []
-            ]}
+         BAM2VCF.out.vcf
+		.map{meta,vcf,idx,bed->[vcf,idx]}
+		.flatMap()
+		.collect()
+		.map{vcf_files->[ [id:"hapcaller"],vcf_files.sort(),[]]}
          )
     versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
 

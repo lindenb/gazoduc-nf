@@ -41,7 +41,7 @@ output:
 script:
    def prefix0 = (meta.id?:"\${MD5}")
    def prefix= task.ext.prefix?:prefix0
-   def args1 = task.ext.args1?:"-G StandardAnnotation -G AS_StandardAnnotation -G StandardHCAnnotation"
+   def args1 = task.ext.args1?:"-G StandardAnnotation -G StandardHCAnnotation"
    def args2 = task.ext.args2?:""
    def jvm = task.ext.jvm?:"-XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -DGATK_STACKTRACE_ON_USER_EXCEPTION=true"
 """
@@ -60,10 +60,10 @@ fi
 test ! -s TMP/bad.txt
 
 gatk --java-options "${jvm}" HaplotypeCaller \\
-    ${optional_bed?"-L TMP/${optional_bed.name}":""} \\
+    ${optional_bed?"-L ${optional_bed}":""} \\
     ${dbsnp?"--dbsnp \"${dbsnp}\"":""} \\
     ${pedigree?"--pedigree \"${pedigree}\"":""} \\
-    -R "\${REF}" \\
+    -R "${fasta}" \\
     -I TMP/bams.list \\
     ${args1} ${args2}\\
     -O "TMP/jeter.vcf.gz"

@@ -43,7 +43,7 @@ script:
 	def args2 = task.ext.args2?:""
 	def config = task.ext.config?:""
 	def prefix = task.ext.prefix?:(meta.id?:"glnexus")+(optional_bed?"."+optional_bed.baseName:"")+".glnexus"
-	if(!optional_config && config.trim().isEmpty()) throw new IllegalArgumentException("${task.process} task.ext.config missing. eg.DeepVariantWGS")
+	if(!(optional_config?true:false) && config.trim().isEmpty()) throw new IllegalArgumentException("${task.process} task.ext.config '${config}' missing. eg.DeepVariantWGS")
 """
 	hostname 1>&2
 	mkdir TMP
