@@ -15,24 +15,31 @@ stub: data/rotavirus_rf.fa data/rotavirus_rf.vcf.gz
 		--fasta $${PWD}/data/rotavirus_rf.fa \
 		--known_sites  $${PWD}/data/rotavirus_rf.vcf.gz
 	# combinegvcfs
-	$(NEXTFLOW) run ../workflows/gatk/gatk4gvcfs3/main.nf  -work-dir STUB/HC  -resume -stub --outdir $${PWD}/STUB/HC/results  \
+	$(NEXTFLOW) run ../workflows/gatk/haplotypecaller/main.nf  -work-dir STUB/HC  -resume -stub --outdir $${PWD}/STUB/HC/results  \
 		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv \
 		--fasta $${PWD}/data/rotavirus_rf.fa \
 		--dbsnp $${PWD}/data/rotavirus_rf.vcf.gz
 	# glnexus
-	$(NEXTFLOW) run ../workflows/gatk/gatk4gvcfs3/main.nf  -work-dir STUB/HC  -resume -stub --outdir $${PWD}/STUB/HC/results  \
+	$(NEXTFLOW) run ../workflows/gatk/haplotypecaller/main.nf  -work-dir STUB/HC  -resume -stub --outdir $${PWD}/STUB/HC/results  \
 		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv \
 		--fasta $${PWD}/data/rotavirus_rf.fa \
 		--gvcf_merge_method glnexus \
 		--dbsnp data/rotavirus_rf.vcf.gz
 	# method bam2vcf
-	$(NEXTFLOW) run ../workflows/gatk/gatk4gvcfs3/main.nf  -work-dir STUB/HC  -resume -stub --outdir $${PWD}/STUB/HC/results  \
+	$(NEXTFLOW) run ../workflows/gatk/haplotypecaller/main.nf  -work-dir STUB/HC  -resume -stub --outdir $${PWD}/STUB/HC/results  \
 		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv \
 		--fasta $${PWD}/data/rotavirus_rf.fa \
 		--method bam2vcf \
 		--dbsnp  $${PWD}/data/rotavirus_rf.vcf.gz
+	# method bam2vcf dnc
+	$(NEXTFLOW) run ../workflows/gatk/haplotypecaller/main.nf  -work-dir STUB/HC  -resume -stub --outdir $${PWD}/STUB/HC/results  \
+		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv \
+		--fasta $${PWD}/data/rotavirus_rf.fa \
+		--method bam2vcf \
+		--divide_and_conquer true \
+		--dbsnp  $${PWD}/data/rotavirus_rf.vcf.gz
 	# method direct
-	$(NEXTFLOW) run ../workflows/gatk/gatk4gvcfs3/main.nf  -work-dir STUB/HC  -resume -stub --outdir $${PWD}/STUB/HC/results  \
+	$(NEXTFLOW) run ../workflows/gatk/haplotypecaller/main.nf  -work-dir STUB/HC  -resume -stub --outdir $${PWD}/STUB/HC/results  \
 		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv \
 		--fasta $${PWD}/data/rotavirus_rf.fa \
 		--method direct \
@@ -68,30 +75,30 @@ test_downsample: work/BWA/results/BAMS/samplesheet.csv
 		--outdir $${PWD}/work/LOWPASS/results --samplesheet $<
 
 test_hapcaller: work/BWA/results/BAMS/samplesheet.csv
-	$(NEXTFLOW) run -resume -work-dir work/HC $(PROFILE) -c reference.config  -c nproc.cfg  ../workflows/gatk/gatk4gvcfs3/main.nf \
+	$(NEXTFLOW) run -resume -work-dir work/HC $(PROFILE) -c reference.config  -c nproc.cfg  ../workflows/gatk/haplotypecaller/main.nf \
 		--outdir $${PWD}/work/HC/results \
 		--samplesheet $<
 	find work/HC/results -type f
 	#
-	$(NEXTFLOW) run -resume -work-dir work/HC $(PROFILE) -c reference.config  -c nproc.cfg  ../workflows/gatk/gatk4gvcfs3/main.nf \
+	$(NEXTFLOW) run -resume -work-dir work/HC $(PROFILE) -c reference.config  -c nproc.cfg  ../workflows/gatk/haplotypecaller/main.nf \
 		--outdir $${PWD}/work/HC/results \
 		--gvcf_merge_method glnexus \
 		--samplesheet $<
 	find work/HC/results -type f
 	#
-	$(NEXTFLOW) run -resume -work-dir work/HC $(PROFILE) -c reference.config  -c nproc.cfg  ../workflows/gatk/gatk4gvcfs3/main.nf \
+	$(NEXTFLOW) run -resume -work-dir work/HC $(PROFILE) -c reference.config  -c nproc.cfg  ../workflows/gatk/haplotypecaller/main.nf \
 		--outdir $${PWD}/work/HC/results \
 		--method direct \
 		--samplesheet $<
 	find work/HC/results -type f
 	#
-	$(NEXTFLOW) run -resume -work-dir work/HC $(PROFILE) -c reference.config  -c nproc.cfg  ../workflows/gatk/gatk4gvcfs3/main.nf \
+	$(NEXTFLOW) run -resume -work-dir work/HC $(PROFILE) -c reference.config  -c nproc.cfg  ../workflows/gatk/haplotypecaller/main.nf \
 		--outdir $${PWD}/work/HC/results \
 		--method bam2vcf \
 		--samplesheet $<
 	find work/HC/results -type f
 	#
-	$(NEXTFLOW) run -resume -work-dir work/HC $(PROFILE) -c reference.config  -c nproc.cfg  ../workflows/gatk/gatk4gvcfs3/main.nf \
+	$(NEXTFLOW) run -resume -work-dir work/HC $(PROFILE) -c reference.config  -c nproc.cfg  ../workflows/gatk/haplotypecaller/main.nf \
 		--outdir $${PWD}/work/HC/results \
 		--method bam2vcf --gvcf_merge_method glnexus \
 		--samplesheet $<

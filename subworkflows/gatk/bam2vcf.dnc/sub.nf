@@ -22,14 +22,15 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {GATK_BAM2VCF   } from '../../../modules/gatk/bam2vcf'
-include {makeKey        } from '../../../modules/utils/functions'
+include { GATK_BAM2VCF   } from '../../../modules/gatk/bam2vcf'
+include { makeKey        } from '../../../modules/utils/functions'
+include { BED_SPLITX     } from '../../../modules/bed/splitx'
 
 
 
 workflow BAM2VCF_DIVIDE_AND_CONQUER {
 take:
-    meta
+    workflow_meta
     level
     fasta
     fai
@@ -41,10 +42,7 @@ take:
     bams // [meta, [bams and bai] ]
 main:
     versions = Channel.empty()
-    ok_ch = Channel.empty()
     bed_todo = bed.map{meta,bed->[meta.plus("level":level),bed]}
-
-   
 
     GATK_BAM2VCF(
         fasta,
@@ -54,43 +52,38 @@ main:
         pedigree,
         references,
         bams.combine(bed_todo)
-            .map{meta1,bam_files,meta2,bed->[
+            .map{_meta1,bam_files,meta2,bed->[
                 meta2/* bed.meta */,
                 bam_files/*bam and bai */,
                 bed/*bed */
                 ]}
         )
     versions = versions.mix(GATK_BAM2VCF.out.versions)
-    
 
     bed_todo 
-        .mix(GATK_BAM2VCF.out.vcf.map{meta,vcf,tbi,bed->[meta,bed]})
+        .mix(GATK_BAM2VCF.out.vcf.map{meta,_vcf,_tbi,bed->[meta,bed]})
         .groupTuple()
-        .branch{meta,beds->
+        .branch{_meta,beds->
             success: beds.size()==2
             failure: beds.size()==1
             other: true
             }.set{branch2}
-    branch2.other.map{throw new IllegalArgumentException("${it}");}
+            
+    branch2.other.map{throw new IllegalArgumentException(" BAM2VCF_DIVIDE_AND_CONQUER ${it}");}
 
-
-    SPLITBED(
-        fasta,
-        fai,
-        dict,
-        level,
+    BED_SPLITX(
         branch2.failure
         )
-    
-    bed_todo = SPLITBED.out.bed
-        .map{meta,beds->beds}
-        .map{beds instanceof List?beds:[beds]}
+    versions = versions.mix(BED_SPLITX.out.versions)
+
+    bed_todo = BED_SPLITX.out.beds
+        .map{_meta,beds->beds}
+        .map{beds->(beds instanceof List?beds:[beds])}
         .flatMap()
         .map{bed->[[id:makeKey(bed)],bed]}
        
-    vcf_out =  GATK_BAM2VCF.out.vcf
+    vcf_out = GATK_BAM2VCF.out.vcf
 
-   vcf_out.view()
 emit:
     versions
     bed = bed_todo
@@ -98,25 +91,3 @@ emit:
 }
 
 
-process SPLITBED {
-tag "${bed.name} Level ${level}"
-label "process_single"
-afterScript "rm -rf TMP"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-input:
-    tuple val(meta1),path(fasta)
-    tuple val(meta2),path(fai)
-    tuple val(meta3),path(dict)
-    val(level)
-    tuple val(meta),path(bed)
-output:
-    tuple val(meta),path("BEDS/*"),optional:true,emit:bed
-    path("versions.yml"),emit:versions
-script:
-    def njobs  = task.ext.njobs?:"10"
-"""
-python3 ${moduleDir}/../../../src/python/split_bed.py" ${njobs} '${bed}'
-
-touch versions.yml
-"""
-}

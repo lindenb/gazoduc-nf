@@ -29,16 +29,16 @@ class Cluster:
     def _md5_of_intervals(self):
         bed_string = ''.join(f"{iv.chrom}\t{iv.start}\t{iv.end}\n" for iv in self.intervals)
         return hashlib.md5(bed_string.encode('utf-8')).hexdigest()
-    def save_as_bed(self):
-        filename = self._md5_of_intervals() + ".bed"
+    def save_as_bed(self,prefix):
+        filename = prefix + self._md5_of_intervals() + ".bed"
         with open(filename, "w") as out:
             for iv in self.intervals:
                 out.write(f"{iv.chrom}\t{iv.start}\t{iv.end}\n")
         return filename
 
 def main():
-    if len(sys.argv) != 3:
-        print(f"Usage: {sys.argv[0]} <factor> <bed_file>", file=sys.stderr)
+    if len(sys.argv) != 4:
+        print(f"Usage: {sys.argv[0]} <factor>  <prefix> <bed_file>", file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -48,8 +48,8 @@ def main():
     except ValueError:
         print("Error: 'factor' must be an integer greater than one.", file=sys.stderr)
         sys.exit(1)
-
-    bed_path = sys.argv[2]
+    prefix = sys.argv[2]
+    bed_path = sys.argv[3]
     intervals = []
     try:
         with open(bed_path, "r") as bed_file:
@@ -104,7 +104,7 @@ def main():
 
     # Save clusters
     for cluster in clusters:
-        filename = cluster.save_as_bed()
+        filename = cluster.save_as_bed(prefix)
         print(f"Cluster saved as: {filename}", file=sys.stderr)
 
 if __name__ == "__main__":

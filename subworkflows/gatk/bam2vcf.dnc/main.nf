@@ -35,7 +35,7 @@ include {BCFTOOLS_CONCAT                                    } from '../../../mod
 /** Divide an conquer BAM2vcf */
 workflow GATK_BAM2VCF_DNC {
 take:
-    meta
+    workflow_meta
     fasta
     fai
     dict
@@ -52,11 +52,11 @@ main:
         .map{[it[1],it[2]]}
         .flatMap()
         .collect()
-        .map{[[id:"hapcaller"],it.sort()]}
+        .map{[[id: workflow_meta.id],it.sort()]}
     
 
     DIVIDE_AND_CONQUER1(
-        meta,
+        workflow_meta,
         1,
         fasta,
         fai,
@@ -73,7 +73,7 @@ main:
 
 
     DIVIDE_AND_CONQUER2(
-        meta,
+        workflow_meta,
         2,
         fasta,
         fai,
@@ -89,7 +89,7 @@ main:
     versions = versions.mix(DIVIDE_AND_CONQUER2.out.versions)
 
     DIVIDE_AND_CONQUER3(
-        meta,
+        workflow_meta,
         3,
         fasta,
         fai,
@@ -105,7 +105,7 @@ main:
     versions = versions.mix(DIVIDE_AND_CONQUER3.out.versions)
 
     DIVIDE_AND_CONQUER4(
-        meta,
+        workflow_meta,
         4,
         fasta,
         fai,
@@ -121,7 +121,7 @@ main:
     versions = versions.mix(DIVIDE_AND_CONQUER4.out.versions)
 
     DIVIDE_AND_CONQUER5(
-        meta,
+        workflow_meta,
         5,
         fasta,
         fai,
@@ -137,7 +137,7 @@ main:
     versions = versions.mix(DIVIDE_AND_CONQUER5.out.versions)
 
     DIVIDE_AND_CONQUER6(
-        meta,
+        workflow_meta,
         6,
         fasta,
         fai,
@@ -156,10 +156,13 @@ main:
 
       
     BCFTOOLS_CONCAT(
-        concat.map{meta,vcf,tbi,bed->[meta,vcf,tbi,[]]}
+        concat.map{_meta,vcf,tbi,_bed->[vcf,tbi]}
+            .flatMap()
+            .collect()
+            .map{[[id:workflow_meta.id],it,[]]}
         )
     versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
-    out_vcf = BCFTOOLS_CONCAT.out.vcf.map{meta,vcf,tbi,bed->[meta,vcf,tbi,[]]}
+    out_vcf = BCFTOOLS_CONCAT.out.vcf.map{meta,vcf,tbi,_bed->[meta,vcf,tbi,[]]}
 
 emit:
     versions

@@ -1,5 +1,30 @@
-include {VCF_TO_BED as VCF2BED1    } from '../../modules/bcftools/vcf2bed/main.nf'
-include {VCF_TO_BED as VCF2BED2    } from '../../modules/bcftools/vcf2bed/main.nf'
+/*
+
+Copyright (c) 2025 Pierre Lindenbaum
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+The MIT License (MIT)
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
+include {VCF_TO_BED as VCF2BED1    } from '../../modules/bcftools/vcf2bed'
+include {VCF_TO_BED as VCF2BED2    } from '../../modules/bcftools/vcf2bed'
+include {IF_EMPTY                  } from '../../subworkflows/nf/if_empty'
 
 String normContig(String s) {
     if(!s.matches("(chr)?[0-9]+")) return "";
@@ -9,7 +34,7 @@ String normContig(String s) {
 
 workflow PIHAT {
     take:
-        meta
+        workflow_metadata
         fasta
         fai
         dict
@@ -17,7 +42,7 @@ workflow PIHAT {
         exclude_samples
         exclude_bed
         vcf1kg //[meta,vcf,vcfidx]
-        vcfs
+        vcfs //[meta,vcf,vcfidx]
     main:
 
 
@@ -30,29 +55,31 @@ workflow PIHAT {
 
         ch1 = VCF2BED1.out.output
             .splitCsv(sep:'\t',header:false,elem:1)
-            .map{[it[1][0],it[2],it[3]]} /* contig, vcf, vcfidx */
-            .map{[normContig(it[0]),it[0],it[1],it[2]]} /* norm_contig, contig, vcf, vcfidx */
+            .map{_meta,bedrecord,vcf,idx->[bedrecord[0],vcf,idx]} /* contig, vcf, vcfidx */
+            .map{contig,vcf,idx,[normContig(contig),contig,vcf,idx]} /* norm_contig, contig, vcf, vcfidx */
             .filter{!it[0].isEmpty()}
             
         ch2 = VCF2BED2.out.output
             .splitCsv(sep:'\t',header:false,elem:1)
-            .map{[it[1][0],it[2],it[3]]} /* contig, vcf, vcfidx */
-            .map{[normContig(it[0]),it[0],it[1],it[2]]}/* norm_contig, contig, vcf, vcfidx */
+            .map{_meta,bedrecord,vcf,idx->[bedrecord[0],vcf,idx]} /* contig, vcf, vcfidx */
+            .map{contig,vcf,idx,[normContig(contig),contig,vcf,idx]} /* norm_contig, contig, vcf, vcfidx */
             .filter{!it[0].isEmpty()}
             
 
-        no_join= ch1.map{
-            [it[0]/* pivot */,it[1]/*ctg*/,it[2]/*vcf*/,it[3]/*idx*/,it[1]/* ctg (same)*/,[]/* no 1kg vcf */,[] /* no 1kg vcf idx */]
-            }
+        no_join= ch1.map{[
+            it[0]/* pivot */,
+            it[1]/*ctg*/,
+            it[2]/*vcf*/,
+            it[3]/*idx*/,
+            it[1]/* ctg (same)*/,
+            []/* no 1kg vcf */,
+            [] /* no 1kg vcf idx */
+            ]}
 
-        join_ch = ch1.join(ch2) /* norm_contig, contig, vcf, vcfidx , ikg_contig, 1kgvcf, 1kgidx */
-            .ifEmpty(no_join) 
+        join_ch = IF_EMPTY(ch1.join(ch2), no_join) /* norm_contig, contig, vcf, vcfidx , ikg_contig, 1kgvcf, 1kgidx */
 
-
-        DOWNLOAD_1KG_SAMPLE2POP(meta)
+        DOWNLOAD_1KG_SAMPLE2POP(workflow_metadata)
         versions = versions.mix(DOWNLOAD_1KG_SAMPLE2POP.out.versions)
-
-
     
         PER_CONTIG(
             fasta,
