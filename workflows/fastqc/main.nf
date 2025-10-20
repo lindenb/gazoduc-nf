@@ -90,6 +90,7 @@ workflow {
 		["id":"multiqc"],
 		META_TO_PED.out.sample2collection,
 		versions,
+        [[id:"no_mqc_config"],[]],
 		multiqc_ch
 		)
     }

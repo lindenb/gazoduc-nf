@@ -24,7 +24,9 @@ SOFTWARE.
 */
 include {VCF_TO_BED as VCF2BED1    } from '../../modules/bcftools/vcf2bed'
 include {VCF_TO_BED as VCF2BED2    } from '../../modules/bcftools/vcf2bed'
-include {IF_EMPTY                  } from '../../subworkflows/nf/if_empty'
+include {VCF_TO_BED as VCF2BED3    } from '../../modules/bcftools/vcf2bed'
+include {IF_EMPTY as IF_EMPTY1     } from '../../subworkflows/nf/if_empty'
+include {IF_EMPTY as IF_EMPTY2     } from '../../subworkflows/nf/if_empty'
 
 String normContig(String s) {
     if(!s.matches("(chr)?[0-9]+")) return "";
@@ -42,31 +44,44 @@ workflow PIHAT {
         exclude_samples
         exclude_bed
         vcf1kg //[meta,vcf,vcfidx]
+        gnomad //[meta,vcf,vcfidx]
         vcfs //[meta,vcf,vcfidx]
     main:
 
 
         versions = Channel.empty()
+        multiqc = Channel.empty()
         
         VCF2BED1(vcfs)
         versions = versions.mix(VCF2BED1.out.versions)
         VCF2BED2(vcf1kg)
         versions = versions.mix(VCF2BED2.out.versions)
+        VCF2BED3(gnomad)
+        versions = versions.mix(VCF2BED3.out.versions)
 
         ch1 = VCF2BED1.out.output
             .splitCsv(sep:'\t',header:false,elem:1)
             .map{_meta,bedrecord,vcf,idx->[bedrecord[0],vcf,idx]} /* contig, vcf, vcfidx */
-            .map{contig,vcf,idx,[normContig(contig),contig,vcf,idx]} /* norm_contig, contig, vcf, vcfidx */
+            .map{contig,vcf,idx->[normContig(contig),contig,vcf,idx]} /* norm_contig, contig, vcf, vcfidx */
             .filter{!it[0].isEmpty()}
-            
+
+	ch1.count().filter{it==0}.map{System.err.println("Warning. No chromosome looks like /(chr)?[0-9]+/");}
+
+
         ch2 = VCF2BED2.out.output
             .splitCsv(sep:'\t',header:false,elem:1)
             .map{_meta,bedrecord,vcf,idx->[bedrecord[0],vcf,idx]} /* contig, vcf, vcfidx */
-            .map{contig,vcf,idx,[normContig(contig),contig,vcf,idx]} /* norm_contig, contig, vcf, vcfidx */
+            .map{contig,vcf,idx->[normContig(contig),contig,vcf,idx]} /* norm_contig, contig, vcf, vcfidx */
             .filter{!it[0].isEmpty()}
-            
 
-        no_join= ch1.map{[
+        ch3 = VCF2BED3.out.output
+            .splitCsv(sep:'\t',header:false,elem:1)
+            .map{_meta,bedrecord,vcf,idx->[bedrecord[0],vcf,idx]} /* contig, vcf, vcfidx */
+            .map{contig,vcf,idx->[normContig(contig),contig,vcf,idx]} /* norm_contig, contig, vcf, vcfidx */
+            .filter{!it[0].isEmpty()}
+
+
+        no_join1= ch1.map{[
             it[0]/* pivot */,
             it[1]/*ctg*/,
             it[2]/*vcf*/,
@@ -76,11 +91,29 @@ workflow PIHAT {
             [] /* no 1kg vcf idx */
             ]}
 
-        join_ch = IF_EMPTY(ch1.join(ch2), no_join) /* norm_contig, contig, vcf, vcfidx , ikg_contig, 1kgvcf, 1kgidx */
+        join_ch = IF_EMPTY1(ch1.join(ch2), no_join1) /* norm_contig, contig, vcf, vcfidx , ikg_contig, 1kgvcf, 1kgidx */
+
+        no_join2= join_ch.map{[
+            it[0]/* pivot */,
+            it[1]/*ctg*/,
+            it[2]/*vcf*/,
+            it[3]/*idx*/,
+            it[4]/* ctg (same)*/,
+            it[5]/* no 1kg vcf */,
+            it[6] /* no 1kg vcf idx */,
+            it[1]/* ctg (same)*/,
+            []/* no gnomad vcf */,
+            [] /* no gnomad vcf idx */
+            ]}
+
+        join_ch = IF_EMPTY2(join_ch.join(ch3), no_join2) /* norm_contig, contig, vcf, vcfidx , ikg_contig, 1kgvcf, 1kgidx, ctg_gnomad, gnomadvcf, gnomadvcfidx */
+
+
+
 
         DOWNLOAD_1KG_SAMPLE2POP(workflow_metadata)
         versions = versions.mix(DOWNLOAD_1KG_SAMPLE2POP.out.versions)
-    
+            
         PER_CONTIG(
             fasta,
             fai,
@@ -90,6 +123,8 @@ workflow PIHAT {
             join_ch
             )
         versions = versions.mix(PER_CONTIG.out.versions)
+
+    
         
         MERGE(
             fasta,
@@ -140,6 +175,7 @@ workflow PIHAT {
         versions
         genome = MERGE.out.genome
         mds = MERGE.out.mds
+	multiqc
 }
 
 
@@ -258,13 +294,15 @@ then
     mv TMP/jeter3.bcf TMP/jeter1.bcf
 
 else
+	mv TMP/jeter1.bcf TMP/jeter2.bcf
+	mv TMP/jeter1.bcf.csi TMP/jeter2.bcf.csi
+
         # extract bed for this vcf, extends to avoid too many regions
 		bcftools query  \\
-            --threads ${task.cpus} \\
             -f '%CHROM\t%POS0\t%END\\n' \\
             TMP/jeter2.bcf |\\
-			jvarkit -Djava.io.tmpdir=TMP -jar  bedrenamechr -f "${gnomad}" --column 1 --convert SKIP |\
-			sort -T TMP -t '\t' -k1,1 -k2,2n |\
+			jvarkit -Djava.io.tmpdir=TMP bedrenamechr -f "${gnomad}" --column 1 --convert SKIP |\\
+			sort -T TMP -t '\t' -k1,1 -k2,2n |\\
 			bedtools merge -i - -d 1000 > TMP/gnomad.bed
 	
 		if [ ! -s gnomad.bed ] ; then
@@ -277,7 +315,7 @@ else
             --regions-file TMP/gnomad.bed \\
             -f '%CHROM\t%POS0\t%END\\n' \\
             "${gnomad}" |\\
-			jvarkit  -Djava.io.tmpdir=TMP -jar  bedrenamechr -f "${fasta}" --column 1 --convert SKIP |\\
+			jvarkit  -Djava.io.tmpdir=TMP bedrenamechr -f "${fasta}" --column 1 --convert SKIP |\\
 			sort -T	TMP -t '\t' -k1,1	-k2,2n > TMP/x.gnomad.bed
 		
 		if [ ! -s x.gnomad.bed ] ; then
@@ -291,9 +329,10 @@ else
             -O b \\
             -o TMP/jeter1.bcf \\
             TMP/jeter2.bcf
-        
-		mv TMP/jeter1.bcf TMP/jeter2.bcf
-	
+        	
+
+	bcftools query -f '.\\n' TMP/jeter1.bcf | wc -l 1>&2
+
 fi
 
 if ${optional_exclude_samples?true:false}
@@ -338,6 +377,8 @@ bcftools index --threads ${task.cpus} -f   TMP/jeter1.bcf
 # rename chromosomes to no chr prefix
 paste <(echo '${contig_user}') <(echo '${contig_user}' | sed 's/^chr//') > TMP/chroms.txt 
 
+bcftools query -f '.\\n' TMP/jeter1.bcf | wc -l 1>&2
+
 # select variant after join
 bcftools annotate \\
         --threads ${task.cpus} \\
@@ -349,7 +390,7 @@ bcftools annotate \\
         -o TMP/jeter1.vcf.gz \\
         TMP/jeter1.bcf
 
-
+bcftools query -f '.\\n' TMP/jeter1.vcf.gz | wc -l 1>&2
 bcftools index --threads ${task.cpus} -f -t TMP/jeter1.vcf.gz
 
 
@@ -403,6 +444,11 @@ ${task.process}:
     plink: todo
 	bcftools: "\$(bcftools --version | awk '(NR==1){print \$NF}')"
 EOF
+"""
+stub:
+def prefix = "indep_${norm_contig}"
+"""
+touch versions.yml ${prefix}.bim ${prefix}.bed ${prefix}.fam 
 """
 }
 
@@ -814,4 +860,6 @@ ${task.process}:
     R: todo
 EOF
 """
+
+
 }

@@ -32,7 +32,7 @@ process BCTOOLS_CONTRAST {
         tuple val(meta2),path(pedigree)
         tuple val(meta),val(vcf),path(vcfidx)
     output:
-        tuple val(meta),path("*{.vcf.gz,.bcf}"),path("*{.tbi,.csi}"),emit:vcf
+        tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
         path("versions.yml"),emit:versions
     when:
         task.ext.when == null || task.ext.when

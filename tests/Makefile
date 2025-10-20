@@ -14,6 +14,10 @@ stub: data/rotavirus_rf.fa data/rotavirus_rf.vcf.gz
 		--samplesheet STUB/WGSIM/results/FASTQ/samplesheet.csv \
 		--fasta $${PWD}/data/rotavirus_rf.fa \
 		--known_sites  $${PWD}/data/rotavirus_rf.vcf.gz
+	# pihat
+	$(NEXTFLOW) run ../workflows/pihat/main.nf  -work-dir STUB/PIHAT  -resume -stub --outdir STUB/PIHAT/results  \
+		--fasta $${PWD}/data/rotavirus_rf.fa \
+		--vcf  $${PWD}/data/rotavirus_rf.vcf.gz	
 	# combinegvcfs
 	$(NEXTFLOW) run ../workflows/gatk/haplotypecaller/main.nf  -work-dir STUB/HC  -resume -stub --outdir $${PWD}/STUB/HC/results  \
 		--samplesheet STUB/BWA/results/BAMS/samplesheet.csv \

@@ -27,13 +27,14 @@ label "process_quick"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/multiqc.yml"
 input:
-	tuple val(meta),path(multiqc_files, stageAs: "?/*")
+	tuple val(meta1),path(multiqc_config)
+	tuple val(meta ),path(multiqc_files, stageAs: "?/*")
 output:
 	tuple val(meta),path("*.zip"),optional:true,emit:zip
 	tuple val(meta),path("*multiqc/*_data"),optional:true,emit:datadir
     path("versions.yml"),emit:versions
 script:
-	def prefix = task.ext.prefix?:""
+	def prefix = task.ext.prefix?:"${meta.id}."
     def comment = task.ext.comment ?:""
     def title = task.ext.comment ?:""
 """
@@ -44,10 +45,12 @@ mkdir -p "${prefix}multiqc"
 
 export LC_ALL=en_US.utf8
 
-multiqc --filename  "${prefix}multiqc_report.html" \\
+multiqc \\
+	${multiqc_config?"--cl-config ${multiqc_config}":""} \\
+	--filename  "${prefix}multiqc_report.html" \\
     --no-ansi \\
-	--title "${title}" \\
-	--comment "${comment}"  \\
+	${title.isEmpty()?"":--title "${title}"} \\
+	${comment.isEmpty()?"":--comment "${comment}"} \\
 	--force \\
 	--outdir "${prefix}multiqc"  \\
 	.

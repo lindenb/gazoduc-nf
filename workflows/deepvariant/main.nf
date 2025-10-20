@@ -160,7 +160,10 @@ workflow {
 	COMPILE_VERSIONS(versions.collect())
 	to_multiqc = to_multiqc.mix(COMPILE_VERSIONS.out.multiqc)
 	
-	MULTIQC(to_multiqc.collect().map{[[id:"deepvariant"],it]})
+	MULTIQC(
+		[[id:"no_mqc_config"],[]],
+		to_multiqc.collect().map{[[id:"deepvariant"],it]}
+		)
 	
 	
 /*

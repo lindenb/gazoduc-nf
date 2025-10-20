@@ -305,6 +305,7 @@ workflow {
 		workflow_metadata.plus("id":"hapcaller"),
 		META_TO_PED.out.sample2collection,
 		versions,
+		[[id:"no_mqc_config"],[]],
 		multiqc
 		)
     

@@ -69,7 +69,10 @@ workflow AF_FREQ_GNOMAD_VS_VCF {
 		plot_ch = PLOT_INTERVAL([:], genomeId, vcf, sample2pop, interval_ch)
 		version_ch = version_ch.mix(plot_ch.version)
 
-		MULTIQC(plot_ch.output.collect())
+		MULTIQC(
+			[[id:"no_mqc_config"],[]],
+			plot_ch.output.collect()
+			)
 
 		version_ch = MERGE_VERSION("vsgnomad",version_ch.collect())
 	emit:

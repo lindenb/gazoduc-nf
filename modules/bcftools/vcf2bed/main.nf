@@ -36,7 +36,7 @@ output:
 	tuple val(meta),path("*.bed"),optional:true,emit:bed
 	path("versions.yml"),emit:versions
 script:	
-	def prefix= task.ext.prefix?:vcf.baseName+".interval"
+	def prefix= task.ext.prefix?:"${meta.id}.vcf2bed"
 	def awk_expr = task.ext.awk_expr?:""
 	if(task.ext.split==null) throw new IllegalArgumentException("ext.split not defined for ${task.process}");
 	// if TRUE : split the final file of N bed records to N files with one bed record
@@ -88,7 +88,35 @@ EOF
 """
 stub:
 if(task.ext.split==null) throw new IllegalArgumentException("ext.split not defined for ${task.process}");
+def prefix = "${meta.id}.vcf2bed"
+def split=false
 """
 touch versions.yml split.${meta.id}.bed
+
+if ${vcf.endsWith("*.vcf.gz")}
+then
+
+gunzip -c "${vcf}" |\\
+	awk -F '\t' '
+		/^#/ {next;}
+		{
+		C=\$1; P=int(\$2);
+		if(!(C in m) || (P-1)<m[C]) {m[C]=P-1;} 
+		if(!(C in M) || P>M[C]) {M[C]=P;}
+		}
+		END {for(C in m) {printf("%s\t%d\t%d\\n",C,m[C],M[C]);}}' |\\
+		LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter.bed
+fi
+
+if test -s TMP/jeter.bed
+then
+	if ${split}
+	then
+		split --lines=1 --additional-suffix=.bed -a 9 TMP/jeter.bed "${prefix}."
+	else
+		mv TMP/jeter.bed "${prefix}.bed"
+	fi
+fi
+
 """
 }

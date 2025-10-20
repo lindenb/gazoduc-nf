@@ -63,7 +63,10 @@ workflow AF_SPECTRUM {
 		
 		plot_ch = PLOT(vcf,pairs_ch)
 
-		mqc_ch = MULTIQC(plot_ch.output.collect())
+		mqc_ch = MULTIQC(
+			[[id:"no_mqc_config"],[]],
+			plot_ch.output.collect()
+			)
 }
 
 

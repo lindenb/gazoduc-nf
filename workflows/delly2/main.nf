@@ -85,6 +85,7 @@ workflow {
             hash_ref.plus("id":"delly2"),
             META_TO_PED.out.sample2collection,
             versions,
+			[[id:"no_mqc_config"],[]],
             multiqc
             )
 		}

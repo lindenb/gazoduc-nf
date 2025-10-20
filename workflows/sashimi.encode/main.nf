@@ -184,7 +184,10 @@ workflow {
  	COMPILE_VERSIONS(version_ch.collect().map{it.sort()})
     multiqc = multiqc.mix(COMPILE_VERSIONS.out.multiqc.map{[[id:"versions"],it]})
     // in case of problem multiqc_ch.filter{!(it instanceof List) || it.size()!=2}.view{"### FIX ME ${it} MULTIQC"}
-    MULTIQC(multiqc.map{it[1]}.collect().map{[[id:"sashimi.encode"],it]})
+    MULTIQC(
+	[[id:"no_mqc_config"],[]],
+	multiqc.map{it[1]}.collect().map{[[id:"sashimi.encode"],it]}
+	)
 
 	/*	
 		bam_ch = DOWNLOAD_BAM_01(meta,gtf, all_bams.combine(all_intervals))

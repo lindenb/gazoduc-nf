@@ -137,7 +137,9 @@ workflow {
 	COMPILE_VERSIONS(versions.collect())
 	multiqc = multiqc.mix(COMPILE_VERSIONS.out.multiqc)
 	
-	MULTIQC(multiqc.collect().map{[[id:"bcftools"],it]})
+	MULTIQC(
+		[[id:"no_mqc_config"],[]],
+		multiqc.collect().map{[[id:"bcftools"],it]})
 	*/
 	}
 
