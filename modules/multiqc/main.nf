@@ -32,9 +32,9 @@ input:
 output:
 	tuple val(meta),path("*.zip"),optional:true,emit:zip
 	tuple val(meta),path("*multiqc/*_data"),optional:true,emit:datadir
-    path("versions.yml"),emit:versions
+        path("versions.yml"),emit:versions
 script:
-	def prefix = task.ext.prefix?:"${meta.id}."
+    def prefix = task.ext.prefix?:"${meta.id}."
     def comment = task.ext.comment ?:""
     def title = task.ext.comment ?:""
 """
@@ -49,8 +49,8 @@ multiqc \\
 	${multiqc_config?"--cl-config ${multiqc_config}":""} \\
 	--filename  "${prefix}multiqc_report.html" \\
     --no-ansi \\
-	${title.isEmpty()?"":--title "${title}"} \\
-	${comment.isEmpty()?"":--comment "${comment}"} \\
+	${title.isEmpty()?"":"--title \"${title}\""} \\
+	${comment.isEmpty()?"":"--comment \"${comment}\""} \\
 	--force \\
 	--outdir "${prefix}multiqc"  \\
 	.

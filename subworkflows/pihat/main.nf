@@ -109,17 +109,22 @@ workflow PIHAT {
         join_ch = IF_EMPTY2(join_ch.join(ch3), no_join2) /* norm_contig, contig, vcf, vcfidx , ikg_contig, 1kgvcf, 1kgidx, ctg_gnomad, gnomadvcf, gnomadvcfidx */
 
 
-
-
-        DOWNLOAD_1KG_SAMPLE2POP(workflow_metadata)
+	/* download sample of 1000genome only if vcf1kg defined */
+        DOWNLOAD_1KG_SAMPLE2POP(
+		vcf1kg.count()
+			.combine(Channel.of(workflow_metadata))
+			.filter{count,_meta-> count>0}
+			.map{_count,meta->meta}
+			.first()
+		)
         versions = versions.mix(DOWNLOAD_1KG_SAMPLE2POP.out.versions)
             
         PER_CONTIG(
             fasta,
             fai,
             dict,
-            exclude_samples,
-            exclude_bed,
+            exclude_samples.first(),
+            exclude_bed.first(),
             join_ch
             )
         versions = versions.mix(PER_CONTIG.out.versions)
@@ -162,6 +167,7 @@ workflow PIHAT {
 
         PLOT_PIHAT(MERGE.out.genome)
         versions = versions.mix(PLOT_PIHAT.out.versions)
+	multiqc = multiqc.mix(PLOT_PIHAT.out.pict.filter{_meta,img->img.name.endsWith(".png")})
 
         components = Channel.of(["C1","C2"],["C1","C3"],["C2","C3"])
         formats = Channel.of("pdf","png")
@@ -169,7 +175,10 @@ workflow PIHAT {
         PLOT_MDS(MERGE.out.mds.combine(components).combine(formats))
         versions = versions.mix(PLOT_MDS.out.versions)
        
+	multiqc = multiqc.mix(PLOT_MDS.out.plot.filter{_meta,img->img.name.endsWith(".png")})
+
         AVERAGE_PIHAT(MERGE.out.genome, MERGE_SAMPLE2POP.out.sample2pop)
+	multiqc = multiqc.mix(AVERAGE_PIHAT.out.png)
         versions = versions.mix(AVERAGE_PIHAT.out.versions)
     emit:
         versions
@@ -192,13 +201,12 @@ input:
     tuple val(meta5),path(optional_exclude_bed)
     tuple val(norm_contig),
             val(contig_user),path(vcf_user),path(idx_user),
-            val(optional_contig_1k),path(optional_vcf_1k),path(optional_idx_1k)
+            val(optional_contig_1k),path(optional_vcf_1k),path(optional_idx_1k),
+	    val(optional_contig_gnomad),path(gnomad),path(gnomad_idx)
 output:
     path("indep_*"),emit:bfile
     path("versions.yml"),emit:versions
 script:
-    def gnomad = task.ext.gnomad?:""
-    if(gnomad.isEmpty()) throw new IllegalArgumentException("${task.process} undefined gnomad.");
     def arg1 = ""
     def cpus3 = task.cpus>3?"--thread ${(task.cpus/3) as int}":""
     def plink_args  = "--const-fid 1 --allow-extra-chr --allow-no-sex --threads ${task.cpus}"
@@ -239,12 +247,14 @@ bcftools index --threads ${task.cpus} -f   TMP/jeter1.bcf
 
 # view data
 bcftools index -s  TMP/jeter1.bcf 1>&2
-set +o pipefail
-bcftools view -G --no-header TMP/jeter1.bcf |head 1>&2
-bcftools query -l TMP/jeter1.bcf | cat -n | tail 1>&2
-set -o pipefail
+
+bcftools view -G --no-header TMP/jeter1.bcf |head 1>&2 || true
+bcftools query -l TMP/jeter1.bcf | cat -n | tail 1>&2 || true
 
 
+# 
+# 1000 GENOMES DATA
+#
 if ${optional_vcf_1k?true:false}
 then
 
@@ -292,21 +302,24 @@ then
             -O b -o TMP/jeter3.bcf
 
     mv TMP/jeter3.bcf TMP/jeter1.bcf
+fi
 
-else
-	mv TMP/jeter1.bcf TMP/jeter2.bcf
-	mv TMP/jeter1.bcf.csi TMP/jeter2.bcf.csi
+#
+# REMOVE VARIANTS OF LOW QUALITY IN GNOMAD
+#
+if ${gnomad?true:false}
+then
 
         # extract bed for this vcf, extends to avoid too many regions
-		bcftools query  \\
+        bcftools query  \\
             -f '%CHROM\t%POS0\t%END\\n' \\
-            TMP/jeter2.bcf |\\
+            TMP/jeter1.bcf |\\
 			jvarkit -Djava.io.tmpdir=TMP bedrenamechr -f "${gnomad}" --column 1 --convert SKIP |\\
 			sort -T TMP -t '\t' -k1,1 -k2,2n |\\
 			bedtools merge -i - -d 1000 > TMP/gnomad.bed
 	
 		if [ ! -s gnomad.bed ] ; then
-        		echo "${contig_user}\t0\t1" > TMP/gnomad.bed
+        		echo "${optional_contig_gnomad}\t0\t1" > TMP/gnomad.bed
 		fi
 
 
@@ -327,13 +340,14 @@ else
             --targets-file "^TMP/x.gnomad.bed" \\
             --targets-overlap 2 \\
             -O b \\
-            -o TMP/jeter1.bcf \\
-            TMP/jeter2.bcf
+            -o TMP/jeter2.bcf \\
+            TMP/jeter1.bcf
         	
+	mv TMP/jeter2.bcf TMP/jeter1.bcf
 
 	bcftools query -f '.\\n' TMP/jeter1.bcf | wc -l 1>&2
-
 fi
+
 
 if ${optional_exclude_samples?true:false}
 then
@@ -441,8 +455,8 @@ mv TMP/indep_${norm_contig}* ./
 
 cat << EOF > versions.yml
 ${task.process}:
-    plink: todo
-	bcftools: "\$(bcftools --version | awk '(NR==1){print \$NF}')"
+    plink: "\$(plink --version | awk '{print \$2}')"
+    bcftools: "\$(bcftools --version | awk '(NR==1){print \$NF}')"
 EOF
 """
 stub:
@@ -455,7 +469,7 @@ touch versions.yml ${prefix}.bim ${prefix}.bed ${prefix}.fam
 process MERGE {
 tag "${meta.id?:""}"
 afterScript "rm -rf TMP"
-label "process_single"
+label "process_short" //single is not enough memory
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
     tuple val(meta1),path(fasta)
@@ -522,7 +536,7 @@ mv TMP/merged.* ./
 
 cat << EOF > versions.yml
 ${task.process}:
-    plink: todo
+    plink: "\$(plink --version | awk '{print \$2}')"
 EOF
 """
 }
@@ -694,6 +708,8 @@ input:
     tuple val(meta ), path(genome)
     tuple val(meta2), path(sample2group)
 output:
+    tuple val(meta),path("*.tsv"),optional:true,emit:tsv
+    tuple val(meta),path("*.png"),optional:true,emit:png
     path("versions.yml"),emit:versions
 script:
     def prefix = task.ext.prefix?:"sample2avg.pihat"
@@ -758,6 +774,7 @@ __EOF__
 R --no-save < TMP/jeter.R
 
 mv TMP/jeter.tsv ${prefix}.tsv
+mv TMP/jeter.png ${prefix}.png || true
 
 cat << EOF > versions.yml
 ${task.process}:
@@ -804,6 +821,7 @@ script:
 
 cat << EOF > versions.yml
 ${task.process}:
+    plink: \$(plink --version | awk '{print \$2}')
     R: todo
 EOF
 	"""
@@ -860,6 +878,4 @@ ${task.process}:
     R: todo
 EOF
 """
-
-
 }

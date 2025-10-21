@@ -52,7 +52,7 @@ workflow {
 		workflow_meta.plus([skip_scatter:true]),
 		Channel.fromPath(params.fasta).map{[[id:it.baseName],it]}
 		)
-    versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
+        versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
 
 
 	/* load gnomad */
