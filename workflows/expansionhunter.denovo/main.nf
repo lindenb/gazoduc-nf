@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,51 +24,78 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-def gazoduc = gazoduc.Gazoduc.getInstance(params).putDefaults().putReference();
 
-gazoduc.make("cases","NO_FILE").
-        description("file containing the path to multiple bam files for the cases").
-        required().
-        existingFile().
-        put()
-
-gazoduc.make("controls","NO_FILE").
-        description("file containing the path to multiple bam files for the controls").
-        required().
-        existingFile().
-        put()
-
-gazoduc.putCondaEnv()
+include { PREPARE_ONE_REFERENCE               } from '../../subworkflows/samtools/prepare.one.ref'
+include { META_TO_BAMS                        } from '../../subworkflows/samtools/meta2bams1'
+include { isBlank                             } from '../../modules/utils/functions.nf'
+include { runOnComplete                       } from '../../modules/utils/functions.nf'
+include { EXPANSION_HUNTER_DE_NOVO            } from '../../subworkflows/expansion.hunter/denovo'
 
 
-include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
-include {parseBoolean;isHg19;getVersionCmd;moduleLoad;runOnComplete} from '../../modules/utils/functions.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
-include {SAMTOOLS_CASES_CONTROLS_01} from '../../subworkflows/samtools/samtools.cases.controls.01.nf'
-include {SIMPLE_ZIP_01} from '../../modules/utils/zip.simple.01.nf'
 
 if( params.help ) {
-    gazoduc.usage().
-		name("expansion hunter de novo").
-		description("expansion hunter de novo").
-		print();
     exit 0
     }
 else
 	{
-	gazoduc.validate()
 	}
 
 
 
 workflow {
-	ch1 = EXPANSION_HUNTER_DE_NOVO_01(params,params.reference,file(params.cases),file(params.controls))
-	html = VERSION_TO_HTML(params,ch1.version)
-	to_zip = Channel.empty().
-		mix(ch1.version).
-		mix(ch1.output).
-		mix(html.html)
-	SIMPLE_ZIP_01([:],to_zip.collect())
+	def metadata =[
+		id:"xhunterdenovo"
+		]
+	versions = Channel.empty()
+	multiqc = Channel.empty()
+	def workflow_meta = [
+		id: "pihat"
+		]
+	if(params.fasta==null) {
+		throw new IllegalArgumentException("undefined --fasta");
+		}
+	if(params.samplesheet==null) {
+		throw new IllegalArgumentException("undefined --samplesheet");
+		}
+
+	PREPARE_ONE_REFERENCE(
+		metadata.plus([skip_scatter:true]),
+		Channel.fromPath(params.fasta).map{[[id:it.baseName],it]}
+		)
+    versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
+
+	ch1 = Channel.fromPath(params.samplesheet).splitCsv(header:true, sep:',')
+
+	ch1.filter{it.status.equals("case")}
+		.count()
+		.filter{it==0}
+		.map{throw new IllegalArgumentException("no status=case for ${params.samplesheet}")}
+	
+	ch1.filter{it.status.equals("control")}
+		.count()
+		.filter{it==0}
+		.map{throw new IllegalArgumentException("no status=control for ${params.samplesheet}")}
+
+
+	ch1.filter{isBlank(it.status) || !it.status.matches("case|control")}
+		.map{throw new IllegalArgumentException("no/invalid status defined for ${it}")}
+	
+	META_TO_BAMS(
+		metadata,
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		ch1
+		)
+  	versions = versions.mix(META_TO_BAMS.out.versions)
+
+	EXPANSION_HUNTER_DE_NOVO(
+		metadata,
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		PREPARE_ONE_REFERENCE.out.dict,
+		META_TO_BAMS.out.bams
+		)
+	
 	}
 
 runOnComplete(workflow);
