@@ -22,41 +22,51 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-process XHUNTER_DENOVO_MERGE {
-    label "process_single"
-	tag "${meta3.id}"
-	afterScript "rm -rf TMP"
-    conda "${moduleDir}/../../../conda/xhunter.denovo.yml"
-	input:
-        tuple val(meta1),path(fasta)
-        tuple val(meta2),path(fai)
-		tuple val(meta3),path("JSON/*")
-        tuple val(meta4),path(manifest)
-	output:
-		tuple val(meta3),path("*.json"),emit:json
-		//tuple val(meta3),path("manifest.txt"),emit:manifest
-		path("versions.yml"),emit:versions
-script:
-    def prefix = task.ext.prefix?:"${meta3.id}"
-"""
-hostname 1>&2
-mkdir -p TMP
+include { XHUNTER_APPLY                } from '../../modules/expansion.hunter/apply'
+include { BCFTOOLS_MERGE               } from '../../modules/bcftools/merge'
+include { isBlank                      } from '../../modules/utils/functions.nf'
 
-ExpansionHunterDenovo merge \\
-		--manifest ${manifest} \\
-		--reference "${fasta}" \\
-		--output-prefix "TMP/${prefix}" 1>&2
+workflow EXPANSION_HUNTER {
+	take:
+		workflow_metadata
+		fasta
+        fai
+        dict
+        catalog
+        bams
+	main:
+        versions = Channel.empty()
 
-mv -v TMP/*.json ./
 
-cat << EOF > versions.yml
-"${task.process}":
-    xhunter: \$(ExpansionHunterDenovo --version 2>&1 | awk '{print \$3}')
-EOF
-"""
 
-stub:
-"""
-touch versions.yml ${meta3.id}.json
-"""
-}
+        XHUNTER_APPLY(
+            fasta,
+            fai,
+            catalog,
+            bams
+            )
+		versions = versions.mix(XHUNTER_APPLY.out.versions)
+
+        BCFTOOLS_MERGE(
+            XHUNTER_APPLY.out.vcf
+                .map{meta,vcf,tbi->[vcf,tbi]}
+                .flatMap()
+                .collect()
+                .map{[
+                    [id:workflow_metadata.id],
+                    it.sort(),
+                    []
+                    ]}
+            )
+        versions = versions.mix(BCFTOOLS_MERGE.out.versions)
+        
+	emit:
+		versions
+        vcf = BCFTOOLS_MERGE.out.vcf
+	}
+
+
+
+
+
+

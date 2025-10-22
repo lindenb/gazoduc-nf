@@ -58,5 +58,14 @@ cat << EOF > versions.yml
     xhunter: todo
 EOF
 	"""
-	}
+
+
+stub:
+        
+def method = task.ext.method?:""
+if(method.trim().isEmpty()) throw new IllegalArgumentException("XHUNTER_DENOVO_CASE_CONTROL task.ext.method is empty");
+"""
+touch versions.yml ${meta.id}.${method}.tsv
+"""
+}
 

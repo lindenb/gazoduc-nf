@@ -22,41 +22,34 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-process XHUNTER_DENOVO_MERGE {
-    label "process_single"
-	tag "${meta3.id}"
-	afterScript "rm -rf TMP"
-    conda "${moduleDir}/../../../conda/xhunter.denovo.yml"
-	input:
-        tuple val(meta1),path(fasta)
-        tuple val(meta2),path(fai)
-		tuple val(meta3),path("JSON/*")
-        tuple val(meta4),path(manifest)
-	output:
-		tuple val(meta3),path("*.json"),emit:json
-		//tuple val(meta3),path("manifest.txt"),emit:manifest
-		path("versions.yml"),emit:versions
+process XHUNTER_DOWNLOAD_CATALOG {
+label "process_single"
+tag "${meta.ucsc_name}"
+input:
+	tuple val(meta ),path(fasta)
+	tuple val(meta2),path(fai)
+output:
+	tuple val(meta),path("*.json"),optional:true,emit:catalog
+	path("versions.yml"),emit:versions
 script:
-    def prefix = task.ext.prefix?:"${meta3.id}"
+	def url0  = (meta.ucsc_name==null || !meta.ucsc_name.matches("hg(19|38)"))?"":"https://github.com/Illumina/RepeatCatalogs/blob/master/${meta.ucsc_name}/variant_catalog.json?raw=true"
+	def url = task.ext.url?:url0
+if(url.isEmpty())
 """
-hostname 1>&2
-mkdir -p TMP
-
-ExpansionHunterDenovo merge \\
-		--manifest ${manifest} \\
-		--reference "${fasta}" \\
-		--output-prefix "TMP/${prefix}" 1>&2
-
-mv -v TMP/*.json ./
+touch versions.yml
+"""
+else
+"""
+curl -L -o variant_catalog.${meta.ucsc_name}.json "${url}"
 
 cat << EOF > versions.yml
 "${task.process}":
-    xhunter: \$(ExpansionHunterDenovo --version 2>&1 | awk '{print \$3}')
+	url : "${url}"
 EOF
 """
 
 stub:
 """
-touch versions.yml ${meta3.id}.json
+touch versions.yml ${meta.id}.catalog.json
 """
 }

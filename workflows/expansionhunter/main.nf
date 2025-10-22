@@ -29,8 +29,8 @@ include { PREPARE_ONE_REFERENCE               } from '../../subworkflows/samtool
 include { META_TO_BAMS                        } from '../../subworkflows/samtools/meta2bams1'
 include { isBlank                             } from '../../modules/utils/functions.nf'
 include { runOnComplete                       } from '../../modules/utils/functions.nf'
-include { EXPANSION_HUNTER_DE_NOVO            } from '../../subworkflows/expansion.hunter/denovo'
-
+include { EXPANSION_HUNTER                    } from '../../subworkflows/expansion.hunter'
+include { XHUNTER_DOWNLOAD_CATALOG            } from '../../modules/expansion.hunter/download.catalog'
 
 
 if( params.help ) {
@@ -44,7 +44,7 @@ else
 
 workflow {
 	def metadata =[
-		id:"xhunterdenovo"
+		id:"xhunter"
 		]
 	versions = Channel.empty()
 	multiqc = Channel.empty()
@@ -64,21 +64,20 @@ workflow {
 		)
     versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
 
+	if(params.catalog ==null) {
+		XHUNTER_DOWNLOAD_CATALOG(
+			PREPARE_ONE_REFERENCE.out.fasta,
+			PREPARE_ONE_REFERENCE.out.fai
+			)
+		versions = versions.mix(XHUNTER_DOWNLOAD_CATALOG.out.versions)
+		catalog = XHUNTER_DOWNLOAD_CATALOG.out.catalog
+	} else {
+		catalog = Channel.of([[id:"catalog"],file(params.catalog)]).first()
+	}
+
+
 	ch1 = Channel.fromPath(params.samplesheet).splitCsv(header:true, sep:',')
 
-	ch1.filter{it.status.equals("case")}
-		.count()
-		.filter{it==0}
-		.map{throw new IllegalArgumentException("no status=case for ${params.samplesheet}")}
-	
-	ch1.filter{it.status.equals("control")}
-		.count()
-		.filter{it==0}
-		.map{throw new IllegalArgumentException("no status=control for ${params.samplesheet}")}
-
-
-	ch1.filter{isBlank(it.status) || !it.status.matches("case|control")}
-		.map{throw new IllegalArgumentException("no/invalid status defined for ${it}")}
 	
 	META_TO_BAMS(
 		metadata,
@@ -88,14 +87,20 @@ workflow {
 		)
   	versions = versions.mix(META_TO_BAMS.out.versions)
 
-	EXPANSION_HUNTER_DE_NOVO(
+	META_TO_BAMS.out.bams
+		.filter{meta,bam,bai->isBlank(meta.sex)}
+		.map{throw new IllegalArgumentException("sex undefined for ${it}")}
+
+
+	EXPANSION_HUNTER(
 		metadata,
 		PREPARE_ONE_REFERENCE.out.fasta,
 		PREPARE_ONE_REFERENCE.out.fai,
 		PREPARE_ONE_REFERENCE.out.dict,
+		catalog,
 		META_TO_BAMS.out.bams
 		)
-	
+	versions = versions.mix(EXPANSION_HUNTER.out.versions)
 	}
 
 runOnComplete(workflow);
