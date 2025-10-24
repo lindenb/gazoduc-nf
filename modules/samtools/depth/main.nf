@@ -23,11 +23,12 @@ SOFTWARE.
 
 */
 
-include {assertNotEmpty;getKeyValue;moduleLoad;isBlank} from '../../modules/utils/functions.nf'
+include {assertNotEmpty;getKeyValue;isBlank} from '../../modules/utils/functions.nf'
 
 process SAMTOOLS_DEPTH{
-tag "${row.bam}"
+tag "${meta.id}"
 afterScript "rm -rf TMP"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 cpus 1
 input:
 	tuple val(meta1),path(fasta)
@@ -46,7 +47,6 @@ script:
 
 """
 hostname 1>&2
-${moduleLoad("samtools")}
 set -o pipefail
 
 ${has_bed?"samtools view -F 3844 --min-MQ \"${mapq}\" --uncompressed -O BAM ${optional_bed} ${ref} \"${row.bam}\" |\\":""}

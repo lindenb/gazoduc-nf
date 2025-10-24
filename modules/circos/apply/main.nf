@@ -1,4 +1,5 @@
 /*
+
 Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -21,53 +22,35 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-
-process DOWNLOAD_CYTOBAND {
-tag "${meta1.ucsc_name?:fasta.name}"
-label "process_single"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+process CIRCOS {
+tag "${fasta.name}"
+label "process_medium"
+conda "${moduleDir}/../../../conda/circos.yml"
 afterScript "rm -rf TMP"
 input:
-	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai)
-	tuple val(meta3),path(dict)
+	tuple val(meta ),path(config)
+    tuple val(meta2),path("DATA/*")
 output:
-	tuple val(meta1),path("*.cytoBandIdeo.txt"),emit:output
-	path("versions.yml"),emit:versions
+	tuple val(meta),path("*.svg"),optional:true,emit:svg
+    tuple val(meta),path("*.png"),optional:true,emit:png
 script:
-	def ucsc_name = (meta1.ucsc_name?:"")
-	def base = task.ext.base?:"https://hgdownload.cse.ucsc.edu/goldenPath"
-	def prefix = task.ext.prefix?:"${ucsc_name}"
-	def url = "${base}/${ucsc_name}/database/cytoBandIdeo.txt.gz"
-
+    def prefix = task.ext.prefix ?: "${meta.id}."
+    def args1 = task.ext.args1?:""
 """
-hostname 1>&2
 mkdir -p TMP
-set -o pipefail
+circos --conf ${config} ${args1} -outputdir TMP
 
-if ${ucsc_name.isEmpty() || ucsc_name.equals("undefined")}
-then
+mv TMP/circos.svg "${prefix}circos.svg"
+mv TMP/circos.png "${prefix}circos.png"
 
-	touch "${prefix}.empty.cytoBandIdeo.txt" 
-
-else
-
-	curl -L -o TMP/cytoBandIdeo.txt.gz "${url}"
-
-	gunzip -c TMP/cytoBandIdeo.txt.gz |\\
-			jvarkit bedrenamechr -f "${fasta}" --column 1 --convert SKIP > "${prefix}.cytoBandIdeo.txt" 
-
-fo
-
-cat << END_VERSIONS > versions.yml
+cat <<-END_VERSIONS > versions.yml
 "${task.process}":
-	url: "${url}"
+    circos: "\$(circos -v 2>&1)"
 END_VERSIONS
 """
 
 stub:
 """
-touch versions.yml "${meta1.ucsc_name?:"undefined"}.empty.cytoBandIdeo.txt" 
+touch versions.yml "${meta.id}.png" "${meta.id}.svg"
 """
 }
-

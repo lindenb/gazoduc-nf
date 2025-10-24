@@ -1,5 +1,6 @@
 /*
-Copyright (c) 2025 Pierre Lindenbaum
+
+Copyright (c) 2024 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -22,52 +23,35 @@ SOFTWARE.
 
 */
 
-process DOWNLOAD_CYTOBAND {
-tag "${meta1.ucsc_name?:fasta.name}"
+process SAMTOOLS_BEDCOV {
 label "process_single"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+tag "${meta.id}"
 afterScript "rm -rf TMP"
 input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)
-	tuple val(meta3),path(dict)
+	tuple val(meta3),path(bed)
+	tuple val(meta ),path(bam),path(bai)
 output:
-	tuple val(meta1),path("*.cytoBandIdeo.txt"),emit:output
+	tuple val(meta),path("*.bed"),emit:bed
 	path("versions.yml"),emit:versions
 script:
-	def ucsc_name = (meta1.ucsc_name?:"")
-	def base = task.ext.base?:"https://hgdownload.cse.ucsc.edu/goldenPath"
-	def prefix = task.ext.prefix?:"${ucsc_name}"
-	def url = "${base}/${ucsc_name}/database/cytoBandIdeo.txt.gz"
-
+	def args1  = task.ext.args1?:"${meta.id}"
+	def prefix = task.ext.prefix?:"${meta.id}.${meta3.id}"
 """
-hostname 1>&2
 mkdir -p TMP
-set -o pipefail
+samtools bedcov \\
+	--reference ${fasta} \\
+	${args1} \\
+	"${bed}" \\
+	"${bam}" | \\
+ 	awk -F '\t' '{printf("%s\t%f\n",\$0,int(\$4)/(int(\$3)-int(\$2)));}' > TMP/jeter.bed
 
-if ${ucsc_name.isEmpty() || ucsc_name.equals("undefined")}
-then
-
-	touch "${prefix}.empty.cytoBandIdeo.txt" 
-
-else
-
-	curl -L -o TMP/cytoBandIdeo.txt.gz "${url}"
-
-	gunzip -c TMP/cytoBandIdeo.txt.gz |\\
-			jvarkit bedrenamechr -f "${fasta}" --column 1 --convert SKIP > "${prefix}.cytoBandIdeo.txt" 
-
-fo
+mv -v TMP/jeter.bed ${prefix}.bed
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	url: "${url}"
+	samtools: "\$(samtools version | awk '(NR==1) {print \$NF;}')"
 END_VERSIONS
 """
-
-stub:
-"""
-touch versions.yml "${meta1.ucsc_name?:"undefined"}.empty.cytoBandIdeo.txt" 
-"""
 }
-
