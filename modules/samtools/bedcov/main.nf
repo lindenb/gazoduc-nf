@@ -27,6 +27,7 @@ process SAMTOOLS_BEDCOV {
 label "process_single"
 tag "${meta.id}"
 afterScript "rm -rf TMP"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)
@@ -36,16 +37,17 @@ output:
 	tuple val(meta),path("*.bed"),emit:bed
 	path("versions.yml"),emit:versions
 script:
-	def args1  = task.ext.args1?:"${meta.id}"
+	def args1  = task.ext.args1?:""
 	def prefix = task.ext.prefix?:"${meta.id}.${meta3.id}"
+	// post process command
+	def post_cmd    = task.ext.post_cmd?:""
 """
 mkdir -p TMP
 samtools bedcov \\
 	--reference ${fasta} \\
 	${args1} \\
 	"${bed}" \\
-	"${bam}" | \\
- 	awk -F '\t' '{printf("%s\t%f\n",\$0,int(\$4)/(int(\$3)-int(\$2)));}' > TMP/jeter.bed
+	"${bam}" ${post_cmd} > TMP/jeter.bed
 
 mv -v TMP/jeter.bed ${prefix}.bed
 

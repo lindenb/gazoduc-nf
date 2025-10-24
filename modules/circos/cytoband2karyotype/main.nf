@@ -1,4 +1,5 @@
 /*
+
 Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -21,53 +22,59 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+/**
+FOR GLICI users
 
-process DOWNLOAD_CYTOBAND {
-tag "${meta1.ucsc_name?:fasta.name}"
+
+note to self: sed -i 's/p@univ/p\\@univ/g' (..)/lib/perl5/5.32/core_perl/Config_heavy.pl 
+
+*/
+
+process CYTOBAND_TO_KARYOTYPE {
+tag "${meta.id}"
 label "process_single"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/circos.yml"
 afterScript "rm -rf TMP"
 input:
-	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai)
-	tuple val(meta3),path(dict)
+    tuple val(meta),path(fai)
+    tuple val(meta2),path(cytoband)//optional
 output:
-	tuple val(meta1),path("*.cytoBandIdeo.txt"),emit:bed
-	path("versions.yml"),emit:versions
+	tuple val(meta),path("*.txt"),emit:karyotype
+    path("versions.yml"),emit:versions
 script:
-	def ucsc_name = (meta1.ucsc_name?:"")
-	def base = task.ext.base?:"https://hgdownload.cse.ucsc.edu/goldenPath"
-	def prefix = task.ext.prefix?:"${ucsc_name}"
-	def url = "${base}/${ucsc_name}/database/cytoBandIdeo.txt.gz"
-
+    def prefix = task.ext.prefix ?: "${meta.id}.karyotype"
+    def args1 = task.ext.args1?:""
 """
-hostname 1>&2
 mkdir -p TMP
-set -o pipefail
 
-if ${ucsc_name.isEmpty() || ucsc_name.equals("undefined")}
+awk '{
+    C=(NR%2==0?"200,200,200":"100,100,100");
+    if(C ~ /^(chr)?[0-9XY]+\$/) C=\$1;
+    printf("chr - %s %s 0 %s %s\\n",\$1,\$1,\$2, C);}
+    ' "${fai}" > TMP/jeter.txt
+
+# chrX    42400000        46400000        p11.3   gpos75
+# chrX    46400000        49800000        p11.23  gneg
+# chrX    49800000        54800000        p11.22  gpos25
+# chrX    54800000        58100000        p11.21  gneg
+
+if ${cytoband?true:false}
 then
-
-	touch "${prefix}.empty.cytoBandIdeo.txt"
-
-else
-
-	curl -L -o TMP/cytoBandIdeo.txt.gz "${url}"
-
-	gunzip -c TMP/cytoBandIdeo.txt.gz |\\
-			jvarkit bedrenamechr -f "${fasta}" --column 1 --convert SKIP > "${prefix}.cytoBandIdeo.txt" 
-
+    awk -F '\t' '(\$4!="" && \$5!="") {
+        printf("band %s %s %s %s %s %s\\n",\$1,\$4,\$4,\$2,\$3,\$5);
+        }' "${cytoband}" >> TMP/jeter.txt
 fi
 
-cat << EOF > versions.yml
+mv TMP/jeter.txt ${prefix}.txt
+
+cat <<-END_VERSIONS > versions.yml
 "${task.process}":
-	url: "${url}"
-EOF
+    awk: todo
+END_VERSIONS
 """
 
 stub:
 """
-touch versions.yml "${meta1.ucsc_name?:"undefined"}.empty.cytoBandIdeo.txt" 
+touch versions.yml "${meta.id}.txt"
 """
 }
-

@@ -33,9 +33,10 @@ main:
 	PREPARE_REFERENCE(workflow_meta,fasta)
 emit:
 	versions = PREPARE_REFERENCE.out.versions
-    fasta = PREPARE_REFERENCE.out.fasta.first()
+	fasta = PREPARE_REFERENCE.out.fasta.first()
 	fai = PREPARE_REFERENCE.out.fai.first()
 	dict = PREPARE_REFERENCE.out.dict.first()
+	bed = PREPARE_REFERENCE.out.bed.first()
 	scatter_bed = PREPARE_REFERENCE.out.scatter_bed.first()
 	complement_bed = PREPARE_REFERENCE.out.complement_bed.first()
 }
