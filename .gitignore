@@ -40,3 +40,5 @@ jeter*
 .project
 
 tests/STUB
+.nf-test
+.theia

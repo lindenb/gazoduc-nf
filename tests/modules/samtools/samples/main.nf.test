@@ -1,0 +1,30 @@
+nextflow_process {
+
+    name "Test Process SAMTOOLS_SAMPLES"
+    script "modules/samtools/samples/main.nf"
+    process "SAMTOOLS_SAMPLES"
+
+    test("Should run without failures") {
+
+        when {
+            params {
+		input = ""
+            }
+            process {
+                """
+                input[0] = [[id:"noref"],[]]
+                input[1] = [[id:"bams"],[file("../../../data/rotavirus_rf.fa")]]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            with(process.out) {
+		assert samplesheet.exist()
+		}
+        }
+
+    }
+
+}
