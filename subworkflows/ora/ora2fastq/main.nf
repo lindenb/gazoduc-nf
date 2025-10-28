@@ -28,16 +28,16 @@ include {RUN_ORAD       } from '../../../modules/orad/run'
 /** convert ORA to FASTQ using illumina ORAD */
 workflow ORA_TO_FASTQ {
 	take:
-		meta /* must be provided using a Channel.of(xxx) */
+		workflow_metadata /* must be provided using a Channel.of(xxx) */
 		ora_files /* [meta,ora] */
 	main:
 		
 		version_ch = Channel.empty()
 		
-		meta2 =ora_files.count()
+		meta2 =ora_files
+				.count()
 				.filter{it>0}
-				.combine(meta)
-				.map{it[1]}
+				.map{[:].plus(workflow_metadata)}
 
 
 		DOWNLOAD_ORAD(meta2)	
@@ -55,7 +55,7 @@ workflow ORA_TO_FASTQ {
 			}		
 
 		ch1.other.map{
-			throw new IllegalStateException("orad unexpected output : "+it);
+			throw new IllegalStateException("orad unexpected output : ${it}.");
 			}
 
 		paired_end = ch1.paired_end.map{

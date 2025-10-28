@@ -38,6 +38,8 @@ script:
 """
 mkdir -p TMP
 
+# not created if there is no ref...
+mkdir -p REFS
 
 find \${PWD}/BAMS/ -name "*am" |\\
     samtools samples \\

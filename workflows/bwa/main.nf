@@ -32,14 +32,12 @@ include {FASTQC                     } from '../../modules/fastqc'
 include {MAP_BWA                    } from '../../subworkflows/bwa/map.fastqs'
 include {BWA_INDEX                  } from '../../modules/bwa/index'
 include {runOnComplete              } from '../../modules/utils/functions.nf'
-include {PREPARE_REFERENCE          } from '../../subworkflows/samtools/prepare.ref'
-include {ORA_TO_FASTQ               } from '../../subworkflows/ora/ora2fastq'
-include {BAM_TO_FASTQ               } from '../../modules/samtools/bam2fastq'
+include {PREPARE_ONE_REFERENCE      } from '../../subworkflows/samtools/prepare.one.ref'
 include {META_TO_PED                } from '../../subworkflows/pedigree/meta2ped'
 include {MULTIQC                    } from '../../subworkflows/multiqc'
 include {BAM_QC                     } from '../../subworkflows/bamqc'
 include {IF_EMPTY                   } from '../../subworkflows/nf/if_empty'
-
+include {SAMPLESHEET_TO_FASTQ       } from '../../subworkflows/samplesheet2fastq'
 
 
 if( params.help ) {
@@ -54,100 +52,71 @@ boolean hasKey(def h, def id) {
 	return h!=null && h[id]!=null && !(h[id].trim().isEmpty() || h[id].equals("."));
 	}
 
-Map cleanupHash(Map h) {
-	return h.findAll{k,v->!k.matches("fasta|fai|dict|bam|bai|ora|fastq_1|fastq_2|bed")}
-	}
-
 workflow {
-  def hash_ref= [
+
+	if(params.samplesheet==null) {
+		System.err.println("undefined --samplesheet");
+		System.exit(-1);
+		}
+	if(params.fasta==null) {
+		System.err.println("undefined --fasta");
+		System.exit(-1);
+		}
+
+  	def workflow_medadata = [
       id: file(params.fasta).baseName,
       name: file(params.fasta).baseName,
       ucsc_name: (params.ucsc_name?:"undefined")
       ]
-	def fasta = [ hash_ref, file(params.fasta)]
+	def fasta = [ workflow_medadata, file(params.fasta)]
 	
 	versions = Channel.empty()
 	multiqc_ch = Channel.empty()
-	ch0 = Channel.fromPath(params.samplesheet)
-        .splitCsv(header:true)
-        .map{assertKeyExistsAndNotEmpty(it,"sample")}
+
+
+	/**
+	 *
+	 * LOAD SAMPLESHEET
+	 *
+	 */
+
+	ch0 =  Channel.fromPath(params.samplesheet);
+
+	if(params.samplesheet.endsWith(".json")) {
+		ch0 = ch0.splitJson()
+		}
+	else
+		{
+		ch0 =  ch0.splitCsv(header:true,sep:',')
+		}
+
+	ch0 = ch0
+		.map{assertKeyExistsAndNotEmpty(it,"sample")}
         .map{h->hasKey(h,"id")?h:h.plus(id:h.sample)}
-        
-     META_TO_PED(hash_ref,ch0)
-     versions = versions.mix(META_TO_PED.out.versions)
-        
-     ch0 = ch0.branch {
-        	fastq :  hasKey(it,"fastq_1") && !hasKey(it,"ora") && !hasKey(it,"bam")
-        	ora   : !hasKey(it,"fastq_1") &&  hasKey(it,"ora") && !hasKey(it,"bam")
-        	bam   : !hasKey(it,"fastq_1") && !hasKey(it,"ora") &&  hasKey(it,"bam") && hasKey(it,"fasta")
-        	other : true
-        	}
-     
-     ch0.other.map{throw new IllegalArgumentException("undefined input ${it}.");}
-     
-     
-     ORA_TO_FASTQ(
-     	Channel.of(hash_ref),
-     	ch0.ora.map{[cleanupHash(it),file(it.ora)]}
-     	)
-     versions = versions.mix(ORA_TO_FASTQ.out.versions)
-     
-     BAM_TO_FASTQ(
-     	ch0.bam.map{[
-     		cleanupHash(it),
-     		file(it.bam),
-     		(hasKey(it,"bai")?file(it.bai): file(it.bam+(it.bam.endsWith(".bam")?".bai":".crai"))),
-     		file(it.fasta),
-     		(hasKey(it,"fai")?file(it.fai): file(it.fasta+".fai")),
-     		(hasKey(it,"bed")?file(it.bed): [] )
-     		]}
-     	)
-     versions = versions.mix(BAM_TO_FASTQ.out.versions)
-     
-     ch1 = ch0.fastq
-        .map{
-            if(it.fastq_1==null && it.R1!=null) return it.plus(fastq_1:it.R1);
-            return it;
-            }
-        .map{
-            if(it.fastq_2==null && it.R2!=null) return it.plus(fastq_2:it.R2);
-            return it;
-            }  
-        .map{assertKeyExistsAndNotEmpty(it,"fastq_1")}
-        .branch{
-                paired: it.fastq_2!=null &&  !it.fastq_2.isEmpty() &&  !it.fastq_2.equals(".")
-                single: true
-                }
-        
     
-    ch2a = ch1.paired
-    	.map{assertKeyExistsAndNotEmpty(it,"fastq_2")}
-    	.map{[
-		    cleanupHash(it),
-		    file(it.fastq_1),
-		    file(it.fastq_2)
-		    ]}
+	SAMPLESHEET_TO_FASTQ(
+		workflow_medadata.plus([
+			bam2fastq_method : params.bam2fastq_method
+			]),
+		ch0
+		)
+	versions = versions.mix(SAMPLESHEET_TO_FASTQ.out.versions)
 
-    ch2b = ch1.single.map{[
-        cleanupHash(it),
-        file(it.fastq_1),
-        []
-        ]}
-
+    META_TO_PED(workflow_medadata,ch0)
+    versions = versions.mix(META_TO_PED.out.versions)
+    
 	bed = Channel.of([[id:"nobed"],[]]).first()
 	
-	PREPARE_REFERENCE(hash_ref,Channel.of(fasta))
-	versions = versions.mix(PREPARE_REFERENCE.out.versions)
-	fasta = PREPARE_REFERENCE.out.fasta.first()
-	fai = PREPARE_REFERENCE.out.fai.first()
-	dict = PREPARE_REFERENCE.out.dict.first()
+	PREPARE_ONE_REFERENCE(workflow_medadata,Channel.of(fasta))
+	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
+	
 	
 	if(params.bwa_index_directory!=null) {
 		BWADir = [[id:"bwaindex"],file(params.bwa_index_directory)];
 		}
 	else
 		{
-		BWA_INDEX(fasta)
+		BWA_INDEX(PREPARE_ONE_REFERENCE.out.fasta)
 		versions = versions.mix(BWA_INDEX.out.versions)
 		BWADir = BWA_INDEX.out.bwa_index
 		}
@@ -156,7 +125,10 @@ workflow {
 	vcf_for_bqsr= Channel.empty()
 
 	if(params.known_sites!=null) {
-		vcf_for_bqsr = Channel.of([hash_ref,[ file(params.known_sites), file(params.known_sites+".tbi")] ])
+		vcf_for_bqsr = Channel.of([
+			workflow_medadata,
+			[ file(params.known_sites), file(params.known_sites+".tbi")]
+			])
 		}
 	else
 		{
@@ -165,36 +137,29 @@ workflow {
 
 
 	MAP_BWA(
-		hash_ref.plus(
+		workflow_medadata.plus(
 			with_bqsr: (params.known_sites==null || params.with_bqsr==false?false:true),
 			with_cram : params.with_cram,
 			with_markdup: params.with_markdup,
 			markdup_method : params.markdup_method,
 			with_seqkit_split : params.with_seqkit_split
 			),
-		fasta,
-		fai,
-		dict,
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		PREPARE_ONE_REFERENCE.out.dict,
 		BWADir,
 		vcf_for_bqsr.first(),
 		bed,
-		ch2a
-			.mix(ch2b)
-			.mix(ORA_TO_FASTQ.out.fastqs)
-			.mix(BAM_TO_FASTQ.out.fastq.flatMap{[
-				[it[0],it[1],it[2]],
-				[it[0],it[3],[]],
-				[it[0],it[4],[]]
-				]})
+		SAMPLESHEET_TO_FASTQ.out.paired_end
 		)
 
 	versions = versions.mix(MAP_BWA.out.versions)
 	multiqc_ch = multiqc_ch.mix(MAP_BWA.out.multiqc)
 
 	if(params.capture==null) {
-		bed4qc = bed = PREPARE_REFERENCE.out.scatter_bed.first()
+		bed4qc = bed = PREPARE_ONE_REFERENCE.out.scatter_bed.first()
 	  } else {
-		bed4qc = Channel.of([hash_ref,file(params.capture)])
+		bed4qc = Channel.of([workflow_medadata,file(params.capture)])
 	  }
 
 	bams_out = MAP_BWA.out.bams
@@ -223,10 +188,10 @@ workflow {
 
 	
 	BAM_QC(
-		hash_ref,
-		fasta,
-		fai,
-		dict,
+		workflow_medadata,
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		PREPARE_ONE_REFERENCE.out.dict,
 		bed4qc,
 		IF_EMPTY(MAP_BWA.out.crams,MAP_BWA.out.bams)
 		)
@@ -235,7 +200,7 @@ workflow {
 	multiqc_ch = multiqc_ch.mix(BAM_QC.out.multiqc)
 
 	MULTIQC(
-		hash_ref.plus("id":"bwa"),
+		workflow_medadata.plus("id":"bwa"),
 		META_TO_PED.out.sample2collection,
 		versions,
 		[[id:"no_mqc_config"],[]],

@@ -25,12 +25,10 @@ SOFTWARE.
 
 
 process BAM_TO_FASTQ {
-label "process_medium"
 tag "${meta.id?:bam.name}"
+label "process_medium"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-when:
-    task.ext.when == null || task.ext.when
 input:
 	tuple val(meta),path(bam),path(bai),path(fasta),path(fai),path(optional_bed)
 output:
@@ -42,8 +40,9 @@ output:
 	path("versions.yml"),emit:versions
 script:
 	def has_bed = optional_bed?true:false
+	def reference_arg = (fasta?"--reference \"${fasta}\"":"")
 	def fetch_pairs = task.attempt==1?" --fetch-pairs ":""
-	def sample = meta.id?:bam.baseName
+	def prefix = task.ext.prefix?:(meta.id?:bam.baseName)
 """
 hostname 1>&2
 set -o pipefail
@@ -58,7 +57,7 @@ then
 		--fast \\
 		--threads ${task.cpus} \\
 		${fetch_pairs} \\
-		--reference "${fasta}" \\
+		${reference_arg} \\
 		-M \\
 		-O BAM \\
 		-o TMP/jeter.bam \\
@@ -74,19 +73,19 @@ samtools collate \\
 	-O \\
 	-u -\\
 	-no-PG \\
-	--reference "${fasta}" \\
+	${reference_arg} \\
 	"${has_bed ? "TMP/jeter.bam":"${bam}"}" TMP/tmp.collate |\\
 	samtools fastq \\
 		-n \\
 		--threads 1 \\
-		-1 TMP/${sample}.paired.R1.fq.gz \\
-		-2 TMP/${sample}.paired.R2.fq.gz \\
-		-s TMP/${sample}.singleton.fq.gz \\
-		-0 TMP/${sample}.other.fq.gz
+		-1 TMP/${prefix}.paired.R1.fq.gz \\
+		-2 TMP/${prefix}.paired.R2.fq.gz \\
+		-s TMP/${prefix}.singleton.fq.gz \\
+		-0 TMP/${prefix}.other.fq.gz
 
 
 
-mv -v TMP/${sample}*.fq.gz ./
+mv -v TMP/${prefix}*.fq.gz ./
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":

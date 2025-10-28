@@ -23,36 +23,51 @@ SOFTWARE.
 
 */
 
-process MARK_DUPLICATES {
+process SAM_TO_FASTQ {
 tag "${meta.id}"
 conda "${moduleDir}/../../../conda/bioinfo.02.yml"
 label "process_short"
 afterScript 'rm -rf TMP'
 input:
-	tuple val(meta ),path("BAMS/*")
+    tuple val(meta1),path(fasta)
+    tuple val(meta2),path(fai)
+    tuple val(meta3),path(dict)
+	tuple val(meta ),path(bam),path(bai)
 output:
-	tuple val(meta),path("*.bam"),path("*.bai"),emit:bam
-	tuple val(meta),path("*.txt"),emit:metrics
+	tuple val(meta),
+			path("*.R1.fq.gz"),
+			path("*.R2.fq.gz"),
+            path("*.R0.fq.gz"),//unpaired
+            optional:true,emit:paired_end
+    tuple val(meta),
+			path("*.fq.gz"),
+            optional:true,emit:single_end
 	path("versions.yml"),emit:versions
 script:
-	def prefix = task.ext.prefix?:"${meta.id}.markdup"
+	def prefix = task.ext.prefix?:"${meta.id}.bam2fq"
 	def args1 =  task.ext.args1?:""
-	def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP" 
+	def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP"
+    def paired = ((task.ext.paired?:true) as boolean)
 """
 hostname 1>&2
 mkdir -p TMP
 
-gatk --java-options "${jvm}" MarkDuplicates \\
+gatk --java-options "${jvm}" SamToFastq \\
 	${args1} \\
-	`find BAMS/ -name "*.bam"  -printf " -I %p " ` \\
+	--INPUT "${bam}" \\
+    --FASTQ "TMP/${prefix}.R1.fq.gz" \\
+    ${fasta?"REFERENCE_SEQUENCE \"${fasta}\"":""} \\
+    ${paired?"--SECOND_END_FASTQ \"TMP/${prefix}.R2.fq.gz\"":""} \\
+    ${paired?"--UNPAIRED_FASTQ \"TMP/${prefix}.R0.fq.gz\"":""} \\
 	--VALIDATION_STRINGENCY LENIENT \\
-	-M "${prefix}.marked_dup_metrics.txt" \\
-	-O TMP/jeter.bam
 
-samtools index -@ ${task.cpus} TMP/jeter.bam
-	
-mv TMP/jeter.bam "${prefix}.bam" 
-mv TMP/jeter.bam.bai "${prefix}.bam.bai"
+if ${!paired}
+then
+    mv TMP/${prefix}.R1.fq.gz"  TMP/${prefix}.fq.gz" 
+fi
+
+mv TMP/*.fq.gz ./ 
+
  
 cat << EOF > versions.yml
 ${task.process}:
@@ -61,10 +76,18 @@ EOF
 """
 
 stub:
+ def prefix = task.ext.prefix?:"${meta.id}.bam2fq"
+ def paired = ((task.ext.paired?:true) as boolean)
 """
-touch "${meta.id}.markdup.bam"
-touch "${meta.id}.markdup.bam.bai"
-touch "${meta.id}.marked_dup_metrics.txt"
+if ${paired}
+then
+    touch "${prefix}.R1.fq.gz"
+    touch "${prefix}.R2.fq.gz"
+    touch "${prefix}.R0.fq.gz"
+else
+    touch "$prefix}.fq.gz"
+fi
+
 touch versions.yml
 """
 }
