@@ -523,6 +523,29 @@ String makeKey(o) {
 }
 
 
+/** test if a file contains a data after uncompressing if needed */
+boolean isEmptyGz(def p) {
+        if(workflow!=null && workflow.stubRun==true) return false;
+        if(!(p instanceof java.nio.file.Path)) {
+            throw new IllegalArgumentException("expected a path for ${p}");
+            }
+        if(!java.nio.file.Files.exists(p)) {
+            throw new java.io.FileNotFoundException("not found ${p}");
+            }
+        if(p.getName().getFileName().toString().toLowerCase().endsWith(".gz")) {
+            try (java.util.zip.GZIPInputStream in = new  java.util.zip.GZIPInputStream(java.nio.file.Files.newInputStream(p)) ) {
+                return in.read()==-1;
+                }
+            }
+        else
+            {
+            try (java.io.InputStream in = java.nio.file.Files.newInputStream(p)) {
+                return in.read()==-1;
+                }
+            }
+        }
+
+
 void runOnComplete(def wf) {
 wf.onComplete {
     println ( workflow.success ? """

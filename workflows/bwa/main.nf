@@ -151,6 +151,7 @@ workflow {
 		vcf_for_bqsr.first(),
 		bed,
 		SAMPLESHEET_TO_FASTQ.out.paired_end
+			.mix(SAMPLESHEET_TO_FASTQ.out.single_end)
 		)
 
 	versions = versions.mix(MAP_BWA.out.versions)

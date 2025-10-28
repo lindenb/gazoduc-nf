@@ -27,6 +27,7 @@ include { assertKeyExistsAndNotEmpty } from '../../modules/utils/functions'
 include { ORA_TO_FASTQ               } from '../../subworkflows/ora/ora2fastq'
 include { BAM_TO_FASTQ               } from '../../subworkflows/bam2fastq'
 include { SAMTOOLS_SAMPLES           } from '../../modules/samtools/samples'
+include { isEmptyGz                  } from '../../modules/utils/functions.nf'
 
 boolean hasKey(def h, def id) {
 	return h!=null && !isBlank(h[id]);
@@ -42,7 +43,7 @@ take:
 main:
     versions = Channel.empty()
     paired = Channel.empty()
-    
+    single  = Channel.empty()
     
     ch0 = samplesheet
         .branch {
@@ -76,6 +77,7 @@ main:
      	)
     versions = versions.mix(ORA_TO_FASTQ.out.versions)
     paired = paired.mix(ORA_TO_FASTQ.out.paired_end)
+    single = single.mix(ORA_TO_FASTQ.out.single_end)
     
     /******************************************
      *
@@ -155,7 +157,7 @@ main:
      	    )
     versions = versions.mix(BAM_TO_FASTQ.out.versions)
     paired = paired.mix(BAM_TO_FASTQ.out.paired_end) 
-
+    single = single.mix(BAM_TO_FASTQ.out.single_end) 
 
      /**
       * REGULAR FASTQ
@@ -190,7 +192,19 @@ main:
                 ]}
         )
     
+    single = single.mix(ch1.single
+            .map{[
+                cleanupHash(it),
+                file(it.fastq_1)
+                ]}
+            )
+
+
+    paired = paired.filter{meta,R1,R2->!(isEmptyGz(R1) && isEmptyGz(R2))}
+    single = single.filter{meta,R1->!(isEmptyGz(R1))}
+
 emit:
     versions
     paired_end = paired
+    single_end = single
 }

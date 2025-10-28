@@ -40,31 +40,51 @@ output:
             path("*.R0.fq.gz"),//unpaired
             optional:true,emit:paired_end
     tuple val(meta),
-			path("*.fq.gz"),
+			path("*.SE.fq.gz"),
             optional:true,emit:single_end
 	path("versions.yml"),emit:versions
 script:
 	def prefix = task.ext.prefix?:"${meta.id}.bam2fq"
 	def args1 =  task.ext.args1?:""
 	def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP"
-    def paired = ((task.ext.paired?:true) as boolean)
 """
 hostname 1>&2
 mkdir -p TMP
 
-gatk --java-options "${jvm}" SamToFastq \\
-	${args1} \\
-	--INPUT "${bam}" \\
-    --FASTQ "TMP/${prefix}.R1.fq.gz" \\
-    ${fasta?"REFERENCE_SEQUENCE \"${fasta}\"":""} \\
-    ${paired?"--SECOND_END_FASTQ \"TMP/${prefix}.R2.fq.gz\"":""} \\
-    ${paired?"--UNPAIRED_FASTQ \"TMP/${prefix}.R0.fq.gz\"":""} \\
-	--VALIDATION_STRINGENCY LENIENT \\
+set +o pipefail
+samtools view \\
+        --threads ${task.cpus} \\
+        ${fasta?"--reference \"${fasta}\"":""} \\
+        --require-flags 1 \\
+        --uncompressed \\
+        ${bam} |\\
+    samtools head -h 0 -n 1 > TMP/paired.flag
 
-if ${!paired}
-then
-    mv TMP/${prefix}.R1.fq.gz"  TMP/${prefix}.fq.gz" 
+set -o pipefail
+
+if test -s TMP/paired.flag
+
+    gatk --java-options "${jvm}" SamToFastq \\
+        ${args1} \\
+        --INPUT "${bam}" \\
+        --FASTQ "TMP/${prefix}.R1.fq.gz" \\
+        ${fasta?"REFERENCE_SEQUENCE \"${fasta}\"":""} \\
+        --SECOND_END_FASTQ "TMP/${prefix}.R2.fq.gz" \\
+        --UNPAIRED_FASTQ "TMP/${prefix}.R0.fq.gz\" \\
+        --VALIDATION_STRINGENCY LENIENT
+
+else
+
+    gatk --java-options "${jvm}" SamToFastq \\
+        ${args1} \\
+        --INPUT "${bam}" \\
+        --FASTQ "TMP/${prefix}.SE.fq.gz" \\
+        ${fasta?"REFERENCE_SEQUENCE \"${fasta}\"":""} \\
+        --VALIDATION_STRINGENCY LENIENT
+
 fi
+
+
 
 mv TMP/*.fq.gz ./ 
 
