@@ -1,5 +1,4 @@
 /*
-
 Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -22,37 +21,42 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-process BCFTOOLS_QUERY_SAMPLES {
+
+process WALLY_REGION {
+tag "${meta.id}"
 label "process_single"
-tag "${meta.id?:""} ${vcf.name}"
+conda "${moduleDir}/../../../conda/wally.yml"
 afterScript "rm -rf TMP"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-	tuple val(meta),path(vcf)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta3),path(annot_bed),path(annot_tbi)
+    tuple val(meta) ,path(bams),path(bai),path(opt_bed)
 output:
-	tuple val(meta),path("*.txt"),emit:samples
+	tuple val(meta),path("*.png"),emit:png
 	path("versions.yml"),emit:versions
 script:
-    def cmd1  = task.ext.args1?:""
-	def cmd2  = task.ext.args1?:"| sort -T TMP | uniq "
-	
-	def prefix = task.ext.prefix?:"${meta.id}"
+	def args1 = task.ext.args1?:""
+	def args2 = task.ext.args2?:""
 """
-mkdir -p TMP
-set -o pipefail
 
-bcftools query -l '${vcf}' ${cmd1}  ${cmd2} > TMP/jeter.samples.txt
+wally region \\
+	${args1} \\
+	${args2} \\
+	${annot_bed?"-b \${annot_bed}":""} \\
+	${opt_bed?"-R \${opt_bed}":""} \\
+	-g ${fasta} \\
+	${bams}
 
-mv TMP/jeter.samples.txt "${prefix}.samples.txt"
-
-cat << END_VERSIONS > versions.yml
+cat << EOF > versions.yml
 "${task.process}":
-	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
-END_VERSIONS
+	wally: "todo"
+EOF
 """
 
 stub:
 """
-touch versions.yml "${meta.id}.samples.txt"
+touch versions.yml "${meta.id}.png" 
 """
 }
+

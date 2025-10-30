@@ -119,4 +119,11 @@ ${task.process}:
     bcftools: \$(bcftools version | awk '(NR==1)  {print \$NF}')
 END_VERSIONS
 """
+
+stub:
+    def prefix = task.ext.prefix?:(meta.id?meta.id+".":"")+"\${MD5}"+(optional_bed?"."+optional_bed.baseName:"")
+"""
+MD5=xxxx
+touch versions.yml ${prefix}.bcf ${prefix}.bcf.csi
+"""
 }

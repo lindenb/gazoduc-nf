@@ -1,0 +1,25 @@
+nextflow_pipeline {
+
+    name "Test Workflow main.nf"
+    script "workflows/wgsim/main.nf"
+    tag "workflow/wgsim"
+    options "-resume"
+
+    test("wgsim should generate a samplesheet") {
+
+        when {
+            params {
+                // define parameters here. Example: 
+                outdir = "tests/results"
+		prefix = "WGSIM."
+		fasta = "${projectDir}/tests/data/rotavirus_rf.fasta"
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+
+    }
+
+}
