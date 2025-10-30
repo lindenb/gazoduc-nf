@@ -205,13 +205,13 @@ nproc.cfg:
 
 REF/$(BUILD)fa.bwt:
 	mkdir -p $(dir $@)
-	cd $(dir $@) && wget -q -O jeter.tar.gz "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/$(BUILD)/seqs_for_alignment_pipelines.ucsc_ids/$(BUILD)_no_alt_analysis_set.fna.bwa_index.tar.gz" && \
+	cd $(dir $@) && wget --progress=dot:mega -O jeter.tar.gz "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/$(BUILD)/seqs_for_alignment_pipelines.ucsc_ids/$(BUILD)_no_alt_analysis_set.fna.bwa_index.tar.gz" && \
 		tar xvfz jeter.tar.gz && \
-		mv $(BUILD)_no_alt_analysis_set.fna.amb REF/$(BUILD).fa.amb && \
-		mv $(BUILD)_no_alt_analysis_set.fna.ann REF/$(BUILD).fa.ann && \
-		mv $(BUILD)_no_alt_analysis_set.fna.bwt REF/$(BUILD).fa.bwt && \
-		mv $(BUILD)_no_alt_analysis_set.fna.pac REF/$(BUILD).fa.pac && \
-		mv $(BUILD)_no_alt_analysis_set.fna.sa  REF/$(BUILD).fa.sa
+		mv $(BUILD)_no_alt_analysis_set.fna.amb $(BUILD).fa.amb && \
+		mv $(BUILD)_no_alt_analysis_set.fna.ann $(BUILD).fa.ann && \
+		mv $(BUILD)_no_alt_analysis_set.fna.bwt $(BUILD).fa.bwt && \
+		mv $(BUILD)_no_alt_analysis_set.fna.pac $(BUILD).fa.pac && \
+		mv $(BUILD)_no_alt_analysis_set.fna.sa  $(BUILD).fa.sa
 
 
 REF/$(BUILD).gff.gz.tbi: REF/$(BUILD).gff.gz
@@ -235,7 +235,7 @@ REF/$(BUILD).gtf.gz:
 
 REF/$(BUILD).fa:
 	mkdir -p $(dir $@) && \
-		wget -qO $(addsuffix .gz,$@) "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/GCA_000001405.15_GRCh38_genomic.fna.gz"
+		wget --progress=dot:mega -O $(addsuffix .gz,$@) "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/GCA_000001405.15_GRCh38_genomic.fna.gz"
 		gunzip -f  $(addsuffix .gz,$@)
 
 REF/$(BUILD).dbsnp.vcf.gz:
