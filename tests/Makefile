@@ -164,7 +164,7 @@ REF/$(BUILD)/BAM/samplesheet.csv : REF/$(BUILD)/FASTQ/samplesheet.csv REF/$(BUIL
 	$(NEXTFLOW) run -resume \
 		-work-dir work/BWA \
 		-c REF/$(BUILD).config \
-		-profile $(BUILD) \
+		-profile gitlabci,$(BUILD) \
 		../workflows/bwa/main.nf \
 		--outdir $(dir $@) \
 		--samplesheet $< \
@@ -176,9 +176,9 @@ REF/$(BUILD)/BAM/samplesheet.csv : REF/$(BUILD)/FASTQ/samplesheet.csv REF/$(BUIL
 
 REF/$(BUILD)/FASTQ/samplesheet.csv: REF/$(BUILD).config
 	$(NEXTFLOW) run -resume \
-		-work-dir work/WGSIM $(PROFILE) \
+		-work-dir work/WGSIM \
 		-c $<  \
-		-profile $(BUILD) \
+		-profile gitlabci,$(BUILD) \
 		../workflows/wgsim/main.nf \
 		--outdir $(dir $@) \
 		--n_samples 7
@@ -193,7 +193,7 @@ REF/$(BUILD).config : REF/$(BUILD)fa.bwt REF/$(BUILD).gff.gz.tbi REF/$(BUILD).gt
 	echo "  fasta='$${PWD}/REF/$(BUILD).fa'" >> $@
 	echo '  ucsc_name="hg38"' >> $@
 	echo '  bwa_index_directory=null' >> $@
-	echo '  gff="$(PWD)/REF/$(BUILD).gff.gz."' >> $@
+	echo '  gff="$(PWD)/REF/$(BUILD).gff.gz"' >> $@
 	echo "}" >> $@
 	echo "}" >> $@
 	echo 'includeConfig("nproc.cfg")' >> $@
@@ -208,11 +208,11 @@ REF/$(BUILD)fa.bwt:
 	mkdir -p $(dir $@)
 	cd $(dir $@) && wget --progress=dot:mega -O jeter.tar.gz "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.bwa_index.tar.gz" && \
 		tar xvfz jeter.tar.gz && \
-		mv GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.amb $(BUILD).fa.amb && \
-		mv GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.ann $(BUILD).fa.ann && \
-		mv GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.bwt $(BUILD).fa.bwt && \
-		mv GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.pac $(BUILD).fa.pac && \
-		mv GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.sa  $(BUILD).fa.sa
+		mv -v GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.amb $(BUILD).fa.amb && \
+		mv -v GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.ann $(BUILD).fa.ann && \
+		mv -v GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.bwt $(BUILD).fa.bwt && \
+		mv -v GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.pac $(BUILD).fa.pac && \
+		mv -v GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.sa  $(BUILD).fa.sa
 
 
 REF/$(BUILD).gff.gz.tbi: REF/$(BUILD).gff.gz
