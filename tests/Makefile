@@ -164,9 +164,9 @@ REF/$(BUILD)/BAM/samplesheet.csv : REF/$(BUILD)/FASTQ/samplesheet.csv REF/$(BUIL
 	$(NEXTFLOW) run -resume \
 		-work-dir work/BWA \
 		-c REF/$(BUILD).config \
-		-profile gitlabci,$(BUILD) \
+		-profile gitlabci,$(BUILD)CI \
 		../workflows/bwa/main.nf \
-		--outdir REF/$(BUILD) \
+		--outdir $${PWD}/REF/$(BUILD) \
 		--samplesheet $< \
 		--known_sites $${PWD}/REF/$(BUILD).dbsnp.vcf.gz
 	find $(dir $@) -type f
@@ -179,7 +179,7 @@ REF/$(BUILD)/FASTQ/samplesheet.csv: REF/$(BUILD).config
 		-work-dir work/WGSIM \
 		../workflows/wgsim/main.nf \
 		-c $<  \
-		-profile gitlabci,$(BUILD) \
+		-profile gitlabci,$(BUILD)CI \
 		--outdir $${PWD}/REF/$(BUILD) \
 		--n_samples 7
 	find  $(dir $@) -type f
@@ -189,7 +189,7 @@ REF/$(BUILD)/FASTQ/samplesheet.csv: REF/$(BUILD).config
 REF/$(BUILD).config : REF/$(BUILD)fa.bwt REF/$(BUILD).gff.gz.tbi REF/$(BUILD).gtf.gz.tbi REF/$(BUILD).fa REF/nproc.cfg
 	mkdir -p $(dir $@)
 	echo "profiles {" > $@
-	echo "${BUILD} {" >> $@
+	echo "${BUILD}CI {" >> $@
 	echo "  fasta='$${PWD}/REF/$(BUILD).fa'" >> $@
 	echo '  ucsc_name="hg38"' >> $@
 	echo '  bwa_index_directory=null' >> $@
