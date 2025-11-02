@@ -532,7 +532,7 @@ boolean isEmptyGz(def p) {
         if(!java.nio.file.Files.exists(p)) {
             throw new java.io.FileNotFoundException("not found ${p}");
             }
-        if(p.getName().getFileName().toString().toLowerCase().endsWith(".gz")) {
+        if(p.getFileName().toString().toLowerCase().endsWith(".gz")) {
             try (java.util.zip.GZIPInputStream in = new  java.util.zip.GZIPInputStream(java.nio.file.Files.newInputStream(p)) ) {
                 return in.read()==-1;
                 }

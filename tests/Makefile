@@ -180,7 +180,7 @@ REF/$(BUILD)/FASTQ/samplesheet.csv: REF/$(BUILD).config
 		../workflows/wgsim/main.nf \
 		-c $<  \
 		-profile gitlabci,$(BUILD) \
-		--outdir REF/$(BUILD) \
+		--outdir $${PWD}/REF/$(BUILD) \
 		--n_samples 7
 	find  $(dir $@) -type f
 	cat $@
