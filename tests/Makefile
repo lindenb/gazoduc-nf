@@ -169,7 +169,7 @@ REF/$(BUILD)/BAM/samplesheet.csv : REF/$(BUILD)/FASTQ/samplesheet.csv REF/$(BUIL
 		--outdir $(dir $@) \
 		--samplesheet $< \
 		--known_sites $${PWD}/REF/$(BUILD).dbsnp.vcf.gz
-	find work/BWA/results -type f
+	find $(dir $@) -type f
 	cut -d, -f 1-8 $@ > $(addsuffix .tmp,$@) && mv $(addsuffix .tmp,$@) $@
 	cat $@
 
@@ -182,6 +182,7 @@ REF/$(BUILD)/FASTQ/samplesheet.csv: REF/$(BUILD).config
 		--outdir $(dir $@) \
 		../workflows/wgsim/main.nf \
 		--n_samples 7
+	find  $(dir $@) -type f
 	cat $@
 
 
@@ -207,11 +208,11 @@ REF/$(BUILD)fa.bwt:
 	mkdir -p $(dir $@)
 	cd $(dir $@) && wget --progress=dot:mega -O jeter.tar.gz "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.bwa_index.tar.gz" && \
 		tar xvfz jeter.tar.gz && \
-		mv $(BUILD)_no_alt_analysis_set.fna.amb $(BUILD).fa.amb && \
-		mv $(BUILD)_no_alt_analysis_set.fna.ann $(BUILD).fa.ann && \
-		mv $(BUILD)_no_alt_analysis_set.fna.bwt $(BUILD).fa.bwt && \
-		mv $(BUILD)_no_alt_analysis_set.fna.pac $(BUILD).fa.pac && \
-		mv $(BUILD)_no_alt_analysis_set.fna.sa  $(BUILD).fa.sa
+		mv GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.amb $(BUILD).fa.amb && \
+		mv GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.ann $(BUILD).fa.ann && \
+		mv GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.bwt $(BUILD).fa.bwt && \
+		mv GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.pac $(BUILD).fa.pac && \
+		mv GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.sa  $(BUILD).fa.sa
 
 
 REF/$(BUILD).gff.gz.tbi: REF/$(BUILD).gff.gz
