@@ -190,10 +190,12 @@ REF/$(BUILD).config : REF/$(BUILD)fa.bwt REF/$(BUILD).gff.gz.tbi REF/$(BUILD).gt
 	mkdir -p $(dir $@)
 	echo "profiles {" > $@
 	echo "${BUILD}CI {" >> $@
+	echo "params {" >> $@
 	echo "  fasta='$${PWD}/REF/$(BUILD).fa'" >> $@
 	echo '  ucsc_name="hg38"' >> $@
 	echo '  bwa_index_directory=null' >> $@
 	echo '  gff="$(PWD)/REF/$(BUILD).gff.gz"' >> $@
+	echo "}" >> $@
 	echo "}" >> $@
 	echo "}" >> $@
 	echo 'includeConfig("nproc.cfg")' >> $@
