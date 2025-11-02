@@ -186,7 +186,7 @@ REF/$(BUILD)/FASTQ/samplesheet.csv: REF/$(BUILD).config
 	cat $@
 
 
-REF/$(BUILD).config : REF/$(BUILD)fa.bwt REF/$(BUILD).gff.gz.tbi REF/$(BUILD).gtf.gz.tbi REF/$(BUILD).fa nproc.cfg
+REF/$(BUILD).config : REF/$(BUILD)fa.bwt REF/$(BUILD).gff.gz.tbi REF/$(BUILD).gtf.gz.tbi REF/$(BUILD).fa REF/nproc.cfg
 	mkdir -p $(dir $@)
 	echo "profiles {" > $@
 	echo "${BUILD} {" >> $@
@@ -199,7 +199,8 @@ REF/$(BUILD).config : REF/$(BUILD)fa.bwt REF/$(BUILD).gff.gz.tbi REF/$(BUILD).gt
 	echo 'includeConfig("nproc.cfg")' >> $@
 	cat $@
 
-nproc.cfg:
+REF/nproc.cfg:
+	mkdir -p $(dir $@)
 	nproc --all | awk '{N=int($$0);printf("process {\nmaxForks=%d\n}\n",(N<3?1:N-3));}' > $@
 	cat $@
 
