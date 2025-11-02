@@ -175,12 +175,12 @@ REF/$(BUILD)/BAM/samplesheet.csv : REF/$(BUILD)/FASTQ/samplesheet.csv REF/$(BUIL
 
 
 REF/$(BUILD)/FASTQ/samplesheet.csv: REF/$(BUILD).config
-	$(NEXTFLOW) run -resume \\
+	$(NEXTFLOW) run -resume \
 		-work-dir work/WGSIM $(PROFILE) \
 		-c $<  \
 		-profile $(BUILD) \
-		--outdir $(dir $@) \
 		../workflows/wgsim/main.nf \
+		--outdir $(dir $@) \
 		--n_samples 7
 	find  $(dir $@) -type f
 	cat $@
