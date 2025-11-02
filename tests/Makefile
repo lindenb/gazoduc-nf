@@ -166,7 +166,7 @@ REF/$(BUILD)/BAM/samplesheet.csv : REF/$(BUILD)/FASTQ/samplesheet.csv REF/$(BUIL
 		-c REF/$(BUILD).config \
 		-profile gitlabci,$(BUILD) \
 		../workflows/bwa/main.nf \
-		--outdir $(dir $@) \
+		--outdir REF/$(BUILD) \
 		--samplesheet $< \
 		--known_sites $${PWD}/REF/$(BUILD).dbsnp.vcf.gz
 	find $(dir $@) -type f
@@ -177,10 +177,10 @@ REF/$(BUILD)/BAM/samplesheet.csv : REF/$(BUILD)/FASTQ/samplesheet.csv REF/$(BUIL
 REF/$(BUILD)/FASTQ/samplesheet.csv: REF/$(BUILD).config
 	$(NEXTFLOW) run -resume \
 		-work-dir work/WGSIM \
+		../workflows/wgsim/main.nf \
 		-c $<  \
 		-profile gitlabci,$(BUILD) \
-		../workflows/wgsim/main.nf \
-		--outdir $(dir $@) \
+		--outdir REF/$(BUILD) \
 		--n_samples 7
 	find  $(dir $@) -type f
 	cat $@
