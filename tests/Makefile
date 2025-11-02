@@ -193,7 +193,7 @@ REF/$(BUILD).config : REF/$(BUILD)fa.bwt REF/$(BUILD).gff.gz.tbi REF/$(BUILD).gt
 	echo "params {" >> $@
 	echo "  fasta='$${PWD}/REF/$(BUILD).fa'" >> $@
 	echo '  ucsc_name="hg38"' >> $@
-	echo '  bwa_index_directory=null' >> $@
+	echo "  bwa_index_directory='$${PWD}/REF'" >> $@
 	echo '  gff="$(PWD)/REF/$(BUILD).gff.gz"' >> $@
 	echo "}" >> $@
 	echo "}" >> $@
