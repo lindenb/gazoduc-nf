@@ -169,7 +169,8 @@ REF/$(BUILD)/BAM/samplesheet.csv : REF/$(BUILD)/FASTQ/samplesheet.csv REF/$(BUIL
 		--outdir $${PWD}/REF/$(BUILD) \
 		--samplesheet $< \
 		--known_sites $${PWD}/REF/$(BUILD).dbsnp.vcf.gz
-	find $(dir $@) -type f
+	find  $${PWD}/REF/$(BUILD) -type f -name "*.am" || true
+	find  $${PWD}/REF/$(BUILD) -type f -name "*.csv" || true
 	cut -d, -f 1-8 $@ > $(addsuffix .tmp,$@) && mv $(addsuffix .tmp,$@) $@
 	cat $@
 

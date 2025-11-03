@@ -1,0 +1,32 @@
+nextflow_process {
+
+    name "Test Process INTERVAL_LIST_TO_BED"
+    script "modules/gatk/interval.list2bed/main.nf"
+    process "INTERVAL_LIST_TO_BED"
+    tag "modules"
+    tag "modules/gatk"
+    tag "modules/gatk/interval.list2bed"
+
+
+    test("BED") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            process {
+                """
+                input[0] = [[id:"bed"],file("${projectDir}/tests/data/rotavirus_rf.interval_list")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            assert snapshot(process.out).match()
+        }
+
+    }
+
+}

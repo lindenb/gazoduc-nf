@@ -1,0 +1,37 @@
+{
+    "BED": {
+        "content": [
+            {
+                "0": [
+                    [
+                        {
+                            "id": "bed",
+                            "ucsc_name": "hg38"
+                        },
+                        "rotavirus_rf.interval_list:md5,59f887387d23626b18b7f57ffc0f1d30"
+                    ]
+                ],
+                "1": [
+                    "versions.yml:md5,c0cb5a6b20f453069ddc18401cb884e3"
+                ],
+                "interval_list": [
+                    [
+                        {
+                            "id": "bed",
+                            "ucsc_name": "hg38"
+                        },
+                        "rotavirus_rf.interval_list:md5,59f887387d23626b18b7f57ffc0f1d30"
+                    ]
+                ],
+                "versions": [
+                    "versions.yml:md5,c0cb5a6b20f453069ddc18401cb884e3"
+                ]
+            }
+        ],
+        "meta": {
+            "nf-test": "0.9.3",
+            "nextflow": "25.10.0"
+        },
+        "timestamp": "2025-11-03T13:49:24.340219828"
+    }
+}
