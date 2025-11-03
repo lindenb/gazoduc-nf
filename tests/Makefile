@@ -161,7 +161,7 @@ data/REF/$(BUILD)/BAMS/samplesheet.csv : data/REF/$(BUILD)/FASTQ/samplesheet.csv
 	cat $@
 
 
-data.REF/$(BUILD)/FASTQ/samplesheet.csv: data/REF/$(BUILD).config
+data/REF/$(BUILD)/FASTQ/samplesheet.csv: data/REF/$(BUILD).config
 	$(NEXTFLOW) run -resume \
 		-work-dir work/WGSIM \
 		../workflows/wgsim/main.nf \
