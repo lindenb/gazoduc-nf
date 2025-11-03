@@ -4,7 +4,7 @@ BUILD=GRCh38
 PROFILE?= -profile gitlabci
 .PHONY=all hard_tests reference test_wgsim test_fastqc test_bwa test_hapcaller test_downsample stub nf-test
 
-all: work/BWA/results/BAMS/samplesheet.csv
+all: REF/$(BUILD)/BAMS/samplesheet.csv
 	nf-test test --profile micromamba --verbose
 
 nf-test: nf-test-wgsim
