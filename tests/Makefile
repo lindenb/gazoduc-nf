@@ -207,16 +207,9 @@ REF/nproc.cfg:
 	cat $@
 
 
-REF/$(BUILD)fa.bwt:
+REF/$(BUILD)fa.bwt: REF/$(BUILD).fa
 	mkdir -p $(dir $@)
-	cd $(dir $@) && wget --progress=dot:mega -O jeter.tar.gz "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.bwa_index.tar.gz" && \
-		tar xvfz jeter.tar.gz && \
-		mv -v GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.amb $(BUILD).fa.amb && \
-		mv -v GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.ann $(BUILD).fa.ann && \
-		mv -v GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.bwt $(BUILD).fa.bwt && \
-		mv -v GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.pac $(BUILD).fa.pac && \
-		mv -v GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.sa  $(BUILD).fa.sa
-
+	bwa index $<
 
 REF/$(BUILD).gff.gz.tbi: REF/$(BUILD).gff.gz
 	tabix -p gff -f $<
@@ -241,8 +234,9 @@ REF/$(BUILD).gtf.gz:
 
 REF/$(BUILD).fa:
 	mkdir -p $(dir $@) && \
-		wget --progress=dot:mega -O $(addsuffix .gz,$@) "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/GCA_000001405.15_GRCh38_genomic.fna.gz"
-		gunzip -f  $(addsuffix .gz,$@)
+		wget --progress=dot:mega -O $(addsuffix .gz,$@) "https://hgdownload.cse.ucsc.edu/goldenpath/hg38/chromosomes/chr22.fa.gz"
+	gunzip -f  $(addsuffix .gz,$@)
+	touch -c $@
 
 REF/$(BUILD).dbsnp.vcf.gz:
 	mkdir -p $(dir $@) && \

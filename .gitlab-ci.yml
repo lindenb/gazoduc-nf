@@ -3,7 +3,7 @@ image: eclipse-temurin:17-jdk
 before_script:
   - env | grep -i PROXY
   - apt-get update -y
-  - apt-get install -y make wget curl samtools bcftools tabix bedtools python3 bzip2 unzip zip
+  - apt-get install -y make wget curl samtools bcftools tabix bedtools python3 bzip2 unzip zip bwa
   - (mkdir -p bin && cd bin && curl -s https://get.nextflow.io | bash && chmod +x nextflow)
   - export PATH="${PWD}/bin:${PATH}"
   - nextflow info
