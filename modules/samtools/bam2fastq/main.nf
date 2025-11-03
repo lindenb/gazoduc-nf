@@ -71,7 +71,7 @@ samtools collate \\
 	-f \\
 	--threads ${(task.cpus as int) -1} \\
 	-O \\
-	-u -\\
+	-u \\
 	-no-PG \\
 	${reference_arg} \\
 	"${has_bed ? "TMP/jeter.bam":"${bam}"}" TMP/tmp.collate |\\

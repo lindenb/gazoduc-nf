@@ -11,9 +11,9 @@ nextflow_pipeline {
         when {
             params {
                 outdir = "tests-output/results"
-		fasta = "${projectDir}/tests/data/rotavirus_rf.fa"
+		fasta = "REF/GRCh38.fa"
 		ucsc_name = "rotavirus"
-                samplesheet = "${HOME}/gazoduc-nf/tests/REF/GRCh38/BAMS/samplesheet.csv"
+                samplesheet = "REF/GRCh38/BAMS/samplesheet.csv"
             }
         }
 

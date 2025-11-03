@@ -1,0 +1,58 @@
+nextflow_process {
+
+    name "Test Process BAM_TO_FASTQ"
+    script "modules/samtools/bam2fastq/main.nf"
+    process "BAM_TO_FASTQ"
+    tag "modules"
+    tag "modules/samtools"
+    tag "modules/samtools/bam2fastq"
+
+    test("WITH_BED") {
+
+        when {
+            process {
+                """
+                input[0] = [
+			[id:"S1"],
+			file("${projectDir}/tests/data/S1.bam"),
+			file("${projectDir}/tests/data/S1.bam.bai"),
+			file("${projectDir}/tests/data/rotavirus_rf.fa"),
+			file("${projectDir}/tests/data/rotavirus_rf.fa.fai"),
+         		file("${projectDir}/tests/data/rotavirus_rf.bed")
+			]
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+
+    }
+
+
+
+    test("NO_BED") {
+
+        when {
+            process {
+                """
+                input[0] = [
+			[id:"S1"],
+			file("${projectDir}/tests/data/S1.bam"),
+			file("${projectDir}/tests/data/S1.bam.bai"),
+			file("${projectDir}/tests/data/rotavirus_rf.fa"),
+			file("${projectDir}/tests/data/rotavirus_rf.fa.fai"),
+         		[]
+			]
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+
+    }
+
+}

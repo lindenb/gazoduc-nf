@@ -23,13 +23,12 @@ SOFTWARE.
 
 */
 
-include {assertNotEmpty;getKeyValue;isBlank} from '../../modules/utils/functions.nf'
 
 process SAMTOOLS_DEPTH{
+label "process_single"
 tag "${meta.id}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-cpus 1
 input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)
@@ -39,19 +38,25 @@ output:
 	tuple val(meta),path("*.depth.tsv"),emit:depth
 	path("versions.yml"),emit:versions
 script:
-	def prefix = task.ext.prefix?:bam.baseName
-	def bed = row.bed==null || row.bed.name.equals("NO_FILE")?"":"-M -L \"${row.bed}\" "
-	def ref = fasta?"--reference \"${fasta}\" ":""
-	def has_bed = optional_bed?true:false
-	def mapq = task.ext.mapq?:1
-
+	def prefix = task.ext.prefix?:"${meta.id}"
+	def mapq   = task.ext.mapq?:1
+	def args1  = task.ext.args1?:"-F 3844 -M"
+	def args2  = task.ext.args2?:"-a"
 """
 hostname 1>&2
-set -o pipefail
 
-${has_bed?"samtools view -F 3844 --min-MQ \"${mapq}\" --uncompressed -O BAM ${optional_bed} ${ref} \"${row.bam}\" |\\":""}
-samtools depth -a -q "${mapq}" ${has_bed?" -b \"${row.bed}\" ":""} ${isBlank(row.interval)?"-":" -r \"${row.interval}\" \"${row.bam}\""}  |\
-awk -F '\t' 'BEGIN{N=0;T=0.0;} {T+=int(\$3);N++;} END {printf("#sample\tbam\treference\tinterval\tbed\tcoverage\\n");printf("${row.sample}\t${row.bam}\t${row.reference?:""}\t${row.interval?:"."}\t${row.bed?:"."}\t%f\\n",(N==0?0.0:T/N));}' > "${row.sample}.depth.tsv"
+if ${optional_bed?true:false}
+then
+
+	samtools view ${args1} --min-MQ "${mapq}" --uncompressed -O BAM  -L ${optional_bed} --reference "${fasta}" "${bam}" |\\
+		samtools depth ${args2} -q "${mapq}" -b "${optional_bed}" -  > "${prefix}.depth.tsv"
+
+else
+
+	samtools depth ${args2} -q "${mapq}" "${bam}"  > "${prefix}.depth.tsv"
+
+fi
+
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":

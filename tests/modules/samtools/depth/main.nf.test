@@ -1,0 +1,51 @@
+nextflow_process {
+
+    name "Test Proces SAMTOOS DEPTH"
+    script "modules/samtools/depth/main.nf"
+    process "SAMTOOLS_DEPTH"
+    tag "modules"
+    tag "modules/samtools"
+    tag "modules/samtools/depth"
+
+    test("WITH_BED") {
+
+        when {
+            process {
+		"""
+                input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[1] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[2] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.bed")]
+                input[3] = [[id:"S1"], file("${projectDir}/tests/data/S1.bam"), file("${projectDir}/tests/data/S1.bam.bai")]
+		"""
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+
+    }
+
+
+
+    test("NO_BED") {
+
+        when {
+            process {
+		"""
+                input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[1] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[2] = [[id:"ref"],[] ]
+                input[3] = [[id:"S1"], file("${projectDir}/tests/data/S1.bam"), file("${projectDir}/tests/data/S1.bam.bai")]
+		"""
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+
+    }
+
+
+}

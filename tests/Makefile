@@ -5,7 +5,7 @@ PROFILE?= -profile gitlabci
 .PHONY=all hard_tests reference test_wgsim test_fastqc test_bwa test_hapcaller test_downsample stub nf-test
 
 all: REF/$(BUILD)/BAMS/samplesheet.csv
-	cd .. && nf-test test --profile micromamba --verbose
+	cd .. && nf-test test --profile micromamba
 
 nf-test: nf-test-wgsim
 

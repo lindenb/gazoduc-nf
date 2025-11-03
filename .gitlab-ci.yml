@@ -16,6 +16,7 @@ before_script:
   - df -h
   - mkdir -p ${HOME}/CONDA
   - export NXF_CONDA_CACHEDIR=${HOME}/CONDA
+  - ln -s gazoduc-nf/tests/REF ${HOME}/REF
 
 stages:
   - test
