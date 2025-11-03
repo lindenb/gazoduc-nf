@@ -1,0 +1,40 @@
+nextflow_workflow {
+
+    name "Test Workflow BAM_QC"
+    script "subworkflows/bamqc/main.nf"
+    workflow "BAM_QC"
+    tag "subworkflows"
+    tag "subworkflows/bamqc"
+    config './nextflow.config'
+
+    test("WITH_BED") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [id:"hg38"]
+                input[1] = Channel.of( [[id:"hg38"], file("${projectDir}/tests/data/rotavirus_rf.fa") ] )
+                input[2] = Channel.of( [[id:"hg38"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai") ] )
+                input[3] = Channel.of( [[id:"hg38"], file("${projectDir}/tests/data/rotavirus_rf.dict") ] )
+		input[4] = Channel.of( [[id:"nobed"],file("${projectDir}/tests/data/rotavirus_rf.bed") ] )
+		input[5] = Channel.of(
+			[ [id:"S1"], file("${projectDir}/tests/data/S1.bam"), file("${projectDir}/tests/data/S1.bam.bai")],
+			[ [id:"S2"], file("${projectDir}/tests/data/S2.bam"), file("${projectDir}/tests/data/S2.bam.bai")],
+			[ [id:"S3"], file("${projectDir}/tests/data/S3.bam"), file("${projectDir}/tests/data/S3.bam.bai")]
+			) 
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

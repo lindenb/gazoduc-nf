@@ -4,8 +4,8 @@ BUILD=GRCh38
 PROFILE?= -profile gitlabci
 .PHONY=all hard_tests reference test_wgsim test_fastqc test_bwa test_hapcaller test_downsample stub nf-test
 
-all: stub
-
+all: work/BWA/results/BAMS/samplesheet.csv
+	nf-test test --profile micromamba --verbose
 
 nf-test: nf-test-wgsim
 
@@ -143,24 +143,10 @@ reference.config: REF/$(BUILD).fa
 	cat $@
 
 
-
 reference: REF/$(BUILD).fa REF/$(BUILD).fa.fai REF/$(BUILD).dict
 
-DATA/FASTQ/samplesheet1.csv:
-	mkdir -p $(dir $@)
-	cd $(dir $@) && \
-		wget -O jeter.zip "https://zenodo.org/records/1236641/files/test_fastq_small.zip?download=1"  && \
-		unzip jeter.zip && \
-		rm jeter.zip
-	find $(dir $@) -type f -name "*.fastq" -exec gzip '{}' ';'
-	echo "sample,fastq_1,fastq_2" > $@
-	find $(dir $@) -name "*.fastq.gz" | sort -V | paste -d, - - | awk '{printf("SAMPLE%d,%s\n",NR,$$0);}' >> $@
-
-
-REF/rotavirus_rf.fa:
-	mkdir -p $(dir $@)
 	
-REF/$(BUILD)/BAM/samplesheet.csv : REF/$(BUILD)/FASTQ/samplesheet.csv REF/$(BUILD).dbsnp.vcf.gz
+REF/$(BUILD)/BAMS/samplesheet.csv : REF/$(BUILD)/FASTQ/samplesheet.csv REF/$(BUILD).dbsnp.vcf.gz
 	$(NEXTFLOW) run -resume \
 		-work-dir work/BWA \
 		-c REF/$(BUILD).config \

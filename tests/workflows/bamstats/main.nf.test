@@ -1,0 +1,26 @@
+nextflow_pipeline {
+
+    name "Test Workflow main.nf"
+    script "workflows/bamstats/main.nf"
+    tag "workflows"
+    tag "workflows/bamstats"
+    config "./nextflow.config"
+
+    test("BAMQC") {
+
+        when {
+            params {
+                outdir = "tests-output/results"
+		fasta = "${projectDir}/tests/data/rotavirus_rf.fa"
+		ucsc_name = "rotavirus"
+                samplesheet = "${HOME}/gazoduc-nf/tests/REF/GRCh38/BAMS/samplesheet.csv"
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+
+    }
+
+}

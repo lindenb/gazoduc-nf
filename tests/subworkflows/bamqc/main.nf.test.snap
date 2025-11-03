@@ -1,0 +1,243 @@
+{
+    "WITH_BED": {
+        "content": [
+            {
+                "0": [
+                    "versions.yml:md5,23be979b11fd40423ef1d3522a5b384c",
+                    "versions.yml:md5,313997b80cd1b8b3a6831d7857191f14",
+                    "versions.yml:md5,313997b80cd1b8b3a6831d7857191f14",
+                    "versions.yml:md5,313997b80cd1b8b3a6831d7857191f14",
+                    "versions.yml:md5,7289d45c02b7f6e1a8eb644953a4c698",
+                    "versions.yml:md5,8f531ff2650cddef1f837190af4b979f",
+                    "versions.yml:md5,c1343602cdcc08837671325d50101fec",
+                    "versions.yml:md5,d331b72be61514d9f247e9959d9d10e5",
+                    "versions.yml:md5,d41d8cd98f00b204e9800998ecf8427e"
+                ],
+                "1": [
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.alignment_summary_metrics:md5,acd33ddfe77ee36c006d5adff5dbde13"
+                    ],
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.base_distribution_by_cycle_metrics:md5,5e7978cf21fd4daadc8532a267fcb065"
+                    ],
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.flagstats.tsv:md5,763ee8675a76fedcc870f77c701862ff"
+                    ],
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.idxstat.tsv:md5,01fed4ba618c7dab4c345889091d412d"
+                    ],
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.insert_size_metrics:md5,b9c902f0ea69c36837932cfb0bf273ee"
+                    ],
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.mosdepth.global.dist.txt:md5,efdb1d5f969a39badcda6f84152d8508"
+                    ],
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.mosdepth.region.dist.txt:md5,1b4120f0f1f76ca2f4a674a42f0946e1"
+                    ],
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.mosdepth.summary.txt:md5,0cc2082be6c2d5cabc7c58f3359375e1"
+                    ],
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.quality_by_cycle_metrics:md5,f246ecaef1369cc6cb2f19789513d2d9"
+                    ],
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.quality_distribution_metrics:md5,f1cd10697d0089c21164ee2019953d2b"
+                    ],
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.stats.tsv:md5,726edf9b35c5d974d42599205ce7d9fc"
+                    ],
+                    [
+                        {
+                            "id": "S2"
+                        },
+                        "S2.idxstat.tsv:md5,01fed4ba618c7dab4c345889091d412d"
+                    ],
+                    [
+                        {
+                            "id": "S3"
+                        },
+                        "S3.idxstat.tsv:md5,01fed4ba618c7dab4c345889091d412d"
+                    ]
+                ],
+                "2": [
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.mosdepth.global.dist.txt:md5,efdb1d5f969a39badcda6f84152d8508"
+                    ]
+                ],
+                "3": [
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.mosdepth.summary.txt:md5,0cc2082be6c2d5cabc7c58f3359375e1"
+                    ]
+                ],
+                "4": [
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.mosdepth.region.dist.txt:md5,1b4120f0f1f76ca2f4a674a42f0946e1"
+                    ]
+                ],
+                "mosdepth_global": [
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.mosdepth.global.dist.txt:md5,efdb1d5f969a39badcda6f84152d8508"
+                    ]
+                ],
+                "mosdepth_regions": [
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.mosdepth.region.dist.txt:md5,1b4120f0f1f76ca2f4a674a42f0946e1"
+                    ]
+                ],
+                "mosdepth_summary": [
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.mosdepth.summary.txt:md5,0cc2082be6c2d5cabc7c58f3359375e1"
+                    ]
+                ],
+                "multiqc": [
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.alignment_summary_metrics:md5,acd33ddfe77ee36c006d5adff5dbde13"
+                    ],
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.base_distribution_by_cycle_metrics:md5,5e7978cf21fd4daadc8532a267fcb065"
+                    ],
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.flagstats.tsv:md5,763ee8675a76fedcc870f77c701862ff"
+                    ],
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.idxstat.tsv:md5,01fed4ba618c7dab4c345889091d412d"
+                    ],
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.insert_size_metrics:md5,b9c902f0ea69c36837932cfb0bf273ee"
+                    ],
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.mosdepth.global.dist.txt:md5,efdb1d5f969a39badcda6f84152d8508"
+                    ],
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.mosdepth.region.dist.txt:md5,1b4120f0f1f76ca2f4a674a42f0946e1"
+                    ],
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.mosdepth.summary.txt:md5,0cc2082be6c2d5cabc7c58f3359375e1"
+                    ],
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.quality_by_cycle_metrics:md5,f246ecaef1369cc6cb2f19789513d2d9"
+                    ],
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.quality_distribution_metrics:md5,f1cd10697d0089c21164ee2019953d2b"
+                    ],
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.stats.tsv:md5,726edf9b35c5d974d42599205ce7d9fc"
+                    ],
+                    [
+                        {
+                            "id": "S2"
+                        },
+                        "S2.idxstat.tsv:md5,01fed4ba618c7dab4c345889091d412d"
+                    ],
+                    [
+                        {
+                            "id": "S3"
+                        },
+                        "S3.idxstat.tsv:md5,01fed4ba618c7dab4c345889091d412d"
+                    ]
+                ],
+                "versions": [
+                    "versions.yml:md5,23be979b11fd40423ef1d3522a5b384c",
+                    "versions.yml:md5,313997b80cd1b8b3a6831d7857191f14",
+                    "versions.yml:md5,313997b80cd1b8b3a6831d7857191f14",
+                    "versions.yml:md5,313997b80cd1b8b3a6831d7857191f14",
+                    "versions.yml:md5,7289d45c02b7f6e1a8eb644953a4c698",
+                    "versions.yml:md5,8f531ff2650cddef1f837190af4b979f",
+                    "versions.yml:md5,c1343602cdcc08837671325d50101fec",
+                    "versions.yml:md5,d331b72be61514d9f247e9959d9d10e5",
+                    "versions.yml:md5,d41d8cd98f00b204e9800998ecf8427e"
+                ]
+            }
+        ],
+        "meta": {
+            "nf-test": "0.9.3",
+            "nextflow": "25.10.0"
+        },
+        "timestamp": "2025-11-03T15:38:13.397835162"
+    }
+}

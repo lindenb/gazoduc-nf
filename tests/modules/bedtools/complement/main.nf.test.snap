@@ -1,0 +1,35 @@
+{
+    "COMPLEMENT": {
+        "content": [
+            {
+                "0": [
+                    [
+                        {
+                            "id": "bed"
+                        },
+                        "rotavirus_rf.complement.bed:md5,e5c2fbfb5d02a4b59d797c37f9259686"
+                    ]
+                ],
+                "1": [
+                    "versions.yml:md5,77ef2191847b41f36036522f5744475e"
+                ],
+                "bed": [
+                    [
+                        {
+                            "id": "bed"
+                        },
+                        "rotavirus_rf.complement.bed:md5,e5c2fbfb5d02a4b59d797c37f9259686"
+                    ]
+                ],
+                "versions": [
+                    "versions.yml:md5,77ef2191847b41f36036522f5744475e"
+                ]
+            }
+        ],
+        "meta": {
+            "nf-test": "0.9.3",
+            "nextflow": "25.10.0"
+        },
+        "timestamp": "2025-11-03T14:44:16.315234325"
+    }
+}

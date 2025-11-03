@@ -35,9 +35,13 @@ output:
     tuple val(meta), path('*.html') ,emit: html
     path("versions.yml"),emit:versions
 script:
-    if(!(fastqs instanceof List)) throw new IllegalArgumentException("${task.process}: fastqs should be a List");
-    if(fastqs.size()>2) throw new IllegalArgumentException("${task.process}: fastqs.size > 2");
-    def L = fastqs.sort()
+    def L0 = ((fastqs instanceof List)?fastqs:[fastqs])
+    if(L0.size()>2) throw new IllegalArgumentException("${task.process}: fastqs.size > 2");
+    if(L0[0]==null) throw new IllegalArgumentException("${task.process}: null object in (${L0})");
+    if(!(L0[0]  instanceof java.nio.file.Path)) throw new IllegalArgumentException("${task.process}: not a path object in (${L0})");
+    if(L0.size()==2 && L0[1]==null) throw new IllegalArgumentException("${task.process}: null object in (${L0})");
+    def L = L0.sort()
+    if(!(L[0] instanceof java.nio.file.Path)) throw new IllegalArgumentException("${task.process}: not a path R1 . ${L}");
     def prefix = task.ext.prefix?:""
     def args1 = task.ext.args1?:""
 """
@@ -54,7 +58,7 @@ script:
             -i "${fastqs[0]}" \\
             -I "${fastqs[1]}" \\
             -o "TMP/${prefix}${L[0].baseName}.fastp.fq.gz" \\
-            -O "TMP/${prefix}${L[1].baseName}.fastp.fq.gz"
+            -O "TMP/${prefix}${L.size()==1?"NOT.USED":L[1].baseName}.fastp.fq.gz"
     else
          fastp \\
             ${args1} \\
@@ -62,7 +66,7 @@ script:
             --json TMP/jeter.json \\
             --html TMP/jeter.html \\
             --report_title "${meta.id}" \\
-            -i "TMP/${prefix}${L[0]}" \\
+            -i "${fastqs[0]}" \\
             -o "TMP/${prefix}${L[0].baseName}.fastp.fq.gz"
     fi
 

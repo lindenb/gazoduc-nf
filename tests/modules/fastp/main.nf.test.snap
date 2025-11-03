@@ -1,0 +1,142 @@
+{
+    "SINGLE": {
+        "content": [
+            {
+                "0": [
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        [
+                            "S1.R1.fq.fastp.fq.gz:md5,ffbf4f5d3d9169c28e5d1c45020e784f"
+                        ]
+                    ]
+                ],
+                "1": [
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.json:md5,22dca493a2c51a52f650140c5f3f076a"
+                    ]
+                ],
+                "2": [
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.html:md5,a67ce36ff33450d65e441b6b5bd2f1e7"
+                    ]
+                ],
+                "3": [
+                    "versions.yml:md5,c4974822658d02533e660fae343f281b"
+                ],
+                "fastqs": [
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        [
+                            "S1.R1.fq.fastp.fq.gz:md5,ffbf4f5d3d9169c28e5d1c45020e784f"
+                        ]
+                    ]
+                ],
+                "html": [
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.html:md5,a67ce36ff33450d65e441b6b5bd2f1e7"
+                    ]
+                ],
+                "json": [
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.json:md5,22dca493a2c51a52f650140c5f3f076a"
+                    ]
+                ],
+                "versions": [
+                    "versions.yml:md5,c4974822658d02533e660fae343f281b"
+                ]
+            }
+        ],
+        "meta": {
+            "nf-test": "0.9.3",
+            "nextflow": "25.10.0"
+        },
+        "timestamp": "2025-11-03T15:13:25.663790052"
+    },
+    "PAIRED": {
+        "content": [
+            {
+                "0": [
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        [
+                            "S1.R1.fq.fastp.fq.gz:md5,ffbf4f5d3d9169c28e5d1c45020e784f",
+                            "S1.R2.fq.fastp.fq.gz:md5,ea432f368aa8b6aaed15e86a63584a95"
+                        ]
+                    ]
+                ],
+                "1": [
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.json:md5,66f91ae8bde10229e0221cfa89ea86cd"
+                    ]
+                ],
+                "2": [
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.html:md5,7709489ec730f243f4b950c61b0454c2"
+                    ]
+                ],
+                "3": [
+                    "versions.yml:md5,c4974822658d02533e660fae343f281b"
+                ],
+                "fastqs": [
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        [
+                            "S1.R1.fq.fastp.fq.gz:md5,ffbf4f5d3d9169c28e5d1c45020e784f",
+                            "S1.R2.fq.fastp.fq.gz:md5,ea432f368aa8b6aaed15e86a63584a95"
+                        ]
+                    ]
+                ],
+                "html": [
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.html:md5,7709489ec730f243f4b950c61b0454c2"
+                    ]
+                ],
+                "json": [
+                    [
+                        {
+                            "id": "S1"
+                        },
+                        "S1.json:md5,66f91ae8bde10229e0221cfa89ea86cd"
+                    ]
+                ],
+                "versions": [
+                    "versions.yml:md5,c4974822658d02533e660fae343f281b"
+                ]
+            }
+        ],
+        "meta": {
+            "nf-test": "0.9.3",
+            "nextflow": "25.10.0"
+        },
+        "timestamp": "2025-11-03T15:13:35.032257403"
+    }
+}

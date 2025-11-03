@@ -26,6 +26,7 @@ nextflow.enable.dsl=2
 //include { validateParameters; paramsHelp; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
 
 include {runOnComplete;testKeyExistsAndNotEmpty;assertKeyMatchRegex} from '../../modules/utils/functions.nf'
+include {assertKeyExistsAndNotEmpty                                } from '../../modules/utils/functions.nf'
 include {BAM_QC                                                    } from '../../subworkflows/bamqc'
 include {SCATTER_TO_BED                                            } from '../../subworkflows/gatk/scatterintervals2bed'
 include {MULTIQC                                                   } from '../../modules/multiqc'
@@ -46,9 +47,18 @@ if (params.help) {
 
 
 workflow {
-	versions_ch = Channel.empty()
+	versions = Channel.empty()
 	to_multiqc = Channel.empty()
 	tozip_ch = Channel.empty()
+
+   def project_root = file("${launchDir}")
+   if(params.fasta==null) {
+	throw new IllegalArgumentException("--fasta undefined")
+	}
+   
+   if(params.samplesheet==null) {
+	throw new IllegalArgumentException("--samplesheet undefined")
+	}
 		
     def hash_ref= [
       id: file(params.fasta).baseName,
@@ -58,24 +68,24 @@ workflow {
 	def fasta = [ hash_ref, file(params.fasta)]
   
   
-  PREPARE_REFERENCE(hash_ref,fasta)
+  PREPARE_REFERENCE(hash_ref, Channel.of(fasta))
   versions = versions.mix(PREPARE_REFERENCE.out.versions)
   fai = PREPARE_REFERENCE.out.fai
   dict = PREPARE_REFERENCE.out.dict
  
   if(params.bed==null) {
     SCATTER_TO_BED(hash_ref,fasta,fai,dict)
-    versions_ch = versions_ch.mix(SCATTER_TO_BED.out.versions)
+    versions = versions.mix(SCATTER_TO_BED.out.versions)
     bed = SCATTER_TO_BED.out.bed
   } else {
-      bed = Channel.of([hash_ref, file(params.bed)])
+      bed = Channel.of([hash_ref, project_root.resolve(file(params.bed)) ])
   }
 
 
     bams_ch = Channel.fromPath(params.samplesheet)
 			.splitCsv(header:true,sep:',')
-			.filter{testKeyExistsAndNotEmpty(it,"bam")}
-			.filter{testKeyExistsAndNotEmpty(it,"sample")}
+			.map{assertKeyExistsAndNotEmpty(it,"bam")}
+			.map{assertKeyExistsAndNotEmpty(it,"sample")}
 			.map{
 				if(it.containsKey("bai")) return it;
 				if(it.bam.endsWith(".bam")) return it.plus("bai":it.bam+".bai");
@@ -90,7 +100,7 @@ workflow {
 				if(it.containsKey("father")) ret=ret.plus("father":it.father);
 				if(it.containsKey("mother")) ret=ret.plus("mother":it.mother);
 				if(it.containsKey("family")) ret=ret.plus("family":it.family);
-				return [ret,file(it.bam),file(it.bai)];
+				return [ret,project_root.resolve(file(it.bam)), project_root.resolve(file(it.bai))];
 				}
 	
 	BAM_QC(
@@ -101,9 +111,9 @@ workflow {
 		bed,
 		bams_ch
 		)
-        versions_ch = versions_ch.mix(BAM_QC.out.versions)
+        versions = versions.mix(BAM_QC.out.versions)
 
-        COMPILE_VERSIONS(versions_ch.collect())
+        COMPILE_VERSIONS(versions.collect())
         to_multiqc = to_multiqc.mix(COMPILE_VERSIONS.out.multiqc)
 
         MULTIQC(

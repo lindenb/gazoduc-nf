@@ -50,7 +50,7 @@ script:
 	def jvm = "-Xmx${task.memory.giga}g -XX:-UsePerfData -Djava.io.tmpdir=TMP -DGATK_STACKTRACE_ON_USER_EXCEPTION=true"
 """
 hostname 1>&2
-mkdir -p TMP
+mkdir -p TMP REFS
 set -x
 
 touch TMP/samples.txt
