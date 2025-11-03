@@ -13,8 +13,8 @@ nextflow_pipeline {
 
         when {
             params {
-		fasta       = "REF/GRCh38.fa"
-		samplesheet = "REF/GRCh38/BAMS/samplesheet.csv"
+		fasta       = "${projectDir}/tests/data/REF/GRCh38.fa"
+		samplesheet = "${projectDir}/tests/data/REF/GRCh38/BAMS/samplesheet.csv"
             }
         }
 

@@ -4,7 +4,7 @@ BUILD=GRCh38
 PROFILE?= -profile gitlabci
 .PHONY=all hard_tests reference test_wgsim test_fastqc test_bwa test_hapcaller test_downsample stub nf-test
 
-all: REF/$(BUILD)/BAMS/samplesheet.csv
+all: data/REF/$(BUILD)/BAMS/samplesheet.csv
 	cd .. && nf-test test --profile micromamba
 
 nf-test: nf-test-wgsim
@@ -134,75 +134,75 @@ work/WGSIM/results/FASTQ/samplesheet.csv: reference.config nproc.cfg
 		--outdir $${PWD}/work/WGSIM/results  ../workflows/wgsim/main.nf --n_samples 7
 	cat $@
 	
-reference.config: REF/$(BUILD).fa 
+reference.config: data/REF/$(BUILD).fa 
 	echo 'params {' > $@
-	echo "  fasta='$${PWD}/REF/$(BUILD).fa'" >> $@
+	echo "  fasta='$${PWD}/data/REF/$(BUILD).fa'" >> $@
 	echo '  ucsc_name="hg38"' >> $@
 	echo '  bwa_index_directory=null' >> $@
 	echo '}'  >> $@
 	cat $@
 
 
-reference: REF/$(BUILD).fa REF/$(BUILD).fa.fai REF/$(BUILD).dict
+reference: data/REF/$(BUILD).fa data/REF/$(BUILD).fa.fai data/REF/$(BUILD).dict
 
 	
-REF/$(BUILD)/BAMS/samplesheet.csv : REF/$(BUILD)/FASTQ/samplesheet.csv REF/$(BUILD).dbsnp.vcf.gz
+data/REF/$(BUILD)/BAMS/samplesheet.csv : data/REF/$(BUILD)/FASTQ/samplesheet.csv data/REF/$(BUILD).dbsnp.vcf.gz
 	$(NEXTFLOW) run -resume \
 		-work-dir work/BWA \
-		-c REF/$(BUILD).config \
+		-c data/REF/$(BUILD).config \
 		-profile gitlabci,$(BUILD)CI \
 		../workflows/bwa/main.nf \
-		--outdir $${PWD}/REF/$(BUILD) \
+		--outdir $${PWD}/data/REF/$(BUILD) \
 		--samplesheet $< \
-		--known_sites $${PWD}/REF/$(BUILD).dbsnp.vcf.gz
-	find  $${PWD}/REF/$(BUILD) -type f -name "*.am" || true
-	find  $${PWD}/REF/$(BUILD) -type f -name "*.csv" || true
+		--known_sites $${PWD}/data/REF/$(BUILD).dbsnp.vcf.gz
+	find  $${PWD}/data/REF/$(BUILD) -type f -name "*.am" || true
+	find  $${PWD}/data/REF/$(BUILD) -type f -name "*.csv" || true
 	cut -d, -f 1-8 $@ > $(addsuffix .tmp,$@) && mv $(addsuffix .tmp,$@) $@
 	cat $@
 
 
-REF/$(BUILD)/FASTQ/samplesheet.csv: REF/$(BUILD).config
+data.REF/$(BUILD)/FASTQ/samplesheet.csv: data/REF/$(BUILD).config
 	$(NEXTFLOW) run -resume \
 		-work-dir work/WGSIM \
 		../workflows/wgsim/main.nf \
 		-c $<  \
 		-profile gitlabci,$(BUILD)CI \
-		--outdir $${PWD}/REF/$(BUILD) \
+		--outdir $${PWD}/data/REF/$(BUILD) \
 		--n_samples 7
 	find  $(dir $@) -type f
 	cat $@
 
 
-REF/$(BUILD).config : REF/$(BUILD)fa.bwt REF/$(BUILD).gff.gz.tbi REF/$(BUILD).gtf.gz.tbi REF/$(BUILD).fa REF/nproc.cfg
+data/REF/$(BUILD).config : data/REF/$(BUILD)fa.bwt data/REF/$(BUILD).gff.gz.tbi data/REF/$(BUILD).gtf.gz.tbi data/REF/$(BUILD).fa data/REF/nproc.cfg
 	mkdir -p $(dir $@)
 	echo "profiles {" > $@
 	echo "${BUILD}CI {" >> $@
 	echo "params {" >> $@
-	echo "  fasta='$${PWD}/REF/$(BUILD).fa'" >> $@
+	echo "  fasta='$${PWD}/data/REF/$(BUILD).fa'" >> $@
 	echo '  ucsc_name="hg38"' >> $@
 	echo "  bwa_index_directory='$${PWD}/REF'" >> $@
-	echo '  gff="$(PWD)/REF/$(BUILD).gff.gz"' >> $@
-	echo '  gtf="$(PWD)/REF/$(BUILD).gtf.gz"' >> $@
+	echo '  gff="$(PWD)/data/REF/$(BUILD).gff.gz"' >> $@
+	echo '  gtf="$(PWD)/data/REF/$(BUILD).gtf.gz"' >> $@
 	echo "}" >> $@
 	echo "}" >> $@
 	echo "}" >> $@
 	echo 'includeConfig("nproc.cfg")' >> $@
 	cat $@
 
-REF/nproc.cfg:
+data/REF/nproc.cfg:
 	mkdir -p $(dir $@)
 	nproc --all | awk '{N=int($$0);printf("process {\nmaxForks=%d\n}\n",(N<3?1:N-3));}' > $@
 	cat $@
 
 
-REF/$(BUILD)fa.bwt: REF/$(BUILD).fa
+data/REF/$(BUILD)fa.bwt: data/REF/$(BUILD).fa
 	mkdir -p $(dir $@)
 	bwa index $<
 
-REF/$(BUILD).gff.gz.tbi: REF/$(BUILD).gff.gz
+data/REF/$(BUILD).gff.gz.tbi: data/REF/$(BUILD).gff.gz
 	tabix -p gff -f $<
 
-REF/$(BUILD).gff.gz:
+data/REF/$(BUILD).gff.gz:
 	mkdir -p $(dir $@)
 	wget -qO - "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_full_analysis_set.refseq_annotation.gff.gz" |\
 		gunzip -c | grep '^chr22' | \
@@ -210,23 +210,23 @@ REF/$(BUILD).gff.gz:
 		bgzip  > $@
 
 
-REF/$(BUILD).gtf.gz.tbi: REF/$(BUILD).gtf.gz
+data/REF/$(BUILD).gtf.gz.tbi: data/REF/$(BUILD).gtf.gz
 	tabix -p gff -f $<
 
-REF/$(BUILD).gtf.gz:
+data/REF/$(BUILD).gtf.gz:
 	mkdir -p $(dir $@)
 	wget -qO - "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_full_analysis_set.refseq_annotation.gtf.gz" |\
 		gunzip -c | grep '^chr22' | \
 		LC_ALL=C sort -t $$'\t' -k1,1 -k4,4n -T . |\
 		bgzip  > $@
 
-REF/$(BUILD).fa:
+data/REF/$(BUILD).fa:
 	mkdir -p $(dir $@) && \
 		wget --progress=dot:mega -O $(addsuffix .gz,$@) "https://hgdownload.cse.ucsc.edu/goldenpath/hg38/chromosomes/chr22.fa.gz"
 	gunzip -f  $(addsuffix .gz,$@)
 	touch -c $@
 
-REF/$(BUILD).dbsnp.vcf.gz:
+data/REF/$(BUILD).dbsnp.vcf.gz:
 	mkdir -p $(dir $@) && \
 	wget -qO - "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/ALL.chr22.phase3_shapeit2_mvncall_integrated_v5b.20130502.genotypes.vcf.gz" |\
 		gunzip -c |\
