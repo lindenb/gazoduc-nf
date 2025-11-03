@@ -55,7 +55,7 @@ set -x
 
 bwa mem \\
 	${args1} \\
-	-t ${cpus2} \\
+	${cpus2>0?"-t ${cpus2}":""} \\
 	-R '@RG\\tID:${ID}\\tSM:${ID}\\tLB:${LB}.R0\\tCN:${CN}\\tPL:${PL}' \\
 	`find ${BWADir}/ -name "*.amb" | sed 's/\\.amb\$//'` \\
 	"${R1}" ${R2?:""} |\\
@@ -65,7 +65,7 @@ if ${fix_mate && (R2?true:false)} ; then
 
 	# collate
 	samtools collate -l 5 \\
-		--threads ${cpus1}  \\
+		${cpus1>0?"--threads ${cpus1}":""}  \\
 		--output-fmt BAM \\
 		--no-PG \\
 		--reference "${fasta}" \\
@@ -77,7 +77,7 @@ if ${fix_mate && (R2?true:false)} ; then
 
 	# fixmate
 	samtools fixmate \\
-		--threads  ${cpus1} \\
+		${cpus1>0?"--threads ${cpus1}":""} \\
 		-mc \\
 		--output-fmt BAM \\
 		TMP/jeter.bam TMP/jeter2.bam
