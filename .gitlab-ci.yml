@@ -23,7 +23,7 @@ stages:
 test-job:
   stage: test
   script:
-    - (cd tests && make REF/GRCh38/BAM/samplesheet.csv)
+    - (cd tests && make )
   artifacts:
     paths:
         - tests/.nextflow.log
