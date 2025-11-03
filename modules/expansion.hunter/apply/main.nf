@@ -57,6 +57,40 @@ process XHUNTER_APPLY {
 		--analysis-mode "${mode}" \\
 		--sex '${sex}' \\
 		--log-level info 1>&2
+
+	# add missing INFO in header
+	awk '
+	/^##/    {
+		if(\$0 ~ /INFO=<ID=END,/) info_END = 1;
+		else if(\$0 ~ /INFO=<ID=REF,/) info_REF = 1;
+		else if(\$0 ~ /INFO=<ID=PL,/) info_PL = 1;
+		else if(\$0 ~ /INFO=<ID=RU,/) info_RU = 1;
+		else if(\$0 ~ /INFO=<ID=REPID,/) info_REPID = 1;
+		else if(\$0 ~ /FORMAT=<ID=SO,/) fmt_SO = 1;
+		else if(\$0 ~ /FORMAT=<ID=REPCN,/) fmt_REPCN = 1;
+		else if(\$0 ~ /FORMAT=<ID=REPCI,/) fmt_REPCI = 1;
+		else if(\$0 ~ /FORMAT=<ID=ADSP,/) fmt_ADSP = 1;
+		else if(\$0 ~ /FORMAT=<ID=ADFL,/) fmt_ADFL = 1;
+		else if(\$0 ~ /FORMAT=<ID=ADIR,/) fmt_ADIR = 1;
+		}
+
+	/^#CHROM/ {
+		if(info_END!=1)    printf("##INFO=<ID=END,Number=1,Type=Integer,Description=\\"END variant\\">\\n");
+		if(info_REF!=1)    printf("##INFO=<ID=REF,Number=1,Type=Integer,Description=\\"missing desc\\">\\n");
+		if(info_PL!=1)     printf("##INFO=<ID=RL,Number=1,Type=Integer,Description=\\"missing desc\\">\\n");
+		if(info_RU!=1)     printf("##INFO=<ID=RU,Number=1,Type=String,Description=\\"missing desc\\">\\n");
+		if(info_REPID!=1)  printf("##INFO=<ID=REPID,Number=1,Type=String,Description=\\"missing desc\\">\\n");
+
+
+		if(fmt_SO!=1)    printf("##FORMAT=<ID=SO,Number=1,Type=String,Description=\\"missing desc\\">\\n");
+		if(fmt_REPCN!=1) printf("##FORMAT=<ID=REPCN,Number=1,Type=String,Description=\\"Number of repeat units spanned by the allele\\">\\n");
+		if(fmt_REPCI!=1) printf("##FORMAT=<ID=REPCI,Number=1,Type=String,Description=\\"missing desc\\">\\n");
+		if(fmt_ADSP!=1)  printf("##FORMAT=<ID=ADSP,Number=1,Type=String,Description=\\"missing desc\\">\\n");
+		if(fmt_ADFL!=1)  printf("##FORMAT=<ID=ADFL,Number=1,Type=String,Description=\\"missing desc\\">\\n");
+		if(fmt_ADIR!=1)  printf("##FORMAT=<ID=ADIR,Number=1,Type=String,Description=\\"missing desc\\">\\n");
+		}
+		{print}' TMP/jeter.vcf > TMP/jeter2.vcf
+	mv TMP/jeter2.vcf TMP/jeter.vcf
 	
 	# rename sample
 	bcftools query -l TMP/jeter.vcf | awk '{printf("%s\t${meta.id}\\n",\$1);}' > TMP/rename.txt

@@ -1,0 +1,9 @@
+[
+   {
+        "LocusId": "RF01_1100_1200",
+        "LocusStructure": "(ACC)*",
+        "ReferenceRegion": "RF01:1100-1200",
+        "VariantId": "RF01:1100-1200",
+        "VariantType": "Repeat"
+    }
+]

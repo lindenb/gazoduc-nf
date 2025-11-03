@@ -43,4 +43,3 @@ tests/STUB
 .nf-test
 .theia
 tests-output
-*.snap

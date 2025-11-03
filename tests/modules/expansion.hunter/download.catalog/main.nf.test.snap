@@ -1,0 +1,37 @@
+{
+    "DOWNLOAD_CATALOG": {
+        "content": [
+            {
+                "0": [
+                    [
+                        {
+                            "id": "ref",
+                            "ucsc_name": "hg38"
+                        },
+                        "variant_catalog.hg38.json:md5,72f12f9ee918878030022c46ec850038"
+                    ]
+                ],
+                "1": [
+                    "versions.yml:md5,87c7ddc3c0173a44e000cd74c993d46b"
+                ],
+                "catalog": [
+                    [
+                        {
+                            "id": "ref",
+                            "ucsc_name": "hg38"
+                        },
+                        "variant_catalog.hg38.json:md5,72f12f9ee918878030022c46ec850038"
+                    ]
+                ],
+                "versions": [
+                    "versions.yml:md5,87c7ddc3c0173a44e000cd74c993d46b"
+                ]
+            }
+        ],
+        "meta": {
+            "nf-test": "0.9.3",
+            "nextflow": "25.10.0"
+        },
+        "timestamp": "2025-11-03T11:37:20.333495938"
+    }
+}

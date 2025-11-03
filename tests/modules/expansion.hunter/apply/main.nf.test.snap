@@ -1,0 +1,63 @@
+{
+    "Should run without failures": {
+        "content": [
+            {
+                "0": [
+                    [
+                        {
+                            "id": "S1",
+                            "sex": "male"
+                        },
+                        "S1.vcf.gz:md5,79762e0ca3bfc2d1cbe99959b42947c7",
+                        "S1.vcf.gz.tbi:md5,91da1f63734eeea6e397558623204423"
+                    ]
+                ],
+                "1": [
+                    [
+                        {
+                            "id": "S1",
+                            "sex": "male"
+                        },
+                        "S1.json:md5,304f8b1480ea839ccbe666f325110e47"
+                    ]
+                ],
+                "2": [
+                    
+                ],
+                "3": [
+                    "versions.yml:md5,dfa0fac1df04fde284ae679110d1e44d"
+                ],
+                "bam": [
+                    
+                ],
+                "json": [
+                    [
+                        {
+                            "id": "S1",
+                            "sex": "male"
+                        },
+                        "S1.json:md5,304f8b1480ea839ccbe666f325110e47"
+                    ]
+                ],
+                "vcf": [
+                    [
+                        {
+                            "id": "S1",
+                            "sex": "male"
+                        },
+                        "S1.vcf.gz:md5,79762e0ca3bfc2d1cbe99959b42947c7",
+                        "S1.vcf.gz.tbi:md5,91da1f63734eeea6e397558623204423"
+                    ]
+                ],
+                "versions": [
+                    "versions.yml:md5,dfa0fac1df04fde284ae679110d1e44d"
+                ]
+            }
+        ],
+        "meta": {
+            "nf-test": "0.9.3",
+            "nextflow": "25.10.0"
+        },
+        "timestamp": "2025-11-03T12:11:38.223886915"
+    }
+}
