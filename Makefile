@@ -4,4 +4,4 @@ BASH=/bin/bash
 
 tests:test
 test:
-	cd tests && $(MAKE) stub hard_tests
+	cd tests && $(MAKE)
