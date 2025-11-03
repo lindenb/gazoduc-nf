@@ -1,7 +1,10 @@
 BASH=/bin/bash
-.PHONY:test tests
+.PHONY:test tests clean
 
 
-tests:test
+tests: test
 test:
 	cd tests && $(MAKE)
+
+clean:
+	rm -rf tests-output
