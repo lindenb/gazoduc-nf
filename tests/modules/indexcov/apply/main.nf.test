@@ -1,0 +1,45 @@
+nextflow_process {
+
+    name "Test Process APPLY_INDEXCOV"
+    script "modules/indexcov/apply/main.nf"
+    process "APPLY_INDEXCOV"
+    tag "modules"
+    tag "modules/indexcov"
+    tag "modules/goleft"
+    tag "modules/indexcov/apply"
+
+    test("INDEXCOV") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            process {
+                """
+                input[0] = [[id:"ref",ucsc_name:"hg38"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[1] = [[id:"ref",ucsc_name:"hg38"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[2] = [[id:"bams"],[
+                        file("${projectDir}/tests/data/S1.bam"),
+			file("${projectDir}/tests/data/S1.bam.bai"),
+                        file("${projectDir}/tests/data/S2.bam"),
+			file("${projectDir}/tests/data/S2.bam.bai"),
+                        file("${projectDir}/tests/data/S3.bam"),
+			file("${projectDir}/tests/data/S3.bam.bai"),
+                        file("${projectDir}/tests/data/S4.bam"),
+			file("${projectDir}/tests/data/S4.bam.bai"),
+                        file("${projectDir}/tests/data/S5.bam"),
+			file("${projectDir}/tests/data/S5.bam.bai")
+			]]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            assert snapshot(process.out).match()
+        }
+
+    }
+
+}

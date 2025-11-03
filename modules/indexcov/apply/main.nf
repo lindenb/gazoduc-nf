@@ -23,7 +23,7 @@ script:
 hostname 1>&2
 mkdir -p "${prefix}" TMP
 
-find BAMS/  -name "*.bam" -o -name "*.cram" > TMP/jeter.list
+find BAMS/ \\( -name "*.bam" -o -name "*.cram" \\) | sort -V -T TMP > TMP/jeter.list
 
 # test not empty
 test -s TMP/jeter.list
@@ -31,7 +31,7 @@ test -s TMP/jeter.list
 # test all files exist
 xargs -a TMP/jeter.list -L1 --verbose test -f
 
-sed 's/\\.cram/.cram.crai/' TMP/jeter.list > TMP/tmp.bams.list
+sed 's/\\.cram/.cram.crai/' TMP/jeter.list | sort | uniq > TMP/tmp.bams.list
 
 # test all files exist
 xargs -a TMP/tmp.bams.list -L1 --verbose test -f
@@ -40,7 +40,7 @@ xargs -a TMP/tmp.bams.list -L1 --verbose test -f
 goleft indexcov \\
     --fai "${fasta}.fai"  \\
     --excludepatt `awk -F '\t' '(!(\$1 ~ /^(chr)?[0-9XY]+\$/)) {print \$1;}' "${fai}" | paste -s -d '|' `  \\
-    --sex `awk -F '\t' '(\$1 ~ /^(chr)?[XY]\$/) {print \$1;}' "${fai}" | paste -s -d, ` \\
+    `awk -F '\t' '(\$1 ~ /^(chr)?[XY]\$/) {print \$1;}' "${fai}" | paste -s -d, | awk '(length(\$0)>0)  {printf("--sex %s",\$0);}' ` \\
     --directory "${prefix}" \\
     `awk '/.crai\$/ {X=1;} END {if(X==1) printf(" --extranormalize ");}' TMP/tmp.bams.list` \\
     `cat TMP/tmp.bams.list`
