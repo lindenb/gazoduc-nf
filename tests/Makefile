@@ -5,7 +5,7 @@ PROFILE?= -profile gitlabci
 .PHONY=all hard_tests reference test_wgsim test_fastqc test_bwa test_hapcaller test_downsample stub nf-test
 
 all: REF/$(BUILD)/BAMS/samplesheet.csv
-	nf-test test --profile micromamba --verbose
+	cd .. && nf-test test --profile micromamba --verbose
 
 nf-test: nf-test-wgsim
 
@@ -182,6 +182,7 @@ REF/$(BUILD).config : REF/$(BUILD)fa.bwt REF/$(BUILD).gff.gz.tbi REF/$(BUILD).gt
 	echo '  ucsc_name="hg38"' >> $@
 	echo "  bwa_index_directory='$${PWD}/REF'" >> $@
 	echo '  gff="$(PWD)/REF/$(BUILD).gff.gz"' >> $@
+	echo '  gtf="$(PWD)/REF/$(BUILD).gtf.gz"' >> $@
 	echo "}" >> $@
 	echo "}" >> $@
 	echo "}" >> $@

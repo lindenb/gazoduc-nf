@@ -1,0 +1,27 @@
+nextflow_pipeline {
+
+    name "Test Workflow main.nf"
+    script "workflows/gatk/haplotypecaller/main.nf"
+    options "-resume"
+    tag "workflows"
+    tag "workflows/gatk"
+    tag "workflows/gatk/haplotypecaller"
+
+
+
+    test("BASIC") {
+
+        when {
+            params {
+		fasta       = "${HOME}/gazoduc-nf/tests/REF/GRCh38.fa"
+		samplesheet = "${HOME}/gazoduc-nf/tests/REF/GRCh38/BAMS/samplesheet.csv"
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+
+    }
+
+}

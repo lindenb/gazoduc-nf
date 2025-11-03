@@ -14,6 +14,8 @@ Pierre Lindenbaum PhD. Institut du Thorax. 44000 Nantes. France
   * --outdir (dir) Save output in this directory
   * --prefix (string) files prefix. default: ""
   * --samplesheet csv file with header or json file 
+  * --with_fastp : use fastp
+
 ## Usage
 
 ```

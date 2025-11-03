@@ -1,0 +1,37 @@
+{
+    "Should run without failures": {
+        "content": [
+            {
+                "0": [
+                    [
+                        {
+                            "id": "ref",
+                            "ucsc_name": "hg38"
+                        },
+                        "rotavirus_rf.fa.fai:md5,ec216206f1780ae92c7d6367bd38712e"
+                    ]
+                ],
+                "1": [
+                    "versions.yml:md5,9028d2007fcbd1e2b3e82ac3e0904292"
+                ],
+                "fai": [
+                    [
+                        {
+                            "id": "ref",
+                            "ucsc_name": "hg38"
+                        },
+                        "rotavirus_rf.fa.fai:md5,ec216206f1780ae92c7d6367bd38712e"
+                    ]
+                ],
+                "versions": [
+                    "versions.yml:md5,9028d2007fcbd1e2b3e82ac3e0904292"
+                ]
+            }
+        ],
+        "meta": {
+            "nf-test": "0.9.3",
+            "nextflow": "25.10.0"
+        },
+        "timestamp": "2025-11-03T17:31:31.546344761"
+    }
+}

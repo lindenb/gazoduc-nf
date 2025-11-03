@@ -138,6 +138,7 @@ workflow {
 
 	MAP_BWA(
 		workflow_medadata.plus(
+			with_fastp : params.with_fastp,
 			with_bqsr: (params.known_sites==null || params.with_bqsr==false?false:true),
 			with_cram : params.with_cram,
 			with_markdup: params.with_markdup,
