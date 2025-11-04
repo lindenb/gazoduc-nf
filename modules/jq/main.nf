@@ -23,52 +23,39 @@ SOFTWARE.
 
 */
 
-
-process SAMTOOLS_FLAGSTATS {
-label "process_single"
-tag "${meta.id?:bam.name}"
+process JQ {
+tag "${meta.id?:json.name}"
 afterScript "rm -rf TMP"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+label "process_single"
+conda "${moduleDir}/../../conda/jq.yml"
 input:
-    tuple val(meta1),path(fasta)
-    tuple val(meta2),path(fai)
-    tuple val(meta3),path(optional_bed)  
-    tuple val(meta),path(bam),path(bai)
+    tuple val(meta ),path(json)
+    tuple val(meta2),path(opt_query)
 output:
-    tuple val(meta),path("*.flagstats.tsv"),emit:stats
-    path("versions.yml"),emit:versions
+	tuple val(meta),path("*.txt"),emit:output
+	path("versions.yml"),emit:versions
 script:
-    def prefix = task.ext.prefix?:(meta.id?:bam.baseName)
-    if((optional_bed?true:false) && !task.ext.containsKey("args1")) {
-        throw new IllegalArgumentException("${task.process} ext.args1 must be specified e.g '-M' ");
-        }
-    def args1 = task.ext.args1?:""
+    def prefix = task.ext.prefix?:"${meta.id}"
+    def query0 = task.ext.query?:""
+    def query_str  =  (opt_query?"":query0)
+    def args1  = task.ext.args1?:""
+    def post_cmd = task.ext.post_cmd?:""
+    if((opt_query?false:true) && query_str.trim().isEmpty()) throw new IllegalArgumentException("${task.process} query undefined");
 """
-hostname 1>&2
 mkdir -p TMP
-if ${optional_bed?true:false}
+
+if ${opt_query?true:false}
 then
-
-    samtools view ${args1} --regions-file \"${optional_bed}\" -O BAM --uncompressed --reference "${fasta}" "${bam}" |\\
-        samtools flagstats '-' > TMP/jeter.flags.txt
-
+    jq ${args1} --from-file "${opt_query}" "${json}" ${post_cmd} > TMP/jeter.out.txt
 else
-
-    samtools flagstats --threads ${task.cpus} '${bam}' > TMP/jeter.flags.txt
+    jq ${args1} '${query_str}' "${json}" ${post_cmd} > TMP/jeter.out.txt
 fi
 
-    mv -v "TMP/jeter.flags.txt" "${prefix}.flagstats.tsv" 
-
-
+mv TMP/jeter.out.txt ${prefix}.out.txt
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	samtools: "\$(samtools version | awk '(NR==1) {print \$NF;}')"
+	jq: "todo"
 END_VERSIONS
-"""
-
-stub:
-"""
-touch versions.yml "${meta.id}.flagstats.tsv" 
 """
 }

@@ -44,9 +44,11 @@ main:
 
 	sample2collection = MAKE_PED.out.sample2col.ifEmpty( [[id:"nosn2col"],[]])
 	pedigree_gatk  = MAKE_PED.out.gatk.ifEmpty( [[id:"nogatkped"],[]])
+	sample2status = MAKE_PED.out.sample2status.ifEmpty( [[id:"nosample2status"],[]])
 emit:
 	pedigree_gatk
 	sample2collection
+	sample2status
 	versions = MAKE_PED.out.versions
 }
 
@@ -63,6 +65,8 @@ output:
 	tuple val(meta),path("cases.txt"),optional:true,emit:cases
 	tuple val(meta),path("controls.txt"),optional:true,emit:controls
 	tuple val(meta),path("sample2collection.tsv"),optional:true,emit:sample2col
+	tuple val(meta),path("sample2status.tsv"),optional:true,emit:sample2status
+	
 	path("versions.yml"),emit:versions
 script:
 """
@@ -72,7 +76,7 @@ EOF
 
 python3 ${moduleDir}/ped.py raw.ped > /dev/null
 
-for F in males.txt females.txt cases.txt controls.txt sample2collection.tsv pedigree4gatk.ped
+for F in males.txt females.txt cases.txt controls.txt sample2collection.tsv pedigree4gatk.ped sample2status.tsv
 do
 	if test ! -s "\${F}"
 	then

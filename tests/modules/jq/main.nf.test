@@ -1,0 +1,28 @@
+nextflow_process {
+
+    name "Test Process JQ"
+    script "modules/jq/main.nf"
+    process "JQ"
+    config "./nextflow.config"
+    tag "modules"
+    tag "modules/jq"
+
+    test("QUERY_IN_CONFIG") {
+
+        when {
+            process {
+                """
+                input[0] = [[id:"j"],file("${projectDir}/tests/data/rotavirus_rf.xhunter.catalog.json")]
+                input[1] = [[id:"q"],[] ]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+}

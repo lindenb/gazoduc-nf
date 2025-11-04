@@ -1,0 +1,51 @@
+nextflow_process {
+
+    name "Test Process SAMTOOLS_FLAGSTATS"
+    script "modules/samtools/flagstats/main.nf"
+    process "SAMTOOLS_FLAGSTATS"
+    tag "modules"
+    tag "modules/samtools"
+    tag "modules/samtools/flagstats"
+    config "./nextflow.config"
+    test("NO_BED") {
+
+        when {
+            process {
+                """
+		input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[1] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[2] = [[id:"bed"],[]]
+                input[3] = [[id:"S1"],file("${projectDir}/tests/data/S1.bam"),file("${projectDir}/tests/data/S1.bam.bai")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+    test("WITH_BED") {
+
+        when {
+            process {
+                """
+		input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[1] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[2] = [[id:"bed"],file("${projectDir}/tests/data/rotavirus_rf.bed")]
+                input[3] = [[id:"S1"],file("${projectDir}/tests/data/S1.bam"),file("${projectDir}/tests/data/S1.bam.bai")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+
+}

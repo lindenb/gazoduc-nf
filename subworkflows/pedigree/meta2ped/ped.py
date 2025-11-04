@@ -118,6 +118,10 @@ def main():
                  f.write(row[0] + "\t" + row[4] + "\n")
             if is_empty(row[5]) == False:
                  f.write(row[0] + "\t" + row[5] + "\n")
+    with open("sample2status.tsv", "w") as f:
+        for row in rows:
+            if is_empty(row[4]) == False and (row[4] == "control" or row[4] == "case"):
+                f.write(row[0] + "\t" + row[4] + "\n")
     # write pedigree for GATK
     with open("pedigree4gatk.ped","w") as f:
         for row in rows:

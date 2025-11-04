@@ -46,7 +46,8 @@ process XHUNTER_APPLY {
 	"""
 	hostname 1>&2
 	mkdir -p TMP
-
+	export TMPDIR=\${PWD}/TMP
+	
 	ExpansionHunter \\
 		${args1} \\
 		--reads "${bam}" \\
@@ -107,7 +108,7 @@ process XHUNTER_APPLY {
 
 
 	if  ${keepbam} ; then
-		samtools sort -T TMP/sort  --threads ${task.cpus} -O BAM --reference "${fasta}" -o "${prefix}.realigned.cram" "TMP/jeter_realigned.bam"
+		samtools sort -T TMP/sort  --threads ${task.cpus} -O BAM --reference "${fasta}" -o "${prefix}.realigned.bam" "TMP/jeter_realigned.bam"
 		samtools index --threads ${task.cpus} "${prefix}.realigned.bam"
 	fi
 

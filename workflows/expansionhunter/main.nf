@@ -31,14 +31,12 @@ include { isBlank                             } from '../../modules/utils/functi
 include { runOnComplete                       } from '../../modules/utils/functions.nf'
 include { EXPANSION_HUNTER                    } from '../../subworkflows/expansion.hunter'
 include { XHUNTER_DOWNLOAD_CATALOG            } from '../../modules/expansion.hunter/download.catalog'
-
+include { COMPILE_VERSIONS                    } from '../../modules/versions'
 
 if( params.help ) {
     exit 0
     }
-else
-	{
-	}
+
 
 
 
@@ -48,9 +46,7 @@ workflow {
 		]
 	versions = Channel.empty()
 	multiqc = Channel.empty()
-	def workflow_meta = [
-		id: "pihat"
-		]
+	
 	if(params.fasta==null) {
 		throw new IllegalArgumentException("undefined --fasta");
 		}
@@ -75,9 +71,13 @@ workflow {
 		catalog = Channel.of([[id:"catalog"],file(params.catalog)]).first()
 	}
 
-
-	ch1 = Channel.fromPath(params.samplesheet).splitCsv(header:true, sep:',')
-
+	if(params.samplesheet.endsWith(".json")) {
+		ch1 = Channel.fromPath(params.samplesheet).splitJson()
+		}
+	else
+		{
+		ch1 = Channel.fromPath(params.samplesheet).splitCsv(header:true, sep:',')
+		}
 	
 	META_TO_BAMS(
 		metadata,
@@ -88,9 +88,10 @@ workflow {
   	versions = versions.mix(META_TO_BAMS.out.versions)
 
 	META_TO_BAMS.out.bams
-		.filter{meta,bam,bai->isBlank(meta.sex)}
-		.map{throw new IllegalArgumentException("sex undefined for ${it}")}
+		.filter{meta,_bam,_bai->isBlank(meta.sex) || !meta.sex.matches("(male|female)")}
+		.map{throw new IllegalArgumentException("sex undefined/unknown for ${it}")}
 
+	
 
 	EXPANSION_HUNTER(
 		metadata,
@@ -101,6 +102,7 @@ workflow {
 		META_TO_BAMS.out.bams
 		)
 	versions = versions.mix(EXPANSION_HUNTER.out.versions)
+	COMPILE_VERSIONS(versions.collect().map{it.sort()})
 	}
 
 runOnComplete(workflow);
