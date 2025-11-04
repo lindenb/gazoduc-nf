@@ -40,7 +40,7 @@ awk -F '\t' '${awk_expr}{printf("%s\t0\t%s\\n",\$1,\$2);}' "${fai}" > "${prefix}
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	awk: todo
+	awk: \$(awk --version | head -n1)
 END_VERSIONS
 """
 }

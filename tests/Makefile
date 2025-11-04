@@ -180,7 +180,7 @@ data/REF/$(BUILD).config : data/REF/$(BUILD)fa.bwt data/REF/$(BUILD).gff.gz.tbi 
 	echo "params {" >> $@
 	echo "  fasta='$${PWD}/data/REF/$(BUILD).fa'" >> $@
 	echo '  ucsc_name="hg38"' >> $@
-	echo "  bwa_index_directory='$${PWD}/REF'" >> $@
+	echo "  bwa_index_directory='$${PWD}/data/REF'" >> $@
 	echo '  gff="$(PWD)/data/REF/$(BUILD).gff.gz"' >> $@
 	echo '  gtf="$(PWD)/data/REF/$(BUILD).gtf.gz"' >> $@
 	echo "}" >> $@
@@ -191,7 +191,7 @@ data/REF/$(BUILD).config : data/REF/$(BUILD)fa.bwt data/REF/$(BUILD).gff.gz.tbi 
 
 data/REF/nproc.cfg:
 	mkdir -p $(dir $@)
-	nproc --all | awk '{N=int($$0);printf("process {\nmaxForks=%d\n}\n",(N<3?1:N-3));}' > $@
+	nproc --all | awk '{N=int($$0);printf("process {\ncpus=%d\nmaxForks=1\n}\n",(N<3?1:N-3));}' > $@
 	cat $@
 
 
