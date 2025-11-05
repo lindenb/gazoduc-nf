@@ -1,0 +1,48 @@
+nextflow_process {
+
+    name "Test Process DRAGMAP_INDEX"
+    script "modules/dragmap/index/main.nf"
+    process "DRAGMAP_INDEX"
+    tag "modules"
+    tag "modules/dragmap"
+    tag "modules/dragmap/index"
+
+    test("NO_BED") {
+
+        when {
+            process {
+                """
+		input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+		input[1] = [[id:"nobed"],[] ]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+
+    test("WITH_BED") {
+
+        when {
+            process {
+                """
+		input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+		input[1] = [[id:"bed"],file("${projectDir}/tests/data/rotavirus_rf.bed")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+
+}

@@ -1,0 +1,36 @@
+nextflow_workflow {
+
+    name "Test Workflow PREPARE_USER_BED"
+    script "subworkflows/bedtools/prepare.user.bed/main.nf"
+    workflow "PREPARE_USER_BED"
+    tag "subworkflows"
+    tag "subworkflows/bedtools"
+    tag "subworkflows/bedtools/prepare.user.bed"
+
+    test("PREPARE_USER_BED_BASIC") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [id:"hg38"]
+                input[1] = Channel.of( [[id:"hg38"], file("${projectDir}/tests/data/rotavirus_rf.fa") ] )
+                input[2] = Channel.of( [[id:"hg38"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai") ] )
+                input[3] = Channel.of( [[id:"hg38"], file("${projectDir}/tests/data/rotavirus_rf.dict") ] )
+		input[4] = Channel.of( [[id:"scatter"],file("${projectDir}/tests/data/rotavirus_rf.bed") ] )
+		input[5] = Channel.of( [[id:"bed"],file("${projectDir}/tests/data/rotavirus_rf.bed") ] )
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

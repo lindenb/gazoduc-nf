@@ -1,0 +1,118 @@
+nextflow_process {
+
+    name "Test Process DRAGMAP_ALIGN"
+    script "modules/dragmap/align/main.nf"
+    process "DRAGMAP_ALIGN"
+    tag "modules"
+    tag "modules/dragmap"
+    tag "modules/dragmap/align"
+
+	setup {
+           run("DRAGMAP_INDEX") {
+		script "modules/dragmap/index/main.nf"
+		process {
+			"""
+	                input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+	                input[1] = [[id:"bed"],[]]
+			"""
+			}
+		}
+	    }
+
+
+
+
+
+    test("PAIRED_END") {
+
+
+        when {
+            process {
+                """
+		input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+		input[1] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+		input[2] = DRAGMAP_INDEX.out.dragmap_index
+		input[3] = [[id:"nobed"],[]]
+		input[4] = [[id:"S1"],file("${projectDir}/tests/data/S1.R1.fq.gz"),file("${projectDir}/tests/data/S1.R2.fq.gz")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+
+    test("PAIRED_END_BED") {
+        when {
+            process {
+                """
+		input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+		input[1] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+		input[2] = DRAGMAP_INDEX.out.dragmap_index
+		input[3] = [[id:"bed"],file("${projectDir}/tests/data/rotavirus_rf.bed")]
+		input[4] = [[id:"S1"],file("${projectDir}/tests/data/S1.R1.fq.gz"),file("${projectDir}/tests/data/S1.R2.fq.gz")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+
+
+    test("SINGLE_END") {
+
+        when {
+            process {
+                """
+		input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+		input[1] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+		input[2] = DRAGMAP_INDEX.out.dragmap_index
+		input[3] = [[id:"nobed"],[]]
+		input[4] = [[id:"S1"],file("${projectDir}/tests/data/S1.R1.fq.gz"),[]]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+
+
+
+    test("SINGLE_END_BED") {
+        when {
+            process {
+                """
+		input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+		input[1] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+		input[2] = DRAGMAP_INDEX.out.dragmap_index
+		input[3] = [[id:"bed"],file("${projectDir}/tests/data/rotavirus_rf.bed")]
+		input[4] = [[id:"S1"],file("${projectDir}/tests/data/S1.R1.fq.gz"),[]]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+
+
+
+}

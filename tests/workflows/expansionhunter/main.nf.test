@@ -1,0 +1,22 @@
+nextflow_pipeline {
+
+    name "Test Workflow main.nf"
+    script "workflows/expansionhunter/main.nf"
+
+    test("EXPANSION_HUNTER_BASIC") {
+
+        when {
+            params {
+                outdir = "tests/results"
+		fasta =  "tests/data/REF/GRCh38.fa"
+		samplesheet = "tests/data/REF/GRCh38/BAMS/samplesheet.csv"
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+
+    }
+
+}
