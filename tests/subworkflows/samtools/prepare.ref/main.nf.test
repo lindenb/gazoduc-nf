@@ -1,0 +1,33 @@
+nextflow_workflow {
+
+    name "Test Workflow PREPARE_REFERENCE"
+    script "subworkflows/samtools/prepare.ref/main.nf"
+    workflow "PREPARE_REFERENCE"
+    tag "subworkflows"
+    tag "subworkflows/samtools"
+    tag "subworkflows/samtools/prepare.ref"
+    config "./nextflow.config"
+
+    test("BASIC") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [id:"rf"]
+                input[1] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")])
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

@@ -6,14 +6,17 @@ nextflow_workflow {
     tag "subworkflows"
     tag "subworkflows/seqkit"
     tag "subworkflows/seqkit/split"
+    config "./nextflow.config"
 
-    test("Should run without failures") {
+    test("BASIC") {
 
         when {
-
+            params {
+                  args1 = "--by-size 200"
+                }
             workflow {
                 """
-                input[0] = [:]
+                input[0] = [disable_split:false]
                 input[1] = Channel.of(
                     [[id:"S1a"], file("${projectDir}/tests/data/S1.R1.fq.gz"), file("${projectDir}/tests/data/S1.R2.fq.gz")],
                     [[id:"S1b"], [file("${projectDir}/tests/data/S1.R1.fq.gz"), file("${projectDir}/tests/data/S1.R2.fq.gz")] ],

@@ -27,7 +27,7 @@ nextflow_process {
                 with(get(0))  {
                     assert size() ==2
                     with(get(1)) {
-                        assert  get(0).toString().matches(".*S1\\.R[12]\\.part_00[0-9]\\.fq.gz")
+                        assert  get(0).toString().matches(".*S1_R[12]_part_00[0-9]\\.fq.gz")
                         }
                     
                     }

@@ -42,18 +42,33 @@ tag "${meta.id} ${R1.name} ${R2?R2.name:""}"
 afterScript "rm -rf TMP"
 // cpus 4 set in config file
 input:
-	tuple val(meta),path(R1),path(R2)
+	tuple val(meta),path(R1),path(R2)//optional R2
 output:
 	tuple val(meta),path("OUT/*.gz",arity: '1..*'),emit:fastqs
 	path("versions.yml"),emit:versions
 script:
 	def args1 = (task.ext.args1?:"")
-	if(args1.toString().isEmpty()) throw new IllegalArgumentException("${task.process} undefined task.args1 e.g. --by-length 3G");
+
+	if(args1.toString().isEmpty()) throw new IllegalArgumentException("${task.process} undefined task.args1 e.g. --by-length 3G  ");
+	
+	if(		!args1.contains("--by-length") && 
+			!args1.contains("--by-part") &&
+			!args1.contains("--by-size")) throw new IllegalArgumentException("${task.process} base task.args1  requires by-xxx ùmethod ");
+	
+	def need_prefix = (R2?true:false) && 
+			!args1.contains("--by-length-prefix") && 
+			!args1.contains("--by-part-prefix") &&
+			!args1.contains("--by-size-prefix")
+	def prefix = task.ext.prefix?:"${meta.id}"
+	def prefix2 = (R2?"${prefix}_R{read}_part_":"${prefix}_R0_part_")
 """
 mkdir -p TMP
 
 seqkit split2 \\
 	${args1} \\
+	${args1.contains("--by-length")?"--by-length-prefix '${prefix2}'":""} \\
+	${args1.contains("--by-part")  ?"--by-part-prefix   '${prefix2}'":""} \\
+	${args1.contains("--by-size")  ?"--by-size-prefix   '${prefix2}'":""} \\
 	--force \\
 	--extension ".gz" \\
 	-O TMP \\
@@ -69,7 +84,7 @@ find OUT -type f 1>&2
 
 cat <<-END_VERSIONS > versions.yml
 "${task.process}":
-        seqkit: todo
+        seqkit: \$(seqkit version)
 END_VERSIONS
 """
 stub:

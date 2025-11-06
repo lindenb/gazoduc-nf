@@ -22,22 +22,41 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {SEQKIT_SPLIT2  } from '../../../modules/seqkit/split2'
-
+include { SEQKIT_SPLIT2   } from '../../../modules/seqkit/split2'
 def restorePairs(def meta, def fastqs) {
+
 	def L=[];
-	System.err.println("restorePairs "+fastqs);
-	def R1 = fastqs.findAll{F->F.name.endsWith("R1.fq.gz")}.sort()
-	def R2 = fastqs.findAll{F->F.name.endsWith("R2.fq.gz")}.sort()
+	int i=0;
+	//System.err.println("restorePairs "+fastqs);
+
+	def R1 = fastqs.findAll{F->F.name.contains("_R1_part_")}.sort();
+	def R2 = fastqs.findAll{F->F.name.contains("_R2_part_")}.sort();
+
 	if(R1.size()!=R2.size()) throw new IllegalArgumentException("restorePairs : R1.size != R2.size");
+
 	if(R1.size()+R2.size()!=fastqs.size()) throw new IllegalArgumentException("restorePairs : R1.size+R2.size!=fastqs.size()");
+
 	if(R1.isEmpty() && !fastqs.isEmpty()) throw new IllegalArgumentException("restore R1.size==0");
-	for(int i=0;i< R1.size();i++) {
-		def hash =  meta.plus([split_index:i+1]);
+
+	for(i=0;i< R1.size();i++) {
+		def hash = meta.plus([splid_id:"split_"+(i+1)])
 		def f1 = R1[i];
 		def f2 = R2[i];
-		if(!f2.name.replaceAll("R2.fq.gz").equals(f1.name)) throw new IllegalArgumentException("restorePairs : "+f1.name+" vs "+f2.name);
+		if(!f2.name.replaceAll("_R2_part_","_R1_part_").equals(f1.name)) throw new IllegalArgumentException("restorePairs faild: "+f1.name+" vs "+f2.name);
 		L.add([hash, f1, f2]);
+		}
+	
+	return L;
+	}
+
+def addSplitIndexForSingleEnd(def meta,def fastqs) {
+	def L=[];
+	int i=0;
+	def R0 = fastqs.findAll{F->F.name.contains("_R0_part_")}.sort();
+	if(R0.size() != fastqs.size()) throw new IllegalArgumentException("restore R0.size!=fastqs.size()");
+	for(i=0;i< R0.size();i++) {
+		def hash = meta.plus([splid_id:"split_"+(i+1)])
+		L.add([hash, R0[i]]);
 		}
 	return L;
 	}
@@ -46,38 +65,64 @@ def restorePairs(def meta, def fastqs) {
 workflow SEQKIT_SPLIT {
 	take:
 		meta
-		fastqs // meta, R1,optional_R2
+        fastqs // [meta, [R1,R2]] or [meta,R0] or [meta,R1,R2] or [meta,[R0]]
 	main:		
 		versions = Channel.empty()
+
 		
-		ch1 = fastqs
-			.branch{
-				all: meta.sektq_split_args!=null && !meta.sektq_split_args.trim().isEmpty()
-				seqtk: it[0].sektq_split_args!=null && !it[0].sektq_split_args.trim().isEmpty()
-				other: true
+  		fastqs = fastqs
+                .map{
+                    if(it.size()==2 && (it[1] instanceof Path)) {
+                        return [it[0],it[1],[]];
+                        }
+					 if(it.size()==2 && (it[1] instanceof List) && it[1].size()==1) {
+                        return [it[0],it[1][0],[]];
+                        }
+					if(it.size()==2 && (it[1] instanceof List) && it[1].size()==2) {
+                        return [it[0],it[1][0], it[1][1]];
+                        }
+                    return it;
+                    }
+                .map {
+                    if(it.size()!=3 || !(it[1] instanceof Path)) {
+                        throw new IllegalArgumentException("workflow:SEQKIT_SPLIT: Bad input ${it}.");
+                        }
+                    return it;
+                    }
+
+        fastqs_out = fastqs
+
+		if(meta.disable_split==null || meta.disable_split==false) {
+			
+			 
+
+			SEQKIT_SPLIT2(fastqs)
+			versions = versions.mix(SEQKIT_SPLIT2.out.versions)
+			
+			ch1 = SEQKIT_SPLIT2.out.fastqs
+				.branch{_meta,fastqs->
+					paired: fastqs.size()>1 &&  
+							fastqs.findAll{F->F.name.contains("_R0_part_")}.size() ==0 && 
+							fastqs.findAll{F->F.name.contains("_R1_part_")}.size() ==  fastqs.findAll{F->F.name.contains("_R2_part_")}.size()
+					single: fastqs.findAll{F->F.name.contains("_R1_part_")}.size() == 0 && 
+							fastqs.findAll{F->F.name.contains("_R2_part_")}.size() == 0 && 
+							fastqs.findAll{F->F.name.contains("_R0_part_")}.size() ==  fastqs.size()
+					others : true
 				}
 
-		
-		ch_all = ch1.all.map{meta,R1,R2->[
-			meta.plus([sektq_split_args:meta.sektq_split_args]),
-			R1,
-			R2
-			]}
-		
-		out_fq  = ch1.other
-		
+			ch1.others.map{throw new IllegalArgumentException("SEQTK SPLIT: boum ${it}.")};
 
-		SEQKIT_SPLIT2(ch1.seqtk.mix(ch_all))
-		
-		versions = versions.mix(SEQKIT_SPLIT2.out.versions)
-		
-		
-		ch2 = SEQKIT_SPLIT2.out.fastqs
-			.flatMap{meta,fastqs->restorePairs(meta,fastqs)}
+			fastqs_out = Channel.empty()
+			fastqs_out = fastqs_out.mix(
+					ch1.single.flatMap{addSplitIndexForSingleEnd(it)}
+					)
 
-		out_fq = out_fq.mix(ch2)
-			.map{meta,R1,R2->[meta.findAll{k,v->!k.equals("sektq_split_args")},R1,R2]}
+			fastqs_out = fastqs_out.mix(
+					ch1.paired.flatMap{meta,fastqs->restorePairs(meta,fastqs)}
+				)
+		}
+
 	emit:
 		versions
-		fastqs = out_fq
+		fastqs = fastqs_out
 	}
