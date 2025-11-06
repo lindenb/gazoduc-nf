@@ -1,0 +1,33 @@
+nextflow_process {
+
+    name "Test Process COLLECT_MULTIPLE_METRICS"
+    script "modules/gatk/collectmultiplemetrics/main.nf"
+    process "COLLECT_MULTIPLE_METRICS"
+    tag "modules"
+    tag "modules/gatk"
+    tag "modules/gatk/collectmultiplemetrics"
+
+
+    test("BASIC") {
+
+        when {
+            process {
+                """
+                        input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                        input[1] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                        input[2] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                        input[3] = [[id:"ref"],[] ]
+                        input[4] = [[id:"ref"],[] ]
+                        input[5] = [[id:"S1"],file("${projectDir}/tests/data/S1.bam"), file("${projectDir}/tests/data/S1.bam.bai"), [] ]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+}

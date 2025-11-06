@@ -1,0 +1,32 @@
+nextflow_workflow {
+
+    name "Test Workflow FASTP"
+    script "subworkflows/fastp/main.nf"
+    workflow "FASTP"
+    tag "subworkflows"
+    tag "subworkflows/fastp"
+
+    test("BASIC") {
+
+        when {
+            workflow {
+                """
+                input[0] = [fastp_disabled:false , fastqc_before:false, fastqc_after:true]
+		input[1] = Channel.of(
+			[[id:"S1a"], file("${projectDir}/tests/data/S1.R1.fq.gz"), file("${projectDir}/tests/data/S1.R2.fq.gz")],
+			[[id:"S1b"], [file("${projectDir}/tests/data/S1.R1.fq.gz"), file("${projectDir}/tests/data/S1.R2.fq.gz")] ],
+			[[id:"S1c"], [file("${projectDir}/tests/data/S1.R2.fq.gz")] ],
+			[[id:"S1d"], file("${projectDir}/tests/data/S1.R2.fq.gz") ]
+			)
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

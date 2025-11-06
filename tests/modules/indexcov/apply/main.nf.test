@@ -17,19 +17,15 @@ nextflow_process {
             }
             process {
                 """
-                input[0] = [[id:"ref",ucsc_name:"hg38"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
-                input[1] = [[id:"ref",ucsc_name:"hg38"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[0] = [[id:"ref",ucsc_name:"hg38"],file("${projectDir}/tests/data/REF/GRCh38.fa")]
+                input[1] = [[id:"ref",ucsc_name:"hg38"],file("${projectDir}/tests/data/REF/GRCh38.fa.fai")]
                 input[2] = [[id:"bams"],[
-                        file("${projectDir}/tests/data/S1.bam"),
-			file("${projectDir}/tests/data/S1.bam.bai"),
-                        file("${projectDir}/tests/data/S2.bam"),
-			file("${projectDir}/tests/data/S2.bam.bai"),
-                        file("${projectDir}/tests/data/S3.bam"),
-			file("${projectDir}/tests/data/S3.bam.bai"),
-                        file("${projectDir}/tests/data/S4.bam"),
-			file("${projectDir}/tests/data/S4.bam.bai"),
-                        file("${projectDir}/tests/data/S5.bam"),
-			file("${projectDir}/tests/data/S5.bam.bai")
+                        file("${projectDir}/tests/data/REF/GRCh38/BAMS/S1/S1.cram"),
+                        file("${projectDir}/tests/data/REF/GRCh38/BAMS/S1/S1.cram.crai"),
+                        file("${projectDir}/tests/data/REF/GRCh38/BAMS/S2/S2.cram"),
+                        file("${projectDir}/tests/data/REF/GRCh38/BAMS/S2/S2.cram.crai"),
+                        file("${projectDir}/tests/data/REF/GRCh38/BAMS/S3/S3.cram"),
+                        file("${projectDir}/tests/data/REF/GRCh38/BAMS/S3/S3.cram.crai")
 			]]
                 """
             }

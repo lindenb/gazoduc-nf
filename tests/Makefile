@@ -173,7 +173,7 @@ data/REF/$(BUILD)/FASTQ/samplesheet.csv: data/REF/$(BUILD).config
 	cat $@
 
 
-data/REF/$(BUILD).config : data/REF/$(BUILD)fa.bwt data/REF/$(BUILD).gff.gz.tbi data/REF/$(BUILD).gtf.gz.tbi data/REF/$(BUILD).fa data/REF/nproc.cfg
+data/REF/$(BUILD).config : data/REF/$(BUILD)fa.bwt data/REF/$(BUILD).gff.gz.tbi data/REF/$(BUILD).gtf.gz.tbi data/REF/$(BUILD).fa data/REF/nproc.cfg data/REF/$(BUILD).dict data/REF/$(BUILD).bed
 	mkdir -p $(dir $@)
 	echo "profiles {" > $@
 	echo "${BUILD}CI {" >> $@
@@ -191,7 +191,7 @@ data/REF/$(BUILD).config : data/REF/$(BUILD)fa.bwt data/REF/$(BUILD).gff.gz.tbi 
 
 data/REF/nproc.cfg:
 	mkdir -p $(dir $@)
-	nproc --all | awk '{N=int($$0);printf("process {\ncpus=%d\nmaxForks=1\n}\n",(N<3?1:N-3));}' > $@
+	nproc --all | awk '{N=int($$0);printf("process {\ncpus=1\nmaxForks=%d\nmemory=10.GB}\n",(N<3?1:N-3));}' > $@
 	cat $@
 
 
@@ -219,6 +219,17 @@ data/REF/$(BUILD).gtf.gz:
 		gunzip -c | grep '^chr22' | \
 		LC_ALL=C sort -t $$'\t' -k1,1 -k4,4n -T . |\
 		bgzip  > $@
+
+
+data/REF/$(BUILD).dict : data/REF/$(BUILD).fa.fai
+	samtools dict $< > $@
+
+data/REF/$(BUILD).bed : data/REF/$(BUILD).fa.fai
+	awk -F '\t' '{printf("%s\t0\t%s\n",$$1,$$2);}' $< > $@
+
+
+data/REF/$(BUILD).fai : data/REF/$(BUILD).fa
+	samtools faidx $<
 
 data/REF/$(BUILD).fa:
 	mkdir -p $(dir $@) && \

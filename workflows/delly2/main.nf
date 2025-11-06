@@ -67,7 +67,7 @@ workflow {
 			PREPARE_REFERENCE.out.fai.first(),
 			exclude_bed
 			)
-		ersions = versions.mix(DOWNLOAD_EXCLUDE.out.versions)
+		versions = versions.mix(DOWNLOAD_EXCLUDE.out.versions)
 
     	DELLY(
 			hash_ref,

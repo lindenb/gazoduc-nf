@@ -22,34 +22,19 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {MULTIQC                     } from '../../../modules/multiqc'
-include {BCFTOOLS_STATS              } from '../../../modules/bcftools/stats'
-include {BCFTOOLS_CALL               } from '../../../subworkflows/bcftools/call'
-include {COMPILE_VERSIONS            } from '../../../modules/versions/main.nf'
-include {runOnComplete; dumpParams   } from '../../../modules/utils/functions.nf'
-include {JVARKIT_BAM_RENAME_CONTIGS  } from '../../../modules/jvarkit/bamrenamechr'
-include {BEDTOOLS_MAKEWINDOWS        } from '../../../modules/bedtools/makewindows'
-include {BED_CLUSTER                 } from '../../../modules/jvarkit/bedcluster'
-
-
-Map assertKeyExists(final Map hash,final String key) {
-    if(!hash.containsKey(key)) throw new IllegalArgumentException("no key ${key}'in ${hash}");
-    return hash;
-}
-
-Map assertKeyExistsAndNotEmpty(final Map hash,final String key) {
-    assertKeyExists(hash,key);
-    def value = hash.get(key);
-    if(value.isEmpty()) throw new IllegalArgumentException("empty ${key}'in ${hash}");
-    return hash;
-}
-
-Map assertKeyMatchRegex(final Map hash,final String key,final String regex) {
-    assertKeyExists(hash,key);
-    def value = hash.get(key);
-    if(!value.matches(regex)) throw new IllegalArgumentException(" ${key}'in ${hash} doesn't match regex '${regex}'.");
-    return hash;
-}
+include { MULTIQC                     } from '../../../modules/multiqc'
+include { BCFTOOLS_STATS              } from '../../../modules/bcftools/stats'
+include { BCFTOOLS_CALL               } from '../../../subworkflows/bcftools/call'
+include { COMPILE_VERSIONS            } from '../../../modules/versions/main.nf'
+include { runOnComplete; dumpParams   } from '../../../modules/utils/functions.nf'
+include { JVARKIT_BAM_RENAME_CONTIGS  } from '../../../modules/jvarkit/bamrenamechr'
+include { BEDTOOLS_MAKEWINDOWS        } from '../../../modules/bedtools/makewindows'
+include { BED_CLUSTER                 } from '../../../modules/jvarkit/bedcluster'
+include { PREPARE_ONE_REFERENCE       } from '../../../subworkflows/samtools/prepare.one.ref'
+include { PREPARE_USER_BED            } from '../../../subworkflows/bedtools/prepare.user.bed'
+include { META_TO_BAMS                } from '../../../subworkflows/samtools/meta2bams2'
+include { META_TO_PED                 } from '../../../subworkflows/pedigree/meta2ped'
+include {isBlank                      } from '../../../modules/utils/functions'
 
 
 
@@ -64,82 +49,107 @@ if( params.help ) {
 
 
 workflow {
-	def refhash=[
-		id: file(params.fasta).baseName,
-		name: file(params.fasta).baseName,
-		ucsc_name :( params.ucsc_name?:"undefined"),
-		ensembl_name : (params.ensembl_name?:"undefined")
-		]
-
-	def fasta =    [ refhash, file(params.fasta) ]
-	def fai   =    [ refhash, file(params.fai)  ]
-	def dict  =    [ refhash, file(params.dict) ]
-	def gtf  =    [ refhash, file(params.gtf) ]
-	def bed   =    [ refhash, []]
-	def pedigree = [ refhash, []]
-
-	if(params.bed!=null) {
-		bed  =  [ refhash, file(params.bed) ]
-	}
-	if(params.pedigree!=null) {
-		pedigree  =  [ refhash, file(params.pedigree) ]
-	}
 	versions = Channel.empty()
-	
+	multiqc = Channel.empty()
 
-	if(params.bed==null) {
-		SCATTER_TO_BED(refhash,fasta,fai,dict)
-		versions = versions.mix(SCATTER_TO_BED.out.versions)
-		bed = SCATTER_TO_BED.out.bed
+	if(params.fasta==null) {
+		throw new IllegalArgumentException("undefined --fasta");
+		}
+	if(params.samplesheet==null) {
+		throw new IllegalArgumentException("undefined --samplesheet");
 		}
 
-  
+	
 
-	bams_ch = Channel.fromPath(params.samplesheet)
-        .splitCsv(header:true,sep:',')
-        .map{assertKeyMatchRegex(it,"sample","^[A-Za-z_0-9\\.\\-]+\$")}
-        .map{assertKeyMatchRegex(it,"bam","^\\S+\\.(bam|cram)\$")}
+	def metadata=[
+		id: "bcftools"
+		]
+
+
+
+	PREPARE_ONE_REFERENCE(
+		metadata,
+		Channel.fromPath(params.fasta)
+			.map{[[id:it.baseName],it]}
+		)
+	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
+
+	def gtf  =    [ metadata, file(params.gtf) ]
+	def pedigree = [ metadata, []]
+
+	
+	if(params.bed==null) {
+		bed = Channel.of([ [id:"nobed"], [] ])
+		}
+	else {
+		PREPARE_USER_BED(
+			metadata,
+			PREPARE_ONE_REFERENCE.out.fasta,
+			PREPARE_ONE_REFERENCE.out.fai,
+			PREPARE_ONE_REFERENCE.out.dict,
+			PREPARE_ONE_REFERENCE.out.scatter_bed,
+			Channel.of([[id:"capture"],file(params.bed)])
+			)
+		versions = versions.mix(PREPARE_USER_BED.out.versions)
+		multiqc = multiqc.mix(PREPARE_USER_BED.out.multiqc)
+		bed = PREPARE_USER_BED.out.bed
+		}
+	
+	if(params.samplesheet.endsWith(".json")) {
+		ch0 = Channel.fromPath(params.samplesheet)
+        	.splitJSon()
+		}
+	else
+		{
+		ch0 = Channel.fromPath(params.samplesheet)
+        	.splitCsv(header:true,sep:',')
+		}
+
+	META_TO_BAMS(
+		metadata,
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		PREPARE_ONE_REFERENCE.out.dict,
+		ch0
+		)
+	versions = versions.mix(META_TO_BAMS.out.versions)
+
+
+	META_TO_PED(metadata, META_TO_BAMS.out.bams.map{it[0]})
+	versions = versions.mix(META_TO_PED.out.versions)
+
+
+	bams_ch = META_TO_BAMS.out.bams
         .map{
-            if(it.containsKey("bai")) return it;
-            if(it.bam.endsWith(".cram")) return it.plus(bai : it.bam+".crai");
-            return it.plus(bai:it.bam+".bai");
-        	}
-		.map{assertKeyMatchRegex(it,"bai","^\\S+\\.(bai|crai)\$")}
-    .map{
-				if(it.containsKey("batch")) return it;
-				return it.plus(batch:it.sample);
-			}
-		.map{
-				if(it.containsKey("fasta")) return it;
-				return it.plus(fasta:params.fasta);
-			}
-			.map{
-				if(it.containsKey("fai")) return it;
-				return it.plus(fai:it.fasta+".fai");
-			}
-			.map{
-				if(it.containsKey("dict")) return it;
-				return it.plus(dict: it.fasta.replaceAll("\\.(fasta|fa|fna)\$",".dict"));
+			if(!isBlank(it[0].batch)) return it;
+			def L=[ it.plus(batch:it.id) ];
+			L.addAll(it.subsList(1,it.size()));
+			return L;
 			}
 		.branch {
-				ok_ref: it.fasta.equals(params.fasta)
-				bad_ref: true
-				}
-
+			ok_ref: java.nio.file.Files.isSameFile(it[3],file(params.fasta))
+			bad_ref: true
+			}
+		
 
 	JVARKIT_BAM_RENAME_CONTIGS(
-		dict,
+		PREPARE_ONE_REFERENCE.out.dict,
 		bed,
-		bams_ch.bad_ref.map{[[id:it.sample,batch:it.batch],file(it.bam),file(it.bai),file(it.fasta),file(it.fai),file(it.dict)]}
+		bams_ch.bad_ref
 		)
 
-	versions =versions.mix(JVARKIT_BAM_RENAME_CONTIGS.out.versions)
+  versions =versions.mix(JVARKIT_BAM_RENAME_CONTIGS.out.versions)
 		
   BEDTOOLS_MAKEWINDOWS(bed)
   versions =versions.mix(BEDTOOLS_MAKEWINDOWS.out.versions)
   bed = BEDTOOLS_MAKEWINDOWS.out.bed
    
-  BED_CLUSTER(fasta,fai,dict,bed)
+  BED_CLUSTER(
+	PREPARE_ONE_REFERENCE.out.fasta,
+	PREPARE_ONE_REFERENCE.out.fai,
+	PREPARE_ONE_REFERENCE.out.dict,
+	bed
+	)
   versions =versions.mix(BED_CLUSTER.out.versions)
 
   bed = BED_CLUSTER.out.bed.flatMap{
@@ -150,42 +160,41 @@ workflow {
 		return L;
 		}
 
-
 	BCFTOOLS_CALL(
-		[id:"bcftools"],
-		fasta,
-		fai,
-		dict,
-        pedigree,
+		metadata,
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		PREPARE_ONE_REFERENCE.out.dict,
+        META_TO_PED.out.pedigree,
 		bed,
-		bams_ch.ok_ref.map{[[id:it.sample,batch:it.batch],file(it.bam),file(it.bai)]}
-			.mix(JVARKIT_BAM_RENAME_CONTIGS.out.bam.map{[it[0],it[1],it[2]]})
+		bams_ch.ok_ref
+			.map{meta,bam,bai,_fasta,_fai,_dict->[meta,bam,bai]}
+			.mix(JVARKIT_BAM_RENAME_CONTIGS.out.bam)
 		)
 	versions = versions.mix(BCFTOOLS_CALL.out.versions)
 	
 
 
-	to_multiqc = Channel.empty()
 
 	BCFTOOLS_STATS(
-		fasta,
-		fai,
-		[[id:"nobed"],[]],
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		bed,
 		gtf,
 		[[id:"no_samples"],[]],
 		BCFTOOLS_CALL.out.vcf.map{[it[0],[it[1],it[2]]]}
 		)
 	versions = versions.mix(BCFTOOLS_STATS.out.versions)
-	to_multiqc = to_multiqc.mix(BCFTOOLS_STATS.out.stats.map{it[1]})
+	multiqc = multiqc.mix(BCFTOOLS_STATS.out.stats.map{it[1]})
 	
 
 	COMPILE_VERSIONS(versions.collect())
-	to_multiqc = to_multiqc.mix(COMPILE_VERSIONS.out.multiqc)
+	multiqc = multiqc.mix(COMPILE_VERSIONS.out.multiqc)
 	
 	MULTIQC(
 		[[id:"no_mqc_config"],[]],
-		to_multiqc.collect().map{[[id:"bcftools"],it]}
-		)	
+		multiqc.collect().map{[[id:"bcftools"],it]}
+		)
 	}
 
 runOnComplete(workflow)

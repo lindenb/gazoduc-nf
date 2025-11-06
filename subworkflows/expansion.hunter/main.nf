@@ -25,6 +25,7 @@ SOFTWARE.
 include { XHUNTER_APPLY                } from '../../modules/expansion.hunter/apply'
 include { BCFTOOLS_MERGE               } from '../../modules/bcftools/merge'
 include { isBlank                      } from '../../modules/utils/functions.nf'
+include {GHOSTSCRIPT_MERGE             } from '../../modules/gs/merge'
 
 workflow EXPANSION_HUNTER {
 	take:
@@ -63,19 +64,38 @@ workflow EXPANSION_HUNTER {
             .map{meta->meta.id+"\t"+meta.status}
             .collectFile(name: 'sample2status.tsv', newLine: true)
             .map{fn->[[id:"xhunter"],fn]}
+	
+	what = Channel.of("average","max","min")
 
         FISHER_TEST(
             BCFTOOLS_MERGE.out.vcf.map{meta,vcf,tbi,_bed->[meta,vcf,tbi]},
             sn2status_ch
+		.filter{_meta,f->(f instanceof java.nio.file.Path)}
+		.combine(what)
+		.map{meta,f,w->[meta.plus([what:w]),f]}
             )
 
+	GHOSTSCRIPT_MERGE(
+		FISHER_TEST.out.pdf
+			.flatMap{meta,pdfs->{
+				def L = (pdfs instanceof List?pdfs:[pdfs]);
+				def L2 = [];
+				for(int i=0;i< L.size();i++) {
+					L2.add([[id: meta.what],L[i]]);
+					}
+				return L2;
+				}}
+			.groupTuple()
+			.view()
+		)
+	versions = versions.mix(GHOSTSCRIPT_MERGE.out.versions)
 	emit:
 		versions
         vcf = BCFTOOLS_MERGE.out.vcf
 	}
 
 process FISHER_TEST {
-tag "${meta.id}"
+tag "${meta.id} ${meta2.what}"
 label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.02.yml"
 afterScript "rm -rf TMP"
@@ -83,17 +103,83 @@ input:
     tuple val(meta) ,path(vcf),path(tbi)
     tuple val(meta2),path(sample2status)
 output:
-    tuple val(meta),path("*.genes.pdf"),emit:genes
-    tuple val(meta),path("*.fisher.tsv"),emit:fisher
+    tuple val(meta2),path("*.genes.pdf"),emit:pdf
+    tuple val(meta2),path("*.fisher.tsv"),emit:fisher
+    path("versions.yml"),emit:versions
 script:
     def prefix=task.ext.prefix?:"${meta.id}"
+    def what = meta2.what
 """
-mkdir -p TMP
-bcftools query -f '[%SAMPLE\t%ID\t%REPCN\t%CHROM:%POS\\n]' '${vcf}'  |\
-    awk -F '\t' '{T=0.0;N=split(\$3,a,/[\\/]/); for(i=1;i<=N;i++) T+=int(a[i]); printf("%s\t%s\t%f\t%s\\n",\$1,\$2,T/N,\$4);}' |\
-    sort -t '\t' -T TMP -k1,1 > TMP/jeter.a
+mkdir -p TMP/PDFS TMP/BEDS
 
-sort -t '\t' -T TMP -k1,1 '${sample2status}'  > TMP/jeter.b
+cat << 'EOF' > TMP/max.awk
+	{
+	j=0;
+	M = 0.0;
+	N = split(\$3,a,/[\\/]/);
+	for(i=1;i<=N;i++) {
+		if(a[i]=="./." || a[i]==".") continue;
+		V= int(a[i])*1.0;
+		if(j==0 || V < M) M=V;
+		j++;
+		}
+	if(j==0) next;
+	printf("%s\t%s\t%f\t%s\\n",\$1,\$2,M,\$4);
+	}
+EOF
+
+cat << 'EOF' > TMP/min.awk
+	{
+	j=0;
+	M = 0.0;
+	N = split(\$3,a,/[\\/]/);
+	for(i=1;i<=N;i++) {
+		j=1;
+		if(a[i]=="./." || a[i]==".") continue;
+		V= int(a[i])*1.0;
+		if(j==0 || V > M) M=V;
+		j++;
+		}
+	if(j==0) next;
+	printf("%s\t%s\t%f\t%s\\n",\$1,\$2,M,\$4);
+	}
+EOF
+
+
+cat << 'EOF' > TMP/average.awk
+	{
+	T = 0.0;
+	N = split(\$3,a,/[\\/]/);
+	j = 0;
+	for(i=1;i<=N;i++) {
+		if(a[i]=="./." || a[i]==".") continue;	
+		V=int(a[i]);
+		if(V==0) continue;
+		T+=V;
+		j++;
+		}
+	if(j==0) next;
+	printf("%s\t%s\t%f\t%s\\n",\$1,\$2,T/j,\$4);
+	}
+EOF
+
+
+
+i=1
+bcftools query -f '%CHROM\t%POS0\t%END\\n' '${vcf}' |\\
+	 split -a 9 --additional-suffix=.bed --lines=1000 - TMP/chunck.
+
+find TMP/ -type f -name "chunck.*.bed" | while read BED
+do
+
+echo "\${BED}" 1>&2
+
+bcftools view -O u --regions-file "\${BED}"  '${vcf}'  |\\
+    bcftools query -f '[%SAMPLE\t%ID\t%REPCN\t%CHROM:%POS-%END\\n]' -  |\\
+    awk -F '\t' -f TMP/${what}.awk |\\
+    sort  -S ${task.memory.kilo} -t '\t' -T TMP -k1,1 > TMP/jeter.a
+
+sort -t '\t'  -S ${task.memory.kilo} -T TMP -k1,1 '${sample2status}'  > TMP/jeter.b
 
 join -t '\t' -1 1 -2 1 -o '1.1,1.2,1.3,1.4,2.2' TMP/jeter.a TMP/jeter.b > TMP/jeter.tsv
 
@@ -124,7 +210,8 @@ for (g in genes) {
    boxplot(
         average ~ status,
         data = d,
-        main = paste("Gene", g),
+        main = paste("Locus: ", g),
+	sub = "${what}",
         ylab = "average",
         col = c("#66c2a5", "#fc8d62")
         ) # two distinct colors
@@ -204,8 +291,27 @@ __EOF__
 
 R --vanilla --quiet < TMP/jeter.R
 
-mv TMP/fisher.tsv "${prefix}.fisher.tsv"
-mv TMP/genes.pdf ${prefix}.genes.pdf
+if test -s TMP/genes.pdf
+then
+  mv TMP/genes.pdf "TMP/PDFS/\${i}.genes.pdf"
+fi
+
+if test -s TMP/fisher.tsv
+then
+  mv TMP/fisher.tsv "TMP/\${i}.fisher.tsv"
+fi
+
+i=\$((i+1))
+
+done
+
+mv TMP/PDFS/*.pdf ./
+
+find ./TMP -name "*.fisher.tsv" -exec cat '{}' ';' |\\
+	sed 's/^position/#position/' |\\
+	LC_ALL=C sort -T TMP -t '\t' -k9,9g | uniq >  "${prefix}.${what}.fisher.tsv"
+
+touch versions.yml
 """
 }
 

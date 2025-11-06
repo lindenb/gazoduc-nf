@@ -27,9 +27,7 @@ SOFTWARE.
 */
 include {runOnComplete; dumpParams                } from '../../modules/utils/functions.nf'
 include {ORA_TO_FASTQ                             } from '../../subworkflows/ora/ora2fastq'
-include {FASTQC as FASTQC_BEFORE_TRIM             } from '../../modules/fastqc'
-include {FASTQC as FASTQC_AFTER_TRIM              } from '../../modules/fastqc'
-include {FASTP                                    } from '../../modules/fastp'
+include {FASTP                                    } from '../../subworkflows/fastp'
 include {MULTIQC                                  } from '../../modules/multiqc'
 include {COMPILE_VERSIONS                         } from '../../modules/versions'
 include {BWA_INDEX                                } from '../../modules/bwa/index'
@@ -53,47 +51,12 @@ include {GRAPHTYPER                               } from '../../subworkflows/gra
 include {BCFTOOLS_CALL                            } from '../../subworkflows/bcftools/call'
 include {FREEBAYES_CALL                           } from '../../subworkflows/freebayes/call'
 include {HAPLOTYPECALLER                          } from '../../subworkflows/gatk/haplotypecaller'
+include {SAMPLESHEET_TO_FASTQ                     } from '../../subworkflows/samplesheet2fastq'
+include {PREPARE_ONE_REFERENCE                    } from '../../subworkflows/samtools/prepare.one.ref'
+include {META_TO_BAMS                             } from '../../subworkflows/samtools/meta2bams1'
+include { META_TO_PED                             } from '../../subworkflows/pedigree/meta2ped'
+include { PREPARE_USER_BED                        } from '../../subworkflows/bedtools/prepare.user.bed'
 
-Map assertKeyExists(final Map hash,final String key) {
-    if(!hash.containsKey(key)) throw new IllegalArgumentException("no key ${key}'in ${hash}");
-    return hash;
-}
-
-boolean testKeyExistsAndNotEmpty(final Map hash,final String key) {
-  if(!hash.containsKey(key)) return false;
-  def value = hash.get(key);
-  if(value==null || value.isEmpty() || value.equals(".")) return false;
-  return true;
-}
-
-Map assertKeyExistsAndNotEmpty(final Map hash,final String key) {
-    assertKeyExists(hash,key);
-    def value = hash.get(key);
-    if(value==null || value.isEmpty()) throw new IllegalArgumentException("empty ${key}'in ${hash}");
-    return hash;
-}
-
-Map assertKeyMatchRegex(final Map hash,final String key,final String regex) {
-    assertKeyExists(hash,key);
-    def value = hash.get(key);
-    if(!value.matches(regex)) throw new IllegalArgumentException(" ${key}'in ${hash} doesn't match regex '${regex}'.");
-    return hash;
-  }
-
-/** create the META ID of each sample, hash must contains "sample" */
-Map makeID(final Map hash) {
-  def hh = [:];
-  assertKeyExistsAndNotEmpty(hash,"sample")
-  hh = hh.plus(id: hash.sample)
-  if(testKeyExistsAndNotEmpty(hash,"batch")) hh = hh.plus(batch: hash.batch) // batch calling for samtools/freebayes/... call all the samples at the same time in that batch
-  if(testKeyExistsAndNotEmpty(hash,"family")) hh = hh.plus(family: hash.family)
-  if(testKeyExistsAndNotEmpty(hash,"father")) hh = hh.plus(father: hash.father)
-  if(testKeyExistsAndNotEmpty(hash,"mother")) hh = hh.plus(mother: hash.mother)
-  if(testKeyExistsAndNotEmpty(hash,"status")) hh = hh.plus(status: hash.status)
-  if(testKeyExistsAndNotEmpty(hash,"sex")) hh = hh.plus(sex: hash.sex)
-  if(testKeyExistsAndNotEmpty(hash,"collection")) hh = hh.plus(collection: hash.collection)
-  return hh;
-}
 
 if( params.help ) {
     dumpParams(params);
@@ -103,15 +66,18 @@ if( params.help ) {
 }
 
 workflow {
-
+  if(params.fasta==null) {
+      throw new IllegalArgumentException("undefined --fasta");
+      }
+	
+  if(!(params.hts_type.equals("WGS") || params.hts_type.equals("WES"))) {
+    throw new IllegalArgumentException("hts_type should batch WES|WGS ${params.hts_type}")
+    }
+  
   def hash_ref= [
-      id: file(params.fasta).baseName,
-      name: file(params.fasta).baseName,
-                  ucsc_name: (params.ucsc_name?:"undefined")
+      id: file(params.fasta).baseName
       ]
-	def fasta = [ hash_ref, file(params.fasta)]
-	def fai   = [ hash_ref, file(params.fai)]
-	def dict  = [ hash_ref, file(params.dict)]
+  def metadata = hash_ref;
   def known_indels = [hash_ref, [],[]]
   def gtf     = [hash_ref,[],[]]
   
@@ -120,140 +86,41 @@ workflow {
   }
 
 
-  if(!(params.hts_type.equals("WGS") || params.hts_type.equals("WES"))) {
-    throw new IllegalArgumentException("hts_type should batch WES|WGS ${params.hts_type}")
-  }
+ 
   def is_exome = params.hts_type.equals("WES");
   def is_wgs = params.hts_type.equals("WGS");
 
   versions_ch = Channel.empty()
   multiqc_ch = Channel.empty()
 
-  samplesheet0_ch = Channel.fromPath(params.samplesheet)
-			.splitCsv(sep:',',header:true)
-			.map{assertKeyMatchRegex(it,"sample","^[A-Za-z0-9][A-Za-z0-9_\\-\\.]*[A-Za-z0-9]\$")}
-      .branch{v->
-        fastq : testKeyExistsAndNotEmpty(v,"fastq_1") && !testKeyExistsAndNotEmpty(v,"bam") && !testKeyExistsAndNotEmpty(v,"ora")
-        bam: testKeyExistsAndNotEmpty(v,"bam") && 
-             testKeyExistsAndNotEmpty(v,"fasta") && 
-            !testKeyExistsAndNotEmpty(v,"fastq_1") && 
-            !testKeyExistsAndNotEmpty(v,"fastq_2") && 
-            !testKeyExistsAndNotEmpty(v,"ora")
-        ora: testKeyExistsAndNotEmpty(v,"ora") &&
-            !testKeyExistsAndNotEmpty(v,"bam") &&
-            !testKeyExistsAndNotEmpty(v,"fastq_1")
-        other: true
-      }
-
-  samplesheet0_ch.other.map{throw new IllegalArgumentException("bad input in ${params.samplesheet} : ${it} not a BAM or fastq or ORA input")}
-  
-  /***************************************************
-   *
-   * REMAP BAMS
-   *
-   */
-  samplesheet_bam_ch = samplesheet0_ch.bam
-      .filter{testKeyExistsAndNotEmpty(it,"bam")}
-			.map{assertKeyMatchRegex(it,"bam","^\\S+\\.(bam|cram)\$")}
-      .map{assertKeyMatchRegex(it,"fasta","^\\S+\\.(fa|fasta)\$")}
-      .map{
-        if(!it.containsKey("fai")) {
-          return it.plus(fai:it.fasta+".fai")
-          }
-        return it;
-        }
-      .map{assertKeyMatchRegex(it,"fai","^\\S+\\.(fai)\$")}
-      .map{[ makeID(it), it.bam, it.fasta, it.fai]}
-
-  PB_BAM2FQ(samplesheet_bam_ch)
-  versions_ch = versions_ch.mix(PB_BAM2FQ.out.versions)
-  bam2fq_ch = PB_BAM2FQ.out.fastqs
-    .map{[it[0],it[1].findAll{v->v.name.endsWith(".R1.fastq.gz") || v.name.endsWith(".R2.fastq.gz")}.sort()]}//ignore singletons, orphans
-    .map{[it[0],it[1][0], (it[1].size()>1?it[1][1]:null)]}
-
-  prevent_multi_gpu_ch = bam2fq_ch.count()
-
-  /***************************************************
-   *
-   *  CONVERT ORA TO FASTQ
-   *
-   */
-  ORA_TO_FASTQ(
-    Channel.of([id:"ora"]),
-    samplesheet0_ch.ora
-      .map{assertKeyMatchRegex(it,"ora","^\\S+\\.(ora)\$")}
-      .map{[ makeID(it) , file(it.ora)]}
-    ) 
-  versions_ch = versions_ch.mix(ORA_TO_FASTQ.out.versions)    
-  
-
-
-  samplesheet_ch = samplesheet0_ch.fastq
-      .filter{testKeyExistsAndNotEmpty(it,"fastq_1")}
-			.map{assertKeyMatchRegex(it,"fastq_1","^\\S+\\.(fastq|fq|fastq\\.gz|fq\\.gz)\$")}
-      .map{
-          if(it.containsKey("fastq_2")) {
-            if(!(it.fastq_2==null || it.fastq_2.equals(".") || it.fastq_2.isEmpty())) {
-              // fastq cannot end with '.ora'
-              assertKeyMatchRegex(it,"fastq_2","^\\S+\\.(fastq|fq|fastq\\.gz|fq\\.gz)\$")
-              }
-            return [[id:it.sample],file(it.fastq_1),file(it.fastq_2)];//paired end
-            }
-          return [makeID(it),file(it.fastq_1), null ];//single end
-          }
-    .mix(bam2fq_ch)
-    .mix(ORA_TO_FASTQ.out.single_end.map{[it[0],it[1],null ]})
-    .mix(ORA_TO_FASTQ.out.paired_end.map{[it[0],it[1],it[2]]})
-
-
-  /***************************************************
-   *
-   * Check no duplicate sample
-   *
-   */  
-  samplesheet_ch.map{it[0].id}.unique().count()
-    .combine( samplesheet_ch.map{it[0].id}.count() )
-    .map{
-      if(!it[0].equals(it[1])) throw new IllegalArgumentException("probably duplicate sample. Check samplesheet");
-      return it;
+  /* no fastq samplesheet */
+  if(params.samplesheet==null) {
+    samplesheet0_ch = Channel.empty()
     }
-
-
-  /**
-   * join meta data about samples
-   */
-	if(params.sampleinfo!=null) {
-      ch2 = Channel.fromPath(params.sampleinfo)
-        .splitCsv(sep:',',header:true)
-        .map{assertKeyExistsAndNotEmpty(it,"sample")}
-        .map{[ [id:it.sample], it ]}
-
-      /* join with fastq info */
-      samplesheet_ch = samplesheet_ch.join(ch2,remainder:true)
-        .filter{it.size()==4}
-        .map {
-          if(it[3]!=null) return [it[0].plus(it[3]),it[1],it[2]];
-          return  [it[0],it[1],it[2]]	
-          }
+  else
+    {
+    samplesheet0_ch = Channel.fromPath(params.samplesheet);
+    if(params.samplesheet.endsWith(".json")) {
+      samplesheet0_ch =  samplesheet0_ch.splitJson();
       }
-	   
-
-
-  /* select fastq having an .ORA extension */
-  fastq_type_ch = samplesheet_ch.branch{v->
-      single_end: v.size()==2 || !v[2]
-      paired_end: v.size()==3
-      other: true
+    else
+      {
+      samplesheet0_ch =  samplesheet0_ch.splitCsv(sep:',',header:true);
       }
+    }
+  
+  SAMPLESHEET_TO_FASTQ(
+    metadata,
+    samplesheet0_ch
+    )
+  versions_ch =  SAMPLESHEET_TO_FASTQ.out.versions
 
-  fastq_type_ch.other.map{throw new IllegalArgumentException("bad input fastq_type_ch : ${it}")}
 
-
-  single_end = fastq_type_ch.single_end
+  single_end = SAMPLESHEET_TO_FASTQ.out.single_end
     .map{[it[0],[it[1]]]}
     
     
-  paired_end = fastq_type_ch.paired_end
+  paired_end = SAMPLESHEET_TO_FASTQ.out.paired_end
     .map{[it[0],[it[1],it[2]]]}
 
    
@@ -266,7 +133,7 @@ workflow {
     FASTQC_BEFORE_TRIM( single_end.mix(paired_end) )
     versions_ch = versions_ch.mix(FASTQC_BEFORE_TRIM.out.versions)
     multiqc_ch = multiqc_ch.mix(FASTQC_BEFORE_TRIM.out.zip)
-   }
+    }
 
   
   /***************************************************
@@ -303,63 +170,96 @@ workflow {
     paired_end = trim_reads.paired_end.map{[it[0],it[1].sort()]}
   }
 
+
+	PREPARE_ONE_REFERENCE(
+		metadata,
+		Channel.fromPath(params.fasta)
+			.map{[[id:it.baseName],it]}
+		)
+	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
+
+
   /***************************************************
    *
    *  Index FASTA For BWA
    *
    */
-  BWA_INDEX(fasta)
-  versions_ch = versions_ch.mix(BWA_INDEX.out.versions)
-  
+  	if(params.bwa_index_directory!=null) {
+      BWADir = [[id:"bwaindex"],file(params.bwa_index_directory)];
+      }
+    else
+      {
+      BWA_INDEX(PREPARE_ONE_REFERENCE.out.fasta)
+      versions_ch = versions_ch.mix(BWA_INDEX.out.versions)
+      BWADir = BWA_INDEX.out.bwa_index
+      }
   /***************************************************
    *
-   *  MAP FASTQS TO BAM USING PARABRICKS
-   *
+   *  MAP FASTQS TO BAM
    */
-  PB_FQ2BAM(
-    fasta,
-    fai,
-    BWA_INDEX.out.bwa_index ,
-    known_indels,
-    prevent_multi_gpu_ch //prevent multiple GPUs jobs at the same time
-      .combine(single_end.mix(paired_end))
-      .map{it[1..<it.size()]} // remove item[0] containing multiple GPLUs guard
-    )  
-  versions_ch = versions_ch.mix(PB_FQ2BAM.out.versions)
-  multiqc_ch = multiqc_ch.mix(PB_FQ2BAM.out.duplicate_metrics)
-  bams_ch =  PB_FQ2BAM.out.bam
-  prevent_multi_gpu_ch = bams_ch.count()
+  if(params.mapper.matches("(pb|parabricks)")) {
+    /***************************************************
+    *
+    *  MAP FASTQS TO BAM USING PARABRICKS
+    *
+    */
+    PB_FQ2BAM(
+      PREPARE_ONE_REFERENCE.out.fasta,
+      PREPARE_ONE_REFERENCE.out.fai,
+      BWADir,
+      known_indels,
+      prevent_multi_gpu_ch //prevent multiple GPUs jobs at the same time
+        .combine(single_end.mix(paired_end))
+        .map{it[1..<it.size()]} // remove item[0] containing multiple GPLUs guard
+      )  
+    versions_ch = versions_ch.mix(PB_FQ2BAM.out.versions)
+    multiqc_ch = multiqc_ch.mix(PB_FQ2BAM.out.duplicate_metrics)
+    bams_ch =  PB_FQ2BAM.out.bam
+    prevent_multi_gpu_ch = bams_ch.count()
+    }
+  else if(params.mapper.matches("(bwa)")) {
+    /***************************************************
+    *
+    *  MAP FASTQS TO BAM USING BWA
+    *
+    */
+    MAP_BWA(
+      metadata ,
+      PREPARE_ONE_REFERENCE.out.fasta,
+      PREPARE_ONE_REFERENCE.out.fai,
+      PREPARE_ONE_REFERENCE.out.dict,
+      BWADir,
+      [[id:"bqsr_files"],[]],
+      [[id:"nobed"],[]],
+      single_end.mix(paired_end)
+      )
+  versions_ch = versions_ch.mix(MAP_BWA.out.versions)
+  bams_ch =  MAP_BWA.out.bams
+  }
+  else
+  {
+    throw new IllegalArgumentException("unknown mapper: ${params.mapper}");
+  }
 
 
   /* add extra BAM , if any */
   if(params.exta_bams!=null) {
-      bams2_ch = 
-        Channel.fromPath(params.exta_bams)
-          .splitCsv(sep:',',header:true)
-          .map{assertKeyMatchRegex(it,"sample","^[A-Za-z0-9][A-Za-z0-9_\\-\\.]*[A-Za-z0-9]\$")}
-          .map{assertKeyMatchRegex(it,"bam","^\\S+\\.(bam|cram)\$")}
-          .map{assertKeyMatchRegex(it,"bai","^\\S+\\.(bai|crai)\$")}
-          .map{[ makeID(it) ,it.bam,it.bai]}
-      
-        /* join SAMPLE INFO is any */
-      	if(params.sampleinfo!=null) {
-            ch2 = Channel.fromPath(params.sampleinfo)
-                                .splitCsv(sep:',',header:true)
-              .map{assertKeyExistsAndNotEmpty(it,"sample")}
-              .map{[ [id:it.sample], it ]}
-
-            /* join with fastq info */
-            bams2_ch = bams2_ch.join(ch2,remainder:true)
-              .filter{it.size()==4}
-              .map {
-                if(it[3]!=null) return [it[0].plus(it[3]),it[1],it[2]];
-                return  [it[0],it[1],it[2]]	
-                }
-            }
-
-
-       bams_ch = bams_ch.mix(bams2_ch)
-  }
+      bams2_ch =  Channel.fromPath(params.exta_bams)
+      if(params.exta_bams.endsWith(".json")) {
+        bams2_ch = bams2_ch.splitJSon()
+      } else {
+        bams2_ch = bams2_ch.splitCsv(sep:',',header:true)
+      }
+      META_TO_BAMS(
+        metadata ,
+        PREPARE_ONE_REFERENCE.out.fasta,
+        PREPARE_ONE_REFERENCE.out.fai,
+        PREPARE_ONE_REFERENCE.out.dict,
+        bams2_ch
+        )
+      versions_ch = versions_ch.mix(META_TO_BAMS.out.versions)
+      bams_ch = bams_ch.mix(META_TO_BAMS.out.bams)
+      }
 
   /***************************************************
    *
@@ -373,43 +273,18 @@ workflow {
       return it;
     }
 
+  
+
   /***************************************************
    *
    * BUILD A PEDIGREE FROM META INFO
    *
    */
-  MAKE_PED(
-    bams_ch
-    .map{
-      def meta=it[0];
-      def sample = meta.id
-      def father = meta.father?:"0"
-      def mother = meta.mother?:"0"
-      def sex = meta.sex?:(meta.gender?:"0")
-      def status = meta.status?:"case"
-      return [sample, father, mother, sex, status]
-      }
-    .collect(flat:false)
-    .view()
-    .map{
-      def snmap=[:];
-      for(row in it) {
-        snmap.put(row[0],row);
-        }
-      def s="";
-      for(row in it) {
-        s+=row[0]+"\t"+row[0]+"\t";
-        s+= (snmap.containsKey(row[1])?row[1]:"0") + "\t";
-        s+= (snmap.containsKey(row[2])?row[2]:"0") + "\t";
-        s+= row[3] + "\t";
-        s+= row[4] + "\n";
-        }
-      return s;
-      }
-    .map{[[id:"pedigree"],it]}
-    )
-   pedigree_ch = MAKE_PED.out.pedigree.ifEmpty([[:],[]])
-   trios_ped_ch = MAKE_PED.out.trio_ped.ifEmpty([[:],[]])
+  META_TO_PED(metadata, bams_ch.map{it[0]})
+	versions = versions.mix(META_TO_PED.out.versions)
+
+   pedigree_ch = META_TO_PED.out.pedigree.ifEmpty([[:],[]])
+   trios_ped_ch = META_TO_PED.out.trio_ped.ifEmpty([[:],[]])
 
   /***************************************************
    *
@@ -418,12 +293,23 @@ workflow {
    *
    */
   if(params.bed==null) {
-    SCATTER_TO_BED(hash_ref,fasta,fai,dict)
-    versions_ch = versions_ch.mix(SCATTER_TO_BED.out.versions)
-    bed = SCATTER_TO_BED.out.bed
-  } else {
-      bed = [hash_ref, file(params.bed)]
-  }
+    if(is_exome) throw new IllegalArgimentException("EXOME but no capture was defined");
+		bed = Channel.of([ [id:"nobed"], [] ])
+		}
+	else {
+		PREPARE_USER_BED(
+			metadata,
+			PREPARE_ONE_REFERENCE.out.fasta,
+			PREPARE_ONE_REFERENCE.out.fai,
+			PREPARE_ONE_REFERENCE.out.dict,
+			PREPARE_ONE_REFERENCE.out.scatter_bed,
+			Channel.of([[id:"capture"],file(params.bed)])
+			)
+		versions = versions.mix(PREPARE_USER_BED.out.versions)
+		multiqc = multiqc.mix(PREPARE_USER_BED.out.multiqc)
+		bed = PREPARE_USER_BED.out.bed
+		}
+  
   /***************************************************
    *
    * STATS ON BAM
@@ -433,7 +319,13 @@ workflow {
   mosdepth_summary_ch = Channel.empty()
   // stats are required if graphtyper is used
   if( params.with_bam_qc == true || params.with_graphtyper == true) {
-      BAM_QC(hash_ref,fasta,fai,dict,bed,bams_ch)
+      BAM_QC(
+        PREPARE_ONE_REFERENCE.out.fasta,
+			  PREPARE_ONE_REFERENCE.out.fai,
+			  PREPARE_ONE_REFERENCE.out.dict,
+        bed,
+        bams_ch
+        )
       versions_ch = versions_ch.mix(BAM_QC.out.versions)
       multiqc_ch = multiqc_ch.mix(BAM_QC.out.multiqc)
       mosdepth_summary_ch = BAM_QC.out.mosdepth_summary
@@ -451,11 +343,11 @@ workflow {
         user_sites = Channel.of([[:],[],[]]) //custom sites
         SOMALIER_BAMS(
             hash_ref,
-            Channel.of(fasta),
-            fai,
-            dict,
+            PREPARE_ONE_REFERENCE.out.fasta,
+            PREPARE_ONE_REFERENCE.out.fai,
+			      PREPARE_ONE_REFERENCE.out.dict,
             bams_ch,
-            pedigree_ch,
+            META_TO_PED.out.pedigree,
             user_sites
             )
         versions_ch = versions_ch.mix(SOMALIER_BAMS.out.versions)
@@ -468,9 +360,9 @@ workflow {
   if(params.with_manta == true && is_wgs) {
     MANTA_SINGLE(
         hash_ref,
-        fasta,
-        fai,
-        dict,
+        PREPARE_ONE_REFERENCE.out.fasta,
+        PREPARE_ONE_REFERENCE.out.fai,
+			  PREPARE_ONE_REFERENCE.out.dict,
         bams_ch,
         [[:],[]] //No bed
         )
@@ -485,10 +377,10 @@ workflow {
   if(params.with_indexcov == true && is_wgs) {
     INDEXCOV(
       hash_ref,
-      fasta,
-      fai,
-      dict,
-      pedigree_ch,
+      PREPARE_ONE_REFERENCE.out.fasta,
+      PREPARE_ONE_REFERENCE.out.fai,
+      PREPARE_ONE_REFERENCE.out.dict,
+      META_TO_PED.out.pedigree,
       bams_ch.map{[it[0],it[1]]/* no BAI please */}
       )
     versions_ch = versions_ch.mix(INDEXCOV.out.versions)
@@ -501,9 +393,9 @@ workflow {
   if(params.with_delly == true && is_wgs) {
       DELLY(
             hash_ref,
-            fasta,
-            fai,
-            dict,
+            PREPARE_ONE_REFERENCE.out.fasta,
+            PREPARE_ONE_REFERENCE.out.fai,
+            PREPARE_ONE_REFERENCE.out.dict,
             bams_ch
             )
       versions_ch = versions_ch.mix(DELLY.out.versions)
@@ -518,9 +410,9 @@ workflow {
   if(params.with_cnvnator == true) {
     CNVNATOR(
       hash_ref,
-      fasta,
-      fai,
-      dict,
+      PREPARE_ONE_REFERENCE.out.fasta,
+      PREPARE_ONE_REFERENCE.out.fai,
+      PREPARE_ONE_REFERENCE.out.dict,
       bams_ch
       )
     versions_ch = versions_ch.mix(CNVNATOR.out.versions)
@@ -558,9 +450,9 @@ workflow {
   if(params.with_pb_haplotypecaller == true) {
     PB_HAPLOTYPECALLER(
       hash_ref,
-      fasta,
-      fai,
-      dict,
+      PREPARE_ONE_REFERENCE.out.fasta,
+      PREPARE_ONE_REFERENCE.out.fai,
+      PREPARE_ONE_REFERENCE.out.dict,
       cluster_bed1.map{[[id:it.name.toString().md5().substring(0,8)],it]},
       prevent_multi_gpu_ch //prevent multiple GPUs jobs at the same time
         .combine(  bams_ch.map{it + [[]]/* empty file for BQSR */})
@@ -579,9 +471,9 @@ workflow {
   if(params.with_pb_deepvariant == true) {
     PB_DEEPVARIANT(
       hash_ref,
-      fasta,
-      fai,
-      dict,
+      PREPARE_ONE_REFERENCE.out.fasta,
+      PREPARE_ONE_REFERENCE.out.fai,
+      PREPARE_ONE_REFERENCE.out.dict,
       cluster_bed1.map{[[id:it.name.toString().md5().substring(0,8)],it]},
       prevent_multi_gpu_ch //prevent multiple GPUs jobs at the same time
         .combine(bams_ch)
@@ -601,9 +493,9 @@ workflow {
   if(params.with_graphtyper == true) {
     GRAPHTYPER(
       hash_ref,
-      fasta,
-      fai,
-      dict,
+      PREPARE_ONE_REFERENCE.out.fasta,
+      PREPARE_ONE_REFERENCE.out.fai,
+      PREPARE_ONE_REFERENCE.out.dict,
       mosdepth_summary_ch,
       cluster_bed1.map{[[id:it.name.toString().md5().substring(0,8)],it]},
       bams_ch
@@ -620,9 +512,9 @@ workflow {
   if(params.with_bcftools_call == true) {
     BCFTOOLS_CALL(
       hash_ref,
-      fasta,
-      fai,
-      dict,
+      PREPARE_ONE_REFERENCE.out.fasta,
+      PREPARE_ONE_REFERENCE.out.fai,
+      PREPARE_ONE_REFERENCE.out.dict,
       pedigree_ch,
       cluster_bed2.map{[[id:"bed"],it]},
       bams_ch
@@ -639,9 +531,9 @@ workflow {
   if(params.with_freebayes == true) {
     FREEBAYES_CALL(
       hash_ref,
-      fasta,
-      fai,
-      dict,
+      PREPARE_ONE_REFERENCE.out.fasta,
+      PREPARE_ONE_REFERENCE.out.fai,
+      PREPARE_ONE_REFERENCE.out.dict,
       pedigree_ch,
       cluster_bed2.map{[[id:"bed"],it]},
       bams_ch
@@ -653,9 +545,9 @@ workflow {
   if(params.with_gatk == true) {
     HAPLOTYPECALLER(
       hash_ref,
-      fasta,
-      fai,
-      dict,
+      PREPARE_ONE_REFERENCE.out.fasta,
+      PREPARE_ONE_REFERENCE.out.fai,
+      PREPARE_ONE_REFERENCE.out.dict,
       cluster_bed1.map{[[id:"bed"],it]},
       bams_ch
       )
@@ -668,7 +560,12 @@ workflow {
    * GUESS PLOIDY FROM VCFS
    *
    */
-  BCFTOOLS_GUESS_PLOIDY(fasta, fai,vcf_ch)
+  BCFTOOLS_GUESS_PLOIDY(
+      hash_ref,
+      PREPARE_ONE_REFERENCE.out.fasta,
+      PREPARE_ONE_REFERENCE.out.fai,
+      vcf_ch
+      )
   versions_ch = versions_ch.mix(BCFTOOLS_GUESS_PLOIDY.out.versions)
 
   /***************************************************
@@ -677,8 +574,8 @@ workflow {
    *
    */
   BCFTOOLS_STATS(
-    fasta,
-    fai,
+    PREPARE_ONE_REFERENCE.out.fasta,
+    PREPARE_ONE_REFERENCE.out.fai,
     bed,
     Channel.of(gtf).map{[it[0],it[1]]}.first(),//meta,gtf
     [[:],[]],//samples,
@@ -707,7 +604,7 @@ runOnComplete(workflow)
   *  BUILD A PEDIGREE FILE
   *
   */
-process MAKE_PED {
+process MAKE_PED_xxxxxxxxxxxx {
 executor "local"
 input:
   tuple val(meta),val(content)

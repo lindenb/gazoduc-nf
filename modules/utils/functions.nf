@@ -546,6 +546,31 @@ boolean isEmptyGz(def p) {
         }
 
 
+/** flat map by array index */
+List flatMapByIndex(List L0,int index) {
+	if(L0==null) throw new IllegalArgumentException("flatMapByIndex L0 is null");
+	if(index<0 || index>=L0.size()) throw new IllegalArgumentException("flatMapByIndex index=${index} out or range");
+	def pivot = L0[index];
+	if(!(pivot instanceof List))  {
+		throw new IllegalArgumentException("flatMapByIndex index . pivot is NOT a list ");
+		}
+	def L1=[];
+	for(int i=0;i< pivot.size();i++) {
+		def L2=[];
+		for(int j=0;j< L0.size();j++) {
+			if(j==index) {
+				L2.add(pivot[i]);
+				}
+			else
+				{
+				L2.add(L0[j]);
+				}
+			}
+		L1.add(L2);
+		}
+	return L1;
+	}
+
 void runOnComplete(def wf) {
 wf.onComplete {
     println ( workflow.success ? """

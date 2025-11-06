@@ -30,7 +30,7 @@ conda "${moduleDir}/../../conda/fastqc.yml"
 input:
 	tuple val(meta),path("IN/*")
 output:
-	tuple val(meta), path("OUT/*.zip"),emit:zip
+	tuple val(meta), path("OUT/*.zip", arity: '1..*'),emit:zip /* one zip per fastq */
 	tuple val(meta), path("OUT/*.html"),emit:html
 	path("versions.yml"),emit:versions
 script:

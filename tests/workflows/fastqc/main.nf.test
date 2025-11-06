@@ -4,27 +4,12 @@ nextflow_pipeline {
     script "workflows/fastqc/main.nf"
 
     test("fastqc test") {
-/*
-	setup {
-		run("wgsim") {
-		script "workflows/wgsim/main.nf"
-		when {
-		params {
-			outdir = "tests/results"
-			fasta = "tests/results/x1.fasta"
-			}
-			}
-		test {
-	            assert workflow.success
-			}
-		}
-	}*/
 
 
         when {
             params {
-	       samplesheet = "tests/results/samplesheet.csv"
-               outdir = "tests/results"
+	       samplesheet = "${}"
+               outdir = "tests/data/REF/GRCh38/FASTQ/samplesheet.csv"
             }
         }
 

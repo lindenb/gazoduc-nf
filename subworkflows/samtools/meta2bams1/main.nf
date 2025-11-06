@@ -85,7 +85,7 @@ main:
 
 	if(meta.with_test_unique_id==null || meta.with_test_unique_id==true) {
      	bams_out.map{it->it[0].id}.unique().count().
-     		combine(bams_out.map{it->it[0].id}.unique().count())
+     		combine(bams_out.map{it->it[0].id}.count())
      		.filter{c1,c2->c1!=c2}
      		.map{throw new IllegalArgumentException("input contains same duplicate samples");}
      	}

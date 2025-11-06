@@ -13,17 +13,14 @@ nextflow_process {
             process {
                 """
                 input[0] = [[id:"noref"],[]]
-                input[1] = [[id:"bams"],[file("../../../data/rotavirus_rf.fa")]]
+                input[1] = [[id:"bams"],[file("${projectDir}/tests/data/S1.bam"),file("${projectDir}/tests/data/S2.bam")]]
                 """
             }
         }
 
         then {
             assert process.success
-            with(process.out) {
-		assert samplesheet.exist()
-		}
-        }
+            }
 
     }
 

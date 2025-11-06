@@ -25,6 +25,7 @@ SOFTWARE.
 include {BCFTOOLS_CALL as CALL } from '../../../modules/bcftools/call'
 include {BCFTOOLS_MERGE        } from '../../../modules/bcftools/merge'
 include {BCFTOOLS_CONCAT       } from '../../../modules/bcftools/concat'
+include {isBlank               } from '../../../modules/utils/functions'
 
 
 
@@ -67,7 +68,7 @@ workflow BCFTOOLS_CALL {
 					to_merge:v[1].size()>2 /* bed and it's index */
 					other: true
 					}
-		// merge thos having more than one sample
+		// merge those having more than one sample
 		BCFTOOLS_MERGE( ch3.to_merge )
 		versions = versions.mix(BCFTOOLS_MERGE.out.versions)
 
@@ -85,8 +86,7 @@ workflow BCFTOOLS_CALL {
 			SET_GQ.out.vcf
 				.map{[[id:"call"],[it[1],it[2]]]}
 				.groupTuple()
-				.map{[it[0],it[1].flatten()]},
-			[[id:"nobed"],[]]
+				.map{[it[0],it[1].flatten(),[]/* no bed */]}
 			)
 		versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
 

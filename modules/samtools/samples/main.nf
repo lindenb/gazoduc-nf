@@ -35,6 +35,12 @@ output:
     path("versions.yml"),emit:versions
 script:
     def args1 = task.ext.args1?:""
+    // check sample is defined
+    def check_sample = (task.ext.check_sample?:true) as boolean
+    // check no dup sample
+    def check_dup = (task.ext.check_dup?:true) as boolean
+    // check fasta is known
+    def check_ref = (task.ext.check_ref?:true) as boolean
 """
 mkdir -p TMP
 
@@ -46,7 +52,38 @@ find \${PWD}/BAMS/ -name "*am" |\\
         ` find REFS/ \\( -name "*.fasta" -o  -name "*.fa" -o -name "*.fna" \\)  -printf "-f %p "` \\
         ${args1} > TMP/samplesheet.tsv
 
+if ${check_sample}
+then
+	awk -F '\t' '(\$1==".")' TMP/samplesheet.tsv > TMP/sn.txt
+	sed 's/^/MISSING RG:SM /' TMP/sn.txt 1>&2
+	test ! -s TMP/sn.txt
+fi
+
+if ${check_ref}
+then
+	awk -F '\t' '(\$3==".")' TMP/samplesheet.tsv > TMP/fa.txt
+	sed 's/^/MISSING REF /' TMP/fa.txt 1>&2
+	test ! -s TMP/fa.txt
+fi
+
+if ${check_dup}
+then
+
+	cut -f1 TMP/samplesheet.tsv | sort | uniq -d > TMP/dups.txt
+	sed 's/^/DUPLICATE SAMPLE: /' TMP/dups.txt 1>&2
+	test ! -s TMP/dups.txt
+
+	cut -f2 TMP/samplesheet.tsv | sort | uniq -d > TMP/dups.txt
+	sed 's/^/DUPLICATE BAM: /' TMP/dups.txt 1>&2
+	test ! -s TMP/dups.txt
+
+fi
+
+
+
 mv TMP/samplesheet.tsv ./
+
+
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
