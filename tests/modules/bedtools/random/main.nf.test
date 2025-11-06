@@ -1,0 +1,28 @@
+nextflow_process {
+
+    name "Test Process BEDTOOLS_RANDOM"
+    script "modules/bedtools/random/main.nf"
+    process "BEDTOOLS_RANDOM"
+    tag "modules"
+    tag "modules/bedtools"
+    tag "modules/bedtools/random"
+
+    test("BASIC") {
+
+        when {
+            
+            process {
+                """
+				input[0] = [ [id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+}

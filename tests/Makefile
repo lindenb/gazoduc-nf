@@ -228,7 +228,7 @@ data/REF/$(BUILD).bed : data/REF/$(BUILD).fa.fai
 	awk -F '\t' '{printf("%s\t0\t%s\n",$$1,$$2);}' $< > $@
 
 
-data/REF/$(BUILD).fai : data/REF/$(BUILD).fa
+data/REF/$(BUILD).fa.fai : data/REF/$(BUILD).fa
 	samtools faidx $<
 
 data/REF/$(BUILD).fa:
