@@ -1,0 +1,54 @@
+nextflow_process {
+
+    name "Test Process SAMTOOLS_STATS"
+    script "modules/samtools/stats/main.nf"
+    process "SAMTOOLS_STATS"
+    tag "modules"
+    tag "modules/samtools"
+    tag "modules/samtools/stats"
+    
+    test("NO_BED") {
+
+        when {
+           
+            process {
+                """
+               	input[0] = [ [id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+				input[1] = [ [id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+				input[2] = [ [id:"nobed"],[]]
+  				input[3] = [ [id:"S1"],file("${projectDir}/tests/data/S1.bam"), file("${projectDir}/tests/data/S1.bam.bai") ]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+    test("BED") {
+
+        when {
+           
+            process {
+                """
+               	input[0] = [ [id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+				input[1] = [ [id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+				input[2] = [ [id:"nobed"],file("${projectDir}/tests/data/rotavirus_rf.bed")]
+  				input[3] = [ [id:"S1"],file("${projectDir}/tests/data/S1.bam"), file("${projectDir}/tests/data/S1.bam.bai") ]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+
+
+}
