@@ -1,0 +1,35 @@
+nextflow_workflow {
+
+    name "Test Workflow SCATTER_TO_BED"
+    script "subworkflows/gatk/scatterintervals2bed/main.nf"
+    workflow "SCATTER_TO_BED"
+    tag "subworkflows"
+    tag "subworkflows/gatk"
+    tag "subworkflows/gatk/scatterintervals2bed"
+    config "./nextflow.config"
+
+    test("BASIC") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [id:"rf"]
+                input[1] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[2] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[3] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")]
+               """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

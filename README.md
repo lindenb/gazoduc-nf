@@ -118,6 +118,13 @@ nextflow run -profile 'GRCh38,nautilus` main.nf
 git clone https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf.git
 ```
 
+## Testing
+
+note to self:
+
+```
+nf-test test --profile micromamba --tag=subworkflows/samtools/prepare.one.ref
+```
 
 ## Author
 
