@@ -50,8 +50,8 @@ script:
 	def mother = meta.mother
 	def model_type = task.ext.model_type?:(meta.model_type?:"")
 	if(model_type.isEmpty()) throw new IllegalArgumentException("${task.process} missing ext.model_type (e.g WGS,WES,PACBIO,ONT_R104,HYBRID_PACBIO_ILLUMINA)");
-	def keep_gvcf= (task.ext.keep_gvcf?:false) as boolean
-	def keep_vcf= (task.ext.keep_vcf?:false) as boolean
+	def keep_gvcf= (task.ext.keep_gvcf?:false).toBoolean()
+	def keep_vcf= (task.ext.keep_vcf?:false).toBoolean()
 	if(!keep_gvcf && !keep_vcf) throw new IllegalArgumentException("${task.process} discard all")
 """
 	hostname 1>&2

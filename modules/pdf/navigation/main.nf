@@ -33,7 +33,7 @@ output:
 script:
 	def prefix = task.ext.prefix?:(meta.id?meta.id:"archive")
     def dir = prefix
-    def with_zip = (task.ext.with_zip?:true) as boolean
+    def with_zip = (task.ext.with_zip?:true).toBoolean()
     def title = task.ext.title?:"PDFs"
 """
 hostname 1>&2

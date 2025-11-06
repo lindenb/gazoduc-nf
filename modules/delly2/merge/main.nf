@@ -36,7 +36,7 @@ process MERGE_DELLY {
          path("versions.yml"),emit:versions
     script:
         def prefix = task.prefix?:meta.id
-	    def with_bnd = (task.ext.with_bnd?:true) as boolean
+	def with_bnd = (task.ext.with_bnd?:true).toBoolean()
     """
     hostname 1>&2
     export LC_ALL=C

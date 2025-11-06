@@ -40,7 +40,7 @@ process JVARKIT_VCF_SET_DICTIONARY {
 		def args2 = task.ext.args2?:"-n SKIP"
 		def args3 = task.ext.args3?:""
 		def prefix  = task.ext.prefix?:vcf.baseName+".setdict"
-		def sort = (task.ext.sort?:false) as boolean
+		def sort = (task.ext.sort?:false).toBoolean()
 		def suffix = task.ext.extension?:".bcf"
 		def is_bcf = suffix.endsWith("bcf")
 	"""

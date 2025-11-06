@@ -37,23 +37,23 @@ workflow WGSELECT_EXCLUDE_BED_01 {
 		gaps_ch = SCATTER_TO_BED(genome)
 		to_merge_ch = to_merge_ch.mix(gaps_ch.output)
 
-		if(params.wgselect.with_rmsk as boolean) {
+		if(params.wgselect.with_rmsk.toBoolean()) {
 			rmsk_ch = RMSK(genome)
 			to_merge_ch = to_merge_ch.mix(rmsk_ch.bed)
 			}
 
-		if(params.wgselect.with_encode_exclude as boolean) {
+		if(params.wgselect.with_encode_exclude.toBoolean()) {
 			x2_ch = EXCLUDE_ENCODE(genome)
 			to_merge_ch = to_merge_ch.mix(x2_ch.bed)
 			}
 
 
-		if(params.wgselect.with_lcr as boolean) {
+		if(params.wgselect.with_lcr.toBoolean()) {
 			x3_ch = LOW_COMPLEXITY_REGIONS(genome)
 			to_merge_ch = to_merge_ch.mix(x3_ch.bed)
 			}
 
-		if(params.wgselect.with_simple_repeats as boolean) {
+		if(params.wgselect.with_simple_repeats .toBoolean()) {
 			x4_ch = SIMPLE_REPEATS(genome)
 			to_merge_ch = to_merge_ch.mix(x4_ch.bed)
 			}

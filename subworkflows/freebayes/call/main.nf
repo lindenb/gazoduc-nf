@@ -112,7 +112,7 @@ output:
 script:
 	def prefix = task.ext.prefix?:vcf.name.md5().substring(0,7)+".ac_gt0"
 	// can break java based parser for VCF after BCFTOOLS MERGE: bad GL
-	def remove_GL = ((task.ext.no_GL?:false) as boolean)
+	def remove_GL = ((task.ext.no_GL?:false).toBoolean())
 """
 mkdir -p TMP
 

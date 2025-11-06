@@ -121,7 +121,7 @@ workflow {
 	versions  = versions.mix(SMOOVE_SV.out.versions)
 
 	vcf = SMOOVE_SV.out.vcf
-	if((params.with_annotation as boolean)==true) {
+	if((params.with_annotation.toBoolean())==true) {
 		SMOOVE_ANNOTATE(fasta,fai,dict,gff3,vcf)
 		versions  = versions.mix(SMOOVE_ANNOTATE.out.versions)
 		vcf = SMOOVE_ANNOTATE.out.vcf

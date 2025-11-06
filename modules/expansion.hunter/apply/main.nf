@@ -34,15 +34,18 @@ process XHUNTER_APPLY {
 		tuple val(meta ),path(bam),path(bai)
 	output:
 		tuple val(meta),path("*.vcf.gz"),path("*.tbi"),emit:vcf
-		tuple val(meta),path("*.json"),emit:json
+		tuple val(meta),path("*.json"),optional:true,emit:json
 		tuple val(meta),path("*.bam"),path("*.bai"),optional:true,emit:bam
 		path("versions.yml"),emit:versions
 	script:
-		def keepbam = ((task.ext.keep_bam?:false) as boolean)
-		def mode  = (task.ext.mode?:"streaming")
-		def prefix = task.ext.prefix?:"${meta.id}"
-		def sex= meta.sex?:"undefined"
-		def args1 = task.ext.args1?:"--region-extension-length  1000 "
+		def keep_bams = (task.ext.keep_bams?:false).toBoolean()
+		def keep_json = (task.ext.keep_json?:false).toBoolean()
+		def mode      = (task.ext.mode?:"streaming")
+		def prefix    = task.ext.prefix?:"${meta.id}"
+		def sex       = meta.sex?:"undefined"
+		def args1     = task.ext.args1?:""
+	
+	//log.warn("keep_bams = ${keep_bams} ${task.ext.keep_bams} class2=${task.ext.keep_bams.class} class=${keep_bams.class}")
 	"""
 	hostname 1>&2
 	mkdir -p TMP
@@ -107,15 +110,22 @@ process XHUNTER_APPLY {
 	bcftools index   --threads ${task.cpus} -f -t "TMP/${prefix}.vcf.gz"
 
 
-	if  ${keepbam} ; then
-		samtools sort -T TMP/sort  --threads ${task.cpus} -O BAM --reference "${fasta}" -o "${prefix}.realigned.bam" "TMP/jeter_realigned.bam"
-		samtools index --threads ${task.cpus} "${prefix}.realigned.bam"
+	if  ${keep_bams}
+	then
+		samtools sort -T TMP/sort  --threads ${task.cpus} -O BAM --reference "${fasta}" -o "TMP/${prefix}.realigned.bam" "TMP/jeter_realigned.bam"
+		samtools index --threads ${task.cpus} "TMP/${prefix}.realigned.bam"
+		mv "TMP/${prefix}.realigned.bam" ./
+		mv "TMP/${prefix}.realigned.bam.bai" ./
 	fi
 
 
 	mv TMP/${prefix}.vcf.gz ./
 	mv TMP/${prefix}.vcf.gz.tbi ./
-	mv TMP/jeter.json "${prefix}.json"
+
+	if ${keep_json}
+	then
+		mv TMP/jeter.json "${prefix}.json"
+	fi
 
 cat << EOF > versions.yml
 "${task.process}":

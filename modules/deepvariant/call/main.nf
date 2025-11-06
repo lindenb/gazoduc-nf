@@ -45,8 +45,8 @@ script:
 	def model_type = task.ext.model_type?:""
 	if(model_type.isEmpty()) throw new IllegalArgumentException("${task.process} missing ext.model_type (e.g WGS,WES,PACBIO,ONT_R104,HYBRID_PACBIO_ILLUMIN)");
 	def prefix = task.ext.prefix?:sample+".deepvariant"
-	def keep_gvcf= (task.ext.keep_gvcf?:true) as boolean
-	def keep_vcf= (task.ext.keep_vcf?:true) as boolean
+	def keep_gvcf= (task.ext.keep_gvcf?:true).toBoolean()
+	def keep_vcf= (task.ext.keep_vcf?:true).toBoolean()
 	if(!keep_gvcf && !keep_vcf) throw new IllegalArgumentException("${task.process} discard all");
 """
 	hostname 1>&2

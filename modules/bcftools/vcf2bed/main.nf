@@ -40,7 +40,7 @@ script:
 	def awk_expr = task.ext.awk_expr?:""
 	if(task.ext.split==null) throw new IllegalArgumentException("ext.split not defined for ${task.process}");
 	// if TRUE : split the final file of N bed records to N files with one bed record
-	def split = (task.ext.split?:false) as boolean
+	def split = (task.ext.split?:false).toBoolean()
 """
 hostname 1>&2
 set -o pipefail

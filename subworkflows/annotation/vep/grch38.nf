@@ -65,10 +65,10 @@ output:
     tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:vcf
     path("versions.yml"),emit:versions
 script:
-    def with_loeuf =((task.ext.with_loeuf?:true) as boolean)
-    def with_spliceai =((task.ext.with_spliceai?:true) as boolean)
-    def with_utrannotator =((task.ext.with_utrannotator?:true) as boolean)
-    def with_gnomad =((task.ext.with_gnomad?:true) as boolean)
+    def with_loeuf =((task.ext.with_loeuf?:true).toBoolean())
+    def with_spliceai =((task.ext.with_spliceai?:true).toBoolean())
+    def with_utrannotator =((task.ext.with_utrannotator?:true).toBoolean())
+    def with_gnomad =((task.ext.with_gnomad?:true).toBoolean())
     def assembly = task.ext.assembly?:"GRCh38"
     def species = task.ext.species?:"homo_sapiens"
     def merged =  task.ext.merged?:true

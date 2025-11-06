@@ -41,7 +41,7 @@ process DISEASES_DOWNLOAD {
 		def url = task.ext.url?:"https://download.jensenlab.org/human_disease_textmining_filtered.tsv"
 		def treshold = task.ext.treshold ?:4.5
 		def TAG = task.ext.tag?:"DISEASES"
-		def enabled = ((task.ext.enabled?:task.attempt<=1) as boolean)
+		def enabled = ((task.ext.enabled?:task.attempt<=1).toBoolean()
 		def WHATIZ = (enabled?"DISEASES is a weekly updated web resource that integrates evidence on disease-gene associations from automatic text mining, manually curated literature, cancer mutation data, and genome-wide association studies. ${url}. Treshold=${treshold}": "DISEASE disabled by user or resource not available")
 	"""
 	hostname 1>&2

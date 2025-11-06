@@ -54,8 +54,8 @@ script:
 	def child = meta.id
 	def parent = meta.parent
 	def prefix = task.ext.prefix?:"deepvariant"
-	def keep_gvcf= (task.ext.keep_gvcf?:true) as boolean
-	def keep_vcf= (task.ext.keep_vcf?:true) as boolean
+	def keep_gvcf= (task.ext.keep_gvcf?:true).toBoolean()
+	def keep_vcf= (task.ext.keep_vcf?:true).toBoolean()
 """
 	hostname 1>&2
 	mkdir -p TMP/TMP

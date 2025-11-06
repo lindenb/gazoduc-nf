@@ -36,11 +36,11 @@ output:
 script:
     def args1 = task.ext.args1?:""
     // check sample is defined
-    def check_sample = (task.ext.check_sample?:true) as boolean
+    def check_sample = (task.ext.check_sample?:true).toBoolean()
     // check no dup sample
-    def check_dup = (task.ext.check_dup?:true) as boolean
+    def check_dup = (task.ext.check_dup?:true).toBoolean()
     // check fasta is known
-    def check_ref = (task.ext.check_ref?:true) as boolean
+    def check_ref = (task.ext.check_ref?:true).toBoolean()
 """
 mkdir -p TMP
 

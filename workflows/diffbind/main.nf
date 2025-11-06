@@ -30,7 +30,7 @@ workflow DIFFBIND {
 			map{T->(!T.containsKey("bam") && T.containsKey("bamReads") ?T.plus("bam":T.bamReads):T)}
 
 
-		if(params.downsample as boolean) {
+		if(params.downsample.toBoolean()) {
 
 			rows1_ch.map{T->(!T.containsKey("sample") && T.containsKey("SampleId") ?T.plus("sample":T.SampleId):T)}
 

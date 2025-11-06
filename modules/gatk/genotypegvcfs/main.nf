@@ -43,7 +43,7 @@ script:
    def prefix= task.ext.prefix?:prefix0
    def args1 = task.ext.args1?:""
    def jvm = task.ext.jvm?:"-XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
-   def with_md5 = (task.ext.with_md5?:true) as boolean
+   def with_md5 = (task.ext.with_md5?:true).toBoolean()
 """
 hostname 1>&2
 mkdir -p TMP

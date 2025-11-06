@@ -87,7 +87,7 @@ output:
 script:
 	def convert = task.ext.convert?:""
     def prefix = task.ext.prefix?:"${meta.id}.checked"
-    def with_merge = (task.ext.with_merge?:false) as boolean
+    def with_merge = (task.ext.with_merge?:false).toBoolean()
 """
 	hostname 1>&2
     set -x

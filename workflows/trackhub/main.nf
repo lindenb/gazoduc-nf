@@ -69,7 +69,7 @@ workflow TRACK_HUB {
 		version_ch = version_ch.mix(bed_ch.version)
 		all_outputs = all_outputs.mix(bed_ch.output)
 	
-		if ( params.with_bnd as boolean ) {
+		if ( (params.with_bnd).toBoolean() ) {
 			inter_ch = MERGE_BED_PE(ci_ch.output , vcfs, scan_ch.bedpe)
 			version_ch = version_ch.mix(inter_ch.version)
 			all_outputs = all_outputs.mix(inter_ch.output)
@@ -154,7 +154,7 @@ process COMPILE_JAVA {
 	mkdir -p TMP
 
 	cat "${moduleDir}/Minikit.java" |\\
-		sed 's/__MIN_SV_LEN__/${params.min_sv_len}/;s/__MAX_SV_LEN__/${params.max_sv_len}/;s/__WITH_BND__/${params.with_bnd as boolean}/' >  TMP/Minikit.java
+		sed 's/__MIN_SV_LEN__/${params.min_sv_len}/;s/__MAX_SV_LEN__/${params.max_sv_len}/;s/__WITH_BND__/${(params.with_bnd).toBoolean()}/' >  TMP/Minikit.java
 
 	javac -d TMP -cp \${JVARKIT_DIST}/jvarkit.jar -sourcepath TMP  TMP/Minikit.java
 	jar cvf minikit.jar -C TMP .

@@ -97,7 +97,7 @@ EOF
 
 stub:
  def prefix = task.ext.prefix?:"${meta.id}.bam2fq"
- def paired = ((task.ext.paired?:true) as boolean)
+ def paired = ((task.ext.paired?:true).toBoolean())
 """
 if ${paired}
 then

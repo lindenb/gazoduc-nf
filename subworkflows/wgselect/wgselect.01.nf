@@ -94,7 +94,7 @@ script:
 	def gnomadAF = (params.wgselect.gnomadAF as double)
 	def soacn = params.wgselect.soacn
 	def exclude_soacn = params.wgselect.exclude_soacn?:""
-	def inverse_so = (params.wgselect.inverse_so as boolean)
+	def inverse_so = (params.wgselect.inverse_so.toBoolean())
 	def f_missing = (params.wgselect.f_missing as double)
 	def maxmaf = (params.wgselect.maxmaf as double)
 	def fisherh = (params.wgselect.fisherh as double)
@@ -131,7 +131,7 @@ test ! -z "\${JVARKIT_JAR}"
 
 
 	function countIt {
-		if ${params.wgselect.with_count as boolean} ; then
+		if ${params.wgselect.with_count.toBoolean()} ; then
 			echo -n "\$1\t" >> TMP/variant_list.txt
 			bcftools query -f '%CHROM:%POS:%REF:%ALT\\n' "\$2" | sed 's/^chr//' | LC_ALL=C sort -T . | uniq  > TMP/tmp.A.txt
 			bcftools query -f '%CHROM:%POS:%REF:%ALT\\n' "\$3" | sed 's/^chr//' | LC_ALL=C sort -T . | uniq  > TMP/tmp.B.txt
@@ -176,7 +176,7 @@ test ! -z "\${JVARKIT_JAR}"
 
 	fi	
 
-	if ${params.wgselect.with_count as boolean} ; then
+	if ${params.wgselect.with_count.toBoolean()} ; then
 		bcftools query -f '.\\n' TMP/jeter1.bcf | awk 'END{printf("initial\t%s\t0\t0\t\\n",NR);}' >> TMP/variant_list.txt
 	fi
 
@@ -459,7 +459,7 @@ test ! -z "\${JVARKIT_JAR}"
 
     # CONTRAST #############################################################################################
 
-	if ${(params.wgselect.with_contrast as boolean)}  && test -s TMP/cases.txt && test -s TMP/controls.txt ; then
+	if ${(params.wgselect.with_contrast.toBoolean())}  && test -s TMP/cases.txt && test -s TMP/controls.txt ; then
 		bcftools +contrast \
 			-0 "TMP/controls.txt" \
 			-1 "TMP/cases.txt" \

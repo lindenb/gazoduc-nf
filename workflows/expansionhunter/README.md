@@ -8,3 +8,4 @@
  * --prefix (string) custom file prefix. Optional
  * --outdir (dir) custom output directory. Optional
 * --keep_bams (boolean) save BAM files
+* --keep_json (boolean) save JSON files

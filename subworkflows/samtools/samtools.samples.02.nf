@@ -107,7 +107,7 @@ output:
 	path("version.xml"),emit:version
 script:
 	def fasta = isBlank(genomeId) || genomeId.equals(".") ? "" : params.genomes[genomeId].fasta
-	def allow_multiple_references = (meta.allow_multiple_references as boolean)
+	def allow_multiple_references = (meta.allow_multiple_references.toBoolean())
 """
 hostname 1>&2
 set -o pipefail

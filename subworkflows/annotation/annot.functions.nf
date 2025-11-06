@@ -40,7 +40,7 @@ boolean hasFeature(key) {
                 log.warn("params.annotations."+key+".enabled missing. return false;");
                 return false;
                 }
-        return (params.annotations[key].enabled as boolean);
+        return (params.annotations[key].enabled.toBoolean());
         }
 
 boolean isSoftFilter(key) {
@@ -59,7 +59,7 @@ boolean isHardFilter(key) {
                 return false;
                 }
 	
-        return (params.annotations[key].hard_filter as boolean)
+        return (params.annotations[key].hard_filter.toBoolean())
         }
 
 String backDelete(json) {

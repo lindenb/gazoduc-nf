@@ -35,7 +35,7 @@ boolean hasFeature(String key) {
 		log.warn("undefined params.annotations.${k}")
 		return false;
 		}
-	return (params.annotations[k] as boolean)
+	return (params.annotations[k].toBoolean())
 	}
 
 

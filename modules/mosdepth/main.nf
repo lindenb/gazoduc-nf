@@ -42,7 +42,7 @@ when:
     task.ext.when == null || task.ext.when
 
 script:
-    def per_base = (task.ext.per_base?:false) as boolean
+    def per_base = (task.ext.per_base?:false).toBoolean()
     def args = task.ext.args ?: ''
     def prefix = task.ext.prefix?:"${meta.id}"
 """
