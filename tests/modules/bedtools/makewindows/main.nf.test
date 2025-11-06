@@ -1,0 +1,47 @@
+nextflow_process {
+
+    name "Test Process BEDTOOLS_MAKEWINDOWS"
+    script "modules/bedtools/makewindows/main.nf"
+    process "BEDTOOLS_MAKEWINDOWS"
+    tag "modules"
+    tag "modules/bedtools"
+    tag "modules/bedtools/makewindows"
+    config "./nextflow.config"
+
+    test("WITH_FAI") {
+
+        when {
+            process {
+                """
+                input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+
+    test("WITH_BED") {
+
+        when {
+            process {
+                """
+                input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.bed")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+
+}

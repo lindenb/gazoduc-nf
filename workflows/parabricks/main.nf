@@ -56,6 +56,7 @@ include {PREPARE_ONE_REFERENCE                    } from '../../subworkflows/sam
 include {META_TO_BAMS                             } from '../../subworkflows/samtools/meta2bams1'
 include { META_TO_PED                             } from '../../subworkflows/pedigree/meta2ped'
 include { PREPARE_USER_BED                        } from '../../subworkflows/bedtools/prepare.user.bed'
+include { MAP_BWA                                 } from '../../subworkflows/bwa/map.fastqs'
 
 
 if( params.help ) {
@@ -74,15 +75,16 @@ workflow {
     throw new IllegalArgumentException("hts_type should batch WES|WGS ${params.hts_type}")
     }
   
-  def hash_ref= [
+  def metadata= [
       id: file(params.fasta).baseName
       ]
-  def metadata = hash_ref;
-  def known_indels = [hash_ref, [],[]]
-  def gtf     = [hash_ref,[],[]]
   
+  def known_indels = [metadata, [],[]]
+  def gtf     = [metadata,[],[]]
+  def prevent_multi_gpu_ch = Channel.empty()  
+
   if(params.gtf!=null) {
-    gtf = [hash_ref,file(params.gtf),file(params.gtf+".tbi")]
+    gtf = [metadata,file(params.gtf),file(params.gtf+".tbi")]
   }
 
 
@@ -90,8 +92,8 @@ workflow {
   def is_exome = params.hts_type.equals("WES");
   def is_wgs = params.hts_type.equals("WGS");
 
-  versions_ch = Channel.empty()
-  multiqc_ch = Channel.empty()
+  versions = Channel.empty()
+  multiqc  = Channel.empty()
 
   /* no fastq samplesheet */
   if(params.samplesheet==null) {
@@ -110,10 +112,12 @@ workflow {
     }
   
   SAMPLESHEET_TO_FASTQ(
-    metadata,
+    metadata.plus([
+      bam2fastq_method: params.bam2fastq_method
+      ]),
     samplesheet0_ch
     )
-  versions_ch =  SAMPLESHEET_TO_FASTQ.out.versions
+  versions =  SAMPLESHEET_TO_FASTQ.out.versions
 
 
   single_end = SAMPLESHEET_TO_FASTQ.out.single_end
@@ -129,11 +133,11 @@ workflow {
       fastqc_before : params.with_fastqc,
       fastqc_after : params.with_fastqc,
       fastp_disabled : !(params.with_fastp)
-      ])
+      ]),
     single_end.mix(paired_end) 
     )
-  multiqc_ch = multiqc_ch.mix(FASTP.out.multiqc)
-  versions_ch = versions_ch.mix(FASTP.out.versions)
+  multiqc = multiqc.mix(FASTP.out.multiqc)
+  versions = versions.mix(FASTP.out.versions)
 
 	PREPARE_ONE_REFERENCE(
 		metadata,
@@ -154,7 +158,7 @@ workflow {
     else
       {
       BWA_INDEX(PREPARE_ONE_REFERENCE.out.fasta)
-      versions_ch = versions_ch.mix(BWA_INDEX.out.versions)
+      versions = versions.mix(BWA_INDEX.out.versions)
       BWADir = BWA_INDEX.out.bwa_index
       }
   /***************************************************
@@ -176,8 +180,8 @@ workflow {
         .combine(single_end.mix(paired_end))
         .map{it[1..<it.size()]} // remove item[0] containing multiple GPLUs guard
       )  
-    versions_ch = versions_ch.mix(PB_FQ2BAM.out.versions)
-    multiqc_ch = multiqc_ch.mix(PB_FQ2BAM.out.duplicate_metrics)
+    versions = versions.mix(PB_FQ2BAM.out.versions)
+    multiqc = multiqc.mix(PB_FQ2BAM.out.duplicate_metrics)
     bams_ch =  PB_FQ2BAM.out.bam
     prevent_multi_gpu_ch = bams_ch.count()
     }
@@ -197,7 +201,7 @@ workflow {
       [[id:"nobed"],[]],
       single_end.mix(paired_end)
       )
-  versions_ch = versions_ch.mix(MAP_BWA.out.versions)
+  versions = versions.mix(MAP_BWA.out.versions)
   bams_ch =  MAP_BWA.out.bams
   }
   else
@@ -221,7 +225,7 @@ workflow {
         PREPARE_ONE_REFERENCE.out.dict,
         bams2_ch
         )
-      versions_ch = versions_ch.mix(META_TO_BAMS.out.versions)
+      versions = versions.mix(META_TO_BAMS.out.versions)
       bams_ch = bams_ch.mix(META_TO_BAMS.out.bams)
       }
 
@@ -247,22 +251,21 @@ workflow {
   META_TO_PED(metadata, bams_ch.map{it[0]})
 	versions = versions.mix(META_TO_PED.out.versions)
 
-   pedigree_ch = META_TO_PED.out.pedigree.ifEmpty([[:],[]])
-   trios_ped_ch = META_TO_PED.out.trio_ped.ifEmpty([[:],[]])
+   pedigree_ch = META_TO_PED.out.gatk_pedigree
+   trios_ped_ch = META_TO_PED.out.trio_ped
 
   /***************************************************
    *
-   * GET A BED FOR GENOME WITHOUT THE POLY-NNNN
-   * will be used for bam QC
+   * PREPARE THE REFERENCE GENOME
    *
    */
   if(params.bed==null) {
-    if(is_exome) throw new IllegalArgimentException("EXOME but no capture was defined");
+    if(is_exome) throw new IllegalArgumentException("EXOME but no capture was defined");
 		bed = Channel.of([ [id:"nobed"], [] ])
 		}
 	else {
 		PREPARE_USER_BED(
-			metadata,
+			metadata.plus([:]),
 			PREPARE_ONE_REFERENCE.out.fasta,
 			PREPARE_ONE_REFERENCE.out.fai,
 			PREPARE_ONE_REFERENCE.out.dict,
@@ -284,14 +287,15 @@ workflow {
   // stats are required if graphtyper is used
   if( params.with_bam_qc == true || params.with_graphtyper == true) {
       BAM_QC(
+        metadata.plus([:]),
         PREPARE_ONE_REFERENCE.out.fasta,
 			  PREPARE_ONE_REFERENCE.out.fai,
 			  PREPARE_ONE_REFERENCE.out.dict,
-        bed,
+        (params.bed==null?PREPARE_ONE_REFERENCE.out.scatter_bed:bed),
         bams_ch
         )
-      versions_ch = versions_ch.mix(BAM_QC.out.versions)
-      multiqc_ch = multiqc_ch.mix(BAM_QC.out.multiqc)
+      versions = versions.mix(BAM_QC.out.versions)
+      multiqc = multiqc.mix(BAM_QC.out.multiqc)
       mosdepth_summary_ch = BAM_QC.out.mosdepth_summary
   }
 
@@ -306,7 +310,7 @@ workflow {
   if(params.with_somalier==true && is_wgs) {
         user_sites = Channel.of([[:],[],[]]) //custom sites
         SOMALIER_BAMS(
-            hash_ref,
+            metadata,
             PREPARE_ONE_REFERENCE.out.fasta,
             PREPARE_ONE_REFERENCE.out.fai,
 			      PREPARE_ONE_REFERENCE.out.dict,
@@ -314,7 +318,7 @@ workflow {
             META_TO_PED.out.pedigree,
             user_sites
             )
-        versions_ch = versions_ch.mix(SOMALIER_BAMS.out.versions)
+        versions = versions.mix(SOMALIER_BAMS.out.versions)
     }
   /***************************************************
    *
@@ -323,14 +327,14 @@ workflow {
    */
   if(params.with_manta == true && is_wgs) {
     MANTA_SINGLE(
-        hash_ref,
+        metadata,
         PREPARE_ONE_REFERENCE.out.fasta,
         PREPARE_ONE_REFERENCE.out.fai,
 			  PREPARE_ONE_REFERENCE.out.dict,
         bams_ch,
         [[:],[]] //No bed
         )
-    versions_ch = versions_ch.mix(MANTA_SINGLE.out.versions)
+    versions = versions.mix(MANTA_SINGLE.out.versions)
     }
 
   /***************************************************
@@ -340,14 +344,14 @@ workflow {
    */
   if(params.with_indexcov == true && is_wgs) {
     INDEXCOV(
-      hash_ref,
+      metadata,
       PREPARE_ONE_REFERENCE.out.fasta,
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
       META_TO_PED.out.pedigree,
       bams_ch.map{[it[0],it[1]]/* no BAI please */}
       )
-    versions_ch = versions_ch.mix(INDEXCOV.out.versions)
+    versions = versions.mix(INDEXCOV.out.versions)
   }
   /***************************************************
    *
@@ -356,13 +360,14 @@ workflow {
    */
   if(params.with_delly == true && is_wgs) {
       DELLY(
-            hash_ref,
+            metadata,
             PREPARE_ONE_REFERENCE.out.fasta,
             PREPARE_ONE_REFERENCE.out.fai,
             PREPARE_ONE_REFERENCE.out.dict,
+            PREPARE_ONE_REFERENCE.out.complement_bed,//TODO blacklisted region, use something better
             bams_ch
             )
-      versions_ch = versions_ch.mix(DELLY.out.versions)
+      versions = versions.mix(DELLY.out.versions)
   }
 
 
@@ -373,32 +378,43 @@ workflow {
    */
   if(params.with_cnvnator == true) {
     CNVNATOR(
-      hash_ref,
+      metadata,
       PREPARE_ONE_REFERENCE.out.fasta,
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
       bams_ch
       )
-    versions_ch = versions_ch.mix(CNVNATOR.out.versions)
+    versions = versions.mix(CNVNATOR.out.versions)
     }
 
 
 
   /* cut the bed/genome into parts for SV calling per region */
-  BEDTOOLS_MAKEWINDOWS(bed)
-  versions_ch = versions_ch.mix(BEDTOOLS_MAKEWINDOWS.out.versions)
+  BEDTOOLS_MAKEWINDOWS(
+	(params.bed!=null?bed:PREPARE_ONE_REFERENCE.out.scatter_bed)//TODO
+	)
+  versions = versions.mix(BEDTOOLS_MAKEWINDOWS.out.versions)
 
   /* if it's an exome , group the small genome together in BED */
-  BED_CLUSTER1(fasta,fai,dict,BEDTOOLS_MAKEWINDOWS.out.bed)
-  versions_ch = versions_ch.mix(BED_CLUSTER1.out.versions)
+  BED_CLUSTER1(
+      PREPARE_ONE_REFERENCE.out.fasta,
+      PREPARE_ONE_REFERENCE.out.fai,
+      PREPARE_ONE_REFERENCE.out.dict,
+      BEDTOOLS_MAKEWINDOWS.out.bed
+      )
+  versions = versions.mix(BED_CLUSTER1.out.versions)
   cluster_bed1 = BED_CLUSTER1.out.bed.map{it[1]}.flatMap()
 
   /* But for slow callers like bcftools or freebayes, we need smaller intervals */
-  BED_CLUSTER2(fasta,fai,dict,BEDTOOLS_MAKEWINDOWS.out.bed)
-  versions_ch = versions_ch.mix(BED_CLUSTER2.out.versions)
+  BED_CLUSTER2(
+    PREPARE_ONE_REFERENCE.out.fasta,
+    PREPARE_ONE_REFERENCE.out.fai,
+     PREPARE_ONE_REFERENCE.out.dict,
+    BEDTOOLS_MAKEWINDOWS.out.bed
+    )
+  versions = versions.mix(BED_CLUSTER2.out.versions)
   cluster_bed2 = BED_CLUSTER2.out.bed.map{it[1]}.flatMap()
-
-
+  
   grouped_bams = bams_ch
     .map{[it[1],it[2]]}//bam,bai
     .collect()
@@ -413,7 +429,7 @@ workflow {
    */
   if(params.with_pb_haplotypecaller == true) {
     PB_HAPLOTYPECALLER(
-      hash_ref,
+      metadata,
       PREPARE_ONE_REFERENCE.out.fasta,
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
@@ -422,7 +438,7 @@ workflow {
         .combine(  bams_ch.map{it + [[]]/* empty file for BQSR */})
         .map{it[1..<it.size()]} // remove item[0] containing multiple GPLUs guard
       )
-    versions_ch = versions_ch.mix(PB_HAPLOTYPECALLER.out.versions)
+    versions = versions.mix(PB_HAPLOTYPECALLER.out.versions)
     vcf_ch = vcf_ch.mix(PB_HAPLOTYPECALLER.out.vcf)
     prevent_multi_gpu_ch = vcf_ch.count()
   }
@@ -434,7 +450,7 @@ workflow {
    */
   if(params.with_pb_deepvariant == true) {
     PB_DEEPVARIANT(
-      hash_ref,
+      metadata,
       PREPARE_ONE_REFERENCE.out.fasta,
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
@@ -443,7 +459,7 @@ workflow {
         .combine(bams_ch)
         .map{it[1..<it.size()]} // remove item[0] containing multiple GPLUs guard
       )
-    versions_ch = versions_ch.mix(PB_DEEPVARIANT.out.versions)
+    versions = versions.mix(PB_DEEPVARIANT.out.versions)
     vcf_ch = vcf_ch.mix(PB_DEEPVARIANT.out.vcf)
     prevent_multi_gpu_ch =  vcf_ch.count()
   }
@@ -456,7 +472,7 @@ workflow {
    */
   if(params.with_graphtyper == true) {
     GRAPHTYPER(
-      hash_ref,
+      metadata,
       PREPARE_ONE_REFERENCE.out.fasta,
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
@@ -464,7 +480,7 @@ workflow {
       cluster_bed1.map{[[id:it.name.toString().md5().substring(0,8)],it]},
       bams_ch
       )
-    versions_ch = versions_ch.mix(GRAPHTYPER.out.versions)
+    versions = versions.mix(GRAPHTYPER.out.versions)
     vcf_ch = vcf_ch.mix(GRAPHTYPER.out.vcf)
   }
 
@@ -475,7 +491,7 @@ workflow {
    */
   if(params.with_bcftools_call == true) {
     BCFTOOLS_CALL(
-      hash_ref,
+      metadata,
       PREPARE_ONE_REFERENCE.out.fasta,
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
@@ -483,7 +499,7 @@ workflow {
       cluster_bed2.map{[[id:"bed"],it]},
       bams_ch
       )
-    versions_ch = versions_ch.mix(BCFTOOLS_CALL.out.versions)
+    versions = versions.mix(BCFTOOLS_CALL.out.versions)
     vcf_ch = vcf_ch.mix(BCFTOOLS_CALL.out.vcf)
   }
 
@@ -494,7 +510,7 @@ workflow {
    */
   if(params.with_freebayes == true) {
     FREEBAYES_CALL(
-      hash_ref,
+      metadata,
       PREPARE_ONE_REFERENCE.out.fasta,
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
@@ -502,20 +518,23 @@ workflow {
       cluster_bed2.map{[[id:"bed"],it]},
       bams_ch
       )
-    versions_ch = versions_ch.mix(FREEBAYES_CALL.out.versions)
+    versions = versions.mix(FREEBAYES_CALL.out.versions)
     vcf_ch = vcf_ch.mix(FREEBAYES_CALL.out.vcf)
     }
 
   if(params.with_gatk == true) {
     HAPLOTYPECALLER(
-      hash_ref,
+      metadata,
       PREPARE_ONE_REFERENCE.out.fasta,
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
+      Channel.of([[id:"refs"],[]]),//other ref TODO
+      Channel.of([[id:"dbsnp"],[],[]]),//TODO dbsnp
+      Channel.of([[id:"ped"],[]]),//TODO ped
       cluster_bed1.map{[[id:"bed"],it]},
       bams_ch
       )
-    versions_ch = versions_ch.mix(HAPLOTYPECALLER.out.versions)
+    versions = versions.mix(HAPLOTYPECALLER.out.versions)
     vcf_ch = vcf_ch.mix(HAPLOTYPECALLER.out.vcf)
     }   
 
@@ -525,12 +544,11 @@ workflow {
    *
    */
   BCFTOOLS_GUESS_PLOIDY(
-      hash_ref,
       PREPARE_ONE_REFERENCE.out.fasta,
       PREPARE_ONE_REFERENCE.out.fai,
       vcf_ch
       )
-  versions_ch = versions_ch.mix(BCFTOOLS_GUESS_PLOIDY.out.versions)
+  versions = versions.mix(BCFTOOLS_GUESS_PLOIDY.out.versions)
 
   /***************************************************
    *
@@ -545,7 +563,7 @@ workflow {
     [[:],[]],//samples,
     vcf_ch.map{[it[0],[it[1],it[2]]]}
     )
-  versions_ch = versions_ch.mix(BCFTOOLS_GUESS_PLOIDY.out.versions)
+  versions = versions.mix(BCFTOOLS_GUESS_PLOIDY.out.versions)
 
   /***************************************************
    *
@@ -553,11 +571,11 @@ workflow {
    *
    */
   if( params.with_multiqc ==true) {
-    COMPILE_VERSIONS(versions_ch.collect().map{it.sort()})
-    multiqc_ch = multiqc_ch.mix(COMPILE_VERSIONS.out.multiqc.map{[[id:"versions"],it]})
+    COMPILE_VERSIONS(versions.collect().map{it.sort()})
+    multiqc = multiqc.mix(COMPILE_VERSIONS.out.multiqc.map{[[id:"versions"],it]})
     // in case of problem multiqc_ch.filter{!(it instanceof List) || it.size()!=2}.view{"### FIX ME ${it} MULTIQC"}
     MULTIQC([[id:"no_mqc_config"],[]],
-      multiqc_ch.map{it[1]}.collect().map{[[id:"parabricks"],it]})
+      multiqc.map{it[1]}.collect().map{[[id:"parabricks"],it]})
     }
 }
 

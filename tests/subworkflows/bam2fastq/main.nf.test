@@ -1,0 +1,203 @@
+nextflow_workflow {
+
+    name "Test Workflow BAM_TO_FASTQ"
+    script "subworkflows/bam2fastq/main.nf"
+    workflow "BAM_TO_FASTQ"
+    tag "subworkflows"
+    tag "subworkflows/bam2fastq"
+    
+    
+    
+    test("BAM_SAMTOOLS") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+               input[0] = [id:"meta",bam2fastq_method:"samtools"]
+               input[1]= Channel.of(
+               			[
+               			[id:"S1"],
+               			file("${projectDir}/tests/data/S1.bam"),
+               			file("${projectDir}/tests/data/S1.bam.bai"),
+               			file("${projectDir}/tests/data/rotavirus_rf.fa"),
+               			file("${projectDir}/tests/data/rotavirus_rf.fa.fai"),
+               			file("${projectDir}/tests/data/rotavirus_rf.dict"),
+               			[]//no bed
+               			]
+               		)
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+    test("CRAM_SAMTOOLS") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+               input[0] = [id:"meta",bam2fastq_method:"samtools"]
+               input[1]= Channel.of(
+               			[
+               			[id:"S1"],
+               			file("${projectDir}/tests/data/S1.cram"),
+               			file("${projectDir}/tests/data/S1.cram.crai"),
+               			file("${projectDir}/tests/data/rotavirus_rf.fa"),
+               			file("${projectDir}/tests/data/rotavirus_rf.fa.fai"),
+               			file("${projectDir}/tests/data/rotavirus_rf.dict"),
+               			[]//no bed
+               			]
+               		)
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+
+
+test("BAM_SAMTOOLS_BED") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+               input[0] = [id:"meta",bam2fastq_method:"samtools"]
+               input[1]= Channel.of(
+               			[
+               			[id:"S1"],
+               			file("${projectDir}/tests/data/S1.bam"),
+               			file("${projectDir}/tests/data/S1.bam.bai"),
+               			file("${projectDir}/tests/data/rotavirus_rf.fa"),
+               			file("${projectDir}/tests/data/rotavirus_rf.fa.fai"),
+               			file("${projectDir}/tests/data/rotavirus_rf.dict"),
+               			file("${projectDir}/tests/data/rotavirus_rf.bed")
+               			]
+               		)
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+    
+    test("BAM_PICARD") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+               input[0] = [id:"meta",bam2fastq_method:"picard"]
+               input[1]= Channel.of(
+               			[
+               			[id:"S1"],
+               			file("${projectDir}/tests/data/S1.bam"),
+               			file("${projectDir}/tests/data/S1.bam.bai"),
+               			file("${projectDir}/tests/data/rotavirus_rf.fa"),
+               			file("${projectDir}/tests/data/rotavirus_rf.fa.fai"),
+               			file("${projectDir}/tests/data/rotavirus_rf.dict"),
+               			[]//no bed
+               			]
+               		)
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+
+   test("CRAM_PICARD") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+               input[0] = [id:"meta",bam2fastq_method:"picard"]
+               input[1]= Channel.of(
+               			[
+               			[id:"S1"],
+               			file("${projectDir}/tests/data/S1.cram"),
+               			file("${projectDir}/tests/data/S1.cram.crai"),
+               			file("${projectDir}/tests/data/rotavirus_rf.fa"),
+               			file("${projectDir}/tests/data/rotavirus_rf.fa.fai"),
+               			file("${projectDir}/tests/data/rotavirus_rf.dict"),
+               			[]//no bed
+               			]
+               		)
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+test("BAM_SAMTOOLS_NO_REF") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+               input[0] = [id:"meta",bam2fastq_method:"samtools"]
+               input[1]= Channel.of(
+               			[
+               			[id:"S1"],
+               			file("${projectDir}/tests/data/S1.bam"),
+               			file("${projectDir}/tests/data/S1.bam.bai")
+               			]
+               		)
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

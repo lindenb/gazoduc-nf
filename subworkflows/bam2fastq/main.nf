@@ -49,7 +49,7 @@ main:
         return L;
         }
     if(workflow_metadata.bam2fastq_method==null) {
-        System.err.println("BAM_TO_FASTQ: undefined bam2fastq_method. using samtools.");
+        log.warn("BAM_TO_FASTQ: undefined bam2fastq_method. using samtools.");
         }
     /* ============================================================================================
      *

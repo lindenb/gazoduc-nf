@@ -63,12 +63,13 @@ samtools view \\
 set -o pipefail
 
 if test -s TMP/paired.flag
+then
 
     gatk --java-options "${jvm}" SamToFastq \\
         ${args1} \\
         --INPUT "${bam}" \\
         --FASTQ "TMP/${prefix}.R1.fq.gz" \\
-        ${fasta?"REFERENCE_SEQUENCE \"${fasta}\"":""} \\
+        ${fasta?"--REFERENCE_SEQUENCE \"${fasta}\"":""} \\
         --SECOND_END_FASTQ "TMP/${prefix}.R2.fq.gz" \\
         --UNPAIRED_FASTQ "TMP/${prefix}.R0.fq.gz\" \\
         --VALIDATION_STRINGENCY LENIENT
@@ -79,7 +80,7 @@ else
         ${args1} \\
         --INPUT "${bam}" \\
         --FASTQ "TMP/${prefix}.SE.fq.gz" \\
-        ${fasta?"REFERENCE_SEQUENCE \"${fasta}\"":""} \\
+        ${fasta?"--REFERENCE_SEQUENCE \"${fasta}\"":""} \\
         --VALIDATION_STRINGENCY LENIENT
 
 fi

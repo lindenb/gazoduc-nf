@@ -76,8 +76,7 @@ main:
         GTYPER.out.vcf
             .map{[it[1],it[2]]}//gvcf,tbi
              .collect()
-             .map{[[id:"deepvariant"],it]},
-        [[:],[]] //bed
+             .map{[[id:"deepvariant"],it,[]]},
         )
     versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
     

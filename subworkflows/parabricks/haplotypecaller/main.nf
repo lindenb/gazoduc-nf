@@ -58,8 +58,7 @@ main:
         GLNEXUS_GENOTYPE.out.vcf
             .map{[it[1],it[2]]}//gvcf,tbi
              .collect()
-             .map{[[id:"pb_hapcaller"],it]},
-        [[:],[]] //bed
+             .map{[[id:"pb_hapcaller"],it,[]]}
         )
     versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
 

@@ -67,9 +67,9 @@ main:
             .map{
                 if(hasKey(it,"id")) return it;
                 if(hasKey(it,"sample")) return it.plus(id:it.sample);
-                throw new IllegalArgumentException("undefined id in ${it}");
+                throw new IllegalArgumentException("ORA_TO_FASTQ : undefined id in ${it}");
                 }
-            .map{assertNotEmpty(it,"id")}
+            .map{assertKeyExistsAndNotEmpty(it,"id")}
             .map{[
                 cleanupHash(it),
                 file(it.ora)
@@ -119,13 +119,12 @@ main:
         .map{it->[it[0],it[1],it[2]]} //extract sample bam  and ref
         .map{sample,bam,ref->
             if(isBlank(sample)) throw new IllegalArgumentException("no sample/id defined for ${bam}");
-            if(isBlank(ref) && bam.endsWith(".cram"))  throw new IllegalArgumentException("no fasta sequence defined for ${bam}");
-            return it;
+            return [sample,bam,ref];
             }
         .map{sample,bam,ref->[file(bam).toRealPath().toString(),sample,ref]}
         .join(ch3.no_sample.map{meta->[file(meta.bam).toRealPath().toString(),meta]}, failOnMismatch:true)
         .map{bam,sn,ref,meta->
-            def h = meta.plus([id:sample,sample:sn])
+            def h = meta.plus([id:sn,sample:sn])
             if(isBlank(h.fasta) && !isBlank(ref)) {
                 h = h.plus([fasta:ref, fai: ref+".fai"]);
                 }
@@ -138,13 +137,16 @@ main:
         workflow_metadata,
      	ch3.has_sample
             .mix(resolved_bam_sample_ch)
+            .map{                
+		if(!hasKey(it,"fasta") && it.bam.endsWith(".cram"))  throw new IllegalArgumentException("no fasta sequence defined for ${it.bam}"); 
+		return it;
+		}
             .map{
                 if(hasKey(it,"id")) return it;
                 if(hasKey(it,"sample")) return it.plus(id:it.sample);
-                if(!hasKey(it,"fasta") && it.bam.endsWith(".cram"))  throw new IllegalArgumentException("no fasta sequence defined for ${it.bam}");
                 throw new IllegalArgumentException("undefined id in ${it}");
                 }
-            .map{assertNotEmpty(it,"id")}
+            .map{assertKeyExistsAndNotEmpty(it,"id")}
             .map{[
                 cleanupHash(it),
                 file(it.bam),

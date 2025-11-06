@@ -1,0 +1,157 @@
+nextflow_workflow {
+
+    name "Test Workflow SAMPLESHEET_TO_FASTQ"
+    script "subworkflows/samplesheet2fastq/main.nf"
+    workflow "SAMPLESHEET_TO_FASTQ"
+    tag "subworkflows"
+    tag "subworkflows/samplesheet2fastq"
+    
+    test("PAIRED") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+               input[0] = [id:"meta",bam2fastq_method:"samtools"]
+               input[1]= Channel.of(
+               			[
+               			id:"S1",
+               			fastq_1:"${projectDir}/tests/data/S1.R1.fq.gz",
+               			fastq_2:"${projectDir}/tests/data/S1.R2.fq.gz"
+               			],
+               			[
+               			id:"S2",
+               			fastq_1:"${projectDir}/tests/data/S2.R1.fq.gz",
+               			fastq_2:"${projectDir}/tests/data/S2.R2.fq.gz"
+               			]
+               		)
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+    }
+
+	test("SINGLE") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+               input[0] = [id:"meta",bam2fastq_method:"samtools"]
+               input[1]= Channel.of(
+               			[
+               			id:"S1",
+               			fastq_1:"${projectDir}/tests/data/S1.R1.fq.gz"
+               			],
+               			[
+               			id:"S2",
+               			fastq_1:"${projectDir}/tests/data/S2.R1.fq.gz",
+               			fastq_2:""
+               			]
+               		)
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+    }
+
+	test("BAMS_NONAME") {
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+               input[0] = [id:"meta",bam2fastq_method:"samtools"]
+               input[1]= Channel.of(
+               			[
+               			bam:"${projectDir}/tests/data/S1.bam"
+               			],
+               			[
+               			bam:"${projectDir}/tests/data/S2.bam"
+               			]
+               		)
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+    }
+
+
+    test("BAMS_SAMTOOLS") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+               input[0] = [id:"meta",bam2fastq_method:"samtools"]
+               input[1]= Channel.of(
+               			[
+               			id:"S1",
+               			bam:"${projectDir}/tests/data/S1.bam"
+               			],
+               			[
+               			id:"S2",
+               			bam:"${projectDir}/tests/data/S2.bam"
+               			]
+               		)
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+    }
+    
+    test("CRAMS") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+               input[0] = [id:"meta",bam2fastq_method:"samtools"]
+               input[1]= Channel.of(
+               			[
+               			id:"S1",
+               			bam:"${projectDir}/tests/data/S1.cram",
+               			fasta:"${projectDir}/tests/data/rotavirus_rf.fa"
+               			]
+               		)
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+    }
+
+}

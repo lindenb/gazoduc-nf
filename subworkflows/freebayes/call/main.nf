@@ -87,8 +87,7 @@ workflow FREEBAYES_CALL {
 			FILTER_AC_GT_0.out.vcf
 				.map{[[id:"freebayes"],[it[1],it[2]]]}
 				.groupTuple()
-				.map{[it[0],it[1].flatten()]},
-			[[id:"nobed"],[]]
+				.map{[it[0],it[1].flatten(),[]]}
 			)
 		versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
 
