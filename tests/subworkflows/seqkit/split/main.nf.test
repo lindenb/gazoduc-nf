@@ -1,17 +1,19 @@
 nextflow_workflow {
 
-    name "Test Workflow FASTP"
-    script "subworkflows/fastp/main.nf"
-    workflow "FASTP"
+    name "Test Workflow SEQKIT_SPLIT"
+    script "subworkflows/seqkit/split/main.nf"
+    workflow "SEQKIT_SPLIT"
     tag "subworkflows"
-    tag "subworkflows/fastp"
+    tag "subworkflows/seqkit"
+    tag "subworkflows/seqkit/split"
 
-    test("BASIC") {
+    test("Should run without failures") {
 
         when {
+
             workflow {
                 """
-                input[0] = [fastp_disabled:false , fastqc_before:false, fastqc_after:true]
+                input[0] = [:]
                 input[1] = Channel.of(
                     [[id:"S1a"], file("${projectDir}/tests/data/S1.R1.fq.gz"), file("${projectDir}/tests/data/S1.R2.fq.gz")],
                     [[id:"S1b"], [file("${projectDir}/tests/data/S1.R1.fq.gz"), file("${projectDir}/tests/data/S1.R2.fq.gz")] ],

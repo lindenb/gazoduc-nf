@@ -123,53 +123,17 @@ workflow {
   paired_end = SAMPLESHEET_TO_FASTQ.out.paired_end
     .map{[it[0],[it[1],it[2]]]}
 
-   
-  /***************************************************
-   *
-   *  FASTQC : get FASTQ quality control
-   *
-   */
-   if( params.with_fastqc == true) {
-    FASTQC_BEFORE_TRIM( single_end.mix(paired_end) )
-    versions_ch = versions_ch.mix(FASTQC_BEFORE_TRIM.out.versions)
-    multiqc_ch = multiqc_ch.mix(FASTQC_BEFORE_TRIM.out.zip)
-    }
-
   
-  /***************************************************
-   *
-   *  FASTP trim treads
-   *
-   */
-  if( params.with_fastp == true) {
-    FASTP(
-      single_end .mix(paired_end)
-      )
-    versions_ch = versions_ch.mix(FASTP.out.versions)
-    multiqc_ch = multiqc_ch.mix(FASTP.out.json)
-
-
-   /***************************************************
-    *
-    *  FASTQC : get FASTQ quality control after FASTP
-    *
-    */
-    if( params.with_fastqc == true) {
-      FASTQC_AFTER_TRIM( FASTP.out.fastqs)
-      versions_ch = versions_ch.mix(FASTQC_AFTER_TRIM.out.versions)
-      multiqc_ch = multiqc_ch.mix(FASTQC_AFTER_TRIM.out.zip)
-      }
-    // split single and paired ends 
-    trim_reads = FASTP.out.fastqs.branch{v->
-      paired_end : v[1].size()==2
-      single_end: v[1].size()==1
-      other: true
-      }
-
-    single_end = trim_reads.single_end
-    paired_end = trim_reads.paired_end.map{[it[0],it[1].sort()]}
-  }
-
+  FASTP(
+    metadata.plus([
+      fastqc_before : params.with_fastqc,
+      fastqc_after : params.with_fastqc,
+      fastp_disabled : !(params.with_fastp)
+      ])
+    single_end.mix(paired_end) 
+    )
+  multiqc_ch = multiqc_ch.mix(FASTP.out.multiqc)
+  versions_ch = versions_ch.mix(FASTP.out.versions)
 
 	PREPARE_ONE_REFERENCE(
 		metadata,

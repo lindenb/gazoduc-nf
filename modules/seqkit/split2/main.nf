@@ -22,6 +22,19 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+
+
+/*
+Example output:
+
+S1.R1.part_001.fq.gz    S1.R1.part_002.fq.gz
+S1.R1.part_003.fq.gz    S1.R1.part_004.fq.gz
+S1.R1.part_005.fq.gz    S1.R2.part_001.fq.gz
+S1.R2.part_002.fq.gz    S1.R2.part_003.fq.gz
+S1.R2.part_004.fq.gz    S1.R2.part_005.fq.gz
+
+
+*/
 process SEQKIT_SPLIT2 {
 label "process_single"
 conda "${moduleDir}/../../../conda/seqkit.yml"
@@ -31,13 +44,12 @@ afterScript "rm -rf TMP"
 input:
 	tuple val(meta),path(R1),path(R2)
 output:
-	tuple val(meta),path("OUT/*.gz"),emit:fastqs
+	tuple val(meta),path("OUT/*.gz",arity: '1..*'),emit:fastqs
 	path("versions.yml"),emit:versions
 script:
-	def arsgs1=task.args.args1?:"--by-length 3G"
+	def args1 = (task.ext.args1?:"")
+	if(args1.toString().isEmpty()) throw new IllegalArgumentException("${task.process} undefined task.args1 e.g. --by-length 3G");
 """
-set -o pipefail
-
 mkdir -p TMP
 
 seqkit split2 \\
@@ -55,6 +67,17 @@ mv -v TMP OUT
 find OUT -type f 1>&2
 
 
-touch versions.yml
+cat <<-END_VERSIONS > versions.yml
+"${task.process}":
+        seqkit: todo
+END_VERSIONS
+"""
+stub:
+	def args1 = (task.ext.args1?:"")
+	if(args1.toString().isEmpty()) throw new IllegalArgumentException("${task.process} undefined task.args1 e.g. --by-length 3G");
+"""
+touch ${R1.name}.part_001.fq ${R1.name}.part_002.fq ${R2?"{R2.name}.part_001.fq ${R2.name}.part_002.fq":""}
+gzip -f *.fq
+touch versions.yml 
 """
 }
