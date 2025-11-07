@@ -26,7 +26,7 @@ process CALL_DELLY {
     tag "${meta.id}"
     label "process_short"
     afterScript "rm -rf TMP"
-    conda "${moduleDir}/../../conda/delly2.yml"
+    conda "${moduleDir}/../../../conda/delly.yml"
     input:
 		tuple val(meta1),path(fasta)
 		tuple val(meta2),path(fai)
@@ -38,7 +38,7 @@ process CALL_DELLY {
 		path("versions.yml"),emit:versions
     script:
 		def args1  = task.ext.args1?:""
-		def prefix = taxt.ext.prefix?:meta.id
+		def prefix = task.ext.prefix?:meta.id
 	"""
 	hostname 1>&2
 	mkdir -p TMP
@@ -48,7 +48,7 @@ process CALL_DELLY {
 	delly call \\
 		${args1} \\
 		${optional_exclude_bed?"--exclude \"${optional_exclude_bed}\"":""} \\
-		${genotype_vcf?"--vcffile \"${genotype_vcf}\"":""} \\
+		${optional_genotype_vcf?"--vcffile \"${optional_genotype_vcf}\"":""} \\
 		--outfile "TMP/${prefix}.bcf" \\
 		--genome "${fasta}" \\
 		"${bam}" 1>&2

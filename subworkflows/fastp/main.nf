@@ -35,6 +35,8 @@ workflow FASTP {
         multiqc = Channel.empty()
         fastqc = Channel.empty()
 
+        
+
 
         fastqs = fastqs
                 .map{
@@ -71,6 +73,7 @@ workflow FASTP {
                 log.warn("FASTP: undefined metadata.fastqc_after")
                 }
             
+            
             APPLY_FASTP(  fastqs )
             versions = versions.mix(APPLY_FASTP.out.versions)
             multiqc = multiqc.mix(APPLY_FASTP.out.json)
@@ -95,13 +98,17 @@ workflow FASTP {
 
         single_end = trim_reads.single_end
                 .map{meta,fqs->[meta,(fqs instanceof List?fqs[0]:fqs)]}
+                
 
         paired_end = trim_reads.paired_end
             .map{meta,fqs->[meta,fqs.sort()]}
             .map{meta,fqs->[meta,fqs[0],fqs[1]]}
+            
 
-        trim_reads.others
-            .map{ throw new IllegalStateException("FASTP:Illegal State $it .") }
+        trim_reads.others.map{
+                log.warn("FASTP:Illegal State $it .");
+                throw new IllegalStateException("FASTP:Illegal State $it .");
+                }
         
 
         multiqc = fastqc

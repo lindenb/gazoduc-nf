@@ -26,7 +26,7 @@ SOFTWARE.
 
 */
 include {runOnComplete; dumpParams                } from '../../modules/utils/functions.nf'
-include {ORA_TO_FASTQ                             } from '../../subworkflows/ora/ora2fastq'
+include {parseBoolean                             } from '../../modules/utils/functions.nf'
 include {FASTP                                    } from '../../subworkflows/fastp'
 include {MULTIQC                                  } from '../../modules/multiqc'
 include {COMPILE_VERSIONS                         } from '../../modules/versions'
@@ -136,13 +136,15 @@ workflow {
       ]),
     single_end.mix(paired_end) 
     )
+
+
+
   multiqc = multiqc.mix(FASTP.out.multiqc)
   versions = versions.mix(FASTP.out.versions)
 
 	PREPARE_ONE_REFERENCE(
 		metadata,
-		Channel.fromPath(params.fasta)
-			.map{[[id:it.baseName],it]}
+		Channel.fromPath(params.fasta).map{[[id:it.baseName],it]}
 		)
 	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
 
@@ -192,7 +194,14 @@ workflow {
     *
     */
     MAP_BWA(
-      metadata ,
+      metadata.plus(
+        with_fastp : parseBoolean(params.with_fastp),
+        with_cram :  parseBoolean(params.with_cram),
+        fastqc_before : parseBoolean(params.with_fastqc),
+        fastqc_after : parseBoolean(params.with_fastqc),
+        with_seqkit_split : parseBoolean(params.with_seqkit_split2),
+        with_bqsr : parseBoolean(params.with_bqsr)
+        ) ,
       PREPARE_ONE_REFERENCE.out.fasta,
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
@@ -201,13 +210,13 @@ workflow {
       [[id:"nobed"],[]],
       single_end.mix(paired_end)
       )
-  versions = versions.mix(MAP_BWA.out.versions)
-  bams_ch =  MAP_BWA.out.bams
-  }
+    versions = versions.mix(MAP_BWA.out.versions)
+    bams_ch =  MAP_BWA.out.bams
+    }
   else
-  {
-    throw new IllegalArgumentException("unknown mapper: ${params.mapper}");
-  }
+    {
+      throw new IllegalArgumentException("unknown mapper: ${params.mapper}");
+    }
 
 
   /* add extra BAM , if any */
@@ -251,8 +260,8 @@ workflow {
   META_TO_PED(metadata, bams_ch.map{it[0]})
 	versions = versions.mix(META_TO_PED.out.versions)
 
-   pedigree_ch = META_TO_PED.out.gatk_pedigree
-   trios_ped_ch = META_TO_PED.out.trio_ped
+  pedigree_ch = META_TO_PED.out.pedigree_gatk
+  trios_ped_ch = META_TO_PED.out.pedigree_gatk //TODO check this, should be a pedigree of trios
 
   /***************************************************
    *
@@ -285,7 +294,7 @@ workflow {
   // stats from mosdepth will be used by graphtyper
   mosdepth_summary_ch = Channel.empty()
   // stats are required if graphtyper is used
-  if( params.with_bam_qc == true || params.with_graphtyper == true) {
+  if( parseBoolean(params.with_bam_qc) || parseBoolean(params.with_graphtyper)) {
       BAM_QC(
         metadata.plus([:]),
         PREPARE_ONE_REFERENCE.out.fasta,
@@ -307,7 +316,7 @@ workflow {
    * SOMALIER
    *
    */ 
-  if(params.with_somalier==true && is_wgs) {
+  if(parseBoolean(params.with_somalier==true) && is_wgs) {
         user_sites = Channel.of([[:],[],[]]) //custom sites
         SOMALIER_BAMS(
             metadata,
@@ -315,7 +324,7 @@ workflow {
             PREPARE_ONE_REFERENCE.out.fai,
 			      PREPARE_ONE_REFERENCE.out.dict,
             bams_ch,
-            META_TO_PED.out.pedigree,
+            META_TO_PED.out.pedigree_gatk,
             user_sites
             )
         versions = versions.mix(SOMALIER_BAMS.out.versions)
@@ -325,7 +334,7 @@ workflow {
    * MANTA
    *
    */
-  if(params.with_manta == true && is_wgs) {
+  if(parseBoolean(params.with_manta) && is_wgs) {
     MANTA_SINGLE(
         metadata,
         PREPARE_ONE_REFERENCE.out.fasta,
@@ -342,13 +351,13 @@ workflow {
    * INDEXCOV
    *
    */
-  if(params.with_indexcov == true && is_wgs) {
+  if(parseBoolean(params.with_indexcov) && is_wgs) {
     INDEXCOV(
       metadata,
       PREPARE_ONE_REFERENCE.out.fasta,
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
-      META_TO_PED.out.pedigree,
+      META_TO_PED.out.pedigree_gatk,
       bams_ch.map{[it[0],it[1]]/* no BAI please */}
       )
     versions = versions.mix(INDEXCOV.out.versions)
@@ -358,7 +367,7 @@ workflow {
    * DELLY2
    *
    */
-  if(params.with_delly == true && is_wgs) {
+  if(parseBoolean(params.with_delly) && is_wgs) {
       DELLY(
             metadata,
             PREPARE_ONE_REFERENCE.out.fasta,
@@ -376,7 +385,7 @@ workflow {
    * CNVNATOR
    *
    */
-  if(params.with_cnvnator == true) {
+  if(parseBoolean(params.with_cnvnator) && is_wgs) {
     CNVNATOR(
       metadata,
       PREPARE_ONE_REFERENCE.out.fasta,
@@ -427,7 +436,7 @@ workflow {
    * PARABRICKS HAPLOTYPECALLER
    *
    */
-  if(params.with_pb_haplotypecaller == true) {
+  if(parseBoolean(params.with_pb_haplotypecaller)) {
     PB_HAPLOTYPECALLER(
       metadata,
       PREPARE_ONE_REFERENCE.out.fasta,
@@ -448,7 +457,7 @@ workflow {
    * PARABRICKS DEEPVARIANT
    *
    */
-  if(params.with_pb_deepvariant == true) {
+  if(parseBoolean(params.with_pb_deepvariant)) {
     PB_DEEPVARIANT(
       metadata,
       PREPARE_ONE_REFERENCE.out.fasta,
@@ -470,7 +479,7 @@ workflow {
    *  GRAPHTYPER
    *
    */
-  if(params.with_graphtyper == true) {
+  if(parseBoolean(params.with_graphtyper)) {
     GRAPHTYPER(
       metadata,
       PREPARE_ONE_REFERENCE.out.fasta,
@@ -489,7 +498,7 @@ workflow {
    *  BCFTOOLS mpileup/call
    *
    */
-  if(params.with_bcftools_call == true) {
+  if(parseBoolean(params.with_bcftools_call)) {
     BCFTOOLS_CALL(
       metadata,
       PREPARE_ONE_REFERENCE.out.fasta,
@@ -508,7 +517,7 @@ workflow {
    *  FREEBAYES call
    *
    */
-  if(params.with_freebayes == true) {
+  if(parseBoolean(params.with_freebayes)) {
     FREEBAYES_CALL(
       metadata,
       PREPARE_ONE_REFERENCE.out.fasta,
@@ -522,7 +531,7 @@ workflow {
     vcf_ch = vcf_ch.mix(FREEBAYES_CALL.out.vcf)
     }
 
-  if(params.with_gatk == true) {
+  if(parseBoolean(params.with_gatk)) {
     HAPLOTYPECALLER(
       metadata,
       PREPARE_ONE_REFERENCE.out.fasta,

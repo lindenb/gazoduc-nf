@@ -36,27 +36,31 @@ def getBoolean(meta,key) {
 
 
 def parseBoolean(def o) {
-	if(o == null) return false;
+	if(o == null)  {
+		def msg =  "cannot convert null to boolean";
+	        log.warn(msg);
+        	throw new IllegalArgumentException(msg);
+		}
 	if((o instanceof Boolean)) {
 		return (Boolean)o;
 		}
-	final String s= String.valueOf(o).trim();
-	if(s.equalsIgnoreCase("true")) return true;
-	if(s.equalsIgnoreCase("yes")) return true;
-	if(s.equalsIgnoreCase("on")) return true;
-	if(s.equalsIgnoreCase("T")) return true;
-	if(s.equalsIgnoreCase("y")) return true;
-	if(s.equalsIgnoreCase("1")) return true;
+	final String s= String.valueOf(o).trim().toLowerCase();
+	if(s.equals("true")) return true;
+	if(s.equals("yes")) return true;
+	if(s.equals("on")) return true;
+	if(s.equals("t")) return true;
+	if(s.equals("y")) return true;
+	if(s.equals("1")) return true;
 
-	if(s.equalsIgnoreCase("false")) return false;
-	if(s.equalsIgnoreCase("no")) return false;
-	if(s.equalsIgnoreCase("off")) return false;
-	if(s.equalsIgnoreCase("F")) return false;
-	if(s.equalsIgnoreCase("n")) return false;
-	if(s.equalsIgnoreCase("0")) return false;
-
-	log.warn("Doesn't look like a boolean : ["+ s + "]");
-	return false;
+	if(s.equals("false")) return false;
+	if(s.equals("no")) return false;
+	if(s.equals("off")) return false;
+	if(s.equals("f")) return false;
+	if(s.equals("n")) return false;
+	if(s.equals("0")) return false;
+	def msg =  "Doesn't look like a boolean : ["+ s + "]";
+	log.warn(msg);
+	throw new IllegalArgumentException(msg);
 	}
 
 

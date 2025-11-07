@@ -26,10 +26,8 @@ SOFTWARE.
 include {BWA_MEM                         } from '../../../modules/bwa/mem'
 include {SEQKIT_SPLIT                    } from '../../seqkit/split'
 include {FASTP                           } from '../../../modules/fastp'
-include {MARK_DUPLICATES                 } from '../../../modules/gatk/markduplicates'
-include {SAMTOOLS_MERGE                  } from '../../../modules/samtools/merge'
 include {BQSR                            } from '../../gatk/bqsr'
-include {SAMBAMBA_MARKDUP                } from '../../../modules/sambamba/markdup'
+include {MARK_DUPLICATES                 } from '../../markdup'
 include {BAM_TO_CRAM                     } from '../../../modules/samtools/bam2cram'
 
 workflow MAP_BWA {
@@ -45,10 +43,26 @@ workflow MAP_BWA {
 	main:
 		versions = Channel.empty()
 		out_bams = Channel.empty()
-		multiqc = Channel.empty()
+		multiqc  = Channel.empty()
+		out_crams = Channel.empty()
 
 		
 		
+		if(meta.with_fastp==null) {
+			log.warn("undefined MAP_BWA:with_fastp")
+			}
+
+		
+		fastqs = fastqs.map{
+			if(it[1] instanceof List) {
+				def L=it[1].sort();
+				if(L.size()==2) return [it[0], L[0], L[1]];
+				if(L.size()==1) return [it[0], L[0], null];
+				throw new IllegalArgumentException("MAP_BWA : bad fastq input : ${it}");
+				}
+			return it;
+			}
+
 		if(meta.with_fastp==null || meta.with_fastp==true) {
 			FASTP(
 				fastqs.map{met,R1,R2->{
@@ -57,6 +71,8 @@ workflow MAP_BWA {
 					}}
 				)
 			versions = versions.mix(FASTP.out.versions)
+			
+
 			fastqs = FASTP.out.fastqs.map{meta2,fqs->{
 					if(fqs.size()==1) return [meta2,fqs[0],[]];
 					if(fqs.size()!=2) throw new IllegalArgumentException("Boum after FASTP ${meta2} ${fqs}"); 
@@ -66,7 +82,6 @@ workflow MAP_BWA {
 				}
 			}
 		
-
 		
 		if(meta.with_seqkit_split==null || meta.with_seqkit_split==true) {
 			SEQKIT_SPLIT(
@@ -83,52 +98,21 @@ workflow MAP_BWA {
 		versions = versions.mix(BWA_MEM.out.versions)
 		
 		
-	
-		if(meta.with_markdup==null || meta.with_markdup==true) {
-			if(meta.markdup_method==null || meta.markdup_method.equals("markduplicates")) {
-				MARK_DUPLICATES(BWA_MEM.out.bam
-					.map{meta,bam,bai->[meta.id,meta,[bam,bai]]}
-					.groupTuple()
-					.map{id,metas,bam_files->[metas[0],bam_files.flatten().sort()]}
-					)
-				versions = versions.mix(MARK_DUPLICATES.out.versions)
-				out_bams = MARK_DUPLICATES.out.bam
-				multiqc = multiqc.mix(MARK_DUPLICATES.out.metrics)
-				}
-			else if(meta.markdup_method.equals("sambamba")) {
-			
-			
-				ch1 = BWA_MEM.out.bam
-					.map{meta,bam,bai->[meta.id,meta,[bam,bai]]}
-					.groupTuple()
-					.map{id,metas,bam_files->[metas[0],bam_files]}
-					.branch{
-						needmerge: it[1].size() > 1
-						one: true
-						}
-				
-				
-				SAMTOOLS_MERGE(
-					fasta,
-					fai,
-					ch1.needmerge.map{meta,bam_files->[meta,bam_files.flatten().sort()]}
-					)
-				versions = versions.mix(SAMTOOLS_MERGE.out.versions)
-				
-				
-				SAMBAMBA_MARKDUP(					
-					SAMTOOLS_MERGE.out.bam.mix(ch1.one.map{meta,bam_files->[meta,bam_files[0]]})
-					)
-				versions = versions.mix(SAMBAMBA_MARKDUP.out.versions)
-				out_bams = SAMBAMBA_MARKDUP.out.bams
-				}
-			else
-				{
-				throw new IllegalArgumentException("Boum MAP_BWA undefined meta.markdup_method: ${meta.markdup_method}");
-				}
+		MARK_DUPLICATES(
+			meta,
+			fasta,
+			fai,
+			dict,
+			BWA_MEM.out.bam
+			)
+		versions = versions.mix(MARK_DUPLICATES.out.versions)
+		multiqc = multiqc.mix(MARK_DUPLICATES.out.multiqc)
+		out_bams = MARK_DUPLICATES.out.bams
+
+
+		if(meta.with_bqsr==null) {
+			log.warn("undefined MAP_BWA:with_bqsr");
 			}
-
-
 		if(meta.with_bqsr==null || meta.with_bqsr==true) {
 			BQSR(
 				meta,
@@ -142,7 +126,12 @@ workflow MAP_BWA {
 			out_bams = BQSR.out.bams
 			}
 			
-		out_crams  =Channel.empty()
+
+		if(meta.with_cram==null) {
+			log.warn("MAP_BWA: undefined meta.with_cram")
+			}
+
+
 		if(meta.with_cram==null || meta.with_cram==true) {
 			BAM_TO_CRAM(fasta,fai,out_bams.map{meta,bam,bai->[meta,bam]});
 			versions = versions.mix(BAM_TO_CRAM.out.versions)
