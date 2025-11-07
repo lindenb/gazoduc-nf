@@ -1,0 +1,124 @@
+nextflow_workflow {
+
+    name "Test Workflow MARK_DUPLICATES"
+    script "subworkflows/markdup/main.nf"
+    workflow "MARK_DUPLICATES"
+    config "./nextflow.config"
+
+    tag "subworkflows"
+    tag "subworkflows/markdup"
+
+    test("EMPTY") {
+
+        when {
+            params {
+            }
+            workflow {
+                """
+                input[0] = [markdup_enabled:true,markdup_method:"gatk"]
+                input[1] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[2] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[3] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[4] = Channel.empty() 
+                """
+            }
+        }
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+    }
+
+    test("GATK") {
+        when {
+            params {
+            }
+            workflow {
+                """
+                input[0] = [markdup_enabled:true,markdup_method:"gatk"]
+                input[1] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[2] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[3] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[4] = Channel.of(
+                        [[id:"S1"],file("${projectDir}/tests/data/S1.bam")],
+                        [[id:"S2"],file("${projectDir}/tests/data/S2.bam")]
+                        ) 
+                """
+            }
+        }
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+    }
+
+    test("SAMBAMBA") {
+        when {
+            params {
+            }
+            workflow {
+                """
+                input[0] = [markdup_enabled:true,markdup_method:"sambamba"]
+                input[1] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[2] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[3] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[4] = Channel.of(
+                        [[id:"S1"],file("${projectDir}/tests/data/S1.bam")]
+                        ) 
+                """
+            }
+        }
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+    }
+
+
+    test("SAMTOOLS") {
+        when {
+            params {
+            }
+            workflow {
+                """
+                input[0] = [markdup_enabled:true,markdup_method:"samtools"]
+                input[1] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[2] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[3] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[4] = Channel.of(
+                        [[id:"S1"],file("${projectDir}/tests/data/S1.bam")]
+                        ) 
+                """
+            }
+        }
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+    }
+
+    test("SAMBAMBA_MULTI") {
+            when {
+                params {
+                }
+                workflow {
+                    """
+                    input[0] = [markdup_enabled:true,markdup_method:"sambamba"]
+                    input[1] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                    input[2] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                    input[3] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                    input[4] = Channel.of(
+                            [[id:"S1"],file("${projectDir}/tests/data/S1.bam")],
+                            [[id:"S1"],file("${projectDir}/tests/data/S1.cram")]
+                            ) 
+                    """
+                }
+            }
+            then {
+                assert workflow.success
+                //assert snapshot(workflow.out).match()
+            }
+        }
+
+
+}

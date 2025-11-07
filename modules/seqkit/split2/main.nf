@@ -22,7 +22,29 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include { removeCommonSuffixes } from '../../utils/functions.nf'
 
+String makeName(String id,String s1,String s2) {
+	s1 =removeCommonSuffixes(s1);
+	String s="";
+	if(s2==null) {
+		s= s1;
+		}
+	else
+		{
+		s2 =removeCommonSuffixes(s2);
+		for(int i=0;i< s1.length() && i< s2.length();i++) {
+			if(s1.charAt(i)==s2.charAt(i)) {
+				s+= s1.charAt(i);
+				}
+			}
+		s = s.replaceAll("[_]+","_");
+		}
+	if(!(s.startsWith(id+".") ||  s.startsWith(id+"_"))) {
+		s = id + "." + s;
+		}
+	return s;
+	}
 
 /*
 Example output:
@@ -59,7 +81,7 @@ script:
 			!args1.contains("--by-length-prefix") && 
 			!args1.contains("--by-part-prefix") &&
 			!args1.contains("--by-size-prefix")
-	def prefix = task.ext.prefix?:"${meta.id}"
+	def prefix = task.ext.prefix?:makeName("${meta.id}",R1.name,(R2?R2.name:null))
 	def prefix2 = (R2?"${prefix}_R{read}_part_":"${prefix}_R0_part_")
 """
 mkdir -p TMP

@@ -228,15 +228,16 @@ String removeCommonSuffixes(String s) {
 		".gz",".txt",".csv",".idx",".tbi",".list",".tmp",".bgz",".zip",".tar",
 		".bed",".interval_list",
 		".vcf",".bcf",
-		".fa",".fasta",
-		".bam",".cram",".bai",".csi",
-		".gtf",".gff",".gff3"
+		".fa",".fasta",".fna",
+		".bam",".cram",".bai",".csi",".crai",
+		".gtf",".gff",".gff3",
+		".fq",".fastq"
 		]
 	boolean done = false;
 	while(!done) {
 		done = true;
 		for(String x:L) {
-			if(s.length()< x.length() && s.toLowerCase().endsWith(x)) {
+			if(x.length()< s.length() && s.toLowerCase().endsWith(x)) {
 				done=false;
 				s=s.substring(0,s.length()-x.length());
 				}

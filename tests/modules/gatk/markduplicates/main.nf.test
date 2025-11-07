@@ -1,0 +1,35 @@
+nextflow_process {
+
+    name "Test Process MARK_DUPLICATES"
+    script "modules/gatk/markduplicates/main.nf"
+    process "MARK_DUPLICATES"
+    tag "modules"
+    tag "modules/gatk"
+    tag "modules/gatk/markduplicates"
+
+    test("BAM") {
+
+        when {
+           
+            process {
+                """
+                input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[1] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[2] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[3] =[
+                        [id:"S1"],
+                        [
+                            file("${projectDir}/tests/data/S1.bam")
+                        ]]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+}

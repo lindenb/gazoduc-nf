@@ -1,0 +1,30 @@
+nextflow_process {
+
+    name "Test Process SAMTOOLS_MARKDUP"
+    script "modules/samtools/markdup/main.nf"
+    process "SAMTOOLS_MARKDUP"
+    tag "modules"
+    tag "modules/samtools"
+    tag "modules/samtools/markdup"
+
+    test("BASIC") {
+
+        when {
+            
+            process {
+                """
+                input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[1] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[2] = [[id:"S1"], file("${projectDir}/tests/data/S1.bam")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+}

@@ -30,13 +30,14 @@ conda "${moduleDir}/../../../conda/sambamba.yml"
 afterScript "rm -rf TMP"
 
 input:
-	tuple val(meta),path(bam),path(bai)
+	tuple val(meta),path(bam)
 output:
 	tuple val(meta),path("*.bam"),path("*.bai"),emit:bam
 	path("versions.yml"),emit:versions
 script:
 	def overflow_size = task.ext.overflow_size?:"600000"
-	def prefix = task.ext.prefix?:bam.baseName+".markdup"
+	def prefix = task.ext.prefix?:"${meta.id}.markdup"
+	if(bam.name.endsWith(".cram")) throw new IllegalArgumentException("CRAM are not supported by sambamba");
 """
 hostname 2>&1
 mkdir TMP

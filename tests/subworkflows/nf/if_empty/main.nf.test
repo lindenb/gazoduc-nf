@@ -1,0 +1,50 @@
+nextflow_workflow {
+
+    name "Test Workflow IF_EMPTY"
+    script "subworkflows/nf/if_empty/main.nf"
+    workflow "IF_EMPTY"
+    tag "subworkflows"
+    tag "subworkflows/nf"
+    tag "subworkflows/nf/if_empty"
+
+    test("IF_A") {
+
+        when {
+            workflow {
+                """
+                input[0] = Channel.of(0,1,2,3,4,5,6,7,8,9).map{[[id:"x"+it],it]}
+                input[1] = Channel.of([[id:"y0"],10000])
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+	    workflow.out.output.stream().forEach{assert it[1]<10};
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+
+    test("IF_B") {
+
+        when {
+            workflow {
+                """
+                input[0] = Channel.empty()
+                input[1] = Channel.of(1,2,3,4,5,6,7,8,9).map{it*1000}
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+	    workflow.out.output.stream().forEach{assert it>=1000};
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+
+}

@@ -10,7 +10,7 @@ all: data/REF/$(BUILD)/BAMS/samplesheet.csv
 nf-test: nf-test-wgsim
 
 nf-test-wgsim:
-	cd .. && nf-test test --profile micromamba tests/workflows/wgsim/main.nf.test
+	cd .. && nf-test test --profile micromamba tests/workflows/wgsim/main.nf.test --verbose
 
 
 stub: data/rotavirus_rf.fa data/rotavirus_rf.vcf.gz

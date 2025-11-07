@@ -29,6 +29,9 @@ conda "${moduleDir}/../../../conda/bioinfo.02.yml"
 label "process_short"
 afterScript 'rm -rf TMP'
 input:
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta3),path(dict)
 	tuple val(meta ),path("BAMS/*")
 output:
 	tuple val(meta),path("*.bam"),path("*.bai"),emit:bam
@@ -44,6 +47,7 @@ mkdir -p TMP
 
 gatk --java-options "${jvm}" MarkDuplicates \\
 	${args1} \\
+	${fasta?"--REFERENCE_SEQUENCE \"${fasta}\"":""} \\
 	`find BAMS/ -name "*.bam"  -printf " -I %p " ` \\
 	--VALIDATION_STRINGENCY LENIENT \\
 	-M "${prefix}.marked_dup_metrics.txt" \\

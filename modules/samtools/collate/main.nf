@@ -24,49 +24,45 @@ SOFTWARE.
 */
 
 
-process SAMTOOLS_MERGE {
+process SAMTOOLS_COLLATE {
 tag "${meta.id?:""}"
-label "process_single"
+label "process_medium"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)
-	tuple val(meta ),path("BAMS/*")
+	tuple val(meta ),path(bam)
 output:
-	tuple val(meta),path("*.bam"),path("*.bai"),emit:bam
+	tuple val(meta),path("*.bam"),emit:bam
 	path("versions.yml"),emit:versions
 script:
-	def prefix = task.ext.prefix?:"${meta.id}.merged"
+    def args1 = task.ext.args1?:""
+    def prefix = task.ext.prefix?:"${meta.id}.collate"
 """
 hostname 2>&1
-mkdir TMP
-
-find BAMS \\( -name "*.bam" -o -name "*.cram" \\) | sort -V > TMP/jeter.list
+mkdir -p TMP
 
 
-samtools merge \\
-	--reference "${fasta}" \\
-	--threads ${task.cpus} \\
-	-o TMP/${prefix}.bam \\
-	-b TMP/jeter.list
+samtools collate \\
+        ${args1} \\
+        --threads ${task.cpus} \\
+        -o "TMP/${prefix}.bam" \\
+        ${fasta?"--reference \"${fasta}\"":""} \\
+        ${bam} TMP/tmp.collate 
 
 
-samtools index \\
-	--threads ${task.cpus} \\
-	TMP/${prefix}.bam
-
-mv TMP/${prefix}.bam ./
-mv TMP/${prefix}.bam.bai ./
+mv -v TMP/${prefix}.bam ./
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
 	samtools: "\$(samtools version | awk '(NR==1) {print \$NF;}')"
 END_VERSIONS
 """
+
 stub:
 """
-touch "${meta.id}.merged.bam" "${meta.id}.merged.bam.bai"
+touch "${meta.id}.collate.bam"
 touch versions.yml
 """
 }

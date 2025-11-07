@@ -24,7 +24,7 @@ SOFTWARE.
 */
 
 
-process SAMTOOLS_MERGE {
+process SAMTOOLS_MARKDUP {
 tag "${meta.id?:""}"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
@@ -32,41 +32,46 @@ afterScript "rm -rf TMP"
 input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)
-	tuple val(meta ),path("BAMS/*")
+	tuple val(meta ),path(bam)
 output:
 	tuple val(meta),path("*.bam"),path("*.bai"),emit:bam
+    tuple val(meta),path("*.json"),emit:json
 	path("versions.yml"),emit:versions
 script:
-	def prefix = task.ext.prefix?:"${meta.id}.merged"
+	def prefix = task.ext.prefix?:"${meta.id}.markdup"
+    def args1 = task.ext.args1?:""
+
 """
 hostname 2>&1
-mkdir TMP
+mkdir -p TMP
 
-find BAMS \\( -name "*.bam" -o -name "*.cram" \\) | sort -V > TMP/jeter.list
-
-
-samtools merge \\
-	--reference "${fasta}" \\
-	--threads ${task.cpus} \\
-	-o TMP/${prefix}.bam \\
-	-b TMP/jeter.list
+samtools markdup \\
+    ${args1} \\
+    --threads ${task.cpus} \\
+    -s \\
+    -f TMP/${prefix}.json \\
+    ${fasta?"--reference \"${fasta}\"":""} \\
+    --json \\
+    ${bam} TMP/${prefix}.bam
 
 
 samtools index \\
 	--threads ${task.cpus} \\
 	TMP/${prefix}.bam
 
-mv TMP/${prefix}.bam ./
-mv TMP/${prefix}.bam.bai ./
+mv -v TMP/${prefix}.bam ./
+mv -v TMP/${prefix}.bam.bai ./
+mv -v TMP/${prefix}.json ./
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
 	samtools: "\$(samtools version | awk '(NR==1) {print \$NF;}')"
 END_VERSIONS
 """
+
 stub:
 """
-touch "${meta.id}.merged.bam" "${meta.id}.merged.bam.bai"
+touch "${meta.id}.markdup.bam" "${meta.id}.markdup.bai" "${meta.id}.json"
 touch versions.yml
 """
 }
