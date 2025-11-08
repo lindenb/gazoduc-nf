@@ -1,0 +1,32 @@
+nextflow_workflow {
+
+    name "Test Workflow WGSIM"
+    script "subworkflows/samtools/wgsim/main.nf"
+    workflow "WGSIM"
+    tag "subworkflows"
+    tag "subworkflows/samtools"
+    tag "subworkflows/samtools/wgsim"
+
+    test("BASIC") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0]=[random_seed:0, n_samples:5]
+                input[1] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")])
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+           //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

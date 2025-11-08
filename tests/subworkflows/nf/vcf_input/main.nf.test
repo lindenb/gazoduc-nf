@@ -1,0 +1,42 @@
+nextflow_workflow {
+
+    name "Test Workflow VCF_INPUT"
+    script "subworkflows/nf/vcf_input/main.nf"
+    workflow "VCF_INPUT"
+    tag "subworkflows"
+    tag "subworkflows/nf"
+    tag "subworkflows/nf/vcf_input"
+
+    test("BASIC") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [
+                    id:"x",
+                    path:"${projectDir}/tests/data/rotavirus_rf.vcf.gz"
+                    ]
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            with(workflow.out.vcf) {
+                assert size()==1
+                with(get(0)) {
+                    assert get(0).id.equals("rotavirus_rf")
+                    assert get(1).endsWith(".vcf.gz")
+                    assert get(2).endsWith(".vcf.gz.tbi")
+                }
+            }
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

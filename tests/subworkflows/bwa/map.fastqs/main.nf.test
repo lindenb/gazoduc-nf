@@ -1,0 +1,61 @@
+nextflow_workflow {
+
+    name "Test Workflow MAP_BWA"
+    script "subworkflows/bwa/map.fastqs/main.nf"
+    workflow "MAP_BWA"
+    tag "subworkflows"
+    tag "subworkflows/bwa"
+    tag "subworkflows/bwa/map.fastqs"
+
+    setup {
+            run("BWA_INDEX") {
+            script "modules/bwa/index/main.nf"
+            process {
+                """
+                input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                """
+                }
+            }
+    }
+
+    test("BASIC") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0]= [
+                    with_fastp : false,
+                    with_cram :  true,
+                    fastqc_before : false,
+                    fastqc_after : false,
+                    with_seqkit_split : false,
+                    with_bqsr : false,
+                    markdup_enabled : true,
+                    markdup_method: "gatk"
+                    ]
+                input[1] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[2] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[3] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[4] = BWA_INDEX.out.bwa_index
+                input[5] = [[id:"bqsr_files"],[]]
+                input[6] = [[id:"nobed"],[]]
+                input[7] = Channel.of(
+                    [[id:"S1"],file("${projectDir}/tests/data/S1.R1.fq.gz"),file("${projectDir}/tests/data/S1.R2.fq.gz")],
+                    [[id:"S2"],file("${projectDir}/tests/data/S2.R1.fq.gz"),file("${projectDir}/tests/data/S2.R2.fq.gz")]
+                    )
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

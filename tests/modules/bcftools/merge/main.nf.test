@@ -1,0 +1,81 @@
+nextflow_process {
+
+    name "Test Process BCFTOOLS_MERGE"
+    script "modules/bcftools/merge/main.nf"
+    process "BCFTOOLS_MERGE"
+    tag "modules"
+    tag "modules/bcftools"
+    tag "modules/bcftools/merge"
+    config "./nextflow.config"
+
+   setup {
+           run("SPLIT_N_VARIANTS") {
+                script "modules/jvarkit/splitnvariants/main.nf"
+               
+                process {
+                        """
+                        input[0] = [ [id:"bed"], [] ]
+                        input[1] = [
+                            [id:"ref"],
+                            file("${projectDir}/tests/data/rotavirus_rf.vcf.gz"),
+                            file("${projectDir}/tests/data/rotavirus_rf.vcf.gz.tbi")
+                            ]
+                        """
+                        }
+                }
+            }
+
+
+
+    test("BASIC") {
+
+        when {
+            params {
+                 args1= "false"
+            }
+            process {
+                """
+               input[0] = [ [id:"bed"], [] ]
+               input[1] = SPLIT_N_VARIANTS.out.vcf
+                            .mix( SPLIT_N_VARIANTS.out.tbi)
+                            .map{meta,f->f}
+                            .collect()
+                            .map{[[id:"merge"],it.sort()]}
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+     test("WITH_BED") {
+
+        when {
+            params {
+                  args1= "false"
+            }
+            process {
+                """
+               input[0] = [ [id:"bed"],  file("${projectDir}/tests/data/rotavirus_rf.bed") ]
+               input[1] = SPLIT_N_VARIANTS.out.vcf
+                            .mix( SPLIT_N_VARIANTS.out.tbi)
+                            .map{meta,f->f}
+                            .collect()
+                            .map{[[id:"with_bed"],it.sort()]}
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+
+}
