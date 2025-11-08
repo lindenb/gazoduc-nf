@@ -49,6 +49,7 @@ script:
 """	
 	hostname 1>&2
 	mkdir -p TMP
+	
 	find VCFS/ \\( -name "*.vcf.gz" -o -name "*.bcf" \\) | sort -V -T TMP > TMP/jeter.list
 
 	set -x

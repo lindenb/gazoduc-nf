@@ -24,6 +24,7 @@ nextflow_workflow {
 
         then {
             assert workflow.success
+            //workflow.out.vcf
             //assert snapshot(workflow.out).match()
         }
 

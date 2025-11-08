@@ -31,16 +31,14 @@ afterScript "rm -rf TMP"
 input:
     tuple val(meta1),path(fasta)
     tuple val(meta2),path(fai)
-    tuple val(meta),path(vcf),path(idx)
+    tuple val(meta ),path(vcf),path(idx)
 output:
     tuple val(meta),path("*.ploidy.txt"),optional:true,  emit:output
     tuple val(meta),path("*.png"), optional:true, emit:image
     path("versions.yml"),emit:versions
-when:
-    task.ext.when == null || task.ext.when
 script:
     def ucsc = meta1.ucsc_name?:"undefined"
-    def prefix = task.ext.prefix?:(meta.id?:vcf.simpleName)
+    def prefix = task.ext.prefix?:"${meta.id}"
     def args = task.ext.args?:""
 """
 mkdir -p TMP

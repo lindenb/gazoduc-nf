@@ -22,22 +22,23 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {BCFTOOLS_CONCAT as CONCAT1 } from '../../../modules/bcftools/concat'
-include {BCFTOOLS_CONCAT as CONCAT2 } from '../../../modules/bcftools/concat'
+include {BCFTOOLS_CONCAT as CONCAT1 } from '../../../modules/bcftools/concat2'
+include {BCFTOOLS_CONCAT as CONCAT2 } from '../../../modules/bcftools/concat2'
 include {makeKey                    } from '../../../modules/utils/functions.nf'
+include {JOIN_VCF_TBI               } from '../../../subworkflows/join.vcf.tbi'
 
 
-List makeSQRT(def group_id,def vcf_files) {
+List makeSQRT(def min_group,def meta,def vcf_files) {
 	def L = vcf_files.sort();
 	int n = (int)Math.ceil(Math.sqrt(L.size()));
-	if(n<25) n=25;
+	if(n<min_group) n=min_group;
 	def returnList = [];
 	def currList = [];
 	int i=0;
 	for(;;) {
 		if(i<L.size()) currList.add(L.get(i));
 		if(i==L.size() || currList.size()==n) {
-			if(!currList.isEmpty()) returnList.add([group_id,currList]);
+			if(!currList.isEmpty()) returnList.add([meta,currList]);
 			if(i==L.size()) break;
 			currList=[];
 			}
@@ -52,17 +53,18 @@ take:
 	bed //meta,bed
 	vcfs // tuple [meta,vcf,idx]
 main:
-
+	def min_group = (meta.min_group_size?:25)
 	versions = Channel.empty()
 
 
 	ch1 = vcfs
-		.map{meta,vcf,idx->[meta.id,[vcf,idx]]}
+		.map{meta,vcf,idx->[meta,[vcf,idx]]}
 		.groupTuple()
-		.flatMap{group_id,vcf_files->makeSQRT(group_id,vcf_files)}
-		.map{meta_id,vcf_files->[[id:meta_id,old_id:meta_id], vcf_files.flatten().sort()]}
+		.flatMap{meta,vcf_files->makeSQRT(min_group,meta,vcf_files)}
+		.map{meta,vcf_files->[meta, vcf_files.flatten().sort()]}
+		
 
-	CONCAT1(ch1,bed)
+	CONCAT1(bed,ch1)
 	versions = versions.mix(CONCAT1.out.versions)
 
 	
@@ -74,11 +76,11 @@ main:
 		
 
 	CONCAT2(
-		ch2.map{bedid,vcffiles->[
-				[id:bedid],
+		bed,
+		ch2.map{meta,vcffiles->[
+				meta,
 				vcffiles.flatten().sort()
 				]},
-		bed
 		)
 	versions = versions.mix(CONCAT2.out.versions)
 

@@ -23,7 +23,7 @@ SOFTWARE.
 */
 //include {makeKey                } from '../../../modules/utils/functions.nf'
 include {HAPLOTYPECALLER_DIRECT as HAPCALLER  } from '../../../modules/gatk/hapcallerdirect'
-include {BCFTOOLS_CONCAT                      } from '../../../modules/bcftools/concat'
+include {BCFTOOLS_CONCAT                      } from '../../../modules/bcftools/concat2'
 include {BCFTOOLS_MERGE                       } from '../../../modules/bcftools/merge'
 
 workflow HAPLOTYPECALLER_DIRECT {
@@ -63,26 +63,31 @@ workflow HAPLOTYPECALLER_DIRECT {
 		to_merge = HAPCALLER.out.vcf
 				.map{meta,vcf,tbi,bed->[bed.toRealPath().toString(),[vcf,tbi]]}
 				.groupTuple()
-				.map{name,vcf_files->[[id:name.md5()],vcf_files.flatten().sort(),[]]}
+				.map{name,vcf_files->[[id:name.md5()],vcf_files.flatten().sort()]}
 				
 				
-		BCFTOOLS_MERGE(to_merge)
+		BCFTOOLS_MERGE(
+			[[id:"nobed"],[]],
+			to_merge
+			)
+			
 		version_ch = version_ch.mix(BCFTOOLS_MERGE.out.versions)
 
 		BCFTOOLS_CONCAT(
+			[[id:"nobed"],[]],
 			BCFTOOLS_MERGE.out.vcf
-				.map{meta,vcf,tbi,bed->[vcf,tbi]}
+				.map{meta,vcf,tbi->[vcf,tbi]}
 				.flatMap()
 				.collect()
 				.map{[
 					[id:meta.id],
-					it,
-					[]
+					it
 					]}
 			)
 		version_ch = version_ch.mix(BCFTOOLS_CONCAT.out.versions)
 		
 		vcf_out = BCFTOOLS_CONCAT.out.vcf.map{meta,vcf,tbi,bed->[meta,vcf,tbi,[]]}
+		TODO AFTER_CONCAT
 	emit:
 		versions = version_ch
 		vcf = vcf_out

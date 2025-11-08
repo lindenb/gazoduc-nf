@@ -27,7 +27,7 @@ nextflow.enable.dsl=2
 
 include {dumpParams                 } from '../../modules/utils/functions.nf'
 include {runOnComplete              } from '../../modules/utils/functions.nf'
-include {WGSIM                      } from '../../modules/samtools/wgsim'
+include {WGSIM                      } from '../../subworkflows/samtools/wgsim'
 include {MULTIQC                    } from '../../modules/multiqc'
 include {COMPILE_VERSIONS           } from '../../modules/versions'
 
@@ -45,36 +45,30 @@ workflow {
 		dumpParams(params);
 		}
 
+	if(params.fasta==null) {
+		log.err("undefined --fasta");
+		exit -1
+	}
 
-   def hash_ref= [
+
+   def metadata = [
       id: file(params.fasta).baseName,
       name: file(params.fasta).baseName,
       ucsc_name: (params.ucsc_name?:"undefined")
       ]
-	def fasta = [ hash_ref, file(params.fasta)]
+	def fasta = [ metadata, file(params.fasta)]
 	versions = Channel.empty()
 	multiqc_ch = Channel.empty()
-	def rnd = new java.util.Random((params.random_seed as long));
 
 	
-	def n_samples= (params.n_samples as int)
-	ch1 = Channel.of(0..<n_samples).map{n->[id:"S"+(n+1)]}
 	
-	ch1 = ch1
-		.collate(3)
-		.map{
-			if(it.size()!=3) return it;
-			def c = it[0].plus(["sex":(rnd.nextBoolean()?"male":"female")  ,"father":it[1].id, "mother":it[2].id])
-			def f = it[1].plus(["sex":"male"  ,"father":"0",      "mother":"0"])
-			def m = it[2].plus(["sex":"female","father":"0",      "mother":"0"])
-			return [c,f,m];
-			}
-		.flatMap()
-		.map{h->h.plus("status":(rnd.nextBoolean()?"case":"control"))}
-		.map{h->h.plus("collection":"collection"+rnd.nextInt(3))}
-	
-	
-	WGSIM(fasta,ch1)
+	WGSIM(
+		metadata.plus([
+			n_samples: (params.n_samples as int),
+			random_seed : (params.random_seed as long)
+			]),
+		Channel.of(fasta)
+		)
 	versions = versions.mix(WGSIM.out.versions)
 
 	MAKE_SAMPLESHEET(

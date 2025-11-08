@@ -28,13 +28,14 @@ tag "${meta.id?:""}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-	tuple val(meta ),path("VCFS/*"),path(optional_bed)
+	tuple val(meta1),path(optional_bed)
+	tuple val(meta ),path("VCFS/*")
 output:
-        tuple val(meta),path("*.bcf"),path("*.bcf.csi"),path(optional_bed),emit:vcf
+        tuple val(meta),path("*.bcf"),path("*.bcf.csi"),emit:vcf
 	path("versions.yml"),emit:versions
 script:
         def args1  = task.ext.args1?:""
-        def prefix = task.ext.prefix?:"\${MD5}"+(meta.id?"."+meta.id.md5().substring(0,7):"") + (optional_bed?"."+optional_bed.baseName:"")
+        def prefix = task.ext.prefix?:"${meta.id}"
 """
 mkdir -p TMP
 find VCFS/ \\( -name "*.vcf.gz" -o -name "*.bcf" \\)  > TMP/jeter.list
@@ -50,7 +51,6 @@ do
 done
 
 LC_ALL=C sort -t, -T TMP -k1,1 TMP/jeter2.list | cut -d, -f2 > TMP/jeter3.list
-MD5=`cat TMP/jeter3.list | md5sum | cut -d ' ' -f1`
 
 if [[ \$(wc -l < TMP/jeter.list) -eq 1 ]]
 then

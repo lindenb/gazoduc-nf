@@ -47,14 +47,14 @@ workflow EXPANSION_HUNTER {
 		versions = versions.mix(XHUNTER_APPLY.out.versions)
 
         BCFTOOLS_MERGE(
+	    [[id:"nobed"],[]],
             XHUNTER_APPLY.out.vcf
                 .map{meta,vcf,tbi->[vcf,tbi]}
                 .flatMap()
                 .collect()
                 .map{[
                     [id:workflow_metadata.id],
-                    it.sort(),
-                    []
+                    it.sort()
                     ]}
             )
         versions = versions.mix(BCFTOOLS_MERGE.out.versions)
@@ -68,7 +68,7 @@ workflow EXPANSION_HUNTER {
 	what = Channel.of("average","max","min")
 
         FISHER_TEST(
-            BCFTOOLS_MERGE.out.vcf.map{meta,vcf,tbi,_bed->[meta,vcf,tbi]},
+            BCFTOOLS_MERGE.out.vcf.map{meta,vcf,tbi->[meta,vcf,tbi]},
             sn2status_ch
 		.filter{_meta,f->(f instanceof java.nio.file.Path)}
 		.combine(what)

@@ -41,6 +41,7 @@ nextflow_process {
                             .map{meta,f->f}
                             .collect()
                             .map{[[id:"concat"],it.sort()]}
+                            .view()
                 """
             }
         }

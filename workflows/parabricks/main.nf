@@ -31,6 +31,7 @@ include {FASTP                                    } from '../../subworkflows/fas
 include {MULTIQC                                  } from '../../modules/multiqc'
 include {COMPILE_VERSIONS                         } from '../../modules/versions'
 include {BWA_INDEX                                } from '../../modules/bwa/index'
+include { DRAGMAP_INDEX                           } from '../../modules/dragmap/index'
 include {PB_FQ2BAM                                } from '../../modules/parabricks/fq2bam'
 include {PB_HAPLOTYPECALLER                       } from '../../subworkflows/parabricks/haplotypecaller'
 include {PB_DEEPVARIANT                           } from '../../subworkflows/parabricks/deepvariant'
@@ -57,6 +58,8 @@ include {META_TO_BAMS                             } from '../../subworkflows/sam
 include { META_TO_PED                             } from '../../subworkflows/pedigree/meta2ped'
 include { PREPARE_USER_BED                        } from '../../subworkflows/bedtools/prepare.user.bed'
 include { MAP_BWA                                 } from '../../subworkflows/bwa/map.fastqs'
+include { MAP_DRAGMAP                             } from '../../subworkflows/dragmap'
+include { NOT_EMPTY_VCF                           } from '../../modules/bcftools/notempty'
 
 
 if( params.help ) {
@@ -154,6 +157,9 @@ workflow {
    *  Index FASTA For BWA
    *
    */
+  if(params.mapper.matches("(pb|parabricks|bwa)")) {
+    DragmapDir = Channel.empty()
+
   	if(params.bwa_index_directory!=null) {
       BWADir = [[id:"bwaindex"],file(params.bwa_index_directory)];
       }
@@ -163,6 +169,33 @@ workflow {
       versions = versions.mix(BWA_INDEX.out.versions)
       BWADir = BWA_INDEX.out.bwa_index
       }
+    }
+  /***************************************************
+   *
+   *  INDEX FASTA FOR DRAGMAP
+   *
+   */
+  else if(params.mapper.matches("(dragmap)")) {
+    BWADir = Channel.empty()
+    
+    if(params.dragmap_index_directory!=null) {
+      DragmapDir = [[id:"dragmapindex"],file(params.dragmap_index_directory)];
+      }
+    else
+      {
+      DRAGMAP_INDEX(
+        PREPARE_ONE_REFERENCE.out.fasta,
+        [[id:"nomask"],[]]
+        )
+      versions = versions.mix(DRAGMAP_INDEX.out.versions)
+      DragmapDir = DRAGMAP_INDEX.out.dragmap_index
+      }
+    }
+   else
+    {
+    throw new IllegalArgumentException("unknown mapper: ${params.mapper}");
+    }
+
   /***************************************************
    *
    *  MAP FASTQS TO BAM
@@ -200,7 +233,9 @@ workflow {
         fastqc_before : parseBoolean(params.with_fastqc),
         fastqc_after : parseBoolean(params.with_fastqc),
         with_seqkit_split : parseBoolean(params.with_seqkit_split2),
-        with_bqsr : parseBoolean(params.with_bqsr)
+        with_bqsr : parseBoolean(params.with_bqsr),
+        markdup_enabled : parseBoolean(params.with_markdup),
+        markdup_method : params.markdup_method
         ) ,
       PREPARE_ONE_REFERENCE.out.fasta,
       PREPARE_ONE_REFERENCE.out.fai,
@@ -212,6 +247,29 @@ workflow {
       )
     versions = versions.mix(MAP_BWA.out.versions)
     bams_ch =  MAP_BWA.out.bams
+    }
+  else if(params.mapper.matches("(dragmap)")) {
+    MAP_DRAGMAP(
+      metadata.plus(
+            with_fastp : parseBoolean(params.with_fastp),
+            with_cram :  parseBoolean(params.with_cram),
+            fastqc_before : parseBoolean(params.with_fastqc),
+            fastqc_after : parseBoolean(params.with_fastqc),
+            with_seqkit_split : parseBoolean(params.with_seqkit_split2),
+            with_bqsr : parseBoolean(params.with_bqsr),
+            markdup_enabled : parseBoolean(params.with_markdup),
+            markdup_method : params.markdup_method
+            ) ,
+          PREPARE_ONE_REFERENCE.out.fasta,
+          PREPARE_ONE_REFERENCE.out.fai,
+          PREPARE_ONE_REFERENCE.out.dict,
+          DragmapDir,
+          [[id:"bqsr_files"],[]],
+          [[id:"nobed"],[]],
+          single_end.mix(paired_end)
+          )
+    versions = versions.mix(MAP_DRAGMAP.out.versions)
+    bams_ch =  MAP_DRAGMAP.out.bams
     }
   else
     {
@@ -531,7 +589,7 @@ workflow {
     vcf_ch = vcf_ch.mix(FREEBAYES_CALL.out.vcf)
     }
 
-  if(parseBoolean(params.with_gatk)) {
+  if(parseBoolean(params.with_haplotype_caller)) {
     HAPLOTYPECALLER(
       metadata,
       PREPARE_ONE_REFERENCE.out.fasta,
@@ -549,13 +607,25 @@ workflow {
 
   /***************************************************
    *
+   * SKIP EMPTY VCFS for stats
+   *
+   */
+  NOT_EMPTY_VCF(vcf_ch)
+  versions = versions.mix(NOT_EMPTY_VCF.out.versions)
+  vcf_ch = NOT_EMPTY_VCF.out.vcf
+    .filter{meta,vcf,idx,status->status.contains("VARIANT")}
+    .map{meta,vcf,idx,status->[meta,vcf,idx]}
+
+
+  /***************************************************
+   *
    * GUESS PLOIDY FROM VCFS
    *
    */
   BCFTOOLS_GUESS_PLOIDY(
       PREPARE_ONE_REFERENCE.out.fasta,
       PREPARE_ONE_REFERENCE.out.fai,
-      vcf_ch
+      vcf_ch.view{"#GUESS PLOIDY ${it}"}
       )
   versions = versions.mix(BCFTOOLS_GUESS_PLOIDY.out.versions)
 

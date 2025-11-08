@@ -5,7 +5,8 @@ tag "${meta.id?:""} ${vcf.name} ${optional_bed?optional_bed.name:""}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-	tuple val(meta ),path(vcf),path(idx),path(optional_bed)
+	tuple val(meta1),path(optional_bed)
+	tuple val(meta ),path(vcf),path(idx)
 output:
 	tuple val(meta),path("OUT/*.vcf.gz",arity:"0..*"),optional:true,emit:vcf
 	tuple val(meta),path("OUT/*.tbi",arity:"0..*"),optional:true,emit:tbi
@@ -16,10 +17,10 @@ script:
 	if(method.trim().isEmpty()) throw new IllegalArgumentException("method undefined for ${task.process}");
 	def has_bed = optional_bed?true:false
 	def args1 = task.ext.args1?:""
-	def prefix = task.ext.prefix?:vcf.baseName+(has_bed?"."+optional_bed.baseName:"")+".split"
+	def prefix = task.ext.prefix?:"${meta.id}.split"
+	def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData  -Djava.io.tmpdir=TMP"
 """
 hostname 1>&2
-set -o pipefail
 mkdir -p OUT TMP
 
 if ${has_bed}
@@ -29,7 +30,7 @@ then
 		LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter1.bed
 
 		
-	${optional_bed.endsWith(".gz")?"gunzip -c":"cat"} "${optional_bed}" |\\
+	${has_bed && optional_bed.endsWith(".gz")?"gunzip -c":"cat"} "${optional_bed}" |\\
 		LC_ALL=C  sort -T TMP -t '\t' -k1,1 -k2,2n |\\
 		bedtools merge > TMP/jeter2.bed
 
@@ -46,7 +47,7 @@ fi
 bcftools view ${args1} \\
 	${has_bed?" --regions-file TMP/jeter3.bed":""} \\
 	"${vcf}" |\\
-	jvarkit -Xmx${task.memory.giga}g  -XX:-UsePerfData  -Djava.io.tmpdir=TMP vcfsplitnvariants \\
+	jvarkit ${jvm} vcfsplitnvariants \\
 	--manifest ${prefix}.MF \\
 	${method} \\
 	-o OUT/${prefix}

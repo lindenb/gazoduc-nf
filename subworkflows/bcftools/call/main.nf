@@ -23,15 +23,14 @@ SOFTWARE.
 
 */
 include {BCFTOOLS_CALL as CALL } from '../../../modules/bcftools/call'
-include {BCFTOOLS_MERGE        } from '../../../modules/bcftools/merge'
-include {BCFTOOLS_CONCAT       } from '../../../modules/bcftools/concat'
+include {BCFTOOLS_MERGE        } from '../../../modules/bcftools/merge3'
+include {BCFTOOLS_CONCAT       } from '../../../modules/bcftools/concat3'
 include {isBlank               } from '../../../modules/utils/functions'
-
 
 
 workflow BCFTOOLS_CALL {
 	take:
-		meta
+		metadata
 		fasta
 		fai
 		dict
@@ -41,15 +40,19 @@ workflow BCFTOOLS_CALL {
 	main:
 		versions = Channel.empty()
 		ch1 = bams
-			.map{
-				if(it[0].containsKey("batch")) return it;
-				return [it[0].plus(batch:it[0].sample),it[1],it[2]];
+			.map{meta,bam,bai->
+				if(!isBlank(meta.batch)) return [meta,bam,bai];
+				return [meta.plus(batch:meta.id),bam,bai];
 				}
-			.map{[[id:it[0].batch],[it[1],it[2]]]}
+			.map{
+				if(isBlank(it[0].batch)) throw new IllegalArgumentException("Empty batch ??? ${it}");
+				return it;
+				}
+			.map{meta,bam,bai->[[id:meta.batch],[bam,bai]]}
 			.groupTuple()
-			.map{[it[0],it[1].flatten()]}
+			.map{meta,files->[ meta, files.flatten().sort() ]}
 		
-		ch2 = ch1.combine(beds.map{it[1]})
+		ch2 = ch1.combine(beds.map{_meta,bed->bed}).view()
 
 		CALL(
 			fasta,
@@ -60,105 +63,30 @@ workflow BCFTOOLS_CALL {
 			)
 		versions = versions.mix(CALL.out.versions)
 
-		ch3 = CALL.out.vcf
-				.map{[[id:it[3].toRealPath().toString()/* bed */],[it[1],it[2]]]}
+		/* group data by BATCH */
+		group_by_batch = CALL.out.vcf
+				.map{meta,vcf,idx,_bed->[meta,[vcf,idx]]}
 				.groupTuple()
-				.map{[it[0],it[1].flatten(), [] /* no bed */]}
-				.branch{v->
-					to_merge:v[1].size()>2 /* bed and it's index */
-					other: true
-					}
-		// merge those having more than one sample
-		BCFTOOLS_MERGE( ch3.to_merge )
-		versions = versions.mix(BCFTOOLS_MERGE.out.versions)
+				.map{meta,files ->[meta, files.flatten().sort() ]}
+				
 
-		without_merge = ch3.other.map{[
-			it[0],
-			it[1].find{v->v.name.endsWith(".bcf") || v.name.endsWith("*.vcf.gz")}, 
-			it[1].find{v->v.name.endsWith(".tbi") || v.name.endsWith("*.csi")}
-			]}
-
-		SET_GQ(BCFTOOLS_MERGE.out.vcf.mix(without_merge))
-		versions = versions.mix(SET_GQ.out.versions)
-
-
-		BCFTOOLS_CONCAT(
-			SET_GQ.out.vcf
-				.map{[[id:"call"],[it[1],it[2]]]}
-				.groupTuple()
-				.map{[it[0],it[1].flatten(),[]/* no bed */]}
-			)
+		/** concat per batch, so we can have one vcf per batch/sample  */
+		BCFTOOLS_CONCAT(group_by_batch)
 		versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
 
+		// merge those having more than one sample
+		BCFTOOLS_MERGE(
+			BCFTOOLS_CONCAT.out.vcf
+				.map{meta,vcf,tbi-> [ [id:"bcftools.call"],[vcf,tbi]]}
+				.groupTuple()
+				.map{meta,files ->[meta, files.flatten().sort() ]}
+			)
+		versions = versions.mix(BCFTOOLS_MERGE.out.versions)
+		vcf_out = BCFTOOLS_MERGE.out.vcf
+		
 	emit:
 		versions
-		vcf = BCFTOOLS_CONCAT.out.vcf
+		vcf = vcf_out
 	}
 
 
-
-
-process SET_GQ {
-tag "${meta.id?:""}"
-label "process_single"
-afterScript "rm -rf TMP"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-input:
-   tuple val(meta),path(vcf),path(vcfidx)
-output:
-    tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
-    path("versions.yml"),emit:versions
-script:
-    def prefix = task.ext.prefix?:"\${MD5}"+".gq"
-"""
-set -x
-mkdir -p TMP
-MD5=`cat "${vcf}" | md5sum | cut -d ' ' -f1`
-
-cat << __EOF__ > TMP/jeter.code
-final VariantContextBuilder vcb = new VariantContextBuilder(variant);
-vcb.genotypes(
-  variant.getGenotypes().stream().map(G->{
-	if(G.hasGQ()) return G;
-        final GenotypeBuilder gb=new GenotypeBuilder(G);
-        final int dp= (G.hasDP()?G.getDP():30);
-        double gq = 99;
-        if(dp<25) gq = gq * (dp/25.0);
-        if(G.isNoCall()) {
-                gq=0;
-                }
-        else if(G.hasAD() && G.getAD().length==2) {
-                final int[] ad=G.getAD();
-                double dp2 = ad[0]+ad[1];
-                if((G.isHomRef() || G.isHomVar()) && dp2>0) {
-                        gq = gq * Math.max(ad[0],ad[1])/dp2;
-                        }
-                else if(G.isHet() && dp2>0) {
-                        gq = gq * ((Math.min(ad[0],ad[1])/dp2) / 0.5 );
-                        }
-                }
-        gb.GQ((int)gq);
-        return gb.make();
-        }).collect(Collectors.toList())
-  );
-return vcb.make();
-__EOF__
-
-
-bcftools view "${vcf}" |\\
-	awk '/^#CHROM/ {printf("##FORMAT=<ID=GQ,Number=1,Type=Integer,Description=\\"Genotype Quality for bcftools\\">\\n");} {print;}' |\\
-	jvarkit  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcffilterjdk -f ~/jeter.code |\\
-	bcftools view -O b -o TMP/jeter.bcf
-
-bcftools index --threads ${task.cpus} -f TMP/jeter.bcf
-
-mv TMP/jeter.bcf     ${prefix}.bcf
-mv TMP/jeter.bcf.csi ${prefix}.bcf.csi
-
-cat << END_VERSIONS > versions.yml
-${task.process}:
-    bcftools: \$(bcftools version | awk '(NR==1)  {print \$NF}')
-    jvarkit: todo
-END_VERSIONS
-"""
-}

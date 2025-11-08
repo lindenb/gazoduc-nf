@@ -24,7 +24,8 @@ SOFTWARE.
 */
 
 include { GRAPHTYPER as GTYPER                 }  from '../../../modules/graphtyper/genotype'
-include { BCFTOOLS_CONCAT                      }  from '../../../modules/bcftools/concat'
+include { BCFTOOLS_CONCAT                      }  from '../../../modules/bcftools/concat2'
+include { JOIN_VCF_TBI                         } from '../../../subworkflows/bcftools/join.vcf.tbi'
 
 
 
@@ -73,17 +74,21 @@ main:
 
 
     BCFTOOLS_CONCAT(
+        [[id:"nobed"],[]],
         GTYPER.out.vcf
             .map{[it[1],it[2]]}//gvcf,tbi
              .collect()
-             .map{[[id:"deepvariant"],it,[]]},
+             .map{[[id:"graphtyper"],it]},
         )
     versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
     
-
+    vcf_out = JOIN_VCF_TBI(
+			BCFTOOLS_CONCAT.out.vcf,
+			BCFTOOLS_CONCAT.out.tbi
+			).vcf
 emit:
     versions
-    vcf = BCFTOOLS_CONCAT.out.vcf
+    vcf = vcf_out
 }
 
 

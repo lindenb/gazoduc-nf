@@ -24,7 +24,7 @@ SOFTWARE.
 */
 include {CALL_FREEBAYES as CALL } from '../../../modules/freebayes/call'
 include {BCFTOOLS_MERGE         } from '../../../modules/bcftools/merge'
-include {BCFTOOLS_CONCAT        } from '../../../modules/bcftools/concat'
+include {BCFTOOLS_CONCAT        } from '../../../modules/bcftools/concat2'
 
 
 
@@ -68,7 +68,10 @@ workflow FREEBAYES_CALL {
 				}
 
 
-		BCFTOOLS_MERGE(ch3.to_merge)
+		BCFTOOLS_MERGE(
+			[[id:"nobed"],[]],
+			ch3.to_merge
+			)
 		versions = versions.mix(BCFTOOLS_MERGE.out.versions)
 
 		without_merge = ch3.other.map{[
@@ -84,10 +87,11 @@ workflow FREEBAYES_CALL {
 
 	
 		BCFTOOLS_CONCAT(
+			[[id:"nobed"],[]],
 			FILTER_AC_GT_0.out.vcf
 				.map{[[id:"freebayes"],[it[1],it[2]]]}
 				.groupTuple()
-				.map{[it[0],it[1].flatten(),[]]}
+				.map{[it[0],it[1].flatten()]}
 			)
 		versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
 

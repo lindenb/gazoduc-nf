@@ -44,6 +44,7 @@ script:
 	
 	def by_contig = (task.ext.by_chromosome?:false).toBoolean()
 	def with_md5 = (task.ext.with_md5?:true).toBoolean()
+	log.warn("BCFTOOLS_CONCAT deprecated")
 """	
 	hostname 1>&2
 	mkdir -p TMP
