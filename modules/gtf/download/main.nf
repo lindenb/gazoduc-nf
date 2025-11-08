@@ -22,7 +22,6 @@ SOFTWARE.
 
 */
 
-include {k1_signature} from '../../utils/k1.nf'
 
 process DOWNLOAD_GTF_OR_GFF3 {
 tag "${meta1.id?:fasta.name}"
@@ -34,42 +33,46 @@ input:
 	tuple val(meta2),path(fai)
 	tuple val(meta3),path(dict)
 output:
-	tuple val(meta1),path("*.gz"), path("*.gz.tbi"),emit:output
+	tuple val(meta1),path("*.gz"), path("*.gz.tbi"),emit:gtf
 	path("versions.yml"),emit:versions
 script:
-	def k1 = k1_signature()
-	def extension = (task.ext==null || task.ext.suffix==null?
-		(task.process.toString().toLowerCase().endsWith("gtf")?"gtf":
-			(task.process.toString().toLowerCase().endsWith("gff3")?"gff3":""))
-		:task.ext.suffix
-		)
-	
-	if(extension.isEmpty()) throw new IllegalArgumentException("suffix missing for ${task.process}");
-	def release = task.ext.release?:"114"
-	def base = task.ext.base?:"https://ftp.ensembl.org/pub"
+	def extension="";
+	 def url0= task.ext.url?:""
+	if(url0.isEmpty()) {
+		 extension = (task.ext==null || task.ext.suffix==null?
+				(task.process.toString().toLowerCase().endsWith("gtf")?"gtf":
+					(task.process.toString().toLowerCase().endsWith("gff3")?"gff3":""))
+				:task.ext.suffix
+				)
+		if(extension.isEmpty()) throw new IllegalArgumentException("suffix missing for ${task.process}");
+
+
+		def ucsc_name = (task.ext.ucsc_name?:meta1.ucsc_name).toString()
+		if(ucsc_name==null || ucsc_name.isEmpty()) throw new IllegalArgumentException("undefined ucsc_name for ${task.process}");
+		def release = task.ext.release?:"114"
+		def base = task.ext.base?:"https://ftp.ensembl.org/pub"
+		if(ucsc_name.equals("hg38")) {
+			url = "${base}/release-${release}/${extension}/homo_sapiens/Homo_sapiens.GRCh38.${release}.${extension}.gz"
+			}
+		else if(ucsc_name.equals("hg19")) {
+			url = "${base}/grch37/current/${extension}/homo_sapiens/Homo_sapiens.GRCh37.87.chr.${extension}.gz"
+			}
+		else
+			{
+			throw new IllegalArgumentException("url missing for ${task.process}: '${ucsc_name}'.");
+			}
+		}
+	else
+		{
+		url = url0;
+		extension = url.contains(".gtf")?"gtf":"gff3"
+		}
 """
 hostname 1>&2
 mkdir -p TMP
 set -o pipefail
 
-##  GTF/GFF3 from gencode are not compatible with bcftools csq
-cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:${k1.hg38}\t${base}/release-${release}/${extension}/homo_sapiens/Homo_sapiens.GRCh38.${release}.${extension}.gz
-1:${k1.hg19}\t${base}/grch37/current/${extension}/homo_sapiens/Homo_sapiens.GRCh37.87.chr.${extension}.gz
-EOF
-
-awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' |\\
-	sed 's/^chr//' |\\
-	sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
-
-join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv |\\
-	sort |\\
-	uniq > TMP/jeter.url
-
-test -s TMP/jeter.url
-
-
-wget -O TMP/gencode.txt.gz `cat TMP/jeter.url`
+wget -O TMP/gencode.txt.gz "${url}"
 
 gunzip -c TMP/gencode.txt.gz |\\
 		jvarkit bedrenamechr -f "${fasta}" --column 1 --convert SKIP |\\

@@ -1,0 +1,46 @@
+nextflow_process {
+
+    name "Test Process RUN_ORAD"
+    script "modules/orad/run/main.nf"
+    process "RUN_ORAD"
+    tag "modules"
+    tag "modules/orad"
+    tag "modules/orad/run"
+    config "../download/nextflow.config"
+
+
+setup {
+      run("DOWNLOAD_ORAD") {
+		script "modules/orad/download/main.nf"
+		process {
+			"""
+	                input[0] = [:]
+			"""
+			}
+		}
+	}
+
+
+    test("BASIC") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            process {
+                """
+                input[0]= DOWNLOAD_ORAD.out.oradir
+	            input[1] = [[id:"S1"],file("${projectDir}/tests/data/S1.ora")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+           // assert snapshot(process.out).match()
+        }
+
+    }
+
+}
