@@ -27,7 +27,7 @@ process JVARKIT_INDEXCOV2VCF {
 	label "process_single"
 	conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 	afterScript "rm -rf TMP"
-	tag "${meta.id?:vcf.name}"
+	tag "${meta.id?:bed.name}"
 	input:
 		tuple val(meta1),path(fasta)
 		tuple val(meta2),path(fai)
@@ -43,9 +43,9 @@ process JVARKIT_INDEXCOV2VCF {
 		def args2 = task.ext.args2?:""
 		def prefix  = task.ext.prefix?:bed.baseName+".indexcov2vcf"
 		def has_pedigree  =opt_pedigree?true:false
+		def jvm = task.ext.jvm?:"-Djava.io.tmpdir=TMP"
 	"""
 	hostname 1>&2
-	set -o pipefail
 	mkdir -p TMP
 
 	if ${has_pedigree}
@@ -58,7 +58,7 @@ process JVARKIT_INDEXCOV2VCF {
 	fi
 
 
-	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP indexcov2vcf \\
+	jvarkit -Xmx${task.memory.giga}g ${jvm} indexcov2vcf \\
 			${args1} \\
 			--cases TMP/cases.txt \\
 			--controls TMP/controls.txt \\
@@ -66,7 +66,7 @@ process JVARKIT_INDEXCOV2VCF {
 			"${bed}"   |\\
 		bcftools view ${args2} -O u -o TMP/jeter.bcf
 
-	bcftools sort -T TMP  --max-mem "${task.memory.giga}G" -Ob -o TMP/jeter2.bcf TMP/jeter.bcf
+	bcftools sort -T TMP/sort  --max-mem "${task.memory.giga}G" -Ob -o TMP/jeter2.bcf TMP/jeter.bcf
 	bcftools index --threads '${task.cpus}' --force TMP/jeter2.bcf
 
 
@@ -78,4 +78,10 @@ ${task.process}:
 	jvarkit: "\$(jvarkit --version)"
 EOF
 	"""
+
+stub:
+def prefix  = task.ext.prefix?:bed.baseName+".indexcov2vcf"
+"""
+touch  versions.yml ${prefix}.bcf ${prefix}.bcf.csi
+"""
 	}

@@ -45,41 +45,43 @@ workflow SOMALIER_BAMS {
 		fasta2 = bams_ch.count()
 				.filter{it>1}
 				.combine(fasta)
-				.map{[it[1],it[2]]}
+				.map{_count,meta,fasta->[meta,fasta]}
 
 		/* sites PROVIDED */
 		sites_vcf =  bams_ch.count()
 			.filter{it>1}
 			.combine(user_sites)
-			.map{[it[1],it[2],it[3]]}
+			.map{_count,meta,vcf,idx->[meta,vcf,idx]}
 
 
-			fasta3 = user_sites
-				.count()
-				.filter{it==0}
-                                .combine(fasta2)
-                                .map{[it[1],it[2]]}
+		fasta3 = user_sites
+			.count()
+			.filter{it==0}
+			.combine(fasta2)
+			.map{_count,meta,fasta->[meta,fasta]}
 
 
-			SOMALIER_DOWNLOAD_SITES(fasta3,fai,dict)
-			version_ch = version_ch.mix(SOMALIER_DOWNLOAD_SITES.out.versions)
-			sites_vcf= sites_vcf.mix(SOMALIER_DOWNLOAD_SITES.out.vcf)
+		SOMALIER_DOWNLOAD_SITES(fasta3,fai,dict)
+		version_ch = version_ch.mix(SOMALIER_DOWNLOAD_SITES.out.versions)
+		sites_vcf= sites_vcf.mix(SOMALIER_DOWNLOAD_SITES.out.vcf)
 
 		sites_vcf = sites_vcf.first()
 
 
 		ch1 = bams_ch.branch {
-				tuple5: it.size()==5
-				tuple3: it.size()==3
+				tuple5: it.size()==5 /* meta,bam,bai,fasta,fai */
+				tuple3: it.size()==3 /* meta,bam,bai */
 				other:true
 				}
 
 
 		ch1.other.map{throw new IllegalArgumentException("bad input for somalier ${it} size=${it.size()}");}
+	
 
-
-		ch2 = ch1.tuple3.combine(fasta2)
-			.map{ [it[0],it[1],it[2],it[4], fai[1] ] }
+		ch2 = ch1.tuple3
+			.combine(fasta2)
+			.combine(fai)
+			.map{meta1,bam,bai,meta2,fasta,meta3,fai-> [meta1,bam,bai,fasta,fai] }
 			.mix( ch1.tuple5)
 
 
@@ -87,14 +89,20 @@ workflow SOMALIER_BAMS {
 		version_ch = version_ch.mix(EXTRACT_BAM.out.versions.first())
 	
 		RELATE(
-			fasta2,fai,dict,
-			EXTRACT_BAM.out.output.map{it[1]}.collect().map{[[id:"somalier"],it]},
+			fasta2,
+			fai,
+			dict,
+			EXTRACT_BAM.out.output
+					.map{meta,xtract->xtract}
+					.collect()
+					.map{[[id:"somalier"],it.sort()]},
 			pedigree
 			)
 		version_ch = version_ch.mix(RELATE.out.versions)
 
 		PLOT_MATRIX(RELATE.out.output.map{[it[0],it[1].find{v->v.name.endsWith(".pairs.tsv")}]})
 		version_ch = version_ch.mix(PLOT_MATRIX.out.versions)
+		
 
 	emit:
 		output = RELATE.out.output

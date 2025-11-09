@@ -42,6 +42,11 @@ if( params.help ) {
 
 
 workflow {
+	if(params.samplesheet==null) {
+		log.error("undefined --samplesheet");
+		exit -1;
+		}
+
 	versions = Channel.empty()
 	multiqc_ch = Channel.empty()
 	ch0 = Channel.fromPath(params.samplesheet)

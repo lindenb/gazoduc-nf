@@ -97,7 +97,8 @@ emit:
     versions
 }
 
-workflow DELLYx {
+/*
+workf low DELLYx {
 take:
 	meta
 	fasta
@@ -124,7 +125,7 @@ main:
         versions_ch = versions_ch.mix(MERGE_EXCLUDE.out.versions)
 
 
-        /* if there is no meta.status, treat everyone as case */
+        // if there is no meta.status, treat everyone as case 
         bams_ch.map{[it[0].containsKey("status") ? it[0] : it[0].plus("status":"case"), it[1], it[2]] }.
                 branch{
                     controls : it[0].status && it[0].status.equals("control")
@@ -179,6 +180,7 @@ emit:
     vcf = FILTER_DELLY.out.vcf
     call_vcfs
 }
+*/
 
 
 process MAPPABILITY {

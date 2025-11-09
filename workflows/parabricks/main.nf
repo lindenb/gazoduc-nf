@@ -60,6 +60,7 @@ include { PREPARE_USER_BED                        } from '../../subworkflows/bed
 include { MAP_BWA                                 } from '../../subworkflows/bwa/map.fastqs'
 include { MAP_DRAGMAP                             } from '../../subworkflows/dragmap'
 include { NOT_EMPTY_VCF                           } from '../../modules/bcftools/notempty'
+include { READ_SAMPLESHEET                        } from '../../subworkflows/nf/read_samplesheet'
 
 
 if( params.help ) {
@@ -104,14 +105,11 @@ workflow {
     }
   else
     {
-    samplesheet0_ch = Channel.fromPath(params.samplesheet);
-    if(params.samplesheet.endsWith(".json")) {
-      samplesheet0_ch =  samplesheet0_ch.splitJson();
-      }
-    else
-      {
-      samplesheet0_ch =  samplesheet0_ch.splitCsv(sep:',',header:true);
-      }
+    /* no fastq samplesheet */
+    samplesheet0_ch = READ_SAMPLESHEET(
+        [arg_name:"samplesheet"],
+        params.samplesheet
+        ).samplesheet
     }
   
   SAMPLESHEET_TO_FASTQ(

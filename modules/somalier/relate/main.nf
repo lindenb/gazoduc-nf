@@ -23,6 +23,7 @@ SOFTWARE.
 
 */
 process RELATE {
+tag "${meta.id}"
 label "process_medium"
 afterScript "rm -rf extracted TMP"
 conda  "${moduleDir}/../../../conda/somalier.yml"

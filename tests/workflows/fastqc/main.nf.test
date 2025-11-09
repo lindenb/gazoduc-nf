@@ -8,8 +8,7 @@ nextflow_pipeline {
 
         when {
             params {
-	       samplesheet = "${}"
-               outdir = "tests/data/REF/GRCh38/FASTQ/samplesheet.csv"
+               samplesheet = "tests/data/REF/GRCh38/FASTQ/samplesheet.csv"
             }
         }
 

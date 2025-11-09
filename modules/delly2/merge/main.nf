@@ -26,7 +26,7 @@ SOFTWARE.
 process MERGE_DELLY {
     label "process_short"
     afterScript "rm -rf TMP"
-    conda "${moduleDir}/../../conda/delly2.yml"
+    conda "${moduleDir}/../../../conda/delly.yml"
     input:
         tuple val(meta1),path(fasta)
         tuple val(meta2),path(fai)

@@ -1,0 +1,22 @@
+nextflow_pipeline {
+
+    name "Test Workflow main.nf"
+    script "workflows/indexcov/main.nf"
+    tag "workflows/indexcov"
+    tag "workflows"
+
+    test("BASIC") {
+        when {
+            params {
+                fasta       = "tests/data/REF/GRCh38.fa"
+                samplesheet = "tests/data/REF/GRCh38/BAMS/samplesheet.csv"
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+
+    }
+
+}

@@ -24,7 +24,7 @@ SOFTWARE.
 */
 process FILTER_DELLY {
     tag "${meta.id}"
-    conda "${moduleDir}/../../conda/bioinfo.01.yml"
+    conda "${moduleDir}/../../../conda/delly.yml"
     label "process_short"
     input:
 		tuple val(meta1),path(fasta)

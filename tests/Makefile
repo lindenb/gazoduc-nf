@@ -154,6 +154,10 @@ data/REF/$(BUILD)/BAMS/samplesheet.csv : data/REF/$(BUILD)/FASTQ/samplesheet.csv
 		../workflows/bwa/main.nf \
 		--outdir $${PWD}/data/REF/$(BUILD) \
 		--samplesheet $< \
+		--with_fastp=false \
+		--with_bqsr=false \
+		--with_markdup=false \
+		--with_seqkit_split=false \
 		--known_sites $${PWD}/data/REF/$(BUILD).dbsnp.vcf.gz
 	find  $${PWD}/data/REF/$(BUILD) -type f -name "*.am" || true
 	find  $${PWD}/data/REF/$(BUILD) -type f -name "*.csv" || true

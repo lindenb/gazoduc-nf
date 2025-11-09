@@ -68,21 +68,33 @@ main:
                 .collect()
                 .filter{it.size()>2} // NO need to run truvari if there is only one vcf and one tbi
                 .map{[[id:"manta"],it]}
+                
 
 
         MANTA_CANDIDATESV( MANTA.out.candidateSV)
         versions = versions.mix(MANTA_CANDIDATESV.out.versions)
         
-        
 
-        TRUVARI_COLLAPSE(
-			fasta,
+	if(meta.with_truvari==null) {
+		log.warn("MANTA: meta.with_truvari undefined")
+		}        
+
+	if(meta.with_truvari==null || meta.with_truvari==true) {
+                fasta2  = bams
+                        .count()
+                        .filter{it>1}
+                        .combine(fasta)
+                        .map{_count,meta,fasta->[meta,fasta]}
+                        .first()
+                        
+	        TRUVARI_COLLAPSE(
+			fasta2,
 			fai,
 			dict,
 			ch1
 			)
-        versions = versions.mix(TRUVARI_COLLAPSE.out.versions)
-
+        	versions = versions.mix(TRUVARI_COLLAPSE.out.versions)
+		}
 emit:
         versions
 }

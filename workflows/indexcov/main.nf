@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -25,10 +25,14 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 
-include {INDEXCOV                   } from '../../subworkflows/indexcov/simple'
-include {JVARKIT_BAM_RENAME_CONTIGS } from '../../modules/jvarkit/bamrenamechr'
-include {runOnComplete;dumpParams   } from '../../modules/utils/functions.nf'
-include {COMPILE_VERSIONS           } from '../../modules/versions'
+include { INDEXCOV                   } from '../../subworkflows/indexcov/simple'
+include { JVARKIT_BAM_RENAME_CONTIGS } from '../../modules/jvarkit/bamrenamechr'
+include { runOnComplete;dumpParams   } from '../../modules/utils/functions.nf'
+include { COMPILE_VERSIONS           } from '../../modules/versions'
+include { READ_SAMPLESHEET           } from '../../subworkflows/nf/read_samplesheet'
+include { META_TO_BAMS               } from '../../subworkflows/samtools/meta2bams2'
+include { META_TO_PED                } from '../../subworkflows/pedigree/meta2ped'
+include {PREPARE_ONE_REFERENCE       } from '../../subworkflows/samtools/prepare.one.ref'
 
 if( params.help ) {
     dumpParams(params);
@@ -38,83 +42,85 @@ if( params.help ) {
 }
 
 
-Map assertKeyExists(final Map hash,final String key) {
-    if(!hash.containsKey(key)) throw new IllegalArgumentException("no key ${key}'in ${hash}");
-    return hash;
-}
-
-Map assertKeyExistsAndNotEmpty(final Map hash,final String key) {
-    assertKeyExists(hash,key);
-    def value = hash.get(key);
-    if(value.isEmpty()) throw new IllegalArgumentException("empty ${key}'in ${hash}");
-    return hash;
-}
-
-Map assertKeyMatchRegex(final Map hash,final String key,final String regex) {
-    assertKeyExists(hash,key);
-    def value = hash.get(key);
-    if(!value.matches(regex)) throw new IllegalArgumentException(" ${key}'in ${hash} doesn't match regex '${regex}'.");
-    return hash;
-}
-
 
 workflow {
-	versions = Channel.empty()
- 	def ref_hash = [
-            id: file(params.fasta).simpleName,
-            ucsc_name: (params.ucsc_name?:"undefined")
-            ]
-	def fasta  = [ref_hash, file(params.fasta) ]
-	def fai    = [ref_hash, file(params.fai) ]
-	def dict   = [ref_hash, file(params.dict) ]
-	def pedigree =  [ref_hash,[] ]
-	if(params.pedigree!=null) {
-		pedigree = [ref_hash, file(params.pedigree)];
+
+	/* no fastq samplesheet */
+	if(params.samplesheet==null) {
+		log.error("--samplesheet undefined")
+		exit -1
+		}
+	/* no fastq samplesheet */
+	if(params.fasta==null) {
+		log.error("--fasta undefined")
+		exit -1
 		}
 
-  	bams = Channel.fromPath(params.samplesheet)
-			.splitCsv(header:true,sep:',')
-			.map{assertKeyMatchRegex(it,"sample","^[A-Za-z_0-9\\.\\-]+\$")}
-			.map{assertKeyMatchRegex(it,"bam","^\\S+\\.(bam|cram)\$")}
-			.map{
-				if(it.containsKey("bai")) return it;
-				if(it.bam.endsWith(".cram")) return it.plus(bai : it.bam+".crai");
-				return it.plus(bai:it.bam+".bai");
-			}
-			.map{
-				if(it.containsKey("fasta")) return it;
-				return it.plus(fasta:params.fasta);
-			}
-			.map{
-				if(it.containsKey("fai")) return it;
-				return it.plus(fai:it.fasta+".fai");
-			}
-			.map{
-				if(it.containsKey("dict")) return it;
-				return it.plus(dict: it.fasta.replaceAll("\\.(fasta|fa|fna)\$",".dict"));
-			}
-			.branch {
-				ok_ref: it.fasta.equals(params.fasta)
+	versions = Channel.empty()
+ 	def metadata = [ id: "indexcov"   ]
+	
+
+	PREPARE_ONE_REFERENCE(
+		metadata,
+		Channel.fromPath(params.fasta).map{[[id:it.baseName],it]}
+		)
+	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
+
+
+
+	samplesheet0_ch = READ_SAMPLESHEET(
+		[arg_name:"samplesheet"],
+		params.samplesheet
+		).samplesheet
+	versions = versions.mix(READ_SAMPLESHEET.out.versions)
+
+
+	if(params.pedigree!=null) {
+		pedigree = Channel.of([[id:"ped"],file(params.pedigree)])
+		}
+	else
+		{
+		META_TO_PED(metadata, samplesheet0_ch.map{it[0]})
+		versions = versions.mix(META_TO_PED.out.versions)
+		pedigree = META_TO_PED.out.gatk_pedigree
+		}
+	
+	META_TO_BAMS(
+		metadata,
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		PREPARE_ONE_REFERENCE.out.dict,
+		READ_SAMPLESHEET.out.samplesheet
+		)
+	versions = versions.mix(META_TO_BAMS.out.versions)
+
+
+  	bams = META_TO_BAMS.out.bams
+			.branch {meta,bam,bai,fasta,fai,dict->
+				ok_ref: fasta.toRealPath().toString().equals(params.fasta)
 				bad_ref: true
 				}
 			//[[],]}
-            //.groupTuple() // group by fasta
+   
 	
 	
 	JVARKIT_BAM_RENAME_CONTIGS(
-		dict,
+		PREPARE_ONE_REFERENCE.out.dict,
 		[[id:"nobed"],[]],
-		bams.bad_ref.map{[[id:it.sample],file(it.bam),file(it.bai),file(it.fasta),file(it.fai),file(it.dict)]}
+		bams.bad_ref
 		)
 	versions =versions.mix(JVARKIT_BAM_RENAME_CONTIGS.out.versions)
 
-	def collate_size = (params.batch_size as int)
+
+ 	
 
 	INDEXCOV(
-		ref_hash.plus([batch_size: collate_size, id:"indexcov"]),
-		fasta,
-		fai,
-		dict,
+		metadata.plus([
+			batch_size:  (params.batch_size as int)
+			]),
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		PREPARE_ONE_REFERENCE.out.dict,
 		pedigree,
 		bams.ok_ref.map{[[id:it.sample],file(it.bam),file(it.bai)]}
 			.mix(JVARKIT_BAM_RENAME_CONTIGS.out.bam.map{[it[0].plus([force_rebuild:false]),it[1],it[2]]})

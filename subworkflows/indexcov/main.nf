@@ -29,29 +29,26 @@ include {JVARKIT_INDEXCOV2VCF                } from '../../modules/jvarkit/index
 
 workflow INDEXCOV {
      take:
-	 	meta
-        fasta
+		meta
+		fasta
 		fai
 		dict
 		pedigree
-		bams /* 		meta,bam,(bai)*/
-
+		bams
      main:
         versions = Channel.empty()
 
 		ch1 = bams.branch{
-			ok: it.size()==5
+			ok: it.size()==2
 			other: true
 			}
 
-		ch2 = ch1.other.
-			map{throw new IllegalArgumentException("INDEXCOV:expected: meta,bam,ref,fasta,fai got ${it}.")}
+		ch1.other.map{throw new IllegalArgumentException("INDEXCOV:expected: meta,bam,ref,fasta,fai got ${it}.")}
 
 
 		INDEXCOV_REBUILD_BAI(
 			fasta,
 			fai,
-			dict,
 			ch1.ok
 			)
 		versions = versions.mix(INDEXCOV_REBUILD_BAI.out.versions)

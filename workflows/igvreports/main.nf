@@ -41,12 +41,16 @@ if( params.help ) {
 
 
 workflow {
+	
+	if(params.fasta==null) {
+      throw new IllegalArgumentException("undefined --fasta");
+      }
+	  
 	def genome_hash= [
 		id:file(params.fasta).simpleName,
 		name:file(params.fasta).simpleName
 		]
-	def 
-	
+
 	ch1 = IGVREPORTS(
 		[id:"igvreports"],
 		[genome_hash,file(params.fasta)],

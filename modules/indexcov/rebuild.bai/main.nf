@@ -29,7 +29,7 @@ process INDEXCOV_REBUILD_BAI {
     input:
         tuple val(meta1),path(fasta)
         tuple val(meta2),path(fai)
-        tuple val(meta),path(bam)
+        tuple val(meta),path("_input.bam")
     output:
 	    tuple val(meta),path("*.bam"),path("*.bai"),emit: bam
         path "versions.yml",emit: versions
@@ -45,7 +45,7 @@ samtools view --header-only -O BAM  \
     --threads ${task.cpus} \
     -o "TMP/${sample}.bam" \
     --reference "${fasta}" \
-    "${bam}"
+    "_input.bam"
 
 # hack about creating bam index. see main samtools manual
 samtools view -F 3844 -q "${mapq}" --uncompressed \
@@ -53,7 +53,7 @@ samtools view -F 3844 -q "${mapq}" --uncompressed \
     -o "/dev/null##idx##TMP/${sample}.bam.bai" \
     --write-index  -O BAM  \
     --reference "${fasta}" \
-    "${bam}"
+    "_input.bam"
 
 
 mv -v TMP/${sample}.bam ./
