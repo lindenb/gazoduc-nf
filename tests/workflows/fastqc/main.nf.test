@@ -1,14 +1,17 @@
 nextflow_pipeline {
 
-    name "Test Workflow main.nf"
+    name "Test Workflow FASTQC"
     script "workflows/fastqc/main.nf"
+    tag "workflows"
+    tag "workflows/fastqc"
+
 
     test("fastqc test") {
 
 
         when {
             params {
-               samplesheet = "tests/data/REF/GRCh38/FASTQ/samplesheet.csv"
+               samplesheet = "../../../tests/data/REF/GRCh38/FASTQ/samplesheet.csv"
             }
         }
 

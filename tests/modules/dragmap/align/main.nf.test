@@ -6,6 +6,7 @@ nextflow_process {
     tag "modules"
     tag "modules/dragmap"
     tag "modules/dragmap/align"
+    options "-stub"
 
 	setup {
            run("DRAGMAP_INDEX") {

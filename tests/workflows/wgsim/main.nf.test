@@ -1,6 +1,6 @@
 nextflow_pipeline {
 
-    name "Test Workflow main.nf"
+    name "Test Workflow wgsim"
     script "workflows/wgsim/main.nf"
     tag "workflows"
     tag "workflows/wgsim"
