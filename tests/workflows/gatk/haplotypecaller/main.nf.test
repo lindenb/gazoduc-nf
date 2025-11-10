@@ -9,6 +9,22 @@ nextflow_pipeline {
 
 
 
+    test("ROTA") {
+
+        when {
+            params {
+                fasta       = "${projectDir}/tests/data/rotavirus_rf.fa"
+                samplesheet = "${projectDir}/tests/data/samplesheet.bams.01.csv"
+                makewindows_args = "-w 100 -s 99"
+                 bed_cluster_args = "--size 2kb " 
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+
+    }
 
 
     test("BASIC") {

@@ -1,0 +1,73 @@
+{
+    "BASIC": {
+        "content": [
+            {
+                "0": [
+                    "versions.yml:md5,3807bf192b72b5a5778986bfe2dda847",
+                    "versions.yml:md5,600474744de9ca926a4cf4962ad60288",
+                    "versions.yml:md5,600474744de9ca926a4cf4962ad60288"
+                ],
+                "1": [
+                    {
+                        "args": [
+                            
+                        ],
+                        "ignoreDagNode": false,
+                        "inputs": [
+                            
+                        ],
+                        "methodName": "concat",
+                        "outputs": [
+                            
+                        ],
+                        "source": null
+                    }
+                ],
+                "2": [
+                    [
+                        {
+                            "id": "hapcaller"
+                        },
+                        "hapcaller.8a0846017af97fcacacc2204a6322e80.concat.vcf.gz:md5,f939f616dc9f22e0429e7f1ed4da8703",
+                        "hapcaller.8a0846017af97fcacacc2204a6322e80.concat.vcf.gz.tbi:md5,4cb176febbc8c26d717a6c6e67b9c905"
+                    ]
+                ],
+                "vcf": [
+                    [
+                        {
+                            "id": "hapcaller"
+                        },
+                        "hapcaller.8a0846017af97fcacacc2204a6322e80.concat.vcf.gz:md5,f939f616dc9f22e0429e7f1ed4da8703",
+                        "hapcaller.8a0846017af97fcacacc2204a6322e80.concat.vcf.gz.tbi:md5,4cb176febbc8c26d717a6c6e67b9c905"
+                    ]
+                ],
+                "vcf_chunks": [
+                    {
+                        "args": [
+                            
+                        ],
+                        "ignoreDagNode": false,
+                        "inputs": [
+                            
+                        ],
+                        "methodName": "concat",
+                        "outputs": [
+                            
+                        ],
+                        "source": null
+                    }
+                ],
+                "versions": [
+                    "versions.yml:md5,3807bf192b72b5a5778986bfe2dda847",
+                    "versions.yml:md5,600474744de9ca926a4cf4962ad60288",
+                    "versions.yml:md5,600474744de9ca926a4cf4962ad60288"
+                ]
+            }
+        ],
+        "meta": {
+            "nf-test": "0.9.3",
+            "nextflow": "25.10.0"
+        },
+        "timestamp": "2025-11-10T14:46:33.705568468"
+    }
+}

@@ -1,0 +1,6 @@
+sample,bam,bai
+S1,https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S1.bam,https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S1.bam.bai
+S2,https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S2.bam,https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S2.bam.bai
+S3,https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S3.bam,https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S3.bam.bai
+34,https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S4.bam,https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S4.bam.bai
+S5,https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S5.bam,https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S5.bam.bai

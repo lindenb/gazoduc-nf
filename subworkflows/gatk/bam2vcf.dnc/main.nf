@@ -28,7 +28,7 @@ include {BAM2VCF_DIVIDE_AND_CONQUER as  DIVIDE_AND_CONQUER3 } from './sub.nf'
 include {BAM2VCF_DIVIDE_AND_CONQUER as  DIVIDE_AND_CONQUER4 } from './sub.nf'
 include {BAM2VCF_DIVIDE_AND_CONQUER as  DIVIDE_AND_CONQUER5 } from './sub.nf'
 include {BAM2VCF_DIVIDE_AND_CONQUER as  DIVIDE_AND_CONQUER6 } from './sub.nf'
-include {BCFTOOLS_CONCAT                                    } from '../../../modules/bcftools/concat'
+include {BCFTOOLS_CONCAT                                    } from '../../../modules/bcftools/concat3'
 
 
 
@@ -49,10 +49,10 @@ main:
     concat = Channel.empty()
 
     bams_ch = bams
-        .map{[it[1],it[2]]}
+        .map{meta,bam,bai->[bam,bai]}
         .flatMap()
         .collect()
-        .map{[[id: workflow_meta.id],it.sort()]}
+        .map{[[id: (workflow_meta.id?:"bam2vcf.dnc")],it.sort()]}
     
 
     DIVIDE_AND_CONQUER1(
@@ -159,11 +159,10 @@ main:
         concat.map{_meta,vcf,tbi,_bed->[vcf,tbi]}
             .flatMap()
             .collect()
-            .map{[[id:workflow_meta.id],it,[]]}
+            .map{[[id:(workflow_meta.id?:"gatk.dnc")],it.sort()]}
         )
     versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
-    out_vcf = BCFTOOLS_CONCAT.out.vcf.map{meta,vcf,tbi,_bed->[meta,vcf,tbi,[]]}
-
+    out_vcf = BCFTOOLS_CONCAT.out.vcf
 emit:
     versions
     vcf_chunks = concat /* meta,vcf,tbi,bed */

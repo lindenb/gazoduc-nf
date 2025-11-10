@@ -24,16 +24,17 @@ SOFTWARE.
 */
 
 include { HAPLOTYPECALLER as HAPCALLER         }  from '../../../modules/gatk/hapcaller1'
-include { BCFTOOLS_CONCAT                      }  from '../../../modules/bcftools/concat'
+include { BCFTOOLS_CONCAT                      }  from '../../../modules/bcftools/concat3'
 include { COMBINE_GENOTYPE_GVCFS               }  from '../combinegenotypegvcfs'
 include { makeKey                              }  from '../../../modules/utils/functions.nf'
+include { flatMapByIndex                       }  from '../../../modules/utils/functions.nf'
 include { FIND_GVCF_BLOCKS                     }  from '../../../modules/jvarkit/findgvcfblocks'
 include { GLNEXUS_GENOTYPE                     }  from '../../../modules/glnexus/genotype'
 
 
 workflow HAPLOTYPECALLER {
 take:
-    meta
+    metadata
     fasta
     fai
     dict
@@ -45,22 +46,29 @@ take:
 main:
     versions = Channel.empty()
 
+
+	/* checl all beds have an unique ID */
+	beds.map{meta,bed->[meta.id,bed]}
+		.groupTuple()
+		.filter{it[1].size()!=1}
+		.map{throw new IllegalArgumentException("In HAPLOTYPECALLER bed should have a unique id"); return it;}
+
     HAPCALLER(
         fasta,
         fai,
         dict,
         all_references,
         bams.combine(beds)
-            .map{meta1,bam,bai,meta2,bed->[meta1,bam,bai,bed]}
+            .map{meta1,bam,bai,meta2,bed->[meta1.plus(bed_id:meta2.id),bam,bai,bed]}
         )
     versions  = versions.mix(HAPCALLER.out.versions)
 
-
+	/** group data by meta.bed_id */
     FIND_GVCF_BLOCKS(
         HAPCALLER.out.gvcf
-            .map{meta,vcf,tbi,bed->[bed.toRealPath(),[vcf,tbi]]}
+            .map{meta,vcf,tbi,bed->[meta.bed_id,[vcf,tbi],bed]}
             .groupTuple()
-            .map{bed,vcf_files->[ [id:"${bed.name}"], vcf_files.flatten().sort(), bed]}
+            .map{bed_id,vcf_files,beds->[ [id:bed_id], vcf_files.flatten().sort(), beds.sort()[0]]}
         )
     versions  = versions.mix(FIND_GVCF_BLOCKS.out.versions)
 
@@ -68,23 +76,22 @@ main:
     versions  = versions.mix(SPLIT_BED.out.versions)
 
     gvcfs_ch = SPLIT_BED.out.beds
-		.map{meta,beds,srcbed->[meta,(beds instanceof List?beds:[beds]),srcbed]}
-		.flatMap{meta,beds,srcbed->{
-			def L=[];
-			for(int i=0;i< beds.size();i++) {
-				L.add([srcbed,beds[i]]);
-				}
-			return L;
-			}}
-        .combine(HAPCALLER.out.gvcf) // I tried to use 'join' but it doesn't work / Nasty bug ? So combine+filter
-        .filter{srcbed1,bed,meta,vcf,tbi,srcbed2->srcbed1.toRealPath().equals(srcbed2.toRealPath())}
-        .map{srcbed1,bed,meta,vcf,tbi,srcbed2->[meta,vcf,tbi,bed]}
+		.map{meta,beds,_srcbed->[meta,(beds instanceof List?beds:[beds])]}
+		.flatMap{flatMapByIndex(it,1)}
+        .combine(HAPCALLER.out.gvcf) //join doesn't support duplicate keys, so use combine
+		.filter{meta1,block_bed,meta2,vcf,tbi,srcbed->meta1.id==meta2.bed_id}
+        .map{meta1,block_bed,meta2,vcf,tbi,srcbed->[meta1,vcf,tbi,block_bed]}
 	
 	
 	vcf_out = Channel.empty()
-	if(meta.gvcf_merge_method==null  || meta.gvcf_merge_method.equalsIgnoreCase("combinegvcfs")) {
+
+	if(metadata.gvcf_merge_method==null) {
+		log.warn("if(HAPLOTYPECALLER: gvcf_merge_method undefined")
+		}
+
+	if(metadata.gvcf_merge_method==null  || metadata.gvcf_merge_method.equalsIgnoreCase("combinegvcfs")) {
 		COMBINE_GENOTYPE_GVCFS(
-			meta,
+			metadata,
 			fasta,
 			fai,
 			dict,
@@ -94,7 +101,7 @@ main:
 		versions  = versions.mix(COMBINE_GENOTYPE_GVCFS.out.versions)
 		vcf_out = COMBINE_GENOTYPE_GVCFS.out.vcf
 		}
-	else if(meta.gvcf_merge_method.equalsIgnoreCase("glnexus")) {
+	else if(metadata.gvcf_merge_method.equalsIgnoreCase("glnexus")) {
 		ch2 = gvcfs_ch
 			.map{meta,gvcf,tbi,bed->
 				[
@@ -122,22 +129,16 @@ main:
 		}
 	else
 		{
-		throw new IllegalArgumentException("unknown meta.gvcf_merge_method = ${meta.gvcf_merge_method}.");
+		throw new IllegalArgumentException("unknown meta.gvcf_merge_method = ${metadata.gvcf_merge_method}.");
 		}
     BCFTOOLS_CONCAT(
-        vcf_out
-            .map{meta,vcf,tbi,bed->[vcf,tbi]}//gvcf,tbi
+        vcf_out.map{meta,vcf,tbi,bed->[vcf,tbi]}//gvcf,tbi
 			.flatMap()
             .collect()
-            .map{[
-				[id:"gatkhapcaller"],
-				it,
-				[] // bed
-				]}
+            .map{files->[ [id:"gatkhapcaller"], files.sort() ]}
         )
     versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
 	vcf_out = BCFTOOLS_CONCAT.out.vcf
-		.map{meta,vcf,tbi,bed->[meta,vcf,tbi]}
 emit:
     versions
     vcf = vcf_out

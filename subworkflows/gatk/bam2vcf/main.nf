@@ -24,13 +24,12 @@ SOFTWARE.
 */
 
 include {GATK_BAM2VCF as BAM2VCF                    } from '../../../modules/gatk/bam2vcf'
-include {BCFTOOLS_CONCAT                            } from '../../../modules/bcftools/concat'
-include {makeKey                                    } from '../../../modules/utils/functions.nf'
+include {BCFTOOLS_CONCAT                            } from '../../../modules/bcftools/concat3'
 
 
 workflow GATK_BAM2VCF {
  take:
-    meta
+    metadata
     fasta
     fai
     dict
@@ -41,6 +40,13 @@ workflow GATK_BAM2VCF {
     bams // [meta,bam,bai]
 main:
     versions = Channel.empty()
+
+    /* check all beds have an unique ID */
+	beds.map{meta,bed->[meta.id,bed]}
+		.groupTuple()
+		.filter{it[1].size()!=1}
+		.map{throw new IllegalArgumentException("In GATK_BAM2VCF bed should have a unique id"); return it;}
+
     BAM2VCF(
         fasta,
         fai,
@@ -50,27 +56,28 @@ main:
         references,
         bams.combine(beds)
             .map{meta1,bam,bai,meta2,bed->[
-                bed.toRealPath()/* bed.meta */,
-                [bam,bai]/*bam and bai */,
+                meta2, /* bed.meta */
+                [bam,bai],/*bam and bai */
+                bed
                 ]}
             .groupTuple()
-            .map{bed,bam_files->[[id:makeKey(bed)],bam_files.flatten(),bed]}
+            .map{meta,bam_files,beds->[meta,bam_files.flatten().sort(), beds.sort()[0]]}
         )
     versions = versions.mix(BAM2VCF.out.versions)
 
 
     BCFTOOLS_CONCAT(
-         BAM2VCF.out.vcf
-		.map{meta,vcf,idx,bed->[vcf,idx]}
-		.flatMap()
-		.collect()
-		.map{vcf_files->[ [id:"hapcaller"],vcf_files.sort(),[]]}
+            BAM2VCF.out.vcf
+            .map{meta,vcf,idx,bed->[vcf,idx]}
+            .flatMap()
+            .collect()
+            .map{vcf_files->[[ id:(metadata.id?:"bam2vcf")],vcf_files.sort()]}
          )
     versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
 
 emit:
     versions
     vcf_chunks = concat
-    vcf = BCFTOOLS_CONCAT.out.vcf.map{meta,vcf,idx,bed->[meta,vcf,idx]}
+    vcf = BCFTOOLS_CONCAT.out.vcf
 }
 
