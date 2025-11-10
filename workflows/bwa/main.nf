@@ -39,7 +39,7 @@ include {MULTIQC                    } from '../../subworkflows/multiqc'
 include {BAM_QC                     } from '../../subworkflows/bamqc'
 include {IF_EMPTY                   } from '../../subworkflows/nf/if_empty'
 include {SAMPLESHEET_TO_FASTQ       } from '../../subworkflows/samplesheet2fastq'
-include {VCF_INPUT                  } from '../../subworkflows/vcf_input'
+include {VCF_INPUT                  } from '../../subworkflows/nf/vcf_input'
 
 if( params.help ) {
     dumpParams(params);

@@ -26,6 +26,7 @@ nextflow.enable.dsl=2
 include {assertKeyExistsAndNotEmpty          } from '../../../modules/utils/functions.nf'
 include {testKeyExistsAndNotEmpty            } from '../../../modules/utils/functions.nf'
 include {assertKeyMatchRegex                 } from '../../../modules/utils/functions.nf'
+include {parseBoolean                        } from '../../../modules/utils/functions.nf'
 include {VCF_STATS                           } from '../../../subworkflows/vcfstats'
 include {BEDTOOLS_MAKEWINDOWS                } from '../../../modules/bedtools/makewindows'
 include {BED_CLUSTER                         } from '../../../modules/jvarkit/bedcluster'
@@ -38,10 +39,12 @@ include {HAPLOTYPECALLER                     } from '../../../subworkflows/gatk/
 include {HAPLOTYPECALLER_DIRECT              } from '../../../subworkflows/gatk/haplotypecaller.direct'
 include {SAMTOOLS_SAMPLES                    } from '../../../modules/samtools/samples'
 include {META_TO_PED                         } from '../../../subworkflows/pedigree/meta2ped'
-include {PREPARE_ONE_REFERENCE                   } from '../../../subworkflows/samtools/prepare.one.ref'
+include {PREPARE_ONE_REFERENCE               } from '../../../subworkflows/samtools/prepare.one.ref'
 include {MULTIQC                             } from '../../../subworkflows/multiqc'
 include {PREPARE_USER_BED                    } from '../../../subworkflows/bedtools/prepare.user.bed'
-
+include {VCF_INPUT                           } from '../../../subworkflows/nf/vcf_input'
+include {READ_SAMPLESHEET                    } from '../../../subworkflows/nf/read_samplesheet'
+include {META_TO_BAMS                        } from '../../../subworkflows/samtools/meta2bams2'
 
 // Print help message, supply typical command line usage for the pipeline
 if (params.help) {
@@ -51,122 +54,82 @@ if (params.help) {
 
 
 workflow {
-
+    /* no fastq samplesheet */
+	if(params.samplesheet==null) {
+		log.error("--samplesheet undefined")
+		exit -1
+		}
+	/* no fastq samplesheet */
+	if(params.fasta==null) {
+		log.error("--fasta undefined")
+		exit -1
+		}
 	bams_ch = Channel.empty()
 	versions = Channel.empty()
 	multiqc = Channel.empty()
 
 	workflow_metadata = [
-		id:   file(params.fasta).simpleName,
-		name: file(params.fasta).simpleName,
-		ucsc_name : params.ucsc_name?:"undefined"
+		id: "haplotypecaller"
 		]
 
 
-	fasta = [workflow_metadata,file(params.fasta)]
 
-    PREPARE_ONE_REFERENCE(workflow_metadata, Channel.of(fasta))
+    PREPARE_ONE_REFERENCE(
+        workflow_metadata,
+        Channel.fromPath(params.fasta).map{f->[[id:f.baseName],f]}
+        )
     versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
-    fasta  = PREPARE_ONE_REFERENCE.out.fasta
-    fai    = PREPARE_ONE_REFERENCE.out.fai
-    dict   = PREPARE_ONE_REFERENCE.out.dict
+
 
 
 
     if(params.dbsnp==null)
-            {
-            dbsnp =     [workflow_metadata, [] ,[] ]
-            }
+        {
+        dbsnp =     Channel.of([workflow_metadata, [] ,[] ])
+        }
     else
-            {
-            dbsnp =     [ workflow_metadata, file(params.dbsnp), file(params.dbsnp+".tbi") ]
-            }
+        {
+        VCF_INPUT([
+            arg_name       : "dbsnp",
+            path          : params.dbsnp,
+            require_index : true,
+            unique        : true
+            ])
+        versions = versions.mix(VCF_INPUT.out.versions)
+        dbsnp = VCF_INPUT.out.vcf
+        }
 
     def gtf     = [workflow_metadata,[],[]]
   
     if(params.gtf!=null) {
         gtf = [workflow_metadata,file(params.gtf),file(params.gtf+".tbi")]
-    }
+     }
 
 
+	READ_SAMPLESHEET(
+        workflow_metadata.plus(arg_name:"samplesheet"),
+        params.samplesheet
+        )
+     versions = versions.mix(READ_SAMPLESHEET.out.versions)
 
-	bams_and_ref = Channel.fromPath(params.samplesheet)
-			.splitCsv(header:true,sep:',')
 
-
-
+    META_TO_BAMS(
+        workflow_metadata,
+        PREPARE_ONE_REFERENCE.out.fasta,
+        PREPARE_ONE_REFERENCE.out.fai,
+        PREPARE_ONE_REFERENCE.out.dict,
+        READ_SAMPLESHEET.out.samplesheet
+        )
+    versions = versions.mix(META_TO_BAMS.out.versions)
   
-    
-    all_references =  bams_and_ref
-        .filter{it.containsKey("fasta")}
-        .filter{testKeyExistsAndNotEmpty(it,"fasta")}
-        .map{assertKeyMatchRegex(it,"fasta",".*\\.(fasta|fa|fna)")}
-        .map{it.fai!=null? it : it.plus(["fai":it.fasta+".fai"])}
-        .map{it.dict!=null?it : it.plus(["dict":it.fasta.replaceAll("\\.(fasta|fa|fna)\$",".dict")])}
-        .map{[file(it.fasta),file(it.fai),file(it.dict)]}
-        .filter{fa,fai,dict->fa.exists() && fai.exists() && dict.exists()}
-        .flatMap()
-        .mix(fasta.map{it[1]})
-        .mix(PREPARE_ONE_REFERENCE.out.fai.map{it[1]})
-        .mix(PREPARE_ONE_REFERENCE.out.dict.map{it[1]})
-        .filter{fn->fn.exists()} // when running in stub mode...
-        .map{fn->[fn.name,fn.toRealPath()]} // group files by names. prevent file collisiton; FAI might have same name because PREPARE_ONE_REFERENCE.out.fai
-	.groupTuple()
-        .map{name,fns->fns.sort()[0]}
-        .unique()
-        .collect()
-        .map{[workflow_metadata,it]}
 
 
-
-    bams_ch1 = bams_and_ref
-            .map{if(!it.containsKey("bam")) throw new IllegalArgumentException("${it} : bam missing"); return it;}
-            .map{if(!(it.bam.endsWith(".cram") || it.bam.endsWith(".bam"))) throw new IllegalArgumentException("${it}.bam should end with bam or cram"); return it;}
-            .branch{
-                /** sample undefined, need to find sample name */
-                no_sample: !it.containsKey("sample") || it.sample.isEmpty() || it.sample.equals(".")
-                /* sample defined */
-                has_sample: true
-            }
-    
-    /* get sample names for bam without id */
-    SAMTOOLS_SAMPLES(
-            all_references,
-            bams_ch1.no_sample
-                .map{file(it.bam)}
-                .collect()
-                .map{[[id:"bams"],it]}
-            )
-   versions = versions.mix(SAMTOOLS_SAMPLES.out.versions)
-
-   fix_sample_name = SAMTOOLS_SAMPLES.out.samplesheet
-            .map{meta,f->f}
-            .splitCsv(sep:'\t',header:false)
-            .map{[file(it[1]).toRealPath().toString(),it[0]]}
-            .groupTuple()
-            .map{bam,names->
-                if(names.size()!=1) throw new IllegalArgumentException("Multiple samples for "+bam+":"+samples);
-                return [bam,names[0]];
-                }
-            .join( bams_ch1.no_sample.map{[file(it.bam).toRealPath().toString(),it]})
-            .map{bam,sample_name,meta->meta.plus("sample":sample_name)}
-
-    bams_ch = fix_sample_name.mix(bams_ch1.has_sample)
-    		.map{
-    			if(it.id==null) return it.plus(id:it.sample);
-    			return it;
-    			}
-			.map{it.bai?it: (it.bam.endsWith(".bam") ? it.plus(["bai":it.bam+".bai"]):  it.plus(["bai":it.bam+".crai"]))}
-            .filter{assertKeyExistsAndNotEmpty(it,"sample")}
-            .map{[
-            	it.findAll{k,v->k.matches("(id|sample|sex|father|mother|status|population|family|collection)") && v!=null && !v.isEmpty()},
-            	file(it.bam),
-            	file(it.bai)
-            	];
-				}
+    bams_ch = META_TO_BAMS.out.bams.map{meta,bam,bai,fasta,fai,dict->[meta,bam,bai]}
 
     /* check no duplicate samples */
-    bams_ch.map{meta,bam,bai->meta.id}.unique().count()
+    bams_ch.map{meta,bam,bai->meta.id}
+        .unique()
+        .count()
         .combine(bams_ch.map{meta,bam,bai->meta.id}.count())
         .filter{c1,c2->c1!=c2}
         .map{
@@ -179,28 +142,34 @@ workflow {
 
 
     if(params.bed==null) {
-       bed = Channel.empty()
+       bed = PREPARE_ONE_REFERENCE.out.scatter_bed
     } else {
 		bed = Channel.of([[id:file(params.bed).baseName],file(params.bed)])
+        
+        PREPARE_USER_BED(
+            workflow_metadata,
+            PREPARE_ONE_REFERENCE.out.fasta,
+            PREPARE_ONE_REFERENCE.out.fai,
+            PREPARE_ONE_REFERENCE.out.dict,
+            PREPARE_ONE_REFERENCE.out.scatter_bed,
+            bed
+            )
+        versions = versions.mix(PREPARE_USER_BED.out.versions)
+        multiqc = multiqc.mix(PREPARE_USER_BED.out.multiqc)
+        bed = PREPARE_USER_BED.out.bed.first()
         }
-    PREPARE_USER_BED(
-        workflow_metadata,
-        fasta,
-        fai,
-        dict,
-        PREPARE_ONE_REFERENCE.out.scatter_bed,
-        bed
-        )
-    versions = versions.mix(PREPARE_USER_BED.out.versions)
-    multiqc = multiqc.mix(PREPARE_USER_BED.out.multiqc)
-    bed = PREPARE_USER_BED.out.bed.first()
-  
+
    /* cut the bed/genome into parts for SV calling per region */
    BEDTOOLS_MAKEWINDOWS(bed)
    versions = versions.mix(BEDTOOLS_MAKEWINDOWS.out.versions)
 
    /* if it's an exome , group the small genome together in BED */
-   BED_CLUSTER(fasta,fai,dict,BEDTOOLS_MAKEWINDOWS.out.bed)
+   BED_CLUSTER(
+        PREPARE_ONE_REFERENCE.out.fasta,
+        PREPARE_ONE_REFERENCE.out.fai,
+        PREPARE_ONE_REFERENCE.out.dict,
+        BEDTOOLS_MAKEWINDOWS.out.bed
+        )
    versions = versions.mix(BED_CLUSTER.out.versions)
    beds_ch = BED_CLUSTER.out.bed
         .map{meta,beds->beds}
@@ -214,10 +183,10 @@ workflow {
     if(params.method.equalsIgnoreCase("gvcf")) {
         HAPLOTYPECALLER(
             [id:"hapcaller",gvcf_merge_method:params.gvcf_merge_method],
-            fasta,
-            fai,
-            dict,
-            all_references,
+            PREPARE_ONE_REFERENCE.out.fasta,
+            PREPARE_ONE_REFERENCE.out.fai,
+            PREPARE_ONE_REFERENCE.out.dict,
+            META_TO_BAMS.out.all_references,
             dbsnp,
             META_TO_PED.out.pedigree_gatk,
             beds_ch,
@@ -230,24 +199,24 @@ workflow {
         if(params.divide_and_conquer==true) {
             GATK_BAM2VCF_DNC(
                 workflow_metadata,
-                fasta,
-                fai,
-                dict,
+                PREPARE_ONE_REFERENCE.out.fasta,
+                PREPARE_ONE_REFERENCE.out.fai,
+                PREPARE_ONE_REFERENCE.out.dict,
                 dbsnp,
                 META_TO_PED.out.pedigree_gatk,
-                all_references, //[meta, [ref files fa fai dict...]] all known reference
+                META_TO_BAMS.out.all_references, //[meta, [ref files fa fai dict...]] all known reference
                 beds_ch, // [meta,bed]
                 bams_ch // [meta,bam,bai]
             )
         } else {
             GATK_BAM2VCF(
                 workflow_metadata,
-                fasta,
-                fai,
-                dict,
+                PREPARE_ONE_REFERENCE.out.fasta,
+                PREPARE_ONE_REFERENCE.out.fai,
+                PREPARE_ONE_REFERENCE.out.dict,
                 dbsnp,
                 META_TO_PED.out.pedigree_gatk,
-                all_references, //[meta, [ref files fa fai dict...]] all known reference
+                META_TO_BAMS.out.all_references, //[meta, [ref files fa fai dict...]] all known reference
                 beds_ch, // [meta,bed]
                 bams_ch // [meta,bam,bai]
                 )
@@ -258,9 +227,9 @@ workflow {
     else if(params.method.equalsIgnoreCase("direct")) {
         HAPLOTYPECALLER_DIRECT(
             workflow_metadata,
-            fasta,
-            fai,
-            dict,
+             PREPARE_ONE_REFERENCE.out.fasta,
+            PREPARE_ONE_REFERENCE.out.fai,
+            PREPARE_ONE_REFERENCE.out.dict,
             dbsnp,
             META_TO_PED.out.pedigree_gatk,
             beds_ch,
@@ -279,7 +248,11 @@ workflow {
    * BCFTOOLS STATS FROM VCFS
    *
    */
-  BCFTOOLS_GUESS_PLOIDY(fasta, fai,vcf_ch)
+  BCFTOOLS_GUESS_PLOIDY(
+        PREPARE_ONE_REFERENCE.out.fasta,
+        PREPARE_ONE_REFERENCE.out.fai,
+        vcf_ch
+        )
   versions = versions.mix(BCFTOOLS_GUESS_PLOIDY.out.versions)
   multiqc = multiqc.mix(BCFTOOLS_GUESS_PLOIDY.out.output)
 
@@ -289,18 +262,20 @@ workflow {
    * BCFTOOLS STATS FROM VCFS
    *
    */
-  BCFTOOLS_STATS(
-    fasta,
-    fai,
-    bed,
-    Channel.of(gtf).map{[it[0],it[1]]}.first(),//meta,gtf
-    [[:],[]],//samples,
-    vcf_ch.map{[it[0],[it[1],it[2]]]}
-    )
-  versions = versions.mix(BCFTOOLS_STATS.out.versions)
-  multiqc = multiqc.mix(BCFTOOLS_STATS.out.stats)
+   if(parseBoolean(params.with_qc)) {
+    BCFTOOLS_STATS(
+        PREPARE_ONE_REFERENCE.out.fasta,
+        PREPARE_ONE_REFERENCE.out.fai,
+        bed,
+        Channel.of(gtf).map{[it[0],it[1]]}.first(),//meta,gtf
+        [[:],[]],//samples,
+        vcf_ch.map{[it[0],[it[1],it[2]]]}
+        )
+    versions = versions.mix(BCFTOOLS_STATS.out.versions)
+    multiqc = multiqc.mix(BCFTOOLS_STATS.out.stats)
+    }
 
-
+ if(parseBoolean(params.with_multiqc)) {
 	MULTIQC(
 		workflow_metadata.plus("id":"hapcaller"),
 		META_TO_PED.out.sample2collection,
@@ -308,6 +283,9 @@ workflow {
 		[[id:"no_mqc_config"],[]],
 		multiqc
 		)
+    }
+
+    
     
 }
 

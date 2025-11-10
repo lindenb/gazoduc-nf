@@ -27,6 +27,10 @@ include {assertKeyMatchRegex                 } from '../../../modules/utils/func
 include {isBlank                             } from '../../../modules/utils/functions.nf'
 include {SAMTOOLS_SAMPLES                    } from '../../../modules/samtools/samples'
 include {GROUP_BY_TRIOS                      } from '../../../subworkflows/pedigree/groupbytrios'
+
+
+
+
 /** decode meta to bams, allow multiple fasta references */
 workflow META_TO_BAMS {
 take:
@@ -69,7 +73,7 @@ main:
     // add default fasta to bams missing a ref
     without_ref = ch1.without_ref
         .combine(main_ref_ch)
-        map{meta1,bam,bai,_meta2,fasta,fai,dict->[meta1,bam,bai,fasta,fai,dict]}
+        .map{meta1,bam,bai,_meta2,fasta,fai,dict->[meta1,bam,bai,fasta,fai,dict]}
     
     // add  meta.fasta to bams having a ref
     with_ref = ch1.with_ref
@@ -143,19 +147,42 @@ main:
             dict
             ]}
     
+
+
     if(metadata.with_test_unique_id==null || metadata.with_test_unique_id==true) {
         bams_out.map{it->it[0].id}.unique().count().
             combine(bams_out.map{it->it[0].id}.count())
             .filter{c1,c2->c1!=c2}
             .map{throw new IllegalArgumentException("input contains same duplicate samples");}
         }
+
     if(metadata.enable_group_by_trios==null || metadata.enable_group_by_trios==true) {
         GROUP_BY_TRIOS(metadata,bams_out)
         bams_out = GROUP_BY_TRIOS.out.output
         versions = versions.mix(GROUP_BY_TRIOS.out.versions)
         }
+
+    all_references =  bams_out
+        .flatMap{meta,bam,bai,fasta,fai,dict->[fasta,fai,dict]}
+        .mix(fasta.map{it[1]})
+        .mix(fai.map{it[1]})
+        .mix(dict.map{it[1]})
+        .filter{fn->fn.exists()} // when running in stub mode...
+        .map{fn->[fn.name,fn.toRealPath()]} // group files by names. prevent file collisiton; FAI might have same name because PREPARE_ONE_REFERENCE.out.fai
+	.groupTuple()
+	.map{
+		def L0 = it[1].collect{f->f.toRealPath().toString()}.unique()
+		if(L0.size()!=1) throw new IllegalArgumentException("META2BAMS2: your using several FASTA/FAI/DICT sequences with the same name: ${it[1]}.");
+		return it;
+		}
+        .map{name,fns->fns.sort()[0]}
+        .unique()
+        .collect()
+        .map{[metadata,it]} 
+
 emit:
 	versions
+	all_references
 	bams = bams_out // meta,bam,bai,fasta,fai,dict
 
 }
