@@ -82,7 +82,7 @@ workflow {
 		{
 		META_TO_PED(metadata, samplesheet0_ch.map{it[0]})
 		versions = versions.mix(META_TO_PED.out.versions)
-		pedigree = META_TO_PED.out.gatk_pedigree
+		pedigree = META_TO_PED.out.pedigree_gatk
 		}
 	
 	META_TO_BAMS(

@@ -1,6 +1,6 @@
 nextflow_pipeline {
 
-    name "Test Workflow main.nf"
+    name "Test Workflow gatk/haplotypecaller"
     script "workflows/gatk/haplotypecaller/main.nf"
     options "-resume"
     tag "workflows"
@@ -13,8 +13,8 @@ nextflow_pipeline {
 
         when {
             params {
-		fasta       = "${projectDir}/tests/data/REF/GRCh38.fa"
-		samplesheet = "${projectDir}/tests/data/REF/GRCh38/BAMS/samplesheet.csv"
+            fasta       = "${projectDir}/tests/data/REF/GRCh38.fa"
+            samplesheet = "${projectDir}/tests/data/REF/GRCh38/BAMS/samplesheet.csv"
             }
         }
 

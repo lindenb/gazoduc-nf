@@ -28,6 +28,7 @@ nextflow.enable.dsl=2
 include {dumpParams                 } from '../../modules/utils/functions.nf'
 include {testKeyExistsAndNotEmpty   } from '../../modules/utils/functions.nf'
 include {assertKeyExistsAndNotEmpty } from '../../modules/utils/functions.nf'
+include {parseBoolean               } from '../../modules/utils/functions.nf'
 include {FASTQC                     } from '../../modules/fastqc'
 include {MAP_BWA                    } from '../../subworkflows/bwa/map.fastqs'
 include {BWA_INDEX                  } from '../../modules/bwa/index'
@@ -38,7 +39,7 @@ include {MULTIQC                    } from '../../subworkflows/multiqc'
 include {BAM_QC                     } from '../../subworkflows/bamqc'
 include {IF_EMPTY                   } from '../../subworkflows/nf/if_empty'
 include {SAMPLESHEET_TO_FASTQ       } from '../../subworkflows/samplesheet2fastq'
-
+include {VCF_INPUT                  } from '../../subworkflows/vcf_input'
 
 if( params.help ) {
     dumpParams(params);
@@ -62,6 +63,11 @@ workflow {
 		System.err.println("undefined --fasta");
 		System.exit(-1);
 		}
+
+	if(parseBoolean(params.with_bqsr) && params.known_sites==null) {
+		System.err.println("defined --with_bqsr but --known_sites==null");
+		exit -1
+	}
 
   	def workflow_medadata = [
       id: file(params.fasta).baseName,
@@ -125,10 +131,13 @@ workflow {
 	vcf_for_bqsr= Channel.empty()
 
 	if(params.known_sites!=null) {
-		vcf_for_bqsr = Channel.of([
-			workflow_medadata,
-			[ file(params.known_sites), file(params.known_sites+".tbi")]
+		VCF_INPUT([
+			path: params.known_sites,
+			require_index : true,
+			unique : true
 			])
+		versions = versions.mix(VCF_INPUT.out.versions)
+		vcf_for_bqsr = VCF_INPUT.out.vcf
 		}
 	else
 		{
@@ -139,7 +148,7 @@ workflow {
 	MAP_BWA(
 		workflow_medadata.plus(
 			with_fastp : params.with_fastp,
-			with_bqsr: (params.known_sites==null || params.with_bqsr==false?false:true),
+			with_bqsr: (params.known_sites!=null && parseBoolean(params.with_bqsr)),
 			with_cram : params.with_cram,
 			with_markdup: params.with_markdup,
 			markdup_method : params.markdup_method,
@@ -188,27 +197,30 @@ workflow {
 	versions = versions.mix(MAKE_SAMPLESHEET.out.versions)
 
 
-	
-	BAM_QC(
-		workflow_medadata,
-		PREPARE_ONE_REFERENCE.out.fasta,
-		PREPARE_ONE_REFERENCE.out.fai,
-		PREPARE_ONE_REFERENCE.out.dict,
-		bed4qc,
-		IF_EMPTY(MAP_BWA.out.crams,MAP_BWA.out.bams)
-		)
+	if(parseBoolean(params.with_qc)) {
+		BAM_QC(
+			workflow_medadata,
+			PREPARE_ONE_REFERENCE.out.fasta,
+			PREPARE_ONE_REFERENCE.out.fai,
+			PREPARE_ONE_REFERENCE.out.dict,
+			bed4qc,
+			IF_EMPTY(MAP_BWA.out.crams,MAP_BWA.out.bams)
+			)
 
-	versions = versions.mix(BAM_QC.out.versions)
-	multiqc_ch = multiqc_ch.mix(BAM_QC.out.multiqc)
+		versions = versions.mix(BAM_QC.out.versions)
+		multiqc_ch = multiqc_ch.mix(BAM_QC.out.multiqc)
+		}
 
-	MULTIQC(
-		workflow_medadata.plus("id":"bwa"),
-		META_TO_PED.out.sample2collection,
-		versions,
-		[[id:"no_mqc_config"],[]],
-		multiqc_ch
-		)
-		
+	if(parseBoolean(params.with_multiqc)) {
+		MULTIQC(
+			workflow_medadata.plus("id":"bwa"),
+			META_TO_PED.out.sample2collection,
+			versions,
+			[[id:"no_mqc_config"],[]],
+			multiqc_ch
+			)
+		}
+
     }
 
 

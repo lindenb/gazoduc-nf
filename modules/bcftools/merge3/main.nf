@@ -97,7 +97,7 @@ END_VERSIONS
 """
 
 stub:
- def prefix = task.ext.prefix?:"zozo"+(meta.id?meta.id.md5().substring(0,7):"")+ ((optional_bed?true:false)?optional_bed.baseName:"")
+        def prefix = task.ext.prefix?:"${meta.id}"
  // "f"+(meta.id?"."+meta.id.md5():"") + (optional_bed?"."+optional_bed.baseName:"")
 """
 find VCFS/ \\( -name "*.vcf.gz" -o -name "*.bcf"  \\) 
