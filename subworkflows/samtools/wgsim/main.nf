@@ -56,7 +56,7 @@ workflow WGSIM {
 	ch1 = ch1
 		.collate(3)
 		.map{
-			if(it.size()!=3) return it;
+			if(it.size()!=3) return it.plus(["sex":(rnd.nextBoolean()?"male":"female")]);
 			def c = it[0].plus(["sex":(rnd.nextBoolean()?"male":"female")  ,"father":it[1].id, "mother":it[2].id])
 			def f = it[1].plus(["sex":"male"  ,"father":"0",      "mother":"0"])
 			def m = it[2].plus(["sex":"female","father":"0",      "mother":"0"])
