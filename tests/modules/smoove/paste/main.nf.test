@@ -1,0 +1,37 @@
+nextflow_process {
+
+    name "Test Process SMOOVE_PASTE"
+    script "modules/smoove/paste/main.nf"
+    process "SMOOVE_PASTE"
+    tag "modules"
+    tag "modules/smoove"
+    tag "modules/smoove/paste"
+
+    test("STUB") {
+	options "-stub"
+	
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            process {
+                """
+                input[0] =  [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[1] =  [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[2] =  [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[3] =  Channel.of(
+			[[id:"xbed"], file("${projectDir}/tests/data/rotavirus_rf.vcf.gz"), file("${projectDir}/tests/data/rotavirus_rf.vcf.gz.tbi")]
+			)
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+}

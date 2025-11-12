@@ -22,12 +22,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {SMOOVE_CALL                        } from '../../../modules/smoove/call'
-include {SMOOVE_MERGE                       } from '../../../modules/smoove/merge'
-include {SMOOVE_GENOTYPE                    } from '../../../modules/smoove/genotype'
-include {SMOOVE_PASTE                       } from '../../../modules/smoove/paste'
+include {SMOOVE_CALL                        } from '../../modules/smoove/call'
+include {SMOOVE_MERGE                       } from '../../modules/smoove/merge'
+include {SMOOVE_GENOTYPE                    } from '../../modules/smoove/genotype'
+include {SMOOVE_PASTE                       } from '../../modules/smoove/paste'
 
-workflow SMOOVE_SV {
+workflow SMOOVE {
 	take:
 		meta
 		fasta
