@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process SAMTOOLS_MARKDUP"
     script "modules/samtools/markdup/main.nf"
     process "SAMTOOLS_MARKDUP"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/samtools"
     tag "modules/samtools/markdup"

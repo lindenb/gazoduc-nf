@@ -171,7 +171,6 @@ main:
          }
 
     gff3_out  = gff3_out.first()
-    gff3_out.view()
 emit:
     versions
     gff3 = gff3_out

@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process BCFTOOLS_MERGE"
     script "modules/bcftools/merge/main.nf"
     process "BCFTOOLS_MERGE"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/bcftools"
     tag "modules/bcftools/merge"

@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process FASTP"
     script "modules/fastp/main.nf"
     process "FASTP"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/fastp"
 

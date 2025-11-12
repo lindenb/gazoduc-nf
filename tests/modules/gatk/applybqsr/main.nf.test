@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process APPLY_BQSR"
     script "modules/gatk/applybqsr/main.nf"
     process "APPLY_BQSR"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/gatk"
     tag "modules/gatk/applybqsr"

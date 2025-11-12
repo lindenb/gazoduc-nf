@@ -3,6 +3,7 @@ nextflow_workflow {
     name "Test Workflow WGSIM"
     script "subworkflows/samtools/wgsim/main.nf"
     workflow "WGSIM"
+    tag "gitlab_ci"
     tag "subworkflows"
     tag "subworkflows/samtools"
     tag "subworkflows/samtools/wgsim"

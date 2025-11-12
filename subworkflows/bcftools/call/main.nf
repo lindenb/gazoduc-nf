@@ -22,10 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {BCFTOOLS_CALL as CALL } from '../../../modules/bcftools/call'
-include {BCFTOOLS_MERGE        } from '../../../modules/bcftools/merge3'
-include {BCFTOOLS_CONCAT       } from '../../../modules/bcftools/concat3'
-include {isBlank               } from '../../../modules/utils/functions'
+include {SIMPLE_CALLING         } from '../../../subworkflows/simple.calling'
 
 
 workflow BCFTOOLS_CALL {
@@ -39,54 +36,22 @@ workflow BCFTOOLS_CALL {
 		bams //[ meta, bam,bai]
 	main:
 		versions = Channel.empty()
-		ch1 = bams
-			.map{meta,bam,bai->
-				if(!isBlank(meta.batch)) return [meta,bam,bai];
-				return [meta.plus(batch:meta.id),bam,bai];
-				}
-			.map{
-				if(isBlank(it[0].batch)) throw new IllegalArgumentException("Empty batch ??? ${it}");
-				return it;
-				}
-			.map{meta,bam,bai->[[id:meta.batch],[bam,bai]]}
-			.groupTuple()
-			.map{meta,files->[ meta, files.flatten().sort() ]}
-		
-		ch2 = ch1.combine(beds.map{_meta,bed->bed}).view()
 
-		CALL(
+		SIMPLE_CALLING(
+			metadata.plus(method:"bcftools"),
 			fasta,
 			fai,
+			dict,
+			[[id:"nodbsnp"],[]],
 			pedigree,
-			[[id:"noploidy"],[]],
-			ch2
+			beds,
+			bams
 			)
-		versions = versions.mix(CALL.out.versions)
+		versions = versions.mix(SIMPLE_CALLING.out.versions)
 
-		/* group data by BATCH */
-		group_by_batch = CALL.out.vcf
-				.map{meta,vcf,idx,_bed->[meta,[vcf,idx]]}
-				.groupTuple()
-				.map{meta,files ->[meta, files.flatten().sort() ]}
-				
-
-		/** concat per batch, so we can have one vcf per batch/sample  */
-		BCFTOOLS_CONCAT(group_by_batch)
-		versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
-
-		// merge those having more than one sample
-		BCFTOOLS_MERGE(
-			BCFTOOLS_CONCAT.out.vcf
-				.map{meta,vcf,tbi-> [ [id:"bcftools.call"],[vcf,tbi]]}
-				.groupTuple()
-				.map{meta,files ->[meta, files.flatten().sort() ]}
-			)
-		versions = versions.mix(BCFTOOLS_MERGE.out.versions)
-		vcf_out = BCFTOOLS_MERGE.out.vcf
-		
 	emit:
 		versions
-		vcf = vcf_out
+		vcf = SIMPLE_CALLING.out.vcf
 	}
 
 

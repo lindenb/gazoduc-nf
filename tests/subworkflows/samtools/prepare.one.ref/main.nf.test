@@ -3,6 +3,7 @@ nextflow_workflow {
     name "Test Workflow PREPARE_ONE_REFERENCE"
     script "subworkflows/samtools/prepare.one.ref/main.nf"
     workflow "PREPARE_ONE_REFERENCE"
+    tag "gitlab_ci"
     tag "subworkflows"
     tag "subworkflows/samtools"
     tag "subworkflows/samtools/prepare.one.ref"

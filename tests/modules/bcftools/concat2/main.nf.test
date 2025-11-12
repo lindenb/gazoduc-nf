@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process BCFTOOLS_CONCAT"
     script "modules/bcftools/concat2/main.nf"
     process "BCFTOOLS_CONCAT"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/bcftools"
     tag "modules/bcftools/concat2"

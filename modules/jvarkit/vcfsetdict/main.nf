@@ -74,4 +74,11 @@ cat << END_VERSIONS > versions.yml
 	jvarkit: todo
 END_VERSIONS
 	"""
-	}
+
+stub:
+ def prefix  = task.ext.prefix?:"${vcf.baseName}.setdict"
+"""
+touch versions.yml  ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi
+"""
+
+}

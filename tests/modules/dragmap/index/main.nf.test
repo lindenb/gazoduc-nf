@@ -3,6 +3,8 @@ nextflow_process {
     name "Test Process DRAGMAP_INDEX"
     script "modules/dragmap/index/main.nf"
     process "DRAGMAP_INDEX"
+    
+    //tag "gitlab_ci"
     tag "modules"
     tag "modules/dragmap"
     tag "modules/dragmap/index"

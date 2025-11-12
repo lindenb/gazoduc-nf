@@ -3,6 +3,7 @@ nextflow_workflow {
     name "Test Workflow SOMALIER_BAMS"
     script "subworkflows/somalier/bams/main.nf"
     workflow "SOMALIER_BAMS"
+    tag "gitlab_ci"
     tag "subworkflows"
     tag "subworkflows/somalier"
     tag "subworkflows/somalier/bams"

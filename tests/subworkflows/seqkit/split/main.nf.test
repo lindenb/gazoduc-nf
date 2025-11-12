@@ -3,6 +3,7 @@ nextflow_workflow {
     name "Test Workflow SEQKIT_SPLIT"
     script "subworkflows/seqkit/split/main.nf"
     workflow "SEQKIT_SPLIT"
+    tag "gitlab_ci"
     tag "subworkflows"
     tag "subworkflows/seqkit"
     tag "subworkflows/seqkit/split"

@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process COLLECT_MULTIPLE_METRICS"
     script "modules/gatk/collectmultiplemetrics/main.nf"
     process "COLLECT_MULTIPLE_METRICS"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/gatk"
     tag "modules/gatk/collectmultiplemetrics"

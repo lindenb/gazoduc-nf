@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process WGSIM"
     script "modules/samtools/wgsim/main.nf"
     process "WGSIM"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/samtools"
     tag "modules/samtools/wgsim"

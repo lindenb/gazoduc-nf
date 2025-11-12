@@ -2,6 +2,7 @@ nextflow_pipeline {
 
     name "Test Workflow wgsim"
     script "workflows/wgsim/main.nf"
+    tag "gitlab_ci"
     tag "workflows"
     tag "workflows/wgsim"
     options "-resume"

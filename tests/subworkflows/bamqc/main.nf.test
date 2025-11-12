@@ -3,6 +3,7 @@ nextflow_workflow {
     name "Test Workflow BAM_QC"
     script "subworkflows/bamqc/main.nf"
     workflow "BAM_QC"
+    tag "gitlab_ci"
     tag "subworkflows"
     tag "subworkflows/bamqc"
     config './nextflow.config'

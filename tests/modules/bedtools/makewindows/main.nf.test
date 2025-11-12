@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process BEDTOOLS_MAKEWINDOWS"
     script "modules/bedtools/makewindows/main.nf"
     process "BEDTOOLS_MAKEWINDOWS"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/bedtools"
     tag "modules/bedtools/makewindows"

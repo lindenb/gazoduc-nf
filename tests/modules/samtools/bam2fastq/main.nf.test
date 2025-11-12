@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process BAM_TO_FASTQ"
     script "modules/samtools/bam2fastq/main.nf"
     process "BAM_TO_FASTQ"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/samtools"
     tag "modules/samtools/bam2fastq"

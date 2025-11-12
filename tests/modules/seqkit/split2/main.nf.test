@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process SEQKIT_SPLIT2"
     script "modules/seqkit/split2/main.nf"
     process "SEQKIT_SPLIT2"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/seqkit"
     tag "modules/seqkit/split2"

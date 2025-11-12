@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process SMOOVE_MERGE"
     script "modules/smoove/merge/main.nf"
     process "SMOOVE_MERGE"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/smoove"
     tag "modules/smoove/merge"

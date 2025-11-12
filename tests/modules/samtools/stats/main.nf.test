@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process SAMTOOLS_STATS"
     script "modules/samtools/stats/main.nf"
     process "SAMTOOLS_STATS"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/samtools"
     tag "modules/samtools/stats"

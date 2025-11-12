@@ -3,6 +3,7 @@ nextflow_workflow {
     name "Test Workflow DELLY"
     script "subworkflows/delly2/main.nf"
     workflow "DELLY"
+    tag "gitlab_ci"
     tag "subworkflows"
     tag "subworkflows/delly2"
 

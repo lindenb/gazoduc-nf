@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process BEDTOOLS_NUC"
     script "modules/bedtools/nuc/main.nf"
     process "BEDTOOLS_NUC"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/bedtools"
     tag "modules/bedtools/nuc"

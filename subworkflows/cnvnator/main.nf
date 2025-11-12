@@ -24,7 +24,7 @@ SOFTWARE.
 */
 workflow CNVNATOR {
 take:
-    meta
+    metadata
     fasta
     fai
     dict
@@ -83,7 +83,7 @@ output:
     tuple val(meta1),path("CHROMS/chroms.txt"),emit:chroms_list
     path("versions.yml"),emit:versions
 script:
-    def regex = task.ext.regex?:"^(chr)?[0-9XY]+\$"    
+    def regex = task.ext.regex?:"^(chr)?[0-9XY]+\$"
 """
 mkdir -p TMP
 cut -f 1 "${fai}" | grep -E '${regex}' | while read C
@@ -99,6 +99,13 @@ cat << END_VERSIONS > versions.yml
 ${task.process}:
     samtools: \$(samtools version | awk '(NR==1)  {print \$NF}')
 END_VERSIONS
+"""
+
+stub:
+"""
+mkdir -p CHROMS
+touch versions.yml
+cut -f1 '${fai}' > CHROMS/chroms.txt
 """
 }
 
@@ -200,6 +207,13 @@ ${task.process}:
     cnvnator: \$(cnvnator 2>&1 | sed -n '3p' | sed 's/CNVnator v//') (bin:${bin})
 END_VERSIONS
 """
+
+stub:
+        def bin = task.ext.bin?:5000
+        def prefix = (task.ext.prefix?:meta.id)+"."+contig+"."+bin
+"""
+touch versions.yml ${prefix}.bed.gz ${prefix}.bcf ${prefix}.bcf.csi
+"""
 }
 
 process CNVNATOR_CONCAT_VCFS {
@@ -229,6 +243,12 @@ ${task.process}:
     bcftools: \$(bcftools version | awk '(NR==1)  {print \$NF}')
 END_VERSIONS
 """
+
+stub:
+ def prefix=task.ext.prefix?:meta.id
+"""
+touch versions.yml ${prefix}.bcf ${prefix}.bcf.csi
+"""
 }
 
 process CNVNATOR_CONCAT_BEDS {
@@ -251,7 +271,7 @@ export LC_ALL=C
 
 echo "#chrom start end sample CNV_type coordinates CNV_size normalized_RD e-val1 e-val2 e-val3 e-val4 q0" | tr " " "\t" >  TMP/jeter.bed
 
-gunzip -c  BEDS/*.bed.gz | sort -T TMP -t '\t'  -k1,1 -k2,2n >> TMP/jeter.bed
+gunzip -c  BEDS/*.bed.gz | sort  -S ${task.memory.kilo} -T TMP -t '\t'  -k1,1 -k2,2n >> TMP/jeter.bed
 bgzip TMP/jeter.bed
 tabix -f -p bed TMP/jeter.bed.gz
 
@@ -262,5 +282,11 @@ cat << END_VERSIONS > versions.yml
 ${task.process}:
     tabix: \$(tabix --version | awk '(NR==1)  {print \$NF}')
 END_VERSIONS
+"""
+
+stub:
+ def prefix=task.ext.prefix?:meta.id
+"""
+touch versions.yml ${prefix}.bed.gz ${prefix}.bed.gz.tbi
 """
 }

@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process INTERVAL_LIST_TO_BED"
     script "modules/gatk/interval.list2bed/main.nf"
     process "INTERVAL_LIST_TO_BED"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/gatk"
     tag "modules/gatk/interval.list2bed"

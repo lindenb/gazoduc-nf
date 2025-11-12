@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process SMOOVE_GENOTYPE"
     script "modules/smoove/genotype/main.nf"
     process "SMOOVE_GENOTYPE"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/smoove"
     tag "modules/smoove/genotype"

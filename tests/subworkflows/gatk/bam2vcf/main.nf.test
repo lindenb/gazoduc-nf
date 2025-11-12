@@ -3,6 +3,7 @@ nextflow_workflow {
     name "Test Workflow GATK_BAM2VCF"
     script "subworkflows/gatk/bam2vcf/main.nf"
     workflow "GATK_BAM2VCF"
+    tag "gitlab_ci"
     tag "subworkflows"
     tag "subworkflows/gatk"
     tag "subworkflows/gatk/bam2vcf"

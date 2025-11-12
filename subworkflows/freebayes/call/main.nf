@@ -22,15 +22,13 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {CALL_FREEBAYES as CALL } from '../../../modules/freebayes/call'
-include {BCFTOOLS_MERGE         } from '../../../modules/bcftools/merge'
-include {BCFTOOLS_CONCAT        } from '../../../modules/bcftools/concat2'
-
+include {SIMPLE_CALLING         } from '../../../subworkflows/simple.calling'
+include {parseBoolean           } from '../../../modules/utils/functions.nf'
 
 
 workflow FREEBAYES_CALL {
 	take:
-		meta
+		metadata
 		fasta
 		fai
 		dict
@@ -38,67 +36,26 @@ workflow FREEBAYES_CALL {
 		beds
 		bams //[ meta, bam,bai]
 	main:
-		versions = Channel.empty()
-		ch1 = bams
-			.map{
-				if(it[0].containsKey("batch")) return it;
-				return [it[0].plus(batch:it[0].sample),it[1],it[2]];
-				}
-			.map{[[id:it[0].batch],[it[1],it[2]]]}
-			.groupTuple()
-			.map{[it[0],it[1].flatten()]}
+ 		versions = Channel.empty()
 		
-		ch2 = ch1.combine(beds.map{it[1]})
-
-		CALL(
+		SIMPLE_CALLING(
+			metadata.plus(method:"freebayes"),
 			fasta,
 			fai,
-			ch2
+			dict,
+			[[id:"nodbsnp"],[]],
+			pedigree,
+			beds,
+			bams
 			)
-		versions = versions.mix(CALL.out.versions)
+		versions = versions.mix(SIMPLE_CALLING.out.versions)
 
-
-		ch3 = CALL.out.vcf
-			.map{[[id:it[3].toRealPath().toString()/* bed */],[it[1],it[2]]]}
-			.groupTuple()
-			.map{[it[0],it[1].flatten(), [] /* no bed */]}
-			.branch{v->
-				to_merge:v[1].size()>2 /* bed and it's index */
-				other: true
-				}
-
-
-		BCFTOOLS_MERGE(
-			[[id:"nobed"],[]],
-			ch3.to_merge
-			)
-		versions = versions.mix(BCFTOOLS_MERGE.out.versions)
-
-		without_merge = ch3.other.map{[
-			it[0],
-			it[1].find{v->v.name.endsWith(".bcf") || v.name.endsWith("*.vcf.gz")}, 
-			it[1].find{v->v.name.endsWith(".tbi") || v.name.endsWith("*.csi")}
-			]}
-
-
-
-		FILTER_AC_GT_0(BCFTOOLS_MERGE.out.vcf.mix(without_merge))
+		FILTER_AC_GT_0(SIMPLE_CALLING.out.vcf)
 		versions = versions.mix(FILTER_AC_GT_0.out.versions)
-
-	
-		BCFTOOLS_CONCAT(
-			[[id:"nobed"],[]],
-			FILTER_AC_GT_0.out.vcf
-				.map{[[id:"freebayes"],[it[1],it[2]]]}
-				.groupTuple()
-				.map{[it[0],it[1].flatten()]}
-			)
-		versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
-
 
 	emit:
 		versions
-		vcf = BCFTOOLS_CONCAT.out.vcf
+		vcf = FILTER_AC_GT_0.out.vcf
 	}
 
 
@@ -115,7 +72,7 @@ output:
 script:
 	def prefix = task.ext.prefix?:vcf.name.md5().substring(0,7)+".ac_gt0"
 	// can break java based parser for VCF after BCFTOOLS MERGE: bad GL
-	def remove_GL = ((task.ext.no_GL?:false).toBoolean())
+	def remove_GL = parseBoolean(task.ext.no_GL?:false)
 """
 mkdir -p TMP
 

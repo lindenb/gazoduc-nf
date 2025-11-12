@@ -1,12 +1,12 @@
 nextflow_process {
 
-    name "Test Process BCFTOOLS_QUERY_SAMPLES"
-    script "modules/bcftools/query.samples/main.nf"
-    process "BCFTOOLS_QUERY_SAMPLES"
+    name "Test Process JVARKIT_VCF_SET_DICTIONARY"
+    script "modules/jvarkit/vcfsetdict/main.nf"
+    process "JVARKIT_VCF_SET_DICTIONARY"
     tag "gitlab_ci"
     tag "modules"
-    tag "modules/bcftools"
-    tag "modules/bcftools/query.samples"
+    tag "modules/jvarkit"
+    tag "modules/jvarkit/vcfsetdict"
 
     test("BASIC") {
 
@@ -17,7 +17,8 @@ nextflow_process {
             }
             process {
                 """
-                input[0] = [[id:"test01"], file("${projectDir}/tests/data/rotavirus_rf.vcf.gz")]
+	        input[0] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[1] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.vcf.gz"), file("${projectDir}/tests/data/rotavirus_rf.vcf.gz.tbi")]
                 """
             }
         }

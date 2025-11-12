@@ -3,6 +3,7 @@ nextflow_workflow {
     name "Test Workflow IF_EMPTY"
     script "subworkflows/nf/if_empty/main.nf"
     workflow "IF_EMPTY"
+    tag "gitlab_ci"
     tag "subworkflows"
     tag "subworkflows/nf"
     tag "subworkflows/nf/if_empty"

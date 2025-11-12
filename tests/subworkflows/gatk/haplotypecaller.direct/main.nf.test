@@ -3,6 +3,7 @@ nextflow_workflow {
     name "Test Workflow HAPLOTYPECALLER_DIRECT"
     script "subworkflows/gatk/haplotypecaller.direct/main.nf"
     workflow "HAPLOTYPECALLER_DIRECT"
+    tag "gitlab_ci"
     tag "subworkflows"
     tag "subworkflows/gatk"
     tag "subworkflows/gatk/haplotypecaller.direct"

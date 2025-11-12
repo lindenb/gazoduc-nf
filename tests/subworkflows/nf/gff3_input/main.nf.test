@@ -3,6 +3,7 @@ nextflow_workflow {
     name "Test Workflow GFF3_INPUT"
     script "subworkflows/nf/gff3_input/main.nf"
     workflow "GFF3_INPUT"
+    tag "gitlab_ci"
     tag "subworkflows"
     tag "subworkflows/nf"
     tag "subworkflows/nf/gff3_input"

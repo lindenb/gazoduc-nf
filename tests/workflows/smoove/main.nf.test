@@ -3,6 +3,7 @@ nextflow_pipeline {
     name "Test Workflow main.nf"
     script "workflows/smoove/main.nf"
     tag "workflows/smoove"
+    tag "gitlab_ci"
     tag "workflows"
 
     test("STUB") {

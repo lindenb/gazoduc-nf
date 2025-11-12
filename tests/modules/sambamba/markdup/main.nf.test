@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process SAMBAMBA_MARKDUP"
     script "modules/sambamba/markdup/main.nf"
     process "SAMBAMBA_MARKDUP"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/sambamba"
     tag "modules/sambamba/markdup"

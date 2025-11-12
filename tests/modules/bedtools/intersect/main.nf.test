@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process BEDTOOLS_INTERSECT"
     script "modules/bedtools/intersect/main.nf"
     process "BEDTOOLS_INTERSECT"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/bedtools"
     tag "modules/bedtools/intersect"

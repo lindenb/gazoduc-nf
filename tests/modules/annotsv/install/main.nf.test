@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process ANNOTSV_INSTALL"
     script "modules/annotsv/install/main.nf"
     process "ANNOTSV_INSTALL"
+    //tag "gitlab_ci"
     tag "modules"
     tag "modules/annotsv"
     tag "modules/annotsv/install"

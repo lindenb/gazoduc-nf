@@ -3,6 +3,7 @@ nextflow_pipeline {
     name "Test Workflow indexcov"
     script "workflows/indexcov/main.nf"
     tag "workflows/indexcov"
+    tag "gitlab_ci"
     tag "workflows"
 
     test("BASIC") {

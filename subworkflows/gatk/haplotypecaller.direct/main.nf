@@ -22,11 +22,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 //include {makeKey                } from '../../../modules/utils/functions.nf'
-include {HAPLOTYPECALLER_DIRECT as HAPCALLER  } from '../../../modules/gatk/hapcallerdirect'
-include {BCFTOOLS_CONCAT                      } from '../../../modules/bcftools/concat3'
-include {BCFTOOLS_MERGE                       } from '../../../modules/bcftools/merge3'
 include {isBlank                              } from '../../../modules/utils/functions'
 include {parseBoolean                         } from '../../../modules/utils/functions'
+include {SIMPLE_CALLING                       } from '../../../subworkflows/simple.calling'
 
 workflow HAPLOTYPECALLER_DIRECT {
 	take:
@@ -41,66 +39,22 @@ workflow HAPLOTYPECALLER_DIRECT {
 	main:
 
 		version_ch = Channel.empty()
-		/* checl all beds have an unique ID */
-		beds.map{meta,bed->[meta.id,bed]}
-			.groupTuple()
-			.filter{it[1].size()!=1}
-			.map{throw new IllegalArgumentException("In HAPLOTYPECALLER_DIRECT bed should have a unique id"); return it;}
-
-
-		bams.filter{meta,_bam,_bai->isBlank(meta.batch)}
-			.take(1)
-			.map{log.warn("in HAPLOTYPECALLER_DIRECT : meta is missing a 'batch' property");return 0;}
-
-
-		/* group all the bams, make a (meta,bams,bed] */
-		ch1 = bams.map{meta,bam,bai->["${meta.batch?:meta.id}", [bam, bai]]}
-			.groupTuple()
-			.map{group_id,bam_files->[[batch:group_id],bam_files.flatten().sort()]}
-			.combine(beds)
-			.map{meta1,bam_files,meta2,bed->[meta1.plus(id:meta2.id),bam_files,bed]} //give them the bed.id
 		
-		HAPCALLER(
+		SIMPLE_CALLING(
+			metadata.plus(method:"gatk"),
 			fasta,
 			fai,
 			dict,
 			dbsnp,
 			pedigree,
-			ch1
+			beds,
+			bams
 			)
-		version_ch = version_ch.mix(HAPCALLER.out.versions)
-
-
-		to_concat = HAPCALLER.out.vcf
-				.map{meta,vcf,tbi,bed->[meta.batch,[vcf,tbi]]} // group by bedid
-				.groupTuple()
-				.map{batch_id,vcf_files->[[id:batch_id],vcf_files.flatten().sort()]}
-
-		// concat per GROUP
-		BCFTOOLS_CONCAT(to_concat)
-		version_ch = version_ch.mix(BCFTOOLS_CONCAT.out.versions)
-		
-
-		if(metadata.with_merge==null || parseBoolean(metadata.with_merge)) {
-			BCFTOOLS_MERGE(
-				BCFTOOLS_CONCAT.out.vcf
-					.map{_meta,vcf,idx->[vcf,idx]}
-					.collect()
-					.map{vcf_files->[[id:(isBlank(metadata.id)?"hapcaller.direct":metadata.id)],vcf_files.flatten().sort()]}
-				)
-				
-			version_ch = version_ch.mix(BCFTOOLS_MERGE.out.versions)
-			vcf_out = BCFTOOLS_MERGE.out.vcf
-			}
-		else
-			{
-			vcf_out = Channel.empty()
-			}
-
+		versions = versions.mix(SIMPLE_CALLING.out.versions)
 
 	emit:
 		versions = version_ch
-		per_group_vcf = BCFTOOLS_CONCAT.out.vcf
-		vcf = BCFTOOLS_MERGE.out.vcf
+		per_group_vcf = SIMPLE_CALLING.out.per_group_vcf
+		vcf = SIMPLE_CALLING.out.vcf
 	}
 

@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process SMOOVE_ANNOTATE"
     script "modules/smoove/annotate/main.nf"
     process "SMOOVE_ANNOTATE"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/smoove"
     tag "modules/smoove/annotate"

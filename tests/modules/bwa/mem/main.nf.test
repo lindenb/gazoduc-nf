@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process BWA_MEM"
     script "modules/bwa/mem/main.nf"
     process "BWA_MEM"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/bwa"
     tag "modules/bwa/mem"

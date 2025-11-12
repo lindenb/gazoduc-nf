@@ -4,6 +4,7 @@ nextflow_process {
     script "modules/jq/main.nf"
     process "JQ"
     config "./nextflow.config"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/jq"
 

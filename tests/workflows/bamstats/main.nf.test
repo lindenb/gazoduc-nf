@@ -2,6 +2,7 @@ nextflow_pipeline {
 
     name "Test Workflow bamstats"
     script "workflows/bamstats/main.nf"
+    tag "gitlab_ci"
     tag "workflows"
     tag "workflows/bamstats"
     config "./nextflow.config"

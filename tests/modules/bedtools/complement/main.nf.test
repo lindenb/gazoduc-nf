@@ -5,6 +5,7 @@ nextflow_process {
     process "BEDTOOLS_COMPLEMENT"
 
 
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/bedtools"
     tag "modules/bedtools/complement"

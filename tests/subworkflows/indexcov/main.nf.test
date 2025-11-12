@@ -3,6 +3,7 @@ nextflow_workflow {
     name "Test Workflow INDEXCOV"
     script "subworkflows/indexcov/main.nf"
     workflow "INDEXCOV"
+    tag "gitlab_ci"
     tag "subworkflows"
     tag "subworkflows/indexcov"
 

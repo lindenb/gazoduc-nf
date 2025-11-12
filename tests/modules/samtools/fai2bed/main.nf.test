@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process FAI2BED"
     script "modules/samtools/fai2bed/main.nf"
     process "FAI2BED"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/samtools"
     tag "modules/samtools/fai2bed"

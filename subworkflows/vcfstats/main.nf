@@ -1,8 +1,32 @@
+/*
+
+Copyright (c) 2025 Pierre Lindenbaum
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+The MIT License (MIT)
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
 include {BCFTOOLS_STATS} from '../../modules/bcftools/stats'
 
 workflow VCF_STATS {
 take:
-    meta
+    metadata
     fasta
     fai
     dict
@@ -16,22 +40,34 @@ main:
     versions= Channel.empty()
     multiqc = Channel.empty()
     
+    if(metadata.with_bcftools_stats==null) {
+        log.warn("VCF_STATS: missing metadata.with_bcftools_stats");
+        }
+    if(metadata.gatk_denovo==null) {
+        log.warn("VCF_STATS: missing metadata.gatk_denovo");
+        }
+    if(metadata.ad_ratio==null) {
+        log.warn("VCF_STATS: missing metadata.ad_ratio");
+        }
    
     vcf2 = vcfs
-        .map{[it[0],[it[1],it[2]]]}
+        .map{meta,vcf,idx->[meta,[vcf,idx]]}
         .groupTuple()
-        .map{[it[0],it[1].flatten()]}
+        .map{meta,files->[meta,files.flatten().sort()]}
 
-    BCFTOOLS_STATS(
-        fasta,
-        fai,
-        bed,
-        gtf.map{[it[0],it[1]]},
-        [[id:"no_samples"],[]],
-        vcf2
-        )
-    versions= versions.mix(BCFTOOLS_STATS.out.versions)
-    multiqc = multiqc.mix(BCFTOOLS_STATS.out.stats.map{it[1]})
+
+    if(metadata.with_bcftools_stats==true) {
+        BCFTOOLS_STATS(
+            fasta,
+            fai,
+            bed,
+            gtf.map{meta,gff,tbi->[meta,gff]},
+            [[id:"no_samples"],[]],
+            vcf2
+            )
+        versions= versions.mix(BCFTOOLS_STATS.out.versions)
+        multiqc = multiqc.mix(BCFTOOLS_STATS.out.stats.map{it[1]})
+        }
 
     conditions_ch = Channel.of(
         [
@@ -69,15 +105,17 @@ main:
         ]
     )
 
+    if(metadata.gatk_denovo==true) {
+        GATK_DE_NOVO(vcf2,bed)
+        versions= versions.mix(GATK_DE_NOVO.out.versions)
+        multiqc = multiqc.mix(GATK_DE_NOVO.out.multiqc)
+        }
 
-    GATK_DE_NOVO(vcf2,bed)
-    versions= versions.mix(GATK_DE_NOVO.out.versions)
-    multiqc = multiqc.mix(GATK_DE_NOVO.out.multiqc)
-
-    AD_RATIO(vcf2,bed)
-    versions= versions.mix(AD_RATIO.out.versions)
-    multiqc = multiqc.mix(AD_RATIO.out.multiqc.map{it instanceof List?it:[it]}.flatMap())
-
+    if(metadata.ad_ratio==true) {
+        AD_RATIO(vcf2,bed)
+        versions= versions.mix(AD_RATIO.out.versions)
+        multiqc = multiqc.mix(AD_RATIO.out.multiqc.map{it instanceof List?it:[it]}.flatMap())
+        }
 
     GENOTYPE_QUALITY(vcf2.combine(conditions_ch) ,bed)
     versions= versions.mix(GENOTYPE_QUALITY.out.versions)
@@ -124,8 +162,7 @@ tag "${meta.id?:""}"
 label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
-when:
-    task.ext.when == null || task.ext.when
+
 input:
     tuple val(meta ),path("VCFS/*")
     tuple val(meta2),path(optional_bed)
@@ -246,8 +283,6 @@ tag "${meta.id?:""}"
 label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
-when:
-    task.ext.when == null || task.ext.when
 input:
     tuple val(meta ),path("VCFS/*")
     tuple val(meta2),path(optional_bed)

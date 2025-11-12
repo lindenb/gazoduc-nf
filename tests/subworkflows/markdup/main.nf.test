@@ -5,6 +5,7 @@ nextflow_workflow {
     workflow "MARK_DUPLICATES"
     config "./nextflow.config"
 
+    tag "gitlab_ci"
     tag "subworkflows"
     tag "subworkflows/markdup"
 

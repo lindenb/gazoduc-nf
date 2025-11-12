@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process DOWNLOAD_GTF_OR_GFF3"
     script "modules/gtf/download/main.nf"
     process "DOWNLOAD_GTF_OR_GFF3"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/gtf"
     tag "modules/gtf/download"
@@ -16,7 +17,7 @@ nextflow_process {
             }
             process {
                 """
-	            input[0] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+	            input[0] = [[id:"r", ucsc_name:"hg19"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
                 input[1] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
                 input[2] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
                 """
@@ -38,7 +39,7 @@ nextflow_process {
             }
             process {
                 """
-	            input[0] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+	            input[0] = [[id:"r", ucsc_name:"hg19"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
                 input[1] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
                 input[2] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
                 """
@@ -61,7 +62,7 @@ nextflow_process {
             }
             process {
                 """
-	            input[0] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+	            input[0] = [[id:"r",ucsc_name:"hg38"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
                 input[1] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
                 input[2] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
                 """
@@ -83,7 +84,7 @@ nextflow_process {
             }
             process {
                 """
-	            input[0] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+	            input[0] = [[id:"r", ucsc_name:"hg19"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
                 input[1] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
                 input[2] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
                 """

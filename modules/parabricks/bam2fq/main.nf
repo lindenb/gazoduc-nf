@@ -32,8 +32,6 @@ process PB_BAM2FQ {
       tuple val(meta), path("*.fastq.gz", arity: '1..*'), emit: fastqs
       path("${meta.id}.bam2fq.log")
       path("versions.yml"),emit:versions
-  when:
-      task.ext.when == null || task.ext.when
   script:
     def sample = meta.id?:bam.simpleName
     def with_orphan = task.ext.with_orphan?:false

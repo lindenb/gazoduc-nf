@@ -3,6 +3,7 @@ nextflow_workflow {
     name "Test Workflow PREPARE_USER_BED"
     script "subworkflows/bedtools/prepare.user.bed/main.nf"
     workflow "PREPARE_USER_BED"
+    tag "gitlab_ci"
     tag "subworkflows"
     tag "subworkflows/bedtools"
     tag "subworkflows/bedtools/prepare.user.bed"

@@ -61,6 +61,7 @@ include { MAP_BWA                                 } from '../../subworkflows/bwa
 include { MAP_DRAGMAP                             } from '../../subworkflows/dragmap'
 include { NOT_EMPTY_VCF                           } from '../../modules/bcftools/notempty'
 include { READ_SAMPLESHEET                        } from '../../subworkflows/nf/read_samplesheet'
+include {SMOOVE                                   } from '../../subworkflows/smoove' 
 
 
 if( params.help ) {
@@ -392,12 +393,31 @@ workflow {
    */
   if(parseBoolean(params.with_manta) && is_wgs) {
     MANTA_SINGLE(
-        metadata,
+        metadata.plus(
+          with_truvari : parseBoolean(params.with_truvari)
+        ),
         PREPARE_ONE_REFERENCE.out.fasta,
         PREPARE_ONE_REFERENCE.out.fai,
 			  PREPARE_ONE_REFERENCE.out.dict,
         bams_ch,
         [[:],[]] //No bed
+        )
+    versions = versions.mix(MANTA_SINGLE.out.versions)
+    }
+
+/***************************************************
+   *
+   * SMOOVE
+   *
+   */
+  if(parseBoolean(params.with_smoove) && is_wgs) {
+    SMOOVE(
+        metadata,
+        PREPARE_ONE_REFERENCE.out.fasta,
+        PREPARE_ONE_REFERENCE.out.fai,
+        PREPARE_ONE_REFERENCE.out.dict,
+        PREPARE_ONE_REFERENCE.out.complement_bed,
+        bams_ch
         )
     versions = versions.mix(MANTA_SINGLE.out.versions)
     }
@@ -478,7 +498,9 @@ workflow {
     BEDTOOLS_MAKEWINDOWS.out.bed
     )
   versions = versions.mix(BED_CLUSTER2.out.versions)
-  cluster_bed2 = BED_CLUSTER2.out.bed.map{it[1]}.flatMap()
+  cluster_bed2 = BED_CLUSTER2.out.bed.map{it[1]}
+    .flatMap()
+    .map{bed->[[id:bed.baseName],bed]}// give a uniq name to the beds
   
   grouped_bams = bams_ch
     .map{[it[1],it[2]]}//bam,bai
@@ -561,7 +583,7 @@ workflow {
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
       pedigree_ch,
-      cluster_bed2.map{[[id:"bed"],it]},
+      cluster_bed2,
       bams_ch
       )
     versions = versions.mix(BCFTOOLS_CALL.out.versions)
@@ -580,7 +602,7 @@ workflow {
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
       pedigree_ch,
-      cluster_bed2.map{[[id:"bed"],it]},
+      cluster_bed2,
       bams_ch
       )
     versions = versions.mix(FREEBAYES_CALL.out.versions)

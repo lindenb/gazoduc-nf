@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process BASE_RECALIBRATOR"
     script "modules/gatk/baserecalibrator/main.nf"
     process "BASE_RECALIBRATOR"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/gatk"
     tag "modules/gatk/baserecalibrator"

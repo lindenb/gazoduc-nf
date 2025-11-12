@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process XHUNTER_DOWNLOAD_CATALOG"
     script "modules/expansion.hunter/download.catalog/main.nf"
     process "XHUNTER_DOWNLOAD_CATALOG"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/expansion.hunter"
     tag "modules/expansion.hunter/download.catalog"

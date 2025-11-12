@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process MARK_DUPLICATES"
     script "modules/gatk/markduplicates/main.nf"
     process "MARK_DUPLICATES"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/gatk"
     tag "modules/gatk/markduplicates"

@@ -2,6 +2,7 @@ nextflow_pipeline {
 
     name "Test Workflow FASTQC"
     script "workflows/fastqc/main.nf"
+    tag "gitlab_ci"
     tag "workflows"
     tag "workflows/fastqc"
 

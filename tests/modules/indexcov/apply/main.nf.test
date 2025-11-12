@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process APPLY_INDEXCOV"
     script "modules/indexcov/apply/main.nf"
     process "APPLY_INDEXCOV"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/indexcov"
     tag "modules/goleft"

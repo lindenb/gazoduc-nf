@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process BAM_TO_CRAM"
     script "modules/samtools/bam2cram/main.nf"
     process "BAM_TO_CRAM"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/samtools"
     tag "modules/samtools/bam2cram"

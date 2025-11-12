@@ -82,24 +82,24 @@ workflow SIMPLE_CALLING {
 			}
         else if(metadata.method=="freebayes") {
             CALL_FREEBAYES(
-                    fasta,
-                    fai,
-                    ch2
-                    ) 
+				fasta,
+				fai,
+				ch2
+				) 
 			versions = versions.mix(CALL_FREEBAYES.out.versions)
 			vcf_out = CALL_FREEBAYES.out.vcf
             }
 		else if(metadata.method=="gatk") {
-			HAPCALLER(
+			HAPLOTYPECALLER_DIRECT(
 				fasta,
 				fai,
 				dict,
 				dbsnp,
 				pedigree,
-				ch1
+				ch2
 				)
-			versions = versions.mix(metadata.out.versions)
-			vcf_out = metadata.out.vcf
+			versions = versions.mix(HAPLOTYPECALLER_DIRECT.out.versions)
+			vcf_out = HAPLOTYPECALLER_DIRECT.out.vcf
             }
         else {
             throw new IllegalArgumentException("In CALLING: unknown method ${metadata.method}");

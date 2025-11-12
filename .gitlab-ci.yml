@@ -14,6 +14,7 @@ before_script:
   - eval "$(./bin/micromamba shell hook -s posix)"
   - export NXF_ANSI_LOG=false
   - df -h
+  - arch
   - mkdir -p ${HOME}/CONDA
   - export NXF_CONDA_CACHEDIR=${HOME}/CONDA
 

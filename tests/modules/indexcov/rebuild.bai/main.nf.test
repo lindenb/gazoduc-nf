@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process INDEXCOV_REBUILD_BAI"
     script "modules/indexcov/rebuild.bai/main.nf"
     process "INDEXCOV_REBUILD_BAI"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/indexov"
     tag "modules/indexov/rebuild.bai"

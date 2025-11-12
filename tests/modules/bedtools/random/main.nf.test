@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process BEDTOOLS_RANDOM"
     script "modules/bedtools/random/main.nf"
     process "BEDTOOLS_RANDOM"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/bedtools"
     tag "modules/bedtools/random"

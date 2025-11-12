@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process BCFTOOLS_GUESS_PLOIDY"
     script "modules/bcftools/guess_ploidy/main.nf"
     process "BCFTOOLS_GUESS_PLOIDY"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/bcftools"
     tag "modules/bcftools/guess_ploidy"

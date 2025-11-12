@@ -3,6 +3,7 @@ nextflow_workflow {
     name "Test Workflow MANTA_SINGLE"
     script "subworkflows/manta/single/main.nf"
     workflow "MANTA_SINGLE"
+    tag "gitlab_ci"
     tag "subworkflows"
     tag "subworkflows/manta"
     tag "subworkflows/manta/single"

@@ -3,6 +3,7 @@ nextflow_workflow {
     name "Test Workflow FASTP"
     script "subworkflows/fastp/main.nf"
     workflow "FASTP"
+    tag "gitlab_ci"
     tag "subworkflows"
     tag "subworkflows/fastp"
 

@@ -3,6 +3,7 @@ nextflow_pipeline {
     name "Test Workflow gatk/haplotypecaller"
     script "workflows/gatk/haplotypecaller/main.nf"
     options "-resume"
+    tag "gitlab_ci"
     tag "workflows"
     tag "workflows/gatk"
     tag "workflows/gatk/haplotypecaller"

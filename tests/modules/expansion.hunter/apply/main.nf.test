@@ -4,6 +4,7 @@ nextflow_process {
     script "modules/expansion.hunter/apply/main.nf"
     process "XHUNTER_APPLY"
     config "./nextflow.config"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/expansion.hunter"
     tag "modules/expansion.hunter/apply"

@@ -3,6 +3,7 @@ nextflow_process {
     name "Test Process DOWNLOAD_ORAD"
     script "modules/orad/download/main.nf"
     process "DOWNLOAD_ORAD"
+    tag "gitlab_ci"
     tag "modules"
     tag "modules/orad"
     tag "modules/orad/download"

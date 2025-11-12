@@ -3,6 +3,8 @@ nextflow_pipeline {
     name "Test Workflow xhunter"
     script "workflows/expansionhunter/main.nf"
     options "-stub"
+    tag "workflows"
+    tag "workflows/expansionhunter"
 
     test("EXPANSION_HUNTER_BASIC") {
 

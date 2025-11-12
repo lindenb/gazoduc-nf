@@ -3,6 +3,7 @@ nextflow_workflow {
     name "Test Workflow SAMPLESHEET_TO_FASTQ"
     script "subworkflows/samplesheet2fastq/main.nf"
     workflow "SAMPLESHEET_TO_FASTQ"
+    tag "gitlab_ci"
     tag "subworkflows"
     tag "subworkflows/samplesheet2fastq"
     
