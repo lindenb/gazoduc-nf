@@ -1,0 +1,96 @@
+nextflow_workflow {
+
+    name "Test Workflow GTF_INPUT"
+    script "subworkflows/nf/gtf_input/main.nf"
+    workflow "GTF_INPUT"
+    tag "gitlab_ci"
+    tag "subworkflows"
+    tag "subworkflows/nf"
+    tag "subworkflows/nf/gtf_input"
+
+    test("FORCE_DOWNLOAD") {
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [
+                    arg_name:"gtf",
+                    download:true,
+                    require_index:true,
+                    path: null
+                    ]
+                input[1] = Channel.of([[id:"ref", ucsc_name:"hg38"], file("${projectDir}/tests/data/rotavirus_rf.fa")])
+                input[2] = Channel.of([[id:"ref", ucsc_name:"hg38"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")])
+                input[3] = Channel.of([[id:"ref", ucsc_name:"hg38"], file("${projectDir}/tests/data/rotavirus_rf.dict")])
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+   test("FILENAME") {
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [
+                    arg_name:"gtf",
+                    download:true,
+                    require_index:true,
+                    path : "${projectDir}/tests/data/rotavirus_rf.gtf.gz"
+                    ]
+                input[1] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")])
+                input[2] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")])
+                input[3] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")])
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+    test("##IDX##") {
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [
+                    arg_name:"gtf",
+                    download:true,
+                    require_index:true,
+                    path : "${projectDir}/tests/data/rotavirus_rf.gtf.gz##idx##${projectDir}/tests/data/rotavirus_rf.gtf.gz.tbi"
+                    ]
+                input[1] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")])
+                input[2] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")])
+                input[3] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")])
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+
+}

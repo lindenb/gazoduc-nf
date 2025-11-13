@@ -27,11 +27,10 @@ include { parseBoolean                             }  from '../../../modules/uti
 include { assertKeyExistsAndNotEmpty               }  from '../../../modules/utils/functions.nf'
 include { assertKeyMatchRegex                      }  from '../../../modules/utils/functions.nf'
 include { removeCommonSuffixes                     }  from '../../../modules/utils/functions.nf'
-include { DOWNLOAD_GTF_OR_GFF3  as DOWNLOAD_GFF3   }  from '../../../modules/gtf/download'
+include { DOWNLOAD_GTF_OR_GFF3   as DOWNLOAD_GTF   }  from '../../../modules/gtf/download'
 include { htslibSplitIndex                         }  from '../../../modules/utils/functions.nf'
 
-
-workflow GFF3_INPUT {
+workflow GTF_INPUT {
 take:
     metadata
     fasta
@@ -40,51 +39,49 @@ take:
 main:
     versions = Channel.empty()
     otherwise_ch = Channel.empty()
-    gff3_out = Channel.empty()
+    gtf_out = Channel.empty()
    
     
     if(metadata.arg_name==null) {
-        log.warn("undefined GFF3_INPUT.medata.arg_name")
+        log.warn("undefined GTF_INPUT.medata.arg_name")
         }
 
     if(metadata.require_index==null) {
-        log.warn("undefined GFF3_INPUT.medata.require_index")
+        log.warn("undefined GTF_INPUT.medata.require_index")
         }
     if(metadata.download==null) {
-        log.warn("undefined GFF3_INPUT.medata.download")
+        log.warn("undefined GTF_INPUT.medata.download")
         }
  
 
     /** DOWNLOAD IF  path is null */
     if(isBlank(metadata.path) && parseBoolean(metadata.download) ) {
         log.warn("--${metadata.arg_name} undefined, trying to download one from fasta...")
-        DOWNLOAD_GFF3(
+        DOWNLOAD_GTF(
             fasta,
             fai,
             dict
             )
-        versions = versions.mix(DOWNLOAD_GFF3.out.versions)
-        gff3_out = DOWNLOAD_GFF3.out.gtf//tbi added later
+        versions = versions.mix(DOWNLOAD_GTF.out.versions)
+        gtf_out = DOWNLOAD_GTF.out.gtf//tbi added later
             
 
         if(!parseBoolean(metadata.require_index))
             {
-            gff3_out = gff3_out.map{meta,gff3,tbi->[meta,gff3]}
+            gtf_out = gtf_out.map{meta,gtf,tbi->[meta,gtf]}
             }
         }
     else
         {
         if(metadata.path==null ) {
-            throw new IllegalArgumentException("GFF3_INPUT  is missing for --${metadata.arg_name}");
+            throw new IllegalArgumentException("GTF_INPUT  is missing for --${metadata.arg_name}");
             }
        
-        else if(metadata.path.endsWith(".gff") || 
-                metadata.path.endsWith(".gff3")  ||
-                metadata.path.endsWith(".gff.gz")  || 
-                metadata.path.endsWith(".gff3.gz") ||
-                ( metadata.path.endsWith(".tbi")  &&  htslibSplitIndex(metadata.path).size()==2) 
+        else if(metadata.path.endsWith(".gtf") || 
+                metadata.path.endsWith(".gtf.gz") ||
+                ( metadata.path.endsWith(".tbi") &&  htslibSplitIndex(metadata.path).size()==2) 
                 ) {
-                ch1 = Channel.of(metadata.path).map{[gff3:it]}
+                ch1 = Channel.of(metadata.path).map{[gtf:it]}
                 }
         else if(metadata.path.endsWith(".list") || metadata.path.endsWith(".txt")) {
                 ch1 = Channel.fromPath(metadata.path)
@@ -106,24 +103,24 @@ main:
                 }
         else
                 {
-                throw new IllegalArgumentException("Undefined suffix for GFF3: ${metadata.path}");
+                throw new IllegalArgumentException("Undefined suffix for GTF: ${metadata.path}");
                 }
 
 
 
-        // use samtools ##idx## system to split gff3 and index 
+        // use samtools ##idx## system to split gtf and index 
         ch1 = ch1.map{
-            if(!isBlank(it.tbi)) return it;
-            def a =  htslibSplitIndex(it.gff3);
+             if(!isBlank(it.tbi)) return it;
+            def a =  htslibSplitIndex(it.gtf);
             if(a.size()==2) {
-                 return it.plus([gff3:a[0],tbi:a[1]]);
+                 return it.plus([gtf:a[0],tbi:a[1]]);
                 }
             return it;
             }
 
 
-        ch1 = ch1.map{assertKeyExistsAndNotEmpty(it,"gff3")}
-                .map{assertKeyMatchRegex(it,"gff3",".*\\.(gff|gff3|gff\\.gz|gff3\\.gz)")}
+        ch1 = ch1.map{assertKeyExistsAndNotEmpty(it,"gtf")}
+                .map{assertKeyMatchRegex(it,"gtf",".*\\.(gtf|gtf\\.gz)")}
 
        
   
@@ -131,12 +128,12 @@ main:
         if(parseBoolean(metadata.require_index?:true)) {
             ch1 = ch1
                 .map{
-                    if(!it.gff3.endsWith(".gz")) throw new IllegalArgumentException("gff3 fmust have suffix .gz: ${it}");
+                    if(!it.gtf.endsWith(".gz")) throw new IllegalArgumentException("gtf fmust have suffix .gz: ${it}");
                     return it;
                     }
                 .map{
                     if(isBlank(it.tbi)) {
-                        return it.plus(tbi: it.gff3+".tbi");
+                        return it.plus(tbi: it.gtf+".tbi");
                         }
                     return it;
                     }
@@ -145,33 +142,33 @@ main:
         ch1.count()
             .filter{it!=1}
             .map{
-                def msg = "Expected only one GFF for --${metadata.arg_name?:"gff3"} but got N=${it}.";
+                def msg = "Expected only one GTF for --${metadata.arg_name?:"gtf"} but got N=${it}.";
                 log.error(msg);
                 throw new IllegalArgumentException(msg);
                 }
       
 
         if(parseBoolean(metadata.require_index?:true)) {
-            gff3_out = ch1.map{[
-                it.plus([id: removeCommonSuffixes(file(it.gff3).name)]).findAll{k,v->!k.matches("(gff3|tbi)")},
-                file(it.gff3),
+            gtf_out = ch1.map{[
+                it.plus([id: removeCommonSuffixes(file(it.gtf).name)]).findAll{k,v->!k.matches("(gtf|tbi)")},
+                file(it.gtf),
                 file(it.tbi)
                 ]}
-            otherwise_ch = Channel.of([[id:"no_gff3"],[],[]])
+            otherwise_ch = Channel.of([[id:"no_gtf"],[],[]])
             }
         else
             {
-            gff3_out = ch1.map{[
-                it.plus([id: removeCommonSuffixes(file(it.gff3).name)]).findAll{k,v->!k.matches("(gff3|tbi)")},
-                file(it.gff3)
+            gtf_out = ch1.map{[
+                it.plus([id: removeCommonSuffixes(file(it.gtf).name)]).findAll{k,v->!k.matches("(gtf|tbi)")},
+                file(it.gtf)
                 ]}
-            otherwise_ch = Channel.of([[id:"no_gff3"],[]])
+            otherwise_ch = Channel.of([[id:"no_gtf"],[]])
             }
 
          }
 
-    gff3_out  = gff3_out.first()
+    gtf_out  = gtf_out.first()
 emit:
     versions
-    gff3 = gff3_out
+    gtf = gtf_out
 }

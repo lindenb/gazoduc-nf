@@ -69,12 +69,12 @@ workflow {
 		exit -1
 	}
 
-  	def workflow_medadata = [
+  	def workflow_metadata = [
       id: file(params.fasta).baseName,
       name: file(params.fasta).baseName,
       ucsc_name: (params.ucsc_name?:"undefined")
       ]
-	def fasta = [ workflow_medadata, file(params.fasta)]
+	def fasta = [ workflow_metadata, file(params.fasta)]
 	
 	versions = Channel.empty()
 	multiqc_ch = Channel.empty()
@@ -101,19 +101,19 @@ workflow {
         .map{h->hasKey(h,"id")?h:h.plus(id:h.sample)}
     
 	SAMPLESHEET_TO_FASTQ(
-		workflow_medadata.plus([
+		workflow_metadata.plus([
 			bam2fastq_method : params.bam2fastq_method
 			]),
 		ch0
 		)
 	versions = versions.mix(SAMPLESHEET_TO_FASTQ.out.versions)
 
-    META_TO_PED(workflow_medadata,ch0)
+    META_TO_PED(workflow_metadata,ch0)
     versions = versions.mix(META_TO_PED.out.versions)
     
 	bed = Channel.of([[id:"nobed"],[]]).first()
 	
-	PREPARE_ONE_REFERENCE(workflow_medadata,Channel.of(fasta))
+	PREPARE_ONE_REFERENCE(workflow_metadata,Channel.of(fasta))
 	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
 	
 	
@@ -133,7 +133,9 @@ workflow {
 	if(params.known_sites!=null) {
 		VCF_INPUT([
 			path: params.known_sites,
+			args_name: "known_sites",
 			require_index : true,
+			required: true,
 			unique : true
 			])
 		versions = versions.mix(VCF_INPUT.out.versions)
@@ -146,7 +148,7 @@ workflow {
 
 
 	MAP_BWA(
-		workflow_medadata.plus(
+		workflow_metadata.plus(
 			with_fastp : params.with_fastp,
 			with_bqsr: (params.known_sites!=null && parseBoolean(params.with_bqsr)),
 			with_cram : params.with_cram,
@@ -170,7 +172,7 @@ workflow {
 	if(params.capture==null) {
 		bed4qc = bed = PREPARE_ONE_REFERENCE.out.scatter_bed.first()
 	  } else {
-		bed4qc = Channel.of([workflow_medadata,file(params.capture)])
+		bed4qc = Channel.of([workflow_metadata,file(params.capture)])
 	  }
 
 	bams_out = MAP_BWA.out.bams
@@ -199,7 +201,7 @@ workflow {
 
 	if(parseBoolean(params.with_qc)) {
 		BAM_QC(
-			workflow_medadata,
+			workflow_metadata,
 			PREPARE_ONE_REFERENCE.out.fasta,
 			PREPARE_ONE_REFERENCE.out.fai,
 			PREPARE_ONE_REFERENCE.out.dict,
@@ -213,7 +215,7 @@ workflow {
 
 	if(parseBoolean(params.with_multiqc)) {
 		MULTIQC(
-			workflow_medadata.plus("id":"bwa"),
+			workflow_metadata.plus("id":"bwa"),
 			META_TO_PED.out.sample2collection,
 			versions,
 			[[id:"no_mqc_config"],[]],
