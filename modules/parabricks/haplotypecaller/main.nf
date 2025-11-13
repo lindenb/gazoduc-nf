@@ -25,6 +25,7 @@ SOFTWARE.
 process PB_HAPLOTYPECALLER {
   tag "${meta.id?:""}"
   label 'process_gpu'
+  label 'parabricks'
   afterScript "rm -rf TMP"
   input:
 	tuple val(meta1),path(fasta)

@@ -7,13 +7,15 @@ ORIGINAL snakemake workflow by Raphael Blanchet PhD.
 process PB_FQ2BAM {
   tag "${meta.id}"
   label 'process_gpu'
+  label 'parabricks'
   afterScript "rm -rf TMP"
+  // container "nvcr.io/nvidia/clara/clara-parabricks:4.6.0-1"
   input:
     tuple val(meta2),path(fasta)
     tuple val(meta3),path(fai)
     tuple val(meta4),path(bwa_index_dir)
     tuple val(meta5),path(known_indels), path(known_indels_tbi)
-    tuple val(meta),path(fastqs)
+    tuple val(meta), path(fq_R1), path(fq_R2)
   output:
 	    tuple val(meta), path("*.cram") ,path("*.crai"),emit: bam,    optional: true
       tuple val(meta), path("*.duplicate.metrics.txt"), emit:duplicate_metrics, optional:true
@@ -24,8 +26,6 @@ process PB_FQ2BAM {
   when:
         task.ext.when == null || task.ext.when
   script:
-  if(!(fastqs instanceof List)) throw new IllegalArgumentException("${task.process}: fastqs should be a List");
-    if(fastqs.size()>2) throw new IllegalArgumentException("${task.process}: fastqs.size > 2");
 
     def sample = task.ext.prefix?:meta.id
     def lib = meta.LIB?:sample
@@ -68,7 +68,7 @@ process PB_FQ2BAM {
       --num-cpu-threads-per-stage ${cpu_per_gpu} \\
       --memory-limit ${task.memory.giga} \\
       --ref TMP/REF/${fasta.name} \\
-      --in-fq ${fastqs.sort((A,B)->A.name.compareTo(B.name)).join(" ")} \\
+      --in-fq ${fq_R1} ${fq_R2?"${fq_R2}":""} \\
       --out-bam "TMP/OUT/${sample}.cram" \\
       --read-group-sm "${sample}" \\
       --read-group-lb "${lib}" \\

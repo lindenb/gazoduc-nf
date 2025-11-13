@@ -29,6 +29,7 @@ SOFTWARE.
 process SMOOVE_CALL {
 tag "${meta.id}"
 label "process_short"
+label "smoove"
 afterScript  "rm -rf TMP TMP2"
 input:
 	tuple val(meta1),path(fasta)
@@ -73,7 +74,7 @@ script:
 
 cat <<- EOF > versions.yml
 "${task.process}":
-    smoove: todo
+    smoove: \$(smoove 2>&1 | awk '(NR==1) {print \$3;}')
 EOF
 """
 

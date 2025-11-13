@@ -35,8 +35,7 @@ input:
 output:
     tuple val(meta), path("*.vcf.gz") ,path("*.tbi"),emit: vcf
     path("versions.yml"),emit:versions
-when:
-    task.ext.when == null || task.ext.when
+
 script:
     def args = task.ext.args ?: ''
     def prefix = task.ext.prefix ?: "${meta.id}"
@@ -78,5 +77,10 @@ cat <<-END_VERSIONS > versions.yml
 "${task.process}":
     duphold: \$(duphold -h | head -n 1 | sed -e "s/^version: //")
 END_VERSIONS
+"""
+
+stub:
+"""
+touch versions.yml ${meta.id}.vcf.gz ${meta.id}.vcf.gz.tbi
 """
 }

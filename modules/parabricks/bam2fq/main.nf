@@ -25,6 +25,7 @@ SOFTWARE.
 process PB_BAM2FQ {
   tag "${meta.id?:""}"
   label 'process_gpu'
+  label 'parabricks'
   afterScript "rm -rf TMP"
   input:
     tuple val(meta),path(bam),path(fasta),path(fai)

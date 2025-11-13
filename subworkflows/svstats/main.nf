@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -22,30 +22,21 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+workflow SV_STATS {
+take:
+    metadata
+    fasta
+    fai
+    dict
+    pedigree
+    gff3
+    gtf
+    vcfs
+main:
+    versions = Channel.empty()
+    multiqc  = Channel.empty()
 
-
-process DOWNLOAD_SOMALIER {
-label "process_single"
-tag "${params.somalier_version}"
-output:
-	path("somalier"),emit:output
-	path("version.xml"),emit:version
-script:
-	def somalier_version = params.somalier_version?:"0.2.17"
-	def url = "https://github.com/brentp/somalier/releases/download/v${somalier_version}/somalier"
-"""
-hostname 1>&2
-wget -O somalier "${url}"
-chmod +x somalier
-
-##################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">download and somalier</entry>
-        <entry key="somalier.version">${somalier_version}</entry>
-        <entry key="url"><a>${url}</a></entry>
-</properties>
-EOF
-"""
+emit:
+    versions
+    multiqc
 }

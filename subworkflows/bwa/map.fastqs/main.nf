@@ -99,7 +99,7 @@ workflow MAP_BWA {
 		
 		
 		MARK_DUPLICATES(
-			meta,
+			meta.plus(markdup_enabled : metadata.with_markdup),
 			fasta,
 			fai,
 			dict,

@@ -7,6 +7,7 @@ ORIGINAL snakemake workflow by Raphael Blanchet PhD.
 process PB_GERMLINE {
   tag "${meta.id} ${R1.name} ${R2.name}"
   label 'process_short'
+  label 'parabricks'
 
   // afterScript "rm -rf TMP"
   input:

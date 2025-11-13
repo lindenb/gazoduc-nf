@@ -24,6 +24,7 @@ SOFTWARE.
 process SMOOVE_ANNOTATE {
 tag "${meta.id}"
 label "process_single"
+label "smoove"
 afterScript  "rm -rf TMP TMP2"
 input:
 	tuple val(meta1),path(fasta)
@@ -53,7 +54,7 @@ script:
 
 cat <<- EOF > versions.yml
 "${task.process}":
-    smoove: todo
+    smoove: \$(smoove 2>&1 | awk '(NR==1) {print \$3;}')
 EOF
 """
 

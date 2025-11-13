@@ -576,6 +576,16 @@ List flatMapByIndex(List L0,int index) {
 	return L1;
 	}
 
+/** split file/index using the htslib method . If found return array with two elements (file/index) or one element (file) */
+List htslibSplitIndex(String fname) {
+	String delim = "##idx##";
+	int i = fname.indexOf(delim);
+	if(i<1) return [fname];
+	String f1 = fname.substring(0,i);
+	String f2 = fname.substring(i+delim.length());
+	return [f1,f2];
+}
+
 void runOnComplete(def wf) {
 wf.onComplete {
     println ( workflow.success ? """

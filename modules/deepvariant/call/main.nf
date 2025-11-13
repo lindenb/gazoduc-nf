@@ -25,6 +25,7 @@ SOFTWARE.
 
 process DEEP_VARIANT_CALL {
 label "process_single"
+label "deepvariant"
 tag "${meta.id} ${bam.name} ${optional_bed?optional_bed.name:""}"
 afterScript "rm -rf TMP  .keras  .parallel"
 conda "${moduleDir}/../../../conda/deepvariant.yml"

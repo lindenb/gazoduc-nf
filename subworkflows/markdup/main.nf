@@ -30,6 +30,7 @@ include { SAMBAMBA_MARKDUP                            } from '../../modules/samb
 include { SAMTOOLS_COLLATE                            } from '../../modules/samtools/collate'
 include { SAMTOOLS_FIXMATE                            } from '../../modules/samtools/fixmate'
 include { SAMTOOLS_SORT                               } from '../../modules/samtools/sort'
+include { PB_MARKDUP                                  } from '../../modules/parabricks/markdup'
 
 
 workflow MARK_DUPLICATES {
@@ -55,7 +56,7 @@ workflow MARK_DUPLICATES {
                 }
             
 
-        if(meta.markdup_method==null || meta.markdup_method.matches("(markduplicates|gatk|picard)")) {
+        if(meta.markdup_method==null || meta.markdup_method.matches("(markduplicates|gatk|picard|pb|parabricks)")) {
             GAKT_MARK_DUPLICATES(
                 fasta,
                 fai,
@@ -119,6 +120,15 @@ workflow MARK_DUPLICATES {
                 out_bams = SAMTOOLS_MARKDUP.out.bam
                 multiqc = multiqc.mix(SAMTOOLS_MARKDUP.out.json)
                 }
+            }
+        else if(meta.markdup_method.matches("(pb|parabricks)"))  {
+            PB_MARKDUP(
+                fasta,
+                fai,
+                merged_ch
+                )
+            versions = versions.mix(PB_MARKDUP.out.versions)
+            multiqc = multiqc.mix(PB_MARKDUP.out.metrics)
             }
         else
             {

@@ -103,7 +103,7 @@ workflow FASTP {
         paired_end = trim_reads.paired_end
             .map{meta,fqs->[meta,fqs.sort()]}
             .map{meta,fqs->[meta,fqs[0],fqs[1]]}
-            
+
 
         trim_reads.others.map{
                 log.warn("FASTP:Illegal State $it .");

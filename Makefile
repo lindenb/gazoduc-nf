@@ -7,4 +7,4 @@ test:
 	cd tests && $(MAKE)
 
 clean:
-	rm -rf tests-output
+	rm -rf tests-output tests/.nextflow

@@ -23,6 +23,7 @@ SOFTWARE.
 */
 process SMOOVE_GENOTYPE {
 label "process_short"
+label "smoove"
 tag "${meta.id}"
 afterScript  "rm -rf TMP"
 input:
@@ -63,7 +64,7 @@ script:
 
 cat <<- EOF > versions.yml
 "${task.process}":
-    smoove: todo
+    smoove: \$(smoove 2>&1 | awk '(NR==1) {print \$3;}')
 EOF
 """
 

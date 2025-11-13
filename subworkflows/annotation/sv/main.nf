@@ -22,11 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {k1_signature         } from '../../../modules/utils/k1.nf'
-include {isGRCh38             } from '../../../modules/utils/k1.nf'
 include {VEP as VEP_GRCH38    } from './grch38.nf'
 
-def k1 = k1_signature()
 
 
 workflow ANNOTATE_SV {
@@ -56,13 +53,23 @@ workflow ANNOTATE_SV {
 			ensemblreg_ch.output,
 			decode_ch.output
 			)
-		vcf = ANNOTATE.out.vcf
-		if(isGRCh38(fai[1])) {
-				VEP_GRCH38(meta,fasta,fai,dict,vcf)
-				vcf = VEP_GRCH38.out.vcf
-			} else {
-				throw new IllegalArgumentException("VEP: unknown build");
+
+		ch1 = fasta.branch{v->
+			fasta_hg38: v[0].ucsc_name!=null && v[0].ucsc_name=="hg38"
+			others: true
 			}
+
+
+			
+		VEP_GRCH38(
+			meta,
+			ch1.fasta_hg38,
+			fai,
+			dict,
+			vcf
+			)
+		vcf = VEP_GRCH38.out.vcf
+
 	emit:
 		vcf
                 versions

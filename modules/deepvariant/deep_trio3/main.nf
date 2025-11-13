@@ -25,6 +25,7 @@ SOFTWARE.
 
 process DEEP_TRIO3 /* 1 child+2 parents */{
 label "process_single"
+label "deeptrio"
 tag "${meta.id} ${C_bam.name} ${optional_bed?optional_bed.name:""}"
 afterScript "rm -rf TMP  .keras  .parallel"
 input:

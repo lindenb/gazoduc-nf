@@ -27,23 +27,50 @@ include { parseBoolean               }  from '../../../modules/utils/functions.n
 include { assertKeyExistsAndNotEmpty }  from '../../../modules/utils/functions.nf'
 include { assertKeyMatchRegex        }  from '../../../modules/utils/functions.nf'
 include { removeCommonSuffixes       }  from '../../../modules/utils/functions.nf'
+include { htslibSplitIndex           }  from '../../../modules/utils/functions.nf'
+
+
 
 workflow VCF_INPUT {
 take:
     metadata
 main:
     versions = Channel.empty()
-    otherwise_ch = Channel.empty()
-   
+
+    if(metadata.path==null || isBlank(metadata.path)) {
+        log.warn("VCF_INPUT : undefined path")
+        }
+
+    if(metadata.require_index==null) {
+        log.warn("VCF_INPUT : undefined require_index")
+        }
+
+    if(isBlank(metadata.arg_name) || isBlank(metadata.arg_name) ) {
+        log.warn("VCF_INPUT : undefined arg_name")
+        }
+    if(metadata.required==null) {
+        log.warn("VCF_INPUT : undefined required")
+        }
+    if(metadata.unique==null) {
+        log.warn("VCF_INPUT : undefined unique")
+        }
+
+    ch1 = Channel.empty()
 
     if(metadata.path==null) {
-        throw new IllegalArgumentException("VCF_INPUT.meta.path is missing");
-        }
+            throw new IllegalArgumentException("VCF_INPUT.meta.path is missing for ${metadata.arg_name?:"option"}");
+            }
+    else if((metadata.path.endsWith(".tbi")  ||  metadata.path.endsWith(".csi")) && htslibSplitIndex(metadata.path).size()==2) {
+            ch1 =  Channel.of(metadata.path).
+                    map{htslibSplitIndex(it)}.
+                    map{[vcf:it[0],index:it[1]]}
+            }
     else if(metadata.path.endsWith(".vcf") || 
             metadata.path.endsWith(".vcf.gz")  ||
             metadata.path.endsWith(".vcf.bgz")  || 
             metadata.path.endsWith(".bcf") ) {
             ch1 = Channel.of(metadata.path).map{[vcf:it]}
+            ch1.view{"##OK123 HERE $it"}
             }
      else if(metadata.path.endsWith(".list") || metadata.path.endsWith(".txt")) {
             ch1 = Channel.fromPath(metadata.path)
@@ -68,12 +95,13 @@ main:
             throw new IllegalArgumentException("Undefined suffix for VCF: ${metadata.path}");
             }
 
-    ch1 = ch1.map{assertKeyExistsAndNotEmpty(it,"vcf")}
+    ch1 = ch1
+            .map{assertKeyExistsAndNotEmpty(it,"vcf")}
             .map{assertKeyMatchRegex(it,"vcf",".*\\.(vcf|vcf\\.gz|bcf)")}
 
 
 
-    if(parseBoolean(metadata.require_index?:true)) {
+    if(metadata.require_index==null || parseBoolean(metadata.require_index?:true)) {
         ch1 = ch1
             .map{
                 if(it.vcf.endsWith(".vcf")) throw new IllegalArgumentException("vcf fmust have suffix .vcf.gz or .bcf: ${it}");
@@ -90,7 +118,7 @@ main:
 
 
 
-    if(parseBoolean(metadata.required?:true)) {
+    if(metadata.required==null || parseBoolean(metadata.required?:true)) {
         ch1.count()
             .filter{it==0}
             .map{
@@ -100,7 +128,7 @@ main:
                 }
         }
 
-    if(parseBoolean(metadata.unique?:false)) {
+    if(metadata.unique==null || parseBoolean(metadata.unique?:false)) {
         ch1.count()
             .filter{it>1}
             .map{
@@ -110,7 +138,7 @@ main:
                 }
         }
     
-    if(parseBoolean(metadata.require_index?:true)) {
+    if(metadata.require_index==null || parseBoolean(metadata.require_index?:true)) {
         ch1 = ch1.map{[
             it.plus([id: removeCommonSuffixes(file(it.vcf).name)]).findAll{k,v->!k.matches("(vcf|index)")},
             file(it.vcf),
@@ -127,7 +155,7 @@ main:
         otherwise_ch = Channel.of([[id:"no_vcf"],[]])
         }
 
-    if(parseBoolean(metadata.unique?:false)) {
+    if(metadata.unique!=null || arseBoolean(metadata.unique?:false)) {
         ch1  = ch1.first()
         }
 

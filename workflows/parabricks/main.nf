@@ -61,7 +61,9 @@ include { MAP_BWA                                 } from '../../subworkflows/bwa
 include { MAP_DRAGMAP                             } from '../../subworkflows/dragmap'
 include { NOT_EMPTY_VCF                           } from '../../modules/bcftools/notempty'
 include { READ_SAMPLESHEET                        } from '../../subworkflows/nf/read_samplesheet'
-include {SMOOVE                                   } from '../../subworkflows/smoove' 
+include { SMOOVE                                  } from '../../subworkflows/smoove' 
+include { VCF_INPUT as DBSNP_VCF_INPUT            } from '../../subworkflows/nf/vcf_input' 
+include { VCF_INPUT as KNOWN_INDELS_VCF_INPUT     } from '../../subworkflows/nf/vcf_input' 
 
 
 if( params.help ) {
@@ -84,9 +86,9 @@ workflow {
       id: file(params.fasta).baseName
       ]
   
-  def known_indels = [metadata, [],[]]
+
   def gtf     = [metadata,[],[]]
-  def prevent_multi_gpu_ch = Channel.empty()  
+  def prevent_multi_gpu_ch = Channel.of(1L)
 
   if(params.gtf!=null) {
     gtf = [metadata,file(params.gtf),file(params.gtf+".tbi")]
@@ -129,7 +131,7 @@ workflow {
   paired_end = SAMPLESHEET_TO_FASTQ.out.paired_end
     .map{[it[0],[it[1],it[2]]]}
 
-  
+  if(parseBoolean(params.with_fastp)) {
   FASTP(
     metadata.plus([
       fastqc_before : params.with_fastqc,
@@ -140,10 +142,64 @@ workflow {
     )
 
 
-
   multiqc = multiqc.mix(FASTP.out.multiqc)
   versions = versions.mix(FASTP.out.versions)
+	paired_end = FASTP.out.paired_end
+	single_end = FASTP.out.single_end
+	}
 
+  /***************************************************
+   *
+   *  DBSNP VCF
+   *
+   */
+  if(params.dbsnp!=null) {
+    DBSNP_VCF_INPUT(
+      metadata.plus([
+        arg_name : "dbsnp",
+        path: params.dbsnp,
+        require_index : true,
+        required : true,
+        unique : true
+        ])
+      )
+    versions = versions.mix(DBSNP_VCF_INPUT.out.versions)
+    dbsnp_ch = DBSNP_VCF_INPUT.out.vcf.first()
+    }
+  else
+    {
+    dbsnp_ch = Channel.of([[id:"nodbsnp"],[],[]]).first()
+    }
+
+  /***************************************************
+   *
+   *  KNWON INDELS
+   *
+   */
+if(params.known_indels!=null) {
+    KNOWN_INDELS_VCF_INPUT(
+      metadata.plus([
+        arg_name : "known_indels",
+        path: params.known_indels,
+        require_index : true,
+        required : true,
+        unique : true
+        ])
+      )
+    versions = versions.mix(KNOWN_INDELS_VCF_INPUT.out.versions)
+    known_indels_ch = KNOWN_INDELS_VCF_INPUT.out.vcf.first()
+    }
+  else
+    {
+    known_indels_ch = Channel.of([[id:"known_indels"],[],[]]).first()
+    }
+  
+
+  /***************************************************
+   *
+   *  PREPARE FASTA REFERENCE
+   *
+   */
 	PREPARE_ONE_REFERENCE(
 		metadata,
 		Channel.fromPath(params.fasta).map{[[id:it.baseName],it]}
@@ -200,6 +256,10 @@ workflow {
    *  MAP FASTQS TO BAM
    */
   if(params.mapper.matches("(pb|parabricks)")) {
+
+    single_end
+      .map{throw new IllegalArgumentException("SORRY: parabricks does'nt support single-end (2025-11-12)");}
+
     /***************************************************
     *
     *  MAP FASTQS TO BAM USING PARABRICKS
@@ -209,9 +269,9 @@ workflow {
       PREPARE_ONE_REFERENCE.out.fasta,
       PREPARE_ONE_REFERENCE.out.fai,
       BWADir,
-      known_indels,
+      known_indels_ch,
       prevent_multi_gpu_ch //prevent multiple GPUs jobs at the same time
-        .combine(single_end.mix(paired_end))
+        .combine(paired_end)
         .map{it[1..<it.size()]} // remove item[0] containing multiple GPLUs guard
       )  
     versions = versions.mix(PB_FQ2BAM.out.versions)
@@ -227,7 +287,7 @@ workflow {
     */
     MAP_BWA(
       metadata.plus(
-        with_fastp : parseBoolean(params.with_fastp),
+        with_fastp : false, /* already done before */
         with_cram :  parseBoolean(params.with_cram),
         fastqc_before : parseBoolean(params.with_fastqc),
         fastqc_after : parseBoolean(params.with_fastqc),
@@ -395,7 +455,7 @@ workflow {
     MANTA_SINGLE(
         metadata.plus(
           with_truvari : parseBoolean(params.with_truvari)
-        ),
+          ),
         PREPARE_ONE_REFERENCE.out.fasta,
         PREPARE_ONE_REFERENCE.out.fai,
 			  PREPARE_ONE_REFERENCE.out.dict,
@@ -419,7 +479,7 @@ workflow {
         PREPARE_ONE_REFERENCE.out.complement_bed,
         bams_ch
         )
-    versions = versions.mix(MANTA_SINGLE.out.versions)
+    versions = versions.mix(SMOOVE.out.versions)
     }
 
   /***************************************************
@@ -434,7 +494,7 @@ workflow {
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
       META_TO_PED.out.pedigree_gatk,
-      bams_ch.map{[it[0],it[1]]/* no BAI please */}
+      bams_ch.map{meta,bambai->[meta,bam]/* no BAI please */}
       )
     versions = versions.mix(INDEXCOV.out.versions)
   }
@@ -488,7 +548,11 @@ workflow {
       BEDTOOLS_MAKEWINDOWS.out.bed
       )
   versions = versions.mix(BED_CLUSTER1.out.versions)
-  cluster_bed1 = BED_CLUSTER1.out.bed.map{it[1]}.flatMap()
+  cluster_bed1 = BED_CLUSTER1.out.bed
+    .map{meta,bed->bed}
+    .map{it instanceof List?it:[it]}
+    .flatMap()
+    .map{bed->[[id:bed.baseName],bed]}
 
   /* But for slow callers like bcftools or freebayes, we need smaller intervals */
   BED_CLUSTER2(
@@ -520,7 +584,7 @@ workflow {
       PREPARE_ONE_REFERENCE.out.fasta,
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
-      cluster_bed1.map{[[id:it.name.toString().md5().substring(0,8)],it]},
+      cluster_bed1,
       prevent_multi_gpu_ch //prevent multiple GPUs jobs at the same time
         .combine(  bams_ch.map{it + [[]]/* empty file for BQSR */})
         .map{it[1..<it.size()]} // remove item[0] containing multiple GPLUs guard
@@ -541,7 +605,7 @@ workflow {
       PREPARE_ONE_REFERENCE.out.fasta,
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
-      cluster_bed1.map{[[id:it.name.toString().md5().substring(0,8)],it]},
+      cluster_bed1,
       prevent_multi_gpu_ch //prevent multiple GPUs jobs at the same time
         .combine(bams_ch)
         .map{it[1..<it.size()]} // remove item[0] containing multiple GPLUs guard
@@ -564,7 +628,7 @@ workflow {
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
       mosdepth_summary_ch,
-      cluster_bed1.map{[[id:it.name.toString().md5().substring(0,8)],it]},
+      cluster_bed1,
       bams_ch
       )
     versions = versions.mix(GRAPHTYPER.out.versions)
@@ -616,9 +680,9 @@ workflow {
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
       Channel.of([[id:"refs"],[]]),//other ref TODO
-      Channel.of([[id:"dbsnp"],[],[]]),//TODO dbsnp
+      dbsnp_ch,
       Channel.of([[id:"ped"],[]]),//TODO ped
-      cluster_bed1.map{[[id:"bed"],it]},
+      cluster_bed1,
       bams_ch
       )
     versions = versions.mix(HAPLOTYPECALLER.out.versions)
@@ -662,7 +726,7 @@ workflow {
     [[:],[]],//samples,
     vcf_ch.map{[it[0],[it[1],it[2]]]}
     )
-  versions = versions.mix(BCFTOOLS_GUESS_PLOIDY.out.versions)
+  versions = versions.mix(BCFTOOLS_STATS.out.versions)
 
   /***************************************************
    *

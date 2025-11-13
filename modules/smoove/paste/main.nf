@@ -24,6 +24,7 @@ SOFTWARE.
 process SMOOVE_PASTE {
 tag "${meta.id}"
 label "process_short"
+label "smoove"
 afterScript  "rm -rf TMP"
 input:
 	tuple val(meta1),path(fasta)
@@ -79,7 +80,7 @@ bcftools index --threads ${task.cpus} -t -f "${prefix}.smoove.square.vcf.gz"
 
 cat <<- EOF > versions.yml
 "${task.process}":
-    smoove: todo
+    smoove: \$(smoove 2>&1 | awk '(NR==1) {print \$3;}')
 EOF
 """
 

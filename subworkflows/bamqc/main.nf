@@ -28,6 +28,8 @@ include {SAMTOOLS_FLAGSTATS         } from '../../modules/samtools/flagstats'
 include {SAMTOOLS_IDXSTATS          } from '../../modules/samtools/bamidxstats'
 include {BED_TO_INTERVAL_LIST       } from '../../modules/gatk/bed2intervallist'
 include {COLLECT_MULTIPLE_METRICS   } from '../../modules/gatk/collectmultiplemetrics'
+include { parseBoolean              } from '../../modules/utils/functions.nf'
+
 
 workflow BAM_QC {
 take:
@@ -42,111 +44,139 @@ main:
 	reports_ch  = Channel.empty()
 	metadata_ch = Channel.empty()
 	
-  /***************************************************
-   *
-   *  MOSDEPTH
-   *
-   */
-	MOSDEPTH(
-		fasta,
-		fai,
-		bams.combine(bed).map{[it[0],it[1],it[2],it[4]]} ,
-		)
-	versions_ch = versions_ch.mix(MOSDEPTH.out.versions)
+	sample_sex_ch =  Channel.empty()
+	mosdepth_global = Channel.empty()
+	mosdepth_summary = Channel.empty()
+	mosdepth_regions = Channel.empty()
 
-	mosdepth_global  = MOSDEPTH.out.global_txt
-	mosdepth_summary = MOSDEPTH.out.summary_txt
-	mosdepth_regions = MOSDEPTH.out.regions_txt
 
-	reports_ch = reports_ch
-		.mix(mosdepth_global)
-		.mix(mosdepth_summary)
-		.mix(mosdepth_regions)
+	if(meta.with_mosdepth==null || parseBoolean(meta.with_mosdepth)) {
+		/***************************************************
+		*
+		*  MOSDEPTH
+		*
+		*/
+		MOSDEPTH(
+			fasta,
+			fai,
+			bams.combine(bed).map{meta1,bam,bai,meta2,_bed->[meta1,bam,bai,bed]} ,
+			)
+		versions_ch = versions_ch.mix(MOSDEPTH.out.versions)
 
-	
-	/** PLOT chrX / chrY */
-	mosdepth_ch = mosdepth_summary.splitCsv(header:true,sep:'\t')
-	
-	ch1 = mosdepth_ch
-		.filter{it[1].chrom.matches("(chr)?[XY]_region")}
-		.map{[it[1].chrom.replaceAll("_region",""), it[0].id, (it[1].mean?:it[1].median)]}
-		.branch{v->
-			chrX: v[0].contains("X")
-			chrY: v[0].contains("Y")
+		mosdepth_global  = MOSDEPTH.out.global_txt
+		mosdepth_summary = MOSDEPTH.out.summary_txt
+		mosdepth_regions = MOSDEPTH.out.regions_txt
+
+		reports_ch = reports_ch
+			.mix(mosdepth_global)
+			.mix(mosdepth_summary)
+			.mix(mosdepth_regions)
+
+		
+		/** PLOT chrX / chrY */
+		mosdepth_ch = mosdepth_summary.splitCsv(header:true,sep:'\t')
+		
+		ch1 = mosdepth_ch
+			.filter{it[1].chrom.matches("(chr)?[XY]_region")}
+			.map{[it[1].chrom.replaceAll("_region",""), it[0].id, (it[1].mean?:it[1].median)]}
+			.branch{v->
+				chrX: v[0].contains("X")
+				chrY: v[0].contains("Y")
+				}
+		
+		PLOT_CHR_XY(
+			ch1.chrX.join(ch1.chrY, by:1) 
+				.map{[it[0],it[2],it[4]]}//sample,depthX,depthY
+				.map{it.join("\t")}
+				.filter{!it.trim().isEmpty()} // when running tests
+				.toSortedList()
+				.filter{!it.isEmpty()} // when running tests
+				.map{[[id:"xy"],it]}
+			)
+		versions_ch = versions_ch.mix(PLOT_CHR_XY.out.versions)
+
+		sample_sex_ch = PLOT_CHR_XY.out.tsv
+			.splitCsv(header:true,sep:'\t')
+			.map{it.plus(id:it.sample)}
+
+
+		// depth [id, mean depth]
+		depth_all  = mosdepth_ch.filter{it[1].chrom.equals("total_region")}.map{[it[0].id,(it[1].mean?:it[1].median)]}
+		depth_chrX = mosdepth_ch.filter{it[1].chrom.matches("(chr)?X_region")}.map{[it[0].id,(it[1].mean?:it[1].median)]}
+		depth_chrY = mosdepth_ch.filter{it[1].chrom.matches("(chr)?Y_region")}.map{[it[0].id,(it[1].mean?:it[1].median)]}
+		depth_ch = depth_all.join(depth_chrX,remainder: true)//id,dp,dpX
+				.join(depth_chrY,remainder: true)//id,dp,dpX,dpY
+				.map{[
+					it[0],
+					[
+						depth:it[1],
+						depthX:(it[2]==null?"":it[2]),
+						depthY:(it[3]==null?"":it[3])
+					]]}
+
+
+		if(meta.with_depth_outliers==null || parseBoolean(meta.with_depth_outliers)) {
+			/** outliers of DEPTH */
+			treshold_ch = Channel.of(100,1000);
+
+			ch1 = mosdepth_summary
+				.combine(treshold_ch)
+				.map{meta,summary,fold->[meta.id,meta.plus(treshold:fold),summary]}
+				.join(bams.map{[it[0].id,it[0],it[1],it[2]]})
+				.combine(bed)
+				.map{sample,meta1,summary,meta2,bam,bai,meta3,bed->[meta1,summary,bam,bai,bed]}
+			
+
+			DEPTH_OUTLIER(fasta,fai,ch1)
+			versions_ch = versions_ch.mix(DEPTH_OUTLIER.out.versions)
+
+			DEPTH_OUTLIER_MERGE_ALL_SAMPLES(DEPTH_OUTLIER.out.bed.map{meta,bed,tbi->[[id:"outliers",treshold:meta.treshold],bed]}.groupTuple())
+			versions_ch = versions_ch.mix(DEPTH_OUTLIER_MERGE_ALL_SAMPLES.out.versions)
 			}
-	
-	PLOT_CHR_XY(
-		ch1.chrX.join(ch1.chrY, by:1) 
-			.map{[it[0],it[2],it[4]]}//sample,depthX,depthY
-			.map{it.join("\t")}
-			.filter{!it.trim().isEmpty()} // when running tests
-			.toSortedList()
-			.filter{!it.isEmpty()} // when running tests
-			.map{[[id:"xy"],it]}
-		)
-	versions_ch = versions_ch.mix(PLOT_CHR_XY.out.versions)
+		
+		}
 
-	// depth [id, mean depth]
-	depth_all  = mosdepth_ch.filter{it[1].chrom.equals("total_region")}.map{[it[0].id,(it[1].mean?:it[1].median)]}
-	depth_chrX = mosdepth_ch.filter{it[1].chrom.matches("(chr)?X_region")}.map{[it[0].id,(it[1].mean?:it[1].median)]}
-	depth_chrY = mosdepth_ch.filter{it[1].chrom.matches("(chr)?Y_region")}.map{[it[0].id,(it[1].mean?:it[1].median)]}
-	depth_ch = depth_all.join(depth_chrX,remainder: true)//id,dp,dpX
-			.join(depth_chrY,remainder: true)//id,dp,dpX,dpY
-			.map{[
-				it[0],
-				[
-					depth:it[1],
-					depthX:(it[2]==null?"":it[2]),
-					depthY:(it[3]==null?"":it[3])
-				]]}
 
-	/** outliers of DEPTH */
-	treshold_ch = Channel.of(100,1000);
-
-	ch1 = mosdepth_summary
-		.combine(treshold_ch)
-		.map{meta,summary,fold->[meta.id,meta.plus(treshold:fold),summary]}
-		.join(bams.map{[it[0].id,it[0],it[1],it[2]]})
-		.combine(bed)
-		.map{sample,meta1,summary,meta2,bam,bai,meta3,bed->[meta1,summary,bam,bai,bed]}
-
-	DEPTH_OUTLIER(fasta,fai,ch1)
-	versions_ch = versions_ch.mix(DEPTH_OUTLIER.out.versions)
-
-	DEPTH_OUTLIER_MERGE_ALL_SAMPLES(DEPTH_OUTLIER.out.bed.map{meta,bed,tbi->[[id:"outliers",treshold:meta.treshold],bed]}.groupTuple())
-	versions_ch = versions_ch.mix(DEPTH_OUTLIER_MERGE_ALL_SAMPLES.out.versions)
 	
   /***************************************************
    *
    *  SAMTOOLS STATS
    *
    */
+   if(meta.with_samtools_stats==null || parseBoolean(meta.with_samtools_stats)) {
     SAMTOOLS_STATS(fasta,fai,bed,bams)
 	versions_ch = versions_ch.mix(SAMTOOLS_STATS.out.versions)
 	reports_ch = reports_ch.mix(SAMTOOLS_STATS.out.stats)
+	}
 
-  /***************************************************
-   *
-   *  SAMTOOLS IDXSTATS
-   *
-   */
-    SAMTOOLS_IDXSTATS(bams)
-	versions_ch = versions_ch.mix(SAMTOOLS_IDXSTATS.out.versions)
-	reports_ch = reports_ch.mix(SAMTOOLS_IDXSTATS.out.stats)
 
-  /***************************************************
-   *
-   *  SAMTOOLS IDXSTATS
-   *
-   */
-    SAMTOOLS_FLAGSTATS(
-		fasta,
-		fai,
-		bed,
-		bams
-		)
-	versions_ch = versions_ch.mix(SAMTOOLS_FLAGSTATS.out.versions)
-	reports_ch = reports_ch.mix(SAMTOOLS_FLAGSTATS.out.stats)
+   if(meta.with_samtools_idxstats==null || parseBoolean(meta.with_samtools_idxstats)) {
+	/***************************************************
+	*
+	*  SAMTOOLS IDXSTATS
+	*
+	*/
+		SAMTOOLS_IDXSTATS(bams)
+		versions_ch = versions_ch.mix(SAMTOOLS_IDXSTATS.out.versions)
+		reports_ch = reports_ch.mix(SAMTOOLS_IDXSTATS.out.stats)
+	}
+
+
+	if(meta.with_samtools_flagstats==null || parseBoolean(meta.with_samtools_flagstats)) {
+	/***************************************************
+	*
+	*  SAMTOOLS FLAGSTATS
+	*
+	*/
+		SAMTOOLS_FLAGSTATS(
+			fasta,
+			fai,
+			bed,
+			bams
+			)
+		versions_ch = versions_ch.mix(SAMTOOLS_FLAGSTATS.out.versions)
+		reports_ch = reports_ch.mix(SAMTOOLS_FLAGSTATS.out.stats)
+	}
 
 
 
@@ -155,6 +185,7 @@ main:
    *  GATK QC
    *
    */
+   if(meta.with_collect_metrics==null || parseBoolean(meta.with_collect_metrics)) {
 	BED_TO_INTERVAL_LIST(
 		dict,
 		bed
@@ -178,6 +209,7 @@ main:
 		.mix(COLLECT_MULTIPLE_METRICS.out.insert_size_metrics)
 		.mix(COLLECT_MULTIPLE_METRICS.out.quality_by_cycle_metrics)
 		.mix(COLLECT_MULTIPLE_METRICS.out.quality_distribution_metrics)
+   	}
 
 emit:
 	versions = versions_ch
@@ -185,6 +217,7 @@ emit:
 	mosdepth_global
 	mosdepth_summary
 	mosdepth_regions
+	sample_sex_ch
 }
 
 
