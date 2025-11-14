@@ -6,7 +6,8 @@ nextflow_workflow {
     tag "gitlab_ci"
     tag "subworkflows"
     tag "subworkflows/samplesheet2fastq"
-    
+    tag "fastq"
+    tag "ora"
 
     test("ORA_NO_NAME") {
         options "-stub"
@@ -20,7 +21,7 @@ nextflow_workflow {
                input[0] = [id:"meta",bam2fastq_method:"samtools"]
                input[1]= Channel.of(
                			[
-               			ora:"${projectDir}/tests/data/S1_S10_L008_R2_001.fastq.ora",
+               			fastq_1:"${projectDir}/tests/data/S1_S10_L008_R2_001.fastq.ora"
                			]
                		)
                 """
@@ -33,7 +34,7 @@ nextflow_workflow {
         }
     }
 
-   test("ORA_NAME") {
+   test("ORA_SINGLE_NAME") {
         options "-stub"
         when {
             params {
@@ -46,7 +47,7 @@ nextflow_workflow {
                input[1]= Channel.of(
                			[
                			id:"S1",
-               			ora:"${projectDir}/tests/data/S1_S10_L008_R2_001.fastq.ora",
+               			fastq_1:"${projectDir}/tests/data/S1_S10_L008_R2_001.fastq.ora"
                			]
                		)
                 """
@@ -93,6 +94,35 @@ nextflow_workflow {
         }
     }
 
+
+    test("PAIRED_NO_NAME") {
+        options "-stub"
+        // TODO fix when file exists
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+               input[0] = [id:"meta",bam2fastq_method:"samtools"]
+               input[1]= Channel.of(
+               			[
+               			fastq_1:"${projectDir}/tests/data/4-0122-T-F_S16_L003_R1_001.fastq.gz",
+               			fastq_2:"${projectDir}/tests/data/4-0122-T-F_S16_L003_R2_001.fastq.gz"
+               			]
+               		)
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+    }
+
+
 	test("SINGLE") {
 
         when {
@@ -112,6 +142,32 @@ nextflow_workflow {
                			id:"S2",
                			fastq_1:"${projectDir}/tests/data/S2.R1.fq.gz",
                			fastq_2:""
+               			]
+               		)
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+    }
+
+     test("SINGLE_NO_NAME") {
+        options "-stub"
+        //TODO fix when file exists
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+               input[0] = [id:"meta",bam2fastq_method:"samtools"]
+               input[1]= Channel.of(
+               			[
+               			fastq_1:"${projectDir}/tests/data/4-0122-T-F_S16_L003_R1_001.fastq.gz"
                			]
                		)
                 """

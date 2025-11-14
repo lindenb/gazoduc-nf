@@ -5,15 +5,18 @@ nextflow_workflow {
     workflow "ORA_TO_FASTQ"
     tag "subworkflows"
     tag "subworkflows/ora/ora2fastq"
-
+    tag "ora"
+    tag "fastq"
+    profile "nautilus"
+    config "./nextflow.config"
+    
     test("STUB") {
         options "-stub"
         tag "gitlab_ci"
 
         when {
             params {
-                // define parameters here. Example:
-                // outdir = "tests/results"
+                 ora_dir = "stub"
             }
             workflow {
                 """
@@ -29,6 +32,29 @@ nextflow_workflow {
         }
 
     }
+
+    test("GLICID") {
+        tag "glicid"
+       
+        when {
+            params {
+                ora_dir = "/LAB-DATA/GLiCID/projects/BiRD_resources/apps/orad/orad.2.7.0.linux"
+            }
+            workflow {
+                """
+                input[0] = [id:"orad"]
+                input[1] = Channel.of([ [id:"S1"], file("${projectDir}/tests/data/S1_S10_L008_R2_001.fastq.ora")])
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
 
 }
 	            

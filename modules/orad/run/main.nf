@@ -23,6 +23,8 @@ SOFTWARE.
 
 */
 include {removeCommonSuffixes  } from '../../utils/functions.nf'
+include {isBlank               } from '../../utils/functions.nf'
+include {verify                } from '../../utils/functions.nf'
 
 process RUN_ORAD {
 label 'process_medium'
@@ -36,31 +38,57 @@ output:
         path("versions.yml"),emit:versions
 script:
         def args1 =  task.ext.args1?:""
-        def prefix = task.ext.prefix?:(fastq_files instanceof List && fastq_files.size()==1 ? removeCommonSuffixes(fastq_files[0].name):"${meta.id}")
+        def prefix = task.ext.prefix?:"${meta.prefix?:""}" //yes, prefix and NOT id
+        def sorted_filenames = (fastq_files instanceof List?fastq_files:[fastq_files]).sort()
+        if(isBlank(prefix)) {
+                if((fastq_files instanceof List ) && fastq_files.size()==1) {
+                        def fastq = fastq_files[0];
+                        sorted_filenames = [fastq];
+                        //prefix not used
+                        prefix= removeCommonSuffixes(fastq.name);
+                        }
+                else if(fastq_files instanceof Path) {
+                        def fastq = fastq_files;
+                        sorted_filenames = [fastq];
+                        //prefix not used
+                        prefix= removeCommonSuffixes(fastq.name);
+                        }
+                else 
+                        {
+                        verify( (fastq_files instanceof List ) , "${task.process} expected a List of ora");
+                        verify( !fastq_files.isEmpty() , "${task.process} expected a non empty List");
+                        verify( !isBlank(prefix) , "${task.process}  prefix shouldn't be blank");
+                        
+                        sorted_filenames = fastq_files.sort()
+                        }
+                }
 """
 mkdir -p TMP
 
 
-
+${sorted_filenames.size()==1?"":" cat "+ sorted_filenames.collect{it.name}.join(" ")+" \\"}
 ${oradir}/orad \\
         ${args1} \\
+        --gz \\
         --threads ${task.cpus} \\
         --path TMP \\
         --ora-reference "${oradir}/oradata" \\
-        -q \\
-        - < ${fastq_files}
+        ${sorted_filenames.size()==1?sorted_filenames[0].name:" - "}
 
 if test -f TMP/-R1.fastq.gz
 then
-        mv TMP/-R1.fastq.gz TMP/${prefix}_R1.fastq.gz
+        mv TMP/-R1.fastq.gz  "./${prefix}.R1.fastq.gz"
 fi
 
 if test -f TMP/-R2.fastq.gz
 then
-        mv TMP/-R2.fastq.gz TMP/${prefix}_R2.fastq.gz
+        mv TMP/-R2.fastq.gz  "./${prefix}.R2.fastq.gz"
 fi
 
-
+# check no file starts with R, case not handled for now
+find TMP -name "-R*" > TMP/other.txt
+cat TMP/other.txt 1>&2
+test ! -s TMP/other.txt
 
 mv -v TMP/*.gz ./
     

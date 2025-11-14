@@ -586,6 +586,42 @@ List htslibSplitIndex(String fname) {
 	return [f1,f2];
 }
 
+
+/** extract sample from illumina fastq name : e.g. S1_S10_L008_R2_001.fastq.ora -> S1 */
+Map extractIlluminaName(String f) {
+	try {
+		f = file(f).name;
+        // _S\\d_L\\d+_R\\d_\\d+
+		java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("^(.*)_(S\\d+)_(L\\d+)_(R\\d)_(\\d+)\\.(fq|fastq)(\\.(ora|gz))?");
+		java.util.regex.Matcher matcher = pattern.matcher(f);
+		if(!matcher.find()) return null;
+
+		String sn = matcher.group(1);
+		return [
+			id: sn,
+			sample: sn,
+			index : matcher.group(2),
+			lane: matcher.group(3),
+			side : matcher.group(4),
+			split :  matcher.group(5)
+			];
+            
+		}
+	catch(Throwable err) {
+		err.printStackTrace();
+		log.warn("cannot extractORASampleName "+f+" "+err.getMessage());
+		return null;
+		}
+	}
+
+/** assertion checker */
+boolean verify(boolean t, String msg) {
+	if(t) return true;
+	log.warn(String.valueOf(msg));
+	throw new IllegalStateException(String.valueOf(msg));
+	}
+
+
 void runOnComplete(def wf) {
 wf.onComplete {
     println ( workflow.success ? """

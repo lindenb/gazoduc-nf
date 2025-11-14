@@ -28,6 +28,8 @@ include { ORA_TO_FASTQ               } from '../../subworkflows/ora/ora2fastq'
 include { BAM_TO_FASTQ               } from '../../subworkflows/bam2fastq'
 include { SAMTOOLS_SAMPLES           } from '../../modules/samtools/samples'
 include { isEmptyGz                  } from '../../modules/utils/functions.nf'
+include { extractIlluminaName        } from '../../modules/utils/functions.nf'
+include { verify                     } from '../../modules/utils/functions.nf'
 
 boolean hasKey(def h, def id) {
 	return h!=null && !isBlank(h[id]);
@@ -36,26 +38,6 @@ Map cleanupHash(Map h) {
 	return h.findAll{k,v->!k.matches("fasta|fai|dict|bam|bai|ora|R1|R2|fastq_1|fastq_2|bed")}
 	}
 
-/** extract sample from illumina fastq name : e.g. S1_S10_L008_R2_001.fastq.ora -> S1 */
-String extractORASampleName(String f) {
-	try {
-		f = file(f).name;
-        // _S\\d_L\\d+_R\\d_\\d+
-		java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("(.*)_S\\d+_L\\d+_R\\d_\\d+\\.fastq\\.ora");
-		java.util.regex.Matcher matcher = pattern.matcher(f);
-		if(!matcher.find()) {
-            return null;
-            }
-		String sn = matcher.group(1);
-		if(sn==null || sn.isEmpty()) return null;
-		return sn;
-		}
-	catch(Throwable err) {
-		err.printStackTrace();
-		log.warn("cannot extractORASampleName "+f+" "+err.getMessage());
-		return null;
-		}
-	}
 
 
 workflow SAMPLESHEET_TO_FASTQ {
@@ -69,9 +51,9 @@ main:
     
     ch0 = samplesheet
         .branch {
-        	fastq :  hasKey(it,"fastq_1") && !hasKey(it,"ora") && !hasKey(it,"bam")
-        	ora   : !hasKey(it,"fastq_1") &&  hasKey(it,"ora") && !hasKey(it,"bam")
-        	bam   : !hasKey(it,"fastq_1") && !hasKey(it,"ora") &&  hasKey(it,"bam")
+        	fastq :  hasKey(it,"fastq_1") && !hasKey(it,"bam") && !it.fastq_1.endsWith(".ora")
+        	ora   :  hasKey(it,"fastq_1") && !hasKey(it,"bam") &&  it.fastq_1.endsWith(".ora") 
+        	bam   : !hasKey(it,"fastq_1") &&  hasKey(it,"bam")
         	other : true
         	}
      
@@ -82,29 +64,51 @@ main:
      * INPUT is ORA
      *
      */
-     
+    ora_ch =  ch0.ora.map{
+            verify( it.fastq_1.endsWith(".ora") , "R1 should end with ORA ${it}" );
+            verify( isBlank(it.fastq_2) || it.fastq_2.endsWith(".ora") , "SAMPLESHEET_TO_FASTQ: both R1 and R2 should end with '.ora':  ${it}.");
+            return it;
+            }
+        .map{
+            if(hasKey(it,"id")) return it;
+            if(hasKey(it,"sample")) return it.plus(id:it.sample);
+            def ilm_name_1 = extractIlluminaName(it.fastq_1);
+            if(ilm_name_1!=null) {
+                //verify( ilm_name_1.side=="R1" , "SAMPLESHEET_TO_FASTQ: Expected side:R1 :  ${it} ."); TODO fix rotavirus path
+                // if paired end check R2 share the same info with R1
+                if(!isBlank(it.fastq_2)) {
+                    def ilm_name_2 = extractIlluminaName(it.fastq_2);
+                    verify( ilm_name_2!=null , "SAMPLESHEET_TO_FASTQ: can extract ilmn name for R1 but not from R2 ?? :  ${it}.");
+                    verify( ilm_name_1.id == ilm_name_2.id , "SAMPLESHEET_TO_FASTQ: Discordant illumina names :  ${it}.");
+                    verify( ilm_name_1.lane == ilm_name_2.lane , "SAMPLESHEET_TO_FASTQ: Discordant illumina lanes :  ${it}.");
+                    verify( ilm_name_1.index == ilm_name_2.index , "SAMPLESHEET_TO_FASTQ: Discordant illumina index :  ${it}.");
+                    verify( ilm_name_1.split == ilm_name_2.split , "SAMPLESHEET_TO_FASTQ: Discordant illumina index :  ${it}.");
+                    verify( ilm_name_2.side == "R2" ,  "SAMPLESHEET_TO_FASTQ: Expected side:R2 :  ${it}.");
+                    }
+                return it.plus(id:ilm_name_1.id);
+                }
+            verify(!isBlank(it.id),"SAMPLESHEET_TO_FASTQ: id missing for  ${it}.");
+            }
+        .map{
+            def hash =it.findAll{k,v->!k.matches("(fastq_1|fastq_2)")}
+            if(isBlank(it.fastq_2)) {
+                return [hash,file(it.fastq_1)]
+                }
+            return [hash , file(it.fastq_1), file(it.fastq_2) ];
+            }
+    
     ORA_TO_FASTQ(
      	workflow_metadata,
-     	ch0.ora
-            .map{
-                if(hasKey(it,"id")) return it;
-                if(hasKey(it,"sample")) return it.plus(id:it.sample);
-                if(extractORASampleName(it.ora)!=null) {
-                    def sample=extractORASampleName(it.ora);
-                    log.warn("FYI: extracted sample name from Illumina ORA path : ${it.ora} => '${sample}'.");
-                    return it.plus(id:sample);
-                    }
-                throw new IllegalArgumentException("ORA_TO_FASTQ : undefined id in ${it}");
-                }
-            .map{assertKeyExistsAndNotEmpty(it,"id")}
-            .map{[
-                cleanupHash(it),
-                file(it.ora)
-                ]}
+     	ora_ch
      	)
     versions = versions.mix(ORA_TO_FASTQ.out.versions)
     paired = paired.mix(ORA_TO_FASTQ.out.paired_end)
     single = single.mix(ORA_TO_FASTQ.out.single_end)
+
+
+
+
+
     
     /******************************************
      *
@@ -165,9 +169,9 @@ main:
      	ch3.has_sample
             .mix(resolved_bam_sample_ch)
             .map{                
-		if(!hasKey(it,"fasta") && it.bam.endsWith(".cram"))  throw new IllegalArgumentException("no fasta sequence defined for ${it.bam}"); 
-		return it;
-		}
+                if(!hasKey(it,"fasta") && it.bam.endsWith(".cram"))  throw new IllegalArgumentException("no fasta sequence defined for ${it.bam}"); 
+                return it;
+                }
             .map{
                 if(hasKey(it,"id")) return it;
                 if(hasKey(it,"sample")) return it.plus(id:it.sample);
@@ -183,20 +187,39 @@ main:
                 (hasKey(it,"dict")?file(it.dict):(hasKey(it,"fasta")?file(it.fasta.replaceAll("\\.(fasta|fa|fna)\$",".dict")):[])),
                 (hasKey(it,"bed")?file(it.bed): [] )
                 ]}
-     	    )
+     	)
     versions = versions.mix(BAM_TO_FASTQ.out.versions)
     paired = paired.mix(BAM_TO_FASTQ.out.paired_end) 
     single = single.mix(BAM_TO_FASTQ.out.single_end) 
+
 
      /**
       * REGULAR FASTQ
       */
     
-    ch1 = ch0.fastq
+    ch1 =  ch0.fastq
         .map{
             if(hasKey(it,"id")) return it;
             if(hasKey(it,"sample")) return it.plus(id:it.sample);
-            throw new IllegalArgumentException("undefined id in ${it}");
+            verify(!isBlank(it.fastq_1),"fastq_1 missing in ${it}");
+
+            def ilm_name_1 = extractIlluminaName(it.fastq_1);
+            if(ilm_name_1!=null) {
+                verify( ilm_name_1.side=="R1" , "SAMPLESHEET_TO_FASTQ: Expected side:R1 :  ${it}.");
+                // if paired end check R2 share the same info with R1
+                if(!isBlank(it.fastq_2)) {
+                    def ilm_name_2 = extractIlluminaName(it.fastq_2);
+                    verify( ilm_name_2!=null , "SAMPLESHEET_TO_FASTQ: can extract ilmn name for R1 but not from R2 ?? :  ${it}.");
+                    verify( ilm_name_1.id == ilm_name_2.id , "SAMPLESHEET_TO_FASTQ: Discordant illumina names :  ${it}.");
+                    verify( ilm_name_1.lane == ilm_name_2.lane , "SAMPLESHEET_TO_FASTQ: Discordant illumina lanes :  ${it}.");
+                    verify( ilm_name_1.index == ilm_name_2.index , "SAMPLESHEET_TO_FASTQ: Discordant illumina index :  ${it}.");
+                    verify( ilm_name_1.split == ilm_name_2.split , "SAMPLESHEET_TO_FASTQ: Discordant illumina index :  ${it}.");
+                    verify( ilm_name_2.side == "R2" ,  "SAMPLESHEET_TO_FASTQ: Expected side:R2 :  ${it}.");
+                    }
+                return it.plus(id:ilm_name_1.id);
+                }
+            verify(!isBlank(it.id),"id missing in ${it}");
+            return it;
             }
         .map{assertKeyExistsAndNotEmpty(it,"id")} 
         .map{assertKeyExistsAndNotEmpty(it,"fastq_1")}
@@ -204,36 +227,36 @@ main:
                 paired: !isBlank(it.fastq_1) && !isBlank(it.fastq_2)
                 single: true
                 }
-        
-    
-    paired = paired.mix(
-        ch1.paired
-            .map{
-                if(it.fastq_1.equals(it.fastq_2)) {
-                    throw new IllegalArgumentException("R1==R2 in ${it}.");
+
+        paired = paired.mix(
+            ch1.paired
+                .map{
+                    if(it.fastq_1.equals(it.fastq_2)) {
+                        throw new IllegalArgumentException("R1==R2 in ${it}.");
+                        }
+                    return it;
                     }
-                return it;
-                }
-            .map{[
-                cleanupHash(it),
-                file(it.fastq_1),
-                file(it.fastq_2)
-                ]}
-        )
-    
-    single = single.mix(ch1.single
-            .map{[
-                cleanupHash(it),
-                file(it.fastq_1)
-                ]}
+                .map{[
+                    cleanupHash(it),
+                    file(it.fastq_1),
+                    file(it.fastq_2)
+                    ]}
             )
+        
+        single = single.mix(ch1.single
+                .map{[
+                    cleanupHash(it),
+                    file(it.fastq_1)
+                    ]}
+                )
+        /* file might not exist in stub mode */
+        if(!workflow.stubRun) {
+            paired = paired.filter{meta,R1,R2->!(isEmptyGz(R1) && isEmptyGz(R2))}
+            single = single.filter{meta,R1->!(isEmptyGz(R1))}
+            }
 
-
-    paired = paired.filter{meta,R1,R2->!(isEmptyGz(R1) && isEmptyGz(R2))}
-    single = single.filter{meta,R1->!(isEmptyGz(R1))}
-
-emit:
-    versions
-    paired_end = paired
-    single_end = single
+    emit:
+        versions
+        paired_end = paired
+        single_end = single
 }
