@@ -1,34 +1,3 @@
+# GATK HC by BED
 
-## About
-
-apply VQSR for a VCF
-
-## Author
-
-Pierre Lindenbaum PhD. Institut du Thorax. 44000 Nantes. France
-
-## Options
-
-  * --reference (fasta) The full path to the indexed fasta reference genome. It must be indexed with samtools faidx and with picard CreateSequenceDictionary or samtools dict. [REQUIRED]
-  * --vcf (file) required SV indexed vcf file. default: ""
-  * --publishDir (dir) Save output in this directory
-  * --prefix (string) files prefix. default: ""
-
-## Usage
-
-```
-nextflow -C ../../confs/cluster.cfg  run -resume recalibration.vqsr.nf \
-	--publishDir output \
-	--prefix "analysis." \
-	--reference /path/to/reference.fasta \
-	--vcf /path/to/cnv.vcf.gz
-```
-
-## Workflow
-
-![workflow](./workflow.svg)
-  
-## See also
-
-
-
+GATK call by bed

@@ -1,0 +1,34 @@
+nextflow_workflow {
+
+    name "Test Workflow ORA_TO_FASTQ"
+    script "subworkflows/ora/ora2fastq/main.nf"
+    workflow "ORA_TO_FASTQ"
+    tag "subworkflows"
+    tag "subworkflows/ora/ora2fastq"
+
+    test("STUB") {
+        options "-stub"
+        tag "gitlab_ci"
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [id:"orad"]
+                input[1] = Channel.of([[id:"S1"],file("${projectDir}/tests/data/S1_S10_L008_R2_001.fastq.ora")])
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}
+	            

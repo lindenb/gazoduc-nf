@@ -1,8 +1,3 @@
-# anatomy of a json file
+# burden 2024
 
-```
-{
-
-
-}
-```
+burden

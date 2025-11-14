@@ -1,15 +1,40 @@
+/*
+
+Copyright (c) 2025 Pierre Lindenbaum
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+The MIT License (MIT)
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
 /**
 ORIGINAL snakemake workflow by Raphael Blanchet PhD.
 
 
 */
+include { parseBoolean} from '../../modules/utils/functions.nf'
 
 process PB_FQ2BAM {
   tag "${meta.id}"
   label 'process_gpu'
   label 'parabricks'
   afterScript "rm -rf TMP"
-  // container "nvcr.io/nvidia/clara/clara-parabricks:4.6.0-1"
+
   input:
     tuple val(meta2),path(fasta)
     tuple val(meta3),path(fai)
@@ -21,6 +46,7 @@ process PB_FQ2BAM {
       tuple val(meta), path("*.duplicate.metrics.txt"), emit:duplicate_metrics, optional:true
       tuple val(meta), path("*.bqsr.report.txt"), emit:bqsr_report, optional:true
       tuple val(meta), path("*.qc_metrics"),optional:true, emit:qc_metrics
+      tuple val(meta), path("*.md5"),optional:true, emit:md5
       path("*.log")
       path("versions.yml"),emit:versions
   when:
@@ -31,11 +57,11 @@ process PB_FQ2BAM {
     def lib = meta.LIB?:sample
     def rgid = meta.rgid?:sample
     def pl = meta.PL?:"ILLUMINA"
-    def with_bqsr = task.ext.with_bqsr
-    def cpu_per_gpu = task.ext.cpu_per_gpu
+    def with_bqsr = parseBoolean(task.ext.with_bqsr?:false)
+    def cpu_per_gpu = task.ext.cpu_per_gpu?:1
     def bqsr_args = with_bqsr && known_indels? "--knownSites \"${known_indels.name}\"   --out-recal-file \"${sample}.bqsr.report.txt\"   " : ""
     def low_memory = task.ext.low_memory==true || task.attempt>1 ? "--low-memory" : ""
-    def fixmate_args = (task.ext.with_fixmate==true?"--fix-mate":"")
+    def fixmate_args = (parseBoolean(task.ext.with_fixmate?:true)?"--fix-mate":"")
     //TODO   add    ‑‑out‑qc‑metrics‑dir "TMP/OUT/${sample}.qc_metrics" 
  """
 	mkdir -p TMP/TMP
@@ -84,11 +110,13 @@ process PB_FQ2BAM {
 
 find .  1>&2
 
+md5sum < "TMP/OUT/${sample}.cram" > "TMP/OUT/${sample}.cram.md5"
+
 mv "TMP/OUT/${sample}.duplicate.metrics.txt" ./ || true
 mv "TMP/OUT/${sample}.qc_metrics" ./ || true
 mv "TMP/OUT/${sample}.cram" ./
 mv "TMP/OUT/${sample}.cram.crai" ./
-
+mv "TMP/OUT/${sample}.cram.md5" ./
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
@@ -101,6 +129,7 @@ stub:
     def sample = meta.id
     """
     touch ${sample}.cram
+    touch ${sample}.cram.md5
     touch ${sample}.cram.crai
     touch ${sample}.duplicate.metrics.txt
     touch versions.yml

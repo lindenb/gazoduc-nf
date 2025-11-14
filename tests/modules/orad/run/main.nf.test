@@ -32,7 +32,7 @@ setup {
             process {
                 """
                 input[0]= DOWNLOAD_ORAD.out.oradir
-	            input[1] = [[id:"S1"],file("${projectDir}/tests/data/S1.ora")]
+	            input[1] = [[id:"S1"],file("${projectDir}/tests/data/S1_S10_L008_R2_001.fastq.ora")]
                 """
             }
         }

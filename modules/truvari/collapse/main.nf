@@ -44,7 +44,7 @@ process TRUVARI_COLLAPSE {
     """
 	hostname 1>&2
 	mkdir -p TMP
-
+	set -x
 	find VCFS -type l \\( -name "*.vcf.gz" -o -name "*.bcf" \\) |\\
 		while read F
 		do

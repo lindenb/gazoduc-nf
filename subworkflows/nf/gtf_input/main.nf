@@ -70,6 +70,7 @@ main:
             {
             gtf_out = gtf_out.map{meta,gtf,tbi->[meta,gtf]}
             }
+
         }
     else
         {

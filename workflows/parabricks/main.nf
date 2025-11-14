@@ -25,6 +25,12 @@ SOFTWARE.
 
 
 */
+
+include { validateParameters                      } from 'plugin/nf-schema'
+include { paramsHelp                              } from 'plugin/nf-schema'
+include { paramsSummaryLog                        } from 'plugin/nf-schema'
+include { samplesheetToList                       } from 'plugin/nf-schema'
+
 include {runOnComplete; dumpParams                } from '../../modules/utils/functions.nf'
 include {parseBoolean                             } from '../../modules/utils/functions.nf'
 include {FASTP                                    } from '../../subworkflows/fastp'
@@ -64,7 +70,7 @@ include { READ_SAMPLESHEET                        } from '../../subworkflows/nf/
 include { SMOOVE                                  } from '../../subworkflows/smoove' 
 include { VCF_INPUT as DBSNP_VCF_INPUT            } from '../../subworkflows/nf/vcf_input' 
 include { VCF_INPUT as KNOWN_INDELS_VCF_INPUT     } from '../../subworkflows/nf/vcf_input' 
-
+include { GTF_INPUT                               } from '../../subworkflows/nf/gtf_input' 
 
 if( params.help ) {
     dumpParams(params);
@@ -74,25 +80,28 @@ if( params.help ) {
 }
 
 workflow {
+
+  validateParameters()
+
+  // Print summary of supplied parameters
+  log.info paramsSummaryLog(workflow)
+
+
   if(params.fasta==null) {
       throw new IllegalArgumentException("undefined --fasta");
       }
 	
-  if(!(params.hts_type.equals("WGS") || params.hts_type.equals("WES"))) {
+  if(!params.hts_type.matches("WGS|WES")) {
     throw new IllegalArgumentException("hts_type should batch WES|WGS ${params.hts_type}")
     }
   
   def metadata= [
-      id: file(params.fasta).baseName
+      id: "parabricks"
       ]
   
 
-  def gtf     = [metadata,[],[]]
   def prevent_multi_gpu_ch = Channel.of(1L)
 
-  if(params.gtf!=null) {
-    gtf = [metadata,file(params.gtf),file(params.gtf+".tbi")]
-  }
 
 
  
@@ -132,21 +141,21 @@ workflow {
     .map{[it[0],[it[1],it[2]]]}
 
   if(parseBoolean(params.with_fastp)) {
-  FASTP(
-    metadata.plus([
-      fastqc_before : params.with_fastqc,
-      fastqc_after : params.with_fastqc,
-      fastp_disabled : !(params.with_fastp)
-      ]),
-    single_end.mix(paired_end) 
-    )
+    FASTP(
+      metadata.plus([
+        fastqc_before : params.with_fastqc,
+        fastqc_after : params.with_fastqc,
+        fastp_disabled : !(params.with_fastp)
+        ]),
+      single_end.mix(paired_end) 
+      )
 
 
-  multiqc = multiqc.mix(FASTP.out.multiqc)
-  versions = versions.mix(FASTP.out.versions)
-	paired_end = FASTP.out.paired_end
-	single_end = FASTP.out.single_end
-	}
+    multiqc = multiqc.mix(FASTP.out.multiqc)
+    versions = versions.mix(FASTP.out.versions)
+    paired_end = FASTP.out.paired_end
+    single_end = FASTP.out.single_end
+    }
 
   /***************************************************
    *
@@ -176,11 +185,11 @@ workflow {
    *  KNWON INDELS
    *
    */
-if(params.known_indels!=null) {
+if(params.known_indels_vcf!=null) {
     KNOWN_INDELS_VCF_INPUT(
       metadata.plus([
-        arg_name : "known_indels",
-        path: params.known_indels,
+        arg_name : "known_indels_vcf",
+        path: params.known_indels_vcf,
         require_index : true,
         required : true,
         unique : true
@@ -191,9 +200,13 @@ if(params.known_indels!=null) {
     }
   else
     {
+    if(parseBoolean(params.with_bqsr)) {
+      log.warn("--with_bqsr==true but --known_indels_vcf is not declared.");
+      }
+
     known_indels_ch = Channel.of([[id:"known_indels"],[],[]]).first()
     }
-  
+
 
   /***************************************************
    *
@@ -206,6 +219,25 @@ if(params.known_indels!=null) {
 		)
 	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
 
+
+  /***************************************************
+   *
+   *  GTF
+   *
+   */
+  GTF_INPUT(
+    metadata.plus(
+      arg_name : "gtf",
+      path : params.gtf,
+      require_index  : true,
+      download: true
+      ),
+    PREPARE_ONE_REFERENCE.out.fasta,
+    PREPARE_ONE_REFERENCE.out.fai,
+    PREPARE_ONE_REFERENCE.out.dict
+    )
+  gtf_ch = GTF_INPUT.out.gtf.ifEmpty([[id:"no_gtf"],[],[]])
+  
 
   /***************************************************
    *
@@ -722,7 +754,7 @@ if(params.known_indels!=null) {
     PREPARE_ONE_REFERENCE.out.fasta,
     PREPARE_ONE_REFERENCE.out.fai,
     bed,
-    Channel.of(gtf).map{[it[0],it[1]]}.first(),//meta,gtf
+    gtf_ch.map{[it[0],it[1]]}.first(),//meta,gtf
     [[:],[]],//samples,
     vcf_ch.map{[it[0],[it[1],it[2]]]}
     )

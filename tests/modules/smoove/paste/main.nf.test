@@ -3,7 +3,6 @@ nextflow_process {
     name "Test Process SMOOVE_PASTE"
     script "modules/smoove/paste/main.nf"
     process "SMOOVE_PASTE"
-    tag "gitlab_ci"
     tag "modules"
     tag "modules/smoove"
     tag "modules/smoove/paste"

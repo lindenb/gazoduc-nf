@@ -62,8 +62,8 @@ nextflow_workflow {
 
 
 
-    test("GLNEXUS") {
-
+    test("GLNEXUS (STUB)") {
+	options "-stub"
         when {
             params {
                 // define parameters here. Example:
@@ -98,7 +98,7 @@ nextflow_workflow {
         }
     }
 
- test("DBSNP") {
+    test("DBSNP") {
 
         when {
             params {

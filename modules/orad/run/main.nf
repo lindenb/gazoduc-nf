@@ -22,28 +22,45 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include {removeCommonSuffixes  } from '../../utils/functions.nf'
+
 process RUN_ORAD {
 label 'process_medium'
-tag "${meta.id} ${ora_file.name}"
+tag "${meta.id}"
 afterScript "rm -rf TMP"
 input:
         tuple val(meta1),path(oradir)
-        tuple val(meta ),path(ora_file)
+        tuple val(meta ),path(fastq_files)
 output:
         tuple val(meta),path("*q.gz",arity:'1..*'),emit:fastq
         path("versions.yml"),emit:versions
-when:
-        task.ext.when == null || task.ext.when
 script:
+        def args1 =  task.ext.args1?:""
+        def prefix = task.ext.prefix?:(fastq_files instanceof List && fastq_files.size()==1 ? removeCommonSuffixes(fastq_files[0].name):"${meta.id}")
 """
 mkdir -p TMP
 
-${oradir}/orad \
+
+
+${oradir}/orad \\
+        ${args1} \\
         --threads ${task.cpus} \\
         --path TMP \\
         --ora-reference "${oradir}/oradata" \\
-        --name ${ora_file} \\
-        -q
+        -q \\
+        - < ${fastq_files}
+
+if test -f TMP/-R1.fastq.gz
+then
+        mv TMP/-R1.fastq.gz TMP/${prefix}_R1.fastq.gz
+fi
+
+if test -f TMP/-R2.fastq.gz
+then
+        mv TMP/-R2.fastq.gz TMP/${prefix}_R2.fastq.gz
+fi
+
+
 
 mv -v TMP/*.gz ./
     

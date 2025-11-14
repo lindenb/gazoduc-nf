@@ -1,27 +1,23 @@
-## Parameters
-* `--fasta` : required path to fasta file
-* `--fai` : required path to fasta.fai file
-* `--dict` : required path to fasta.dict file
-* `--ucsc_name` : UCSC name of the genome (hg19/hg38/...)
-* `--gtf` : optional path to a tabix indexed GTF file. Will be used for statistics
-* `--outdir` : output directory. Default is "results"
-* `--hts_type`: type of analysis. Possible values: "WES|WGS"; Default is "WGS". If WES, some SV analysis like DELLY will be disabled.
+# Parabricks
 
-* `--bed` . Optional. Limit analysis to that BED file. If not defined, use the Whole genome as BED. Chromosome name must match the chromosomes in the reference file.
+Parabricks Pipeline
+
+## Input / Ouput
 
 
-* `--sampleinfo` ` . Optional. Extra meta data about the samples that could be added to the sample sheet (sex, status, etc...). Those information might be used for example in the QC to show the difference between male/female, case/controls, etc... Samples must be unique. It's CSV file with the following required column in the header : 'sample'
 
-```
-sample,sex,status
-CD12345,male,case
-CD12346,female,control
-```
+| Parameter | Description | Type | Default | Required |
+|-----------|-----------|-----------|-----------|-----------|
+| `fasta` | Path to FASTA REFERENCE file. | `string` |  | True |
+| `prefix` | prefix for the save files. A good prefix would be 'YYYY-MM-DD.project_name.'  <details><summary>Help</summary><small>Ouput file prefix</small></details>| `string` |  |  |
+| `outdir` | The output directory where the results will be saved. You have to use absolute paths to storage on Cloud infrastructure. <details><summary>Help</summary><small>output directory</small></details>| `string` |  |  |
+| `help` |  | `boolean` |  |  |
 
-* `--extra_bams` . Optional. And those extra BAM/CRAM files that will be added to the calling/QC. It's CSV file with the following required columns in the header : sample,bam,bai . Files MUST be mapped on the very same FASTA reference. Samples must be unique.
+## Mapping FASTQs
 
-```
-sample,bam,bai
-CD12345,/path/to/CD12345.bam,/path/to/CD12345.bam.bai
-CD12346,/path/to/CD12346.cram,/path/to/CD12346.cram.crai
-```
+
+
+| Parameter | Description | Type | Default | Required |
+|-----------|-----------|-----------|-----------|-----------|
+| `samplesheet` | Path to samplesheet with the appropriate suffix (csv or tsv or json). <details><summary>Help</summary><small>path to fastq samplesheet.</small></details>| `string` |  |  |
+| `mapper` | wich mapper to use. bwa,pb,parabricks,dragmap | `string` |  | True |

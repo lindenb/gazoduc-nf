@@ -59,7 +59,7 @@ main:
 		MOSDEPTH(
 			fasta,
 			fai,
-			bams.combine(bed).map{meta1,bam,bai,meta2,_bed->[meta1,bam,bai,bed]} ,
+			bams.combine(bed).map{meta1,bam,bai,_meta2,bed->[meta1,bam,bai,bed]} ,
 			)
 		versions_ch = versions_ch.mix(MOSDEPTH.out.versions)
 
@@ -96,9 +96,10 @@ main:
 		versions_ch = versions_ch.mix(PLOT_CHR_XY.out.versions)
 
 		sample_sex_ch = PLOT_CHR_XY.out.tsv
+			.map{meta,tsv->tsv}
 			.splitCsv(header:true,sep:'\t')
 			.map{it.plus(id:it.sample)}
-
+			
 
 		// depth [id, mean depth]
 		depth_all  = mosdepth_ch.filter{it[1].chrom.equals("total_region")}.map{[it[0].id,(it[1].mean?:it[1].median)]}

@@ -82,6 +82,9 @@ main:
 				else if ( array.every{s->s.endsWith(".vcf") || s.endsWith(".vcf.gz") || s.endsWith(".bcf")} ) {
 					label="vcf";
 					}
+				else if ( array.every{s->s.endsWith(".ora")} ) {
+					label="ora";
+					}
 				else	
 					{
 					throw new IllegalArgumentException("Cannot infer the content of --${meta.arg_name?:"sampleheet"} = ${filename}");

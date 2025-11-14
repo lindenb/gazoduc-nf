@@ -36,6 +36,28 @@ Map cleanupHash(Map h) {
 	return h.findAll{k,v->!k.matches("fasta|fai|dict|bam|bai|ora|R1|R2|fastq_1|fastq_2|bed")}
 	}
 
+/** extract sample from illumina fastq name : e.g. S1_S10_L008_R2_001.fastq.ora -> S1 */
+String extractORASampleName(String f) {
+	try {
+		f = file(f).name;
+        // _S\\d_L\\d+_R\\d_\\d+
+		java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("(.*)_S\\d+_L\\d+_R\\d_\\d+\\.fastq\\.ora");
+		java.util.regex.Matcher matcher = pattern.matcher(f);
+		if(!matcher.find()) {
+            return null;
+            }
+		String sn = matcher.group(1);
+		if(sn==null || sn.isEmpty()) return null;
+		return sn;
+		}
+	catch(Throwable err) {
+		err.printStackTrace();
+		log.warn("cannot extractORASampleName "+f+" "+err.getMessage());
+		return null;
+		}
+	}
+
+
 workflow SAMPLESHEET_TO_FASTQ {
 take:
     workflow_metadata // bam2fastq_method=(samtools|gatk|parabricks)
@@ -67,6 +89,11 @@ main:
             .map{
                 if(hasKey(it,"id")) return it;
                 if(hasKey(it,"sample")) return it.plus(id:it.sample);
+                if(extractORASampleName(it.ora)!=null) {
+                    def sample=extractORASampleName(it.ora);
+                    log.warn("FYI: extracted sample name from Illumina ORA path : ${it.ora} => '${sample}'.");
+                    return it.plus(id:sample);
+                    }
                 throw new IllegalArgumentException("ORA_TO_FASTQ : undefined id in ${it}");
                 }
             .map{assertKeyExistsAndNotEmpty(it,"id")}

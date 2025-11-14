@@ -29,74 +29,76 @@ List mapper(String id,List row){
     L2.add(row[0].plus(batch:id));
     L2.addAll(row.subList(1,row.size()));
     return L2;
-    };
+    }
 
 List groupBy(List L0) {
     def id2data = [:];
     def used = [:];
-    def i=0;
-    for( i=0; i< L0.size();i++) {
-        def item = L0[i];
+    L0.each{item->{
+        if(!(item instanceof List)) throw new IllegalArgumentException("Not a LIST: ${item}}");
+        if(isBlank(item[0].id))  throw new IllegalArgumentException("id missing in ${item}}");
         def sn = item[0].id;
-        if(id2data.containsKey(sn)) throw new IllegalArgumentException("duplicate sample ${sn}");
-        id2data.put(sn,item);
-        used.put(sn,false);
-        }
-    def L=[];
-    
+        if(id2data[sn]!=null) throw new IllegalArgumentException("duplicate sample ${sn}");
 
-    for( i=0; i< L0.size();i++) {
-        def item = L0[i];
-        def sn = item[0].id;
-        if(used[sn]) continue;
-        def father= (!isBlank(item[0].father) && id2data.containsKey(item[0].father)? id2data[item[0].father]:null);
-        def mother= (!isBlank(item[0].mother) && id2data.containsKey(item[0].mother)? id2data[item[0].mother]:null);
-        if(father!=null && mother!=null && !used[item.father] && !used[item.mother]) {
+        id2data[sn]=item;
+        used[sn]=false;
+        }}
+    def L=[];
+
+    L0.each{item->{
+        def meta = item[0];
+        def sn = meta.id;
+        if(used[sn]==true) return;
+        def father= (!isBlank(meta.father) && id2data[meta.father]!=null? id2data[meta.father]:null);
+        def mother= (!isBlank(meta.mother) && id2data[meta.mother]!=null? id2data[meta.mother]:null);
+        if(father!=null && mother!=null && used[father[0].id]==false && used[mother[0].id]==false) {
             def batch="trio_"+ sn;
             L.add(mapper(batch,item));
             L.add(mapper(batch,father));
             L.add(mapper(batch,mother));
-            used.put(item.it,true);
-            used.put(item.father,true);
-            used.put(item.mother,true);
+            used[meta.id]=true;
+            used[father[0].id]=true;
+            used[mother[0].id]=true;
             }
-        }
+        }}
 
-     for( i=0; i< L0.size();i++) {
-        def item = L0[i];
-        def sn = item[0].id;
-        if(used[sn]) continue;
-        def father= (!isBlank(item[0].father) && id2data.containsKey(item[0].father)? id2data[item[0].father]:null);
-        if(father!=null  && !used[item.father]) {
+
+
+    L0.each{item->{
+        def meta = item[0];
+        def sn = meta.id;
+        if(used[sn]==true) return;
+        def father= (!isBlank(meta.father) && id2data[meta.father]!=null? id2data[meta.father]:null);
+        if(father!=null  && used[father[0].id]==false) {
             def batch="duo_"+ sn;
             L.add(mapper(batch,item));
             L.add(mapper(batch,father));
-            used.put(item.it,true);
-            used.put(item.father,true);
+            used.put(meta.id,true);
+            used.put(father[0].id,true);
             }
-        }
+        }}
 
-     for( i=0; i< L0.size();i++) {
-        def item = L0[i];
-        def sn = item[0].id;
-        if(used[sn]) continue;
-        def mother= (!isBlank(item[0].father) && id2data.containsKey(item[0].mother)? id2data[item[0].mother]:null);
-        if(mother!=null  && !used[item.mother]) {
+      L0.each{item->{
+        def meta = item[0];
+        def sn = meta.id;
+        if(used[sn]==true) return;
+        def mother= (!isBlank(meta.mother) && id2data[meta.mother]!=null? id2data[meta.mother]:null);
+        if(mother!=null  && used[mother[0].id]==false) {
             def batch="duo_"+ sn;
             L.add(mapper(batch,item));
             L.add(mapper(batch,mother));
-            used.put(item.it,true);
-            used.put(item.mother,true);
+            used.put(meta.id,true);
+            used.put(mother[0].id,true);
             }
-        }
-        
-     for( i=0; i< L0.size();i++) {
-        def item = L0[i];
+        }}
+
+     L0.each{item->{
         def sn = item[0].id;
-        if(used[sn]) continue;
+        if(used[sn]==true) return;
         L.add(item);
-        }
-    if(L.size()!=L0.size()) throw new IllegalStateException("");
+        }}
+
+    if(L.size()!=L0.size()) throw new IllegalStateException("GROUP_BY_TRIOS L.size()=${L.size()}!=L0.size()=${L0.size()}");
     return L;
     }
 
@@ -107,15 +109,19 @@ workflow GROUP_BY_TRIOS {
         rows //[meta,any...] , first element must be a meta containing sample id/father/mother
     main:
         versions = Channel.empty()
-        ch1 =  rows.branch{v->
-            sporadic : isBlank(v[0].id) || !isBlank(v[0].batch)
-            family : true
-            }
+        ch1 =  rows
+                .map{
+                        if(!(it instanceof List)) throw new IllegalStateException("GROUP_BY_TRIOS: input should be a list");
+                        return it;
+                }
+		.branch{v->
+	            	sporadic : isBlank(v[0].id) || !isBlank(v[0].batch)
+        	    	family : true
+            		}
 
         ch2 = ch1.family
             .collect(flat:false)
             .flatMap{groupBy(it)}
-
 
     emit:
         versions

@@ -21,6 +21,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include { parseBoolean } from '../../utils/functions.nf'
+include { isBlank      } from '../../utils/functions.nf'
 
 
 process DOWNLOAD_GTF_OR_GFF3 {
@@ -33,11 +35,12 @@ input:
 	tuple val(meta2),path(fai)
 	tuple val(meta3),path(dict)
 output:
-	tuple val(meta1),path("*.gz"), path("*.gz.tbi"),emit:gtf
+	tuple val(meta1),path("*.gz"), path("*.gz.tbi"),optional:true,emit:gtf
 	path("versions.yml"),emit:versions
 script:
 	def extension="";
-	 def url0= task.ext.url?:""
+	def url0= task.ext.url?:""
+	def enable_missing = parseBoolean(task.ext.enable_missing?:false)
 	if(url0.isEmpty()) {
 		 extension = (task.ext==null || task.ext.suffix==null?
 				(task.process.toString().toLowerCase().endsWith("gtf")?"gtf":
@@ -48,18 +51,25 @@ script:
 
 
 		def ucsc_name = (task.ext.ucsc_name?:meta1.ucsc_name).toString()
-		if(ucsc_name==null || ucsc_name.isEmpty()) throw new IllegalArgumentException("undefined ucsc_name for ${task.process}");
-		def release = task.ext.release?:"114"
-		def base = task.ext.base?:"https://ftp.ensembl.org/pub"
-		if(ucsc_name.equals("hg38")) {
-			url = "${base}/release-${release}/${extension}/homo_sapiens/Homo_sapiens.GRCh38.${release}.${extension}.gz"
-			}
-		else if(ucsc_name.equals("hg19")) {
-			url = "${base}/grch37/current/${extension}/homo_sapiens/Homo_sapiens.GRCh37.87.chr.${extension}.gz"
+		if(isBlank(ucsc_name))  {
+			if(!enable_missing) throw new IllegalArgumentException("undefined ucsc_name for ${task.process}");
+			url = ""
 			}
 		else
 			{
-			throw new IllegalArgumentException("url missing for ${task.process}: '${ucsc_name}'.");
+			def release = task.ext.release?:"114"
+			def base = task.ext.base?:"https://ftp.ensembl.org/pub"
+			if(ucsc_name=="hg38") {
+				url = "${base}/release-${release}/${extension}/homo_sapiens/Homo_sapiens.GRCh38.${release}.${extension}.gz"
+				}
+			else if(ucsc_name=="hg19") {
+				url = "${base}/grch37/current/${extension}/homo_sapiens/Homo_sapiens.GRCh37.87.chr.${extension}.gz"
+				}
+			else
+				{
+				if(!enable_missing) throw new IllegalArgumentException("url missing for ${task.process}: '${ucsc_name}'.");
+				url = ""
+				}
 			}
 		}
 	else
@@ -67,24 +77,31 @@ script:
 		url = url0;
 		extension = url.contains(".gtf")?"gtf":"gff3"
 		}
+	def prefix = task.ext.prefix?:"${fasta.baseName}.${extension}"
 """
 hostname 1>&2
 mkdir -p TMP
 set -o pipefail
 
-wget -O TMP/gencode.txt.gz "${url}"
+if ${!(url.isEmpty() && enable_missing==true)}
+then
 
-gunzip -c TMP/gencode.txt.gz |\\
-		jvarkit bedrenamechr -f "${fasta}" --column 1 --convert SKIP |\\
-		LC_ALL=C sort -T TMP -t '\t' -k1,1 -k4,4n |\\
-		bgzip > "${fasta.baseName}.${extension}.gz"
 
-tabix -f -p gff  "${fasta.baseName}.${extension}.gz"
+	curl -L -o TMP/gencode.txt.gz "${url}"
+
+	gunzip -c TMP/gencode.txt.gz |\\
+			jvarkit bedrenamechr -f "${fasta}" --column 1 --convert SKIP |\\
+			LC_ALL=C sort -T TMP -t '\t' -k1,1 -k4,4n |\\
+			bgzip > "${prefix}.gz"
+
+	tabix -f -p gff  "${prefix}.gz"
+
+fi
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
 	bcftools: "\$(tabix version | awk '(NR==1) {print \$NF;}')"
-	URL: "\$(cat TMP/jeter.url)"
+	URL: "${url}"
 END_VERSIONS
 """
 }

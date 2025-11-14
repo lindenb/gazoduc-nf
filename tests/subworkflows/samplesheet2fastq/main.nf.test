@@ -7,6 +7,60 @@ nextflow_workflow {
     tag "subworkflows"
     tag "subworkflows/samplesheet2fastq"
     
+
+    test("ORA_NO_NAME") {
+        options "-stub"
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+               input[0] = [id:"meta",bam2fastq_method:"samtools"]
+               input[1]= Channel.of(
+               			[
+               			ora:"${projectDir}/tests/data/S1_S10_L008_R2_001.fastq.ora",
+               			]
+               		)
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+    }
+
+   test("ORA_NAME") {
+        options "-stub"
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+               input[0] = [id:"meta",bam2fastq_method:"samtools"]
+               input[1]= Channel.of(
+               			[
+               			id:"S1",
+               			ora:"${projectDir}/tests/data/S1_S10_L008_R2_001.fastq.ora",
+               			]
+               		)
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+    }
+
+
+
     test("PAIRED") {
 
         when {
@@ -154,5 +208,7 @@ nextflow_workflow {
             //assert snapshot(workflow.out).match()
         }
     }
+
+
 
 }

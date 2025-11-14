@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Parabricks",
+  "description": "Parabricks Pipeline",
+  "type": "object",
+  "$defs": {
+    "input_and_output_params": {
+      "title": "Input / Ouput",
+      "type": "object",
+      "description": "General Parameters",
+      "required": ["fasta"],
+      "properties": {
+        "fasta": {
+          "type": "string",
+          "format": "file-path",
+          "exists": true,
+          "mimetype": "text/plain",
+          "pattern": "^\\S+\\.(fasta|fa|fna))?(\\.gz)?$",
+          "description": "Path to FASTA REFERENCE file.",
+          "fa_icon": "far fa-file-code"
+        },
+
+        "prefix": {
+          "type": "string",
+          "pattern": "^[a-zA-z0-9_\\.]+\\.$",
+          "description": "prefix for the save files. A good prefix would be 'YYYY-MM-DD.project_name.' ",
+          "help_text": "Ouput file prefix"
+        },
+
+        "hts_type": {
+          "type": "string",
+          "pattern": "^(WES|WGS)+\\.$",
+          "description": "Type of analysis (WES or WGS). If WES, --capture (bed) is expected.",
+          "help_text": "Type of HTS analysis"
+        },
+        
+        "outdir": {
+          "type": "string",
+          "format": "directory-path",
+          "description": "The output directory where the results will be saved. You have to use absolute paths to storage on Cloud infrastructure.",
+          "help_text": "output directory",
+          "fa_icon": "fas fa-folder-open"
+        },
+        "help": {
+          "type": "boolean"
+        }
+      }
+    },
+    "mapping_fastqs": {
+      "title": "Mapping FASTQs",
+      "type": "object",
+      "description": "Parameters use to map the reads on a reference genome.",
+      "required": ["mapper"],
+      "properties": {
+        "samplesheet": {
+          "type": "string",
+          "format": "file-path",
+          "exists": true,
+          "mimetype": "text/plain",
+          "pattern": "^\\S+\\.(csv|tsv|json)$",
+          "description": "Path to samplesheet with the appropriate suffix (csv or tsv or json).",
+          "help_text": "path to fastq samplesheet."
+        },
+        "orad_directory": {
+          "type": "string",
+          "format": "directory-path",
+          "description": "ora-d directory containing the sofwtare used to decrompress .ora files. If not defined, the toolbox is downloaded. (But on glicid it's blocked by the proxy)",
+          "help_text": "path to ora-d directory used to decrompress .ora files."
+        },
+        "mapper": {
+          "type": "string",
+          "pattern": "^\\(bwa|pb|parabricks|dragmap)$",
+          "description": "wich mapper to use. bwa,pb,parabricks,dragmap"
+        },
+        "known_indels_vcf":  {
+          "type": "string",
+          "pattern": "^\\S+\\.vcf\\.gz$",
+          "description": "Path to  VCF indexed with tabix used as source of known indels for BQSR."
+        },
+        "with_fastp": {
+          "type": "boolean",
+          "description": "If true, preprocess the Reads with FASTP before mapping the reads"
+        },
+        "with_fastqc": {
+          "type": "boolean",
+          "description": "Run Fastqc. If --with_fastp==true, anothe fastqc is run after trimming."
+        },
+        "with_cram": {
+          "type": "boolean",
+          "description": "Save the alignments as CRAM (always true for parabricks)."
+        },
+        "bam2fastq_method" :{
+           "type": "string",
+           "pattern": "^(samtools|picard|gatk|pb|parabricks)$",
+           "description":"when the input is a BAM/CRAM to has be converted back to fastq prior to mapping, what is the method to use ? "
+        }
+      }
+    }
+  },
+  "allOf": [
+    { "$ref": "#/defs/input_and_output_params" },
+    { "$ref": "#/defs/mapping_fastqs" }
+  ]
+}

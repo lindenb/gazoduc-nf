@@ -1,0 +1,47 @@
+nextflow_workflow {
+
+    name "Test Workflow GROUP_BY_TRIOS"
+    script "subworkflows/pedigree/groupbytrios/main.nf"
+    workflow "GROUP_BY_TRIOS"
+    tag "gitlab_ci"
+    tag "subworkflows"
+    tag "subworkflows/pedigree"
+    tag "subworkflows/pedigree/groupbytrios"
+
+    test("INPUT_IS_MAP") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [:]
+                input[1] = Channel.of(
+                    [id:"S1",father:"S2",mother:"S3"],
+                    [id:"S2"],
+                    [id:"S3"],
+                    [id:"S4a",father:"S5",mother:"S6"],
+                    [id:"S4b",father:"S5",mother:"S6"],
+                    [id:"S5"],
+                    [id:"S6"],
+                    [id:"alone"],
+                    [id:"S7",father:"S7f"],
+                    [id:"S7f"],
+                    [id:"S8",mother:"S8m"],
+                    [id:"S8m"],
+                    [id:"alone2"]
+                    ).map{[it]}
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

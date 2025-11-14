@@ -235,7 +235,7 @@ String removeCommonSuffixes(String s) {
 		".fa",".fasta",".fna",
 		".bam",".cram",".bai",".csi",".crai",
 		".gtf",".gff",".gff3",
-		".fq",".fastq"
+		".fq",".fastq",".ora"
 		]
 	boolean done = false;
 	while(!done) {
