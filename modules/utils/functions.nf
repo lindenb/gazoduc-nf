@@ -531,8 +531,9 @@ String makeKey(o) {
 /** test if a file contains a data after uncompressing if needed */
 boolean isEmptyGz(def p) {
         if(workflow!=null && workflow.stubRun==true) return false;
+	verify(p!=null,"isEmptyGZ: p is null?");
         if(!(p instanceof java.nio.file.Path)) {
-            throw new IllegalArgumentException("expected a path for ${p}");
+            throw new IllegalArgumentException("expected a path for ${p} but got ${p.class}");
             }
         if(!java.nio.file.Files.exists(p)) {
             throw new java.io.FileNotFoundException("not found ${p}");
@@ -595,8 +596,9 @@ Map extractIlluminaName(String f) {
 		java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("^(.*)_(S\\d+)_(L\\d+)_(R\\d)_(\\d+)\\.(fq|fastq)(\\.(ora|gz))?");
 		java.util.regex.Matcher matcher = pattern.matcher(f);
 		if(!matcher.find()) return null;
-
+		
 		String sn = matcher.group(1);
+		verify(sn.indexOf("/")==-1,"Whattt ? ${f}");
 		return [
 			id: sn,
 			sample: sn,

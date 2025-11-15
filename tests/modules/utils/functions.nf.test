@@ -4,6 +4,22 @@ nextflow_function {
     name "Test Functions"
     script "modules/utils/functions.nf"
     tag "functions"
+
+
+    test("flatMapByIndex") {
+        function "flatMapByIndex"
+        when {
+            function {
+                """
+                input[0] = ["A",[1,2,3,4,5],"B"]
+                input[1] = 1
+                """
+            }
+        }
+        then {
+            assert function.success
+        }
+    }
 	
 
     test("Test Function parseBoolean") {

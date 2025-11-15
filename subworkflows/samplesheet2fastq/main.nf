@@ -30,6 +30,10 @@ include { SAMTOOLS_SAMPLES           } from '../../modules/samtools/samples'
 include { isEmptyGz                  } from '../../modules/utils/functions.nf'
 include { extractIlluminaName        } from '../../modules/utils/functions.nf'
 include { verify                     } from '../../modules/utils/functions.nf'
+include { parseBoolean               } from '../../modules/utils/functions.nf'
+include { FASTQ_MERGE as MERGE_SE    } from '../../modules/fastq/merge'
+include { FASTQ_MERGE as MERGE_PE1   } from '../../modules/fastq/merge'
+include { FASTQ_MERGE as MERGE_PE2   } from '../../modules/fastq/merge'
 
 boolean hasKey(def h, def id) {
 	return h!=null && !isBlank(h[id]);
@@ -49,6 +53,11 @@ main:
     paired = Channel.empty()
     single  = Channel.empty()
     
+    if(workflow_metadata.merge_fastqs==null) {
+        log.warn("SAMPLESHEET_TO_FASTQ: merge_fastqs undefined.")
+        }
+
+
     ch0 = samplesheet
         .branch {
         	fastq :  hasKey(it,"fastq_1") && !hasKey(it,"bam") && !it.fastq_1.endsWith(".ora")
@@ -96,7 +105,7 @@ main:
                 }
             return [hash , file(it.fastq_1), file(it.fastq_2) ];
             }
-    
+    	
     ORA_TO_FASTQ(
      	workflow_metadata,
      	ora_ch
@@ -254,6 +263,54 @@ main:
             paired = paired.filter{meta,R1,R2->!(isEmptyGz(R1) && isEmptyGz(R2))}
             single = single.filter{meta,R1->!(isEmptyGz(R1))}
             }
+
+        if(workflow_metadata.merge_fastqs!=null && parseBoolean(workflow_metadata.merge_fastqs)) {
+            /** merge single end */
+            ch4 = single
+                .map{meta,R1->[meta.id,meta,R1]}
+                .groupTuple()
+                .map{_meta_id,metas,files->[metas[0],files.sort()]}
+                .branch{meta,files->
+                    one: files.size()==1
+                    multi: true
+                    }
+           
+            MERGE_SE(ch4.multi.map{meta,files->[meta.plus(prefix:meta.id+".R0"),files]})
+            versions = versions.mix(MERGE_SE.out.versions)
+
+            single = ch4.one
+                    .map{meta,files->[meta,files[0]]}
+                    .mix(MERGE_SE.out.fastq)
+            
+            /** merge paired-end */
+            ch5 = paired
+                .map{meta,R1,R2->[meta.id,meta,R1,R2]}
+                .groupTuple()
+                .map{_meta_id,metas,files1,files2->[metas[0],files1.sort(),files2.sort()]}
+                .branch{meta,files1,files2->
+                    one: files1.size()==1
+                    multi: true
+                    }
+            MERGE_PE1(ch5.multi.map{meta,f1,f2->[meta.plus(prefix:meta.id+".R1"),f1]})
+            versions = versions.mix(MERGE_PE1.out.versions)
+
+            MERGE_PE2(ch5.multi.map{meta,f1,f2->[meta.plus(prefix:meta.id+".R2"),f2]})
+            versions = versions.mix(MERGE_PE2.out.versions)
+        
+
+            paired = ch5.one
+                    .map{meta,f1,f2->[meta,f1[0],f2[0]]}
+                    .mix(
+                        MERGE_PE1.out.fastq
+                            .map{meta,f->[meta.findAll{k,v->!k.matches("prefix")},f]}
+                            .join(MERGE_PE2.out.fastq.map{meta,f->[meta.findAll{k,v->!k.matches("prefix")},f]})
+                        )
+            }
+
+		paired.mix(single).filter{
+			verify(it[0].id.matches("[A-Za-z0-9][A-Za-z_0-9\\.\\-]*"),"Bad id for a fastq ${it}");
+			}
+
 
     emit:
         versions

@@ -58,7 +58,7 @@
           "exists": true,
           "mimetype": "text/plain",
           "pattern": "^\\S+\\.(csv|tsv|json)$",
-          "description": "Path to samplesheet with the appropriate suffix (csv or tsv or json).",
+          "description": "Path to samplesheet with the appropriate suffix (csv or tsv or json).<br/>For **ora** files or **fastq.gz" from illumina/dragen, the 'sample' column is optional as it can be extracted from the fastq name",
           "help_text": "path to fastq samplesheet."
         },
         "orad_directory": {
@@ -70,12 +70,16 @@
         "mapper": {
           "type": "string",
           "pattern": "^\\(bwa|pb|parabricks|dragmap)$",
-          "description": "wich mapper to use. bwa,pb,parabricks,dragmap"
+          "description": "wich mapper to use. one of 'bwa,pb,parabricks,dragmap'"
         },
         "known_indels_vcf":  {
           "type": "string",
           "pattern": "^\\S+\\.vcf\\.gz$",
           "description": "Path to  VCF indexed with tabix used as source of known indels for BQSR."
+        },
+        "with_merge_fastqs": {
+          "type": "boolean",
+          "description": "If true, merge the reads for the same sample. Always true for mapper=parabricks"
         },
         "with_fastp": {
           "type": "boolean",

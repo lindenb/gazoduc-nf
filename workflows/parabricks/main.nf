@@ -31,7 +31,7 @@ include { paramsHelp                              } from 'plugin/nf-schema'
 include { paramsSummaryLog                        } from 'plugin/nf-schema'
 include { samplesheetToList                       } from 'plugin/nf-schema'
 
-include {runOnComplete; dumpParams                } from '../../modules/utils/functions.nf'
+include {runOnComplete                            } from '../../modules/utils/functions.nf'
 include {parseBoolean                             } from '../../modules/utils/functions.nf'
 include {FASTP                                    } from '../../subworkflows/fastp'
 include {MULTIQC                                  } from '../../modules/multiqc'
@@ -72,19 +72,20 @@ include { VCF_INPUT as DBSNP_VCF_INPUT            } from '../../subworkflows/nf/
 include { VCF_INPUT as KNOWN_INDELS_VCF_INPUT     } from '../../subworkflows/nf/vcf_input' 
 include { GTF_INPUT                               } from '../../subworkflows/nf/gtf_input' 
 
-if( params.help ) {
-    dumpParams(params);
-    exit 0
-}  else {
-    dumpParams(params);
-}
+
 
 workflow {
 
-  validateParameters()
+//  validateParameters()
 
+
+if( params.help ) {
+    exit 0
+}  else {
   // Print summary of supplied parameters
   log.info paramsSummaryLog(workflow)
+}
+
 
 
   if(params.fasta==null) {
@@ -124,9 +125,14 @@ workflow {
         ).samplesheet
     }
   
+  if(!params.mapper.matches("pb|parabricks") && parseBoolean(params.with_merge_fastqs) && parseBoolean(params.with_seqkit_split2)) {
+    log.warn("both using --with_merge_fastqs and --with_seqkit_split2 ? ok, why not ?")
+    }
+
   SAMPLESHEET_TO_FASTQ(
     metadata.plus([
-      bam2fastq_method: params.bam2fastq_method
+      bam2fastq_method: params.bam2fastq_method,
+      merge_fastqs : params.mapper.matches("pb|parabricks") || parseBoolean(params.with_merge_fastqs)
       ]),
     samplesheet0_ch
     )
