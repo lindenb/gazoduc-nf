@@ -18,7 +18,7 @@ nextflow_workflow {
             }
             workflow {
                 """
-               input[0] = [id:"meta",bam2fastq_method:"samtools"]
+               input[0] = [id:"meta",bam2fastq_method:"samtools", merge_fastqs:true]
                input[1]= Channel.of(
                			[
                			fastq_1:"${projectDir}/tests/data/S1_S10_L008_R2_001.fastq.ora"
@@ -43,7 +43,7 @@ nextflow_workflow {
             }
             workflow {
                 """
-               input[0] = [id:"meta",bam2fastq_method:"samtools"]
+               input[0] = [id:"meta",bam2fastq_method:"samtools", merge_fastqs:true]
                input[1]= Channel.of(
                			[
                			id:"S1",
@@ -71,7 +71,7 @@ nextflow_workflow {
             }
             workflow {
                 """
-               input[0] = [id:"meta",bam2fastq_method:"samtools"]
+               input[0] = [id:"meta",bam2fastq_method:"samtools", merge_fastqs:true]
                input[1]= Channel.of(
                			[
                			id:"S1",
@@ -105,7 +105,7 @@ nextflow_workflow {
             }
             workflow {
                 """
-               input[0] = [id:"meta",bam2fastq_method:"samtools"]
+               input[0] = [id:"meta",bam2fastq_method:"samtools", merge_fastqs:true]
                input[1]= Channel.of(
                			[
                			fastq_1:"${projectDir}/tests/data/4-0122-T-F_S16_L003_R1_001.fastq.gz",
@@ -132,7 +132,7 @@ nextflow_workflow {
             }
             workflow {
                 """
-               input[0] = [id:"meta",bam2fastq_method:"samtools"]
+               input[0] = [id:"meta",bam2fastq_method:"samtools", merge_fastqs:true]
                input[1]= Channel.of(
                			[
                			id:"S1",
@@ -164,7 +164,7 @@ nextflow_workflow {
             }
             workflow {
                 """
-               input[0] = [id:"meta",bam2fastq_method:"samtools"]
+               input[0] = [id:"meta",bam2fastq_method:"samtools", merge_fastqs:true]
                input[1]= Channel.of(
                			[
                			fastq_1:"${projectDir}/tests/data/4-0122-T-F_S16_L003_R1_001.fastq.gz"
@@ -188,7 +188,7 @@ nextflow_workflow {
             }
             workflow {
                 """
-               input[0] = [id:"meta",bam2fastq_method:"samtools"]
+               input[0] = [id:"meta",bam2fastq_method:"samtools", merge_fastqs:true]
                input[1]= Channel.of(
                			[
                			bam:"${projectDir}/tests/data/S1.bam"
@@ -217,7 +217,7 @@ nextflow_workflow {
             }
             workflow {
                 """
-               input[0] = [id:"meta",bam2fastq_method:"samtools"]
+               input[0] = [id:"meta",bam2fastq_method:"samtools", merge_fastqs:true]
                input[1]= Channel.of(
                			[
                			id:"S1",
@@ -247,7 +247,7 @@ nextflow_workflow {
             }
             workflow {
                 """
-               input[0] = [id:"meta",bam2fastq_method:"samtools"]
+               input[0] = [id:"meta",bam2fastq_method:"samtools", merge_fastqs:true]
                input[1]= Channel.of(
                			[
                			id:"S1",

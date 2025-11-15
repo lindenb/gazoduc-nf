@@ -595,8 +595,9 @@ Map extractIlluminaName(String f) {
 		java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("^(.*)_(S\\d+)_(L\\d+)_(R\\d)_(\\d+)\\.(fq|fastq)(\\.(ora|gz))?");
 		java.util.regex.Matcher matcher = pattern.matcher(f);
 		if(!matcher.find()) return null;
-
+		
 		String sn = matcher.group(1);
+		verify(sn.indexOf("/")==-1,"Whattt ? ${f}");
 		return [
 			id: sn,
 			sample: sn,

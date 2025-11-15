@@ -27,7 +27,7 @@ ORIGINAL snakemake workflow by Raphael Blanchet PhD.
 
 
 */
-include { parseBoolean} from '../../modules/utils/functions.nf'
+include { parseBoolean} from '../../../modules/utils/functions.nf'
 
 process PB_FQ2BAM {
   tag "${meta.id}"

@@ -37,7 +37,7 @@ workflow ORA_TO_FASTQ {
 		workflow_metadata /* must be provided using a Channel.of(xxx) */
 		ora_files /* [meta,oraR0] or [meta,oraR1,oraR2] */
 	main:
-		if(workflow_metadata.merge_fastqs) {
+		if(workflow_metadata.merge_fastqs==null) {
 			log.warn("ORA_TO_FASTQ: merge_fastqs undefined")
 			}
 		
@@ -173,14 +173,14 @@ workflow ORA_TO_FASTQ {
 		 */ 
 		if(workflow_metadata.merge_fastqs==null || parseBoolean(workflow_metadata.merge_fastqs)) {
 			ch3 = info_ch.paired
-				.map{meta,_info,ora->[[id:meta.id,side:meta.side],meta,ora]}
+				.map{meta,_info,ora->[[id:meta.id,side:meta.side],meta.plus(prefix:meta.id+"_"+meta.side),ora]}
 				.groupTuple()
-				.map{_meta_id_side,metas,files->[meta.sort()[0],files.sort()]}
+				.map{_meta_id_side,metas,files->[metas.sort()[0],files.sort()]}
 			}
 		else
 			{
 			ch3 = info_ch.paired
-				.map{meta,_info,ora->[meta,[ora]]}
+				.map{meta,_info,ora->[meta.plus(prefix:meta.id+"_"+meta.side),[ora]]}
 			}
 
 		RUN_ORAD_PE(
@@ -192,11 +192,11 @@ workflow ORA_TO_FASTQ {
 
 		paired_R1 = RUN_ORAD_PE.out.fastq
 				.filter{meta,_fastq->meta.side=="R1"}
-				.map{meta,fastq->[meta.findAll{k,v->!k.matches("(side)")},fastq]}
+				.map{meta,fastq->[meta.findAll{k,v->!k.matches("(side|prefix)")},fastq]}
 		
 		paired_R2 = RUN_ORAD_PE.out.fastq
 				.filter{meta,_fastq->meta.side=="R2"}
-				.map{meta,fastq->[meta.findAll{k,v->!k.matches("(side)")},fastq]}
+				.map{meta,fastq->[meta.findAll{k,v->!k.matches("(side[prefix)")},fastq]}
 
 		paired_ch = paired_R1.join(paired_R2,failOnMismatch:true,failOnDuplicate:true)
 

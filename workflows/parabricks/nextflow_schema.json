@@ -77,6 +77,10 @@
           "pattern": "^\\S+\\.vcf\\.gz$",
           "description": "Path to  VCF indexed with tabix used as source of known indels for BQSR."
         },
+        "with_merge_fastqs": {
+          "type": "boolean",
+          "description": "If true, merge the reads for the same sample. Always true for mapper=parabricks"
+        },
         "with_fastp": {
           "type": "boolean",
           "description": "If true, preprocess the Reads with FASTP before mapping the reads"
