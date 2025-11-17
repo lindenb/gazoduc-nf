@@ -39,8 +39,6 @@ output:
 	tuple val(meta),path("*.genes.report.bed"),emit:genes_report
 	tuple val(meta),path("*.variants.report.txt"),emit:variants_report
 	path("versions.yml"),emit:versions
-when:
-	task.ext.when == null || task.ext.when
 script:
     def prefix = task.ext.prefix?:vcf.baseName+".hetcomposite"
 	def extractors = task.ext.extractors?:"ANN/GeneId"

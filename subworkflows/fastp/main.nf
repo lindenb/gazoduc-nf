@@ -111,9 +111,7 @@ workflow FASTP {
                 }
         
 
-        multiqc = fastqc
-                .flatMap{flatMapByIndex(it,1)}
-                .mix(multiqc)
+        multiqc = multiqc.mix(fastqc.flatMap{flatMapByIndex(it,1)})
 
     emit:
         versions

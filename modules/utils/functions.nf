@@ -553,28 +553,35 @@ boolean isEmptyGz(def p) {
 
 
 /** flat map by array index */
-List flatMapByIndex(List L0,int index) {
-	if(L0==null) throw new IllegalArgumentException("flatMapByIndex L0 is null");
-	if(index<0 || index>=L0.size()) throw new IllegalArgumentException("flatMapByIndex index=${index} out or range");
+List flatMapByIndex(L0,index) {
+	verify(L0!=null,"flatMapByIndex L0 is null");
+	verify((L0 instanceof List),"flatMapByIndex should be a List ${L0.class}");
+	verify(index>=0 && index<L0.size() , "flatMapByIndex index=0<=${index}<${L0.size()}. out or range");
 	def pivot = L0[index];
-	if(!(pivot instanceof List))  {
-		throw new IllegalArgumentException("flatMapByIndex index . pivot is NOT a list ");
-		}
-	def L1=[];
+	verify((pivot instanceof List), "flatMapByIndex index in ${L0}. pivot is NOT a list ${pivot.class}");
+
+	try {
+	def L1 = [];
 	for(int i=0;i< pivot.size();i++) {
 		def L2=[];
 		for(int j=0;j< L0.size();j++) {
+			def value = null;
 			if(j==index) {
-				L2.add(pivot[i]);
+				value = pivot[i];
 				}
 			else
 				{
-				L2.add(L0[j]);
+				value = L0[j];
 				}
+			L2.add(value==null?null:(value instanceof java.lang.Cloneable?value.clone():value));
 			}
 		L1.add(L2);
 		}
 	return L1;
+	} catch(Throwable err) {
+		log.warn("flatMapByIndex: ${err}");
+		throw err;
+		}
 	}
 
 /** split file/index using the htslib method . If found return array with two elements (file/index) or one element (file) */

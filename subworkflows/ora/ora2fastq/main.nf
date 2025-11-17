@@ -79,7 +79,7 @@ workflow ORA_TO_FASTQ {
 					[it[0].plus(side:"R2"),it[2]]
 					];
 				}
-/**
+		/**
 		 *
 		 * EXTRACT INFO from ORA file
 		 *

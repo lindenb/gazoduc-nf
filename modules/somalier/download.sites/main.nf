@@ -35,9 +35,10 @@ output:
 	tuple val(meta1),path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:vcf
 	path("versions.yml"),emit:versions
 script:
-	def base = "https://github.com/brentp/somalier/files"
+	def base = task.ext.base?:"https://github.com/brentp/somalier/files"
 	def prefix = task.ext.prefix?:"sites.${meta1.ucsc_name?:"undefined"}"
 	def url = task.ext.url?:""
+	def jvm = task.ext.jvm?:"-XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
 """
 hostname 1>&2
 
@@ -45,23 +46,24 @@ set -x
 mkdir -p TMP
 if ${!url.trim().isEmpty()}
 then
-	echo "${url}" > TMP/url
+	echo "${url}" > TMP/jeter.url
 elif ${meta1.ucsc_name=="hg38"}
 then
-	echo '${base}/3412456/sites.hg38.vcf.gz' > TMP.url
+	echo '${base}/3412456/sites.hg38.vcf.gz' > TMP/jeter.url
 elif ${meta1.ucsc_name=="hg19"}
 then
-	echo '${base}/3412453/sites.hg19.vcf.gz' > TMP.url
+	echo '${base}/3412453/sites.hg19.vcf.gz' > TMP/jeter.url
 else
 	echo "UNDEFINED BUILD URL for ${fasta.name}" 1>&2
 fi
 
 
+test -s TMP/jeter.url
 
-curl -L - `cat TMP.url` |\\
+curl -L `cat TMP/jeter.url` |\\
 	gunzip -c |\\
-	jvarkit  vcfsetdict -R "${fasta}"  --onNotFound SKIP |\\
-	bcftools sort -T TMP/sort -o TMP/sites.vcf.gz -O z
+	jvarkit ${jvm} vcfsetdict -R "${fasta}"  --onNotFound SKIP |\\
+	bcftools sort -T TMP/sort -o TMP/${prefix}.vcf.gz -O z
 
 bcftools index -f -t TMP/${prefix}.vcf.gz
 

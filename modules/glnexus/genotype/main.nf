@@ -36,8 +36,6 @@ input:
 output:
 	tuple val(meta ),path("*.bcf"),path("*.bcf.csi"),path(optional_bed),emit:vcf
 	path("versions.yml"),emit:versions
-when:
-    task.ext.when == null || task.ext.when
 script:
 	def args1 = task.ext.args1?:""
 	def args2 = task.ext.args2?:""

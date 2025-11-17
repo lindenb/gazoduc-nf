@@ -24,7 +24,7 @@ SOFTWARE.
 */
 
 
-process BED_CLUSTER {
+process GTF_TO_BED {
 	label "process_single"
 	tag "${meta.id?:""} "
 	afterScript "rm -rf TMP"
@@ -33,29 +33,37 @@ process BED_CLUSTER {
 		tuple val(meta1),path(fasta)
 		tuple val(meta2),path(fai)
 		tuple val(meta3),path(dict)
-		tuple val(meta ),path(bed)
+		tuple val(meta4),path(opt_bed)
+        tuple val(meta ),path(gtf)
 	output:
-		tuple val(meta), path("BEDS/*.bed",arity:"0..*"),emit:bed
+		tuple val(meta), path("*.bed"),emit:bed
 		path("versions.yml"),emit:versions
 	script:
 		def args = task.ext.args?:""
-		if(args.trim().isEmpty()) throw new IllegalArgumentException("args for bedcluter must be defined in ${task.process}")
-	"""
+        def prefix = task.ext.prefix?:"${meta.id}"
+        def jvm =  task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -XX:-UsePerfData"
+        def awk_expr = task.ext.awk_expr?:"(1==1)"
+    """
 	hostname 1>&2
-	set -o pipefail
-	mkdir -p TMP/TMP2 BEDS
-	jvarkit  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -XX:-UsePerfData bedcluster \\
+    mkdir -p TMP
+	
+    ${gtf.name.endsWith(".gz")?"gunzip -c ":"cat"} ${gtf} |\\	
+        awk -F '\t' '${awk_expr}' |\\
+	jvarkit  ${jvm}  gtf2bed \\
 		-R "${fasta}" \\
 		${args} \\
-		-o TMP/TMP2 "${bed}"
+		${gtf} |\\
+        sort -T TMP -t '\t' -k1,1 -k2,2n |\\
+	uniq > TMP/jeter.bed
+    
+    cp TMP/jeter.bed ${prefix}.bed
 
-	#force uniq names for later
-	MD5=\$(pwd | sha1sum  | cut -c 1-10)
-	find TMP/TMP2 -type f -name "*.bed" |\
-	while read F
-	do
-		mv "\${F}" "BEDS/\${MD5}.\$(basename "\$F")"
-	done
+    bzip TMP/jeter.bed
+    tabix -p bed -f  TMP/jeter.bed.gz
+
+    mv TMP/jeter.bed.gz ${prefix}.bed.gz
+    mv TMP/jeter.bed.gz.tbi ${prefix}.bed.gz.tbi
+
 
 cat << EOF > versions.yml
 ${task.process}:
@@ -63,10 +71,9 @@ ${task.process}:
 EOF
 	"""
 	
-stub:
+stub: 
+def prefix = task.ext.prefix?:"${meta.id}"
 """
-mkdir BEDS
-split --additional-suffix=.bed --lines=1 "${bed}" BEDS/cluster
-touch versions.yml
-"""	
+mkdir versions.yml ${prefix}.bed.gz ${prefix}.bed.gz.tbi ${prefix}.bed
+"""
 }

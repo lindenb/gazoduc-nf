@@ -24,7 +24,7 @@ SOFTWARE.
 */
 process COLLECT_MULTIPLE_METRICS {
 tag "${meta.id?:""}"
-label "process_single"
+label "process_short" // longer than 3H for a wgs
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.02.yml"
 input:

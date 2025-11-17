@@ -22,32 +22,111 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+
+include {MANTA_SINGLE              } from '../../modules/manta/single'
+include {MANTA_MULTI               } from '../../modules/manta/multi'
+include {MANTA_CANDIDATESV         } from '../../modules/manta/candidateSV'
+include {MANTA_CONVERT_INVERSION   } from '../../modules//manta/convert.inversion'
+include {TRUVARI_COLLAPSE          } from '../../modules/truvari/collapse'
+include {isBlank                   } from '../../modules/utils/functions'
+
+
 workflow MANTA {
-    take:
-        meta
+take:
+	meta
         fasta
         fai
         dict
-        capture
         bams
-    main:
+	optional_bed
+main:
+        versions = Channel.empty()
+        multiqc = Channel.empty()
 
-        ch1 = bams.branch{
-            bam3: it.size()==3 //meta,bam,bai
-            bam6: it.size()==6 //meta,bam/fasta,fai,dict
-            other: true
-            }
-        ch1.bams.other.map{throw new IllegalArgumentException("MANTA: bad input ${it}.");}
+        group_by_batch = bams.map{meta,bam,bai->
+                if(!isBlank(meta.batch)) return [meta,bam,bai];
+                return [meta.plus(batch:meta.id),bam,bai];
+                }
+            .map{meta,bam,bai->[meta.batch,meta,bam,bai]}
+            .groupTuple()
+            .branch{batch_id,metas,bams,bais->
+                single: metas.size()==1
+                multi: true
+                }
+	
 
-        ch1.bam3
-            .combine(fasta)
-            .combine(fai)
-            .combine(dict)
-            .map{meta,bam,bai,m1,fasta,m2,fai,m3,dict->[meta,bam,bai,fasta,fai,dict]}
-            .mix(ch1.bam6)
-            .map{meta,bam,bai,fasta,fai,dict->[makeKey(fasta),]}
+        diploidSV_ch = Channel.empty()
+        candidateSV =  Channel.empty()
+
+        MANTA_SINGLE(
+                fasta,
+                fai,
+                dict,
+                optional_bed,
+                group_by_batch.single.map{_batch_id,metas,bams,bais->[metas[0],bams[0],bais[0]]}
+                )
+        versions = versions.mix(MANTA_SINGLE.out.versions)
+        diploidSV_ch = diploidSV_ch.mix( MANTA_SINGLE.out.diploidSV)
+        candidateSV = candidateSV.mix( MANTA_SINGLE.out.candidateSV)
+
+
+         MANTA_MULTI(
+                fasta,
+                fai,
+                dict,
+                optional_bed,
+                group_by_batch.multi
+                        .map{batch_id,metas,bams,bais->[[id:batch_id],bams.plus(bais).flatten().sort()]}
+                )
+        versions = versions.mix(MANTA_MULTI.out.versions)
+        diploidSV_ch = diploidSV_ch.mix( MANTA_MULTI.out.diploidSV)
+        candidateSV = candidateSV.mix( MANTA_MULTI.out.candidateSV)
 
 
 
+        MANTA_CONVERT_INVERSION(
+                fasta,
+                fai,
+                dict,
+                diploidSV_ch
+                )
+        versions = versions.mix(MANTA_CONVERT_INVERSION.out.versions)
+
+
+        ch1 = MANTA_CONVERT_INVERSION.out.vcf
+                .map{[it[1],it[2]]}
+                .flatten()
+                .collect()
+                .filter{it.size()>2} // NO need to run truvari if there is only one vcf and one tbi
+                .map{[[id:"manta"],it]}
+                
+
+
+        MANTA_CANDIDATESV(candidateSV)
+        versions = versions.mix(MANTA_CANDIDATESV.out.versions)
         
+
+	if(meta.with_truvari==null) {
+		log.warn("MANTA: meta.with_truvari undefined")
+		}        
+
+	if(meta.with_truvari==null || meta.with_truvari==true) {
+                fasta2  = bams
+                        .count()
+                        .filter{it>1}
+                        .combine(fasta)
+                        .map{_count,meta,fasta->[meta,fasta]}
+                        .first()
+                        
+	        TRUVARI_COLLAPSE(
+			fasta2,
+			fai,
+			dict,
+			ch1
+			)
+        	versions = versions.mix(TRUVARI_COLLAPSE.out.versions)
+		}
+emit:
+        versions
+        multiqc
 }

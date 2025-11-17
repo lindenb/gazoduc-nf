@@ -6,8 +6,6 @@ process BCTOOLS_MENDELIAN2 {
     tag "${meta.id}"
     conda "${moduleDir}/../../../conda/bioinfo.01.yml"
     afterScript "rm -rf TMP"
-    when:
-        task.ext.when == null || task.ext.when
     input:
         tuple val(meta1),path(fai)
         tuple val(meta2),path(pedigree)

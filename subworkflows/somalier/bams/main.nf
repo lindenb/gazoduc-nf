@@ -30,35 +30,44 @@ include {RELATE                 } from '../../../modules/somalier/relate'
 
 workflow SOMALIER_BAMS {
 	take:
-		meta
+		metadata
 		fasta//MUST BE PROVIDED AS Channel.of() [meta,fasta]
 		fai
 		dict
 		bams_ch // sample,bam,bai
 		pedigree // pedigree for somalier
-		user_sites //file or no file   [meta,vcf,vcf_idx]
+		user_sites0 //file or no file   [meta,vcf,vcf_idx]
 	main:
 		version_ch = Channel.empty()
-		user_sites = user_sites.filter{it!=null && it.size()>1 && it[1]}
+		user_sites = user_sites0
+			.filter{it!=null && it.size()>2 && (it[1] instanceof Path) && (it[2] instanceof Path)}
+			
+		bams_ch
+				.count()
+				.filter{it<=1}
+				.view{"I won't run Somalier because there is just one or zero BAMs."}
 
 
-		fasta2 = bams_ch.count()
+		/** need at least two BAM */
+		fasta2 = bams_ch
+				.count()
 				.filter{it>1}
 				.combine(fasta)
-				.map{_count,meta,fasta->[meta,fasta]}
+				.map{_count,meta,fa->[meta,fa]}
 
 		/* sites PROVIDED */
-		sites_vcf =  bams_ch.count()
-			.filter{it>1}
+		sites_vcf =  bams_ch
+			.count()
+			.filter{it>1} /* at least 2 bams */
 			.combine(user_sites)
 			.map{_count,meta,vcf,idx->[meta,vcf,idx]}
 
 
 		fasta3 = user_sites
-			.count()
-			.filter{it==0}
+			.ifEmpty("GUARD")
+			.filter{v->v=="GUARD"}
 			.combine(fasta2)
-			.map{_count,meta,fasta->[meta,fasta]}
+			.map{_guard,meta,fa->[meta,fa]}
 
 
 		SOMALIER_DOWNLOAD_SITES(fasta3,fai,dict)
@@ -81,8 +90,9 @@ workflow SOMALIER_BAMS {
 		ch2 = ch1.tuple3
 			.combine(fasta2)
 			.combine(fai)
-			.map{meta1,bam,bai,meta2,fasta,meta3,fai-> [meta1,bam,bai,fasta,fai] }
+			.map{meta1,bam,bai,_meta2,fasta,meta3,fai-> [meta1,bam,bai,fasta,fai] }
 			.mix( ch1.tuple5)
+
 
 
 		EXTRACT_BAM(sites_vcf, ch2)

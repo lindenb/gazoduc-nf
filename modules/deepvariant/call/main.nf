@@ -29,8 +29,6 @@ label "deepvariant"
 tag "${meta.id} ${bam.name} ${optional_bed?optional_bed.name:""}"
 afterScript "rm -rf TMP  .keras  .parallel"
 conda "${moduleDir}/../../../conda/deepvariant.yml"
-when:
-    task.ext.when == null || task.ext.when
 input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)

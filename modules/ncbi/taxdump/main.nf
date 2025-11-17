@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -22,37 +22,37 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {getVersionCmd;moduleLoad;runOnComplete} from '../utils/functions.nf'
 
 
-process NCBI_DOWNLOAD_TAXDUMP_01 {
+process NCBI_DOWNLOAD_TAXDUMP {
+label "process_single"
 input:
 	val(meta)
 output:
-	path("citations.dmp"),emit:citations
-	path("delnodes.dmp"),emit:delnodes
-	path("division.dmp"),emit:division
-	path("gencode.dmp"),emit:gencode
-	path("merged.dmp"),emit:merged
-	path("names.dmp"),emit:names
-	path("nodes.dmp"),emit:nodes
-	path("gc.prt"),emit:gc
-	path("version.xml"),emit:version
+	tuple val(meta),path("citations.dmp"),emit:citations
+	tuple val(meta),path("delnodes.dmp"),emit:delnodes
+	tuple val(meta),path("division.dmp"),emit:division
+	tuple val(meta),path("gencode.dmp"),emit:gencode
+	tuple val(meta),path("merged.dmp"),emit:merged
+	tuple val(meta),path("names.dmp"),emit:names
+	tuple val(meta),path("nodes.dmp"),emit:nodes
+	tuple val(meta),path("gc.prt"),emit:gc
+	path("versions.xml"),emit:versions
 script:
-	def url = "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz"
+	def url = task.ext.url?:"https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/taxdump.tar.gz"
 """
-hostname 1>&2
-wget --no-check-certificate -O jeter.tar.gz "${url}"
+curl -L -o jeter.tar.gz "${url}"
 tar xvfz jeter.tar.gz
 rm jeter.tar.gz
 
-##################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">download ncbi taxdump</entry>
-        <entry key="url"><a>${url}</a></entry>
-</properties>
+cat << EOF > versions.yml
+"${task.process}"
+    url: "${url}"
 EOF
+"""
+
+stub:
+"""
+touch citations.dmp delnodes.dmp division.dmp gencode.dmp merged.dmp names.dmp nodes.dmp gc.prt versions.yml
 """
 }

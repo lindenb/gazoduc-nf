@@ -34,8 +34,6 @@ process BCTOOLS_CONTRAST {
     output:
         tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
         path("versions.yml"),emit:versions
-    when:
-        task.ext.when == null || task.ext.when
     script:
         def prefix = task.ext.prefix?:vcf.baseName+".contrast"
     """

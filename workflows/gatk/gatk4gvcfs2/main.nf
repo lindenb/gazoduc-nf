@@ -509,8 +509,6 @@ process GLNEXUS {
         tuple path(bed),path("GVCFS/*")
     output:
         tuple  path("*.bcf"),path("*.bcf.csi")   , emit: output
-    when:
-        task.ext.when == null || task.ext.when
     script:
         def args = task.ext.args ?: ''
         def prefix = task.ext.prefix ?: "${bed.baseName}"

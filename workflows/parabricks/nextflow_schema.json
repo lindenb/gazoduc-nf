@@ -15,11 +15,10 @@
           "format": "file-path",
           "exists": true,
           "mimetype": "text/plain",
-          "pattern": "^\\S+\\.(fasta|fa|fna))?(\\.gz)?$",
+          "pattern": "^\\S+\\.(fasta|fa|fna)?(\\.gz)?$",
           "description": "Path to FASTA REFERENCE file.",
           "fa_icon": "far fa-file-code"
         },
-
         "prefix": {
           "type": "string",
           "pattern": "^[a-zA-z0-9_\\.]+\\.$",
@@ -29,11 +28,16 @@
 
         "hts_type": {
           "type": "string",
-          "pattern": "^(WES|WGS)+\\.$",
+          "pattern": "^(WES|WGS)$",
           "description": "Type of analysis (WES or WGS). If WES, --capture (bed) is expected.",
           "help_text": "Type of HTS analysis"
         },
-        
+        "bed": {
+          "type": "string",
+          "format": "file-path",
+          "description": "Path to BED file that was used as the capture. Required for --hts_type=WES.",
+          "help_text": "Capture BED"
+        },
         "outdir": {
           "type": "string",
           "format": "directory-path",
@@ -58,7 +62,7 @@
           "exists": true,
           "mimetype": "text/plain",
           "pattern": "^\\S+\\.(csv|tsv|json)$",
-          "description": "Path to samplesheet with the appropriate suffix (csv or tsv or json).<br/>For **ora** files or **fastq.gz" from illumina/dragen, the 'sample' column is optional as it can be extracted from the fastq name",
+          "description": "Path to samplesheet with the appropriate suffix (csv or tsv or json).<br/>For **ora** files or **fastq.gz** from illumina/dragen, the 'sample' column is optional as it can be extracted from the fastq name",
           "help_text": "path to fastq samplesheet."
         },
         "orad_directory": {
@@ -69,7 +73,7 @@
         },
         "mapper": {
           "type": "string",
-          "pattern": "^\\(bwa|pb|parabricks|dragmap)$",
+          "pattern": "^(bwa|pb|parabricks|dragmap)$",
           "description": "wich mapper to use. one of 'bwa,pb,parabricks,dragmap'"
         },
         "known_indels_vcf":  {
@@ -85,10 +89,7 @@
           "type": "boolean",
           "description": "If true, preprocess the Reads with FASTP before mapping the reads"
         },
-        "with_fastqc": {
-          "type": "boolean",
-          "description": "Run Fastqc. If --with_fastp==true, anothe fastqc is run after trimming."
-        },
+        
         "with_cram": {
           "type": "boolean",
           "description": "Save the alignments as CRAM (always true for parabricks)."
@@ -99,10 +100,109 @@
            "description":"when the input is a BAM/CRAM to has be converted back to fastq prior to mapping, what is the method to use ? "
         }
       }
-    }
+    },
+  "bam_qc_params": {
+    "title": "QC for BAMs",
+    "type": "object",
+    "description": "Parameters used for BAM QC",
+    "required": [],
+    "properties": {
+      "with_fastqc": {
+          "type": "boolean",
+          "description": "Run Fastqc. If --with_fastp==true, anothe fastqc is run after trimming."
+        },
+      "with_collect_metrics": {
+        "type": "boolean",
+          "description": "Run Picard Collect Metrics (which can be quite slow for WGS)."
+        },
+      "mosdepth_use_median":{
+        "type": "boolean",
+        "description":"use 'median' instead of 'average' to calculate the depth with mosdepth."
+        },
+      "mosdepth_min_depth":{
+        "type": "number",
+        "minimum": 0,
+        "description":"Treshold of total mosdepth coverage. Bam below this treshold withh be affected by '--on_low_bam_quality'."
+        },
+      "on_low_bam_quality":{
+        "type": "string",
+        "pattern": "^(abort|warning|skip)$",
+        "description":"What to do with BAMs with a depth under the treshold ? abort: stop the workflow. warning : just print a message. skip: skip the bams with a low quality."
+        }
+      }
+    },
+    "somalier_params": {
+      "title": "SOMALIER",
+      "type": "object",
+      "description": "Parameters used for SOMALIER",
+      "properties": {
+        "with_somalier":{
+          "type": "boolean",
+          "description":"Run **somalier** on BAMs."
+          },
+        "somalier_vcf_sites": {
+          "type": "string",
+          "description":"somalier VCF sites. if ignored, VCF is downloaded ."
+          }
+        }
+      },
+      "manta_params": {
+        "title": "MANTA",
+        "type": "object",
+        "description": "Manta: Structural variant and indel caller for mapped sequencing data  (https://github.com/Illumina/manta)",
+        "properties": {
+          "with_manta":{
+            "type": "boolean",
+            "description":"Run manta."
+            },
+          "with_truvari": {
+            "type": "boolean",
+            "description":"Apply truvari to merge the VCFs (https://github.com/ACEnglish/truvari)"
+            }
+          }
+        },
+      "smoove_params": {
+        "title": "SMOOVE",
+        "type": "object",
+        "description": "Smoove: 'Structural variant calling and genotyping with existing tools, but, smoothly'.  https://github.com/brentp/smoove",
+        "properties": {
+          "with_smoove":{
+            "type": "boolean",
+            "description":"Run Smoove."
+            }
+          }
+        },
+     "delly_params": {
+        "title": "DELLY2",
+        "type": "object",
+        "description": " DELLY2: Structural variant discovery by integrated paired-end and split-read analysis . https://github.com/dellytools/delly",
+        "properties": {
+          "with_delly":{
+            "type": "boolean",
+            "description":"Run DELLY2."
+            }
+          }
+        },
+     "indexcov_params": {
+        "title": "INDEXCOV",
+        "type": "object",
+        "description": " Goleft/indexcov: Quickly estimate coverage from a whole-genome bam or cram index.  https://github.com/brentp/goleft/tree/master/indexcov/",
+        "properties": {
+          "with_indexcov":{
+            "type": "boolean",
+            "description":"Run Goleft/indexcov."
+            }
+          }
+        }
   },
   "allOf": [
-    { "$ref": "#/defs/input_and_output_params" },
-    { "$ref": "#/defs/mapping_fastqs" }
+    { "$ref": "#/$defs/input_and_output_params" },
+    { "$ref": "#/$defs/mapping_fastqs" },
+    { "$ref": "#/$defs/bam_qc_params" },
+    { "$ref": "#/$defs/somalier_params" },
+    { "$ref": "#/$defs/manta_params" },
+    { "$ref": "#/$defs/smoove_params" },
+    { "$ref": "#/$defs/delly_params" },
+    { "$ref": "#/$defs/indexcov_params" }
   ]
 }

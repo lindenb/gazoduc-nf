@@ -3,6 +3,10 @@ nextflow_function {
 
     name "Test Functions"
     script "modules/utils/functions.nf"
+    tag "modules/utils/functions.nf"
+    tag "modules/utils"
+    tag "modules/utils/functions"
+    tag "modules/utils/functions.nf"
     tag "functions"
 
 

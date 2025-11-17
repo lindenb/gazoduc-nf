@@ -10,7 +10,7 @@ doc:
 	source ${HOME}/.bash_profile && \
 	micromamba activate NFCORE && \
 	find ./workflows -type f -name "nextflow_schema.json"  -exec dirname '{}' ';' |\
-		while read DIR ; do nf-core pipelines schema docs --format markdown -o "$${DIR}/README.md" --force -c 'parameter,description,type,default,required' "$${DIR}" || true ; done
+		while read DIR ; do nf-core pipelines schema lint "$${DIR}/nextflow_schema.json" && nf-core pipelines schema docs --format markdown -o "$${DIR}/README.md" --force -c 'parameter,description,type,default,required,pattern' "$${DIR}" || true ; done
 
 
 clean:

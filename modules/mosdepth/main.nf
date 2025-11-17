@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -22,6 +22,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+
+include {parseBoolean} from '../../modules/utils/functions.nf'
+
 process MOSDEPTH {
 tag "${meta.id?:""}"
 label "process_single"
@@ -37,12 +40,8 @@ output:
         tuple val(meta), path('*.region.dist.txt')      , optional:true, emit: regions_txt
         tuple val(meta), path('*.regions.bed.gz'), path('*.regions.bed.gz.csi'), optional:true, emit: regions_bed
         path  "versions.yml"                            , emit: versions
-
-when:
-    task.ext.when == null || task.ext.when
-
 script:
-    def per_base = (task.ext.per_base?:false).toBoolean()
+    def per_base = parseBoolean(task.ext.per_base?:false)
     def args = task.ext.args ?: ''
     def prefix = task.ext.prefix?:"${meta.id}"
 """

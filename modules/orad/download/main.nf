@@ -30,8 +30,6 @@ input:
 output:
         tuple val(meta),path("orad.*.linux"),emit:oradir
         path("versions.yml"),emit:versions
-when:
-	task.ext.when == null || task.ext.when
 script:
         def version = task.ext.version?:"2.7.0"
 	def local_dir = task.ext.local_dir?:"NO_DIR"

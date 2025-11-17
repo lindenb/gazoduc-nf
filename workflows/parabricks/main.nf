@@ -33,6 +33,7 @@ include { samplesheetToList                       } from 'plugin/nf-schema'
 
 include {runOnComplete                            } from '../../modules/utils/functions.nf'
 include {parseBoolean                             } from '../../modules/utils/functions.nf'
+include { isBlank                                 } from '../../modules/utils/functions.nf'
 include {FASTP                                    } from '../../subworkflows/fastp'
 include {MULTIQC                                  } from '../../modules/multiqc'
 include {COMPILE_VERSIONS                         } from '../../modules/versions'
@@ -45,7 +46,7 @@ include {PB_BAM2FQ                                } from '../../modules/parabric
 include {SCATTER_TO_BED                           } from '../../subworkflows/gatk/scatterintervals2bed'
 include {BAM_QC                                   } from '../../subworkflows/bamqc'
 include {SOMALIER_BAMS                            } from '../../subworkflows/somalier/bams'
-include {MANTA_SINGLE                             } from '../../subworkflows/manta/single'
+include {MANTA                                    } from '../../subworkflows/manta'
 include {INDEXCOV                                 } from '../../subworkflows/indexcov/simple'
 include {DELLY                                    } from '../../subworkflows/delly2'
 include {CNVNATOR                                 } from '../../subworkflows/cnvnator'
@@ -69,17 +70,19 @@ include { NOT_EMPTY_VCF                           } from '../../modules/bcftools
 include { READ_SAMPLESHEET                        } from '../../subworkflows/nf/read_samplesheet'
 include { SMOOVE                                  } from '../../subworkflows/smoove' 
 include { VCF_INPUT as DBSNP_VCF_INPUT            } from '../../subworkflows/nf/vcf_input' 
-include { VCF_INPUT as KNOWN_INDELS_VCF_INPUT     } from '../../subworkflows/nf/vcf_input' 
+include { VCF_INPUT as KNOWN_INDELS_VCF_INPUT     } from '../../subworkflows/nf/vcf_input'
+include { VCF_INPUT as SOMALIER_SITES_VCF_INPUT   } from '../../subworkflows/nf/vcf_input' 
 include { GTF_INPUT                               } from '../../subworkflows/nf/gtf_input' 
 
 
 
 workflow {
 
-//  validateParameters()
+validateParameters()
 
 
 if( params.help ) {
+  log.info(paramsHelp())
     exit 0
 }  else {
   // Print summary of supplied parameters
@@ -106,8 +109,8 @@ if( params.help ) {
 
 
  
-  def is_exome = params.hts_type.equals("WES");
-  def is_wgs = params.hts_type.equals("WGS");
+  def is_exome = params.hts_type == "WES";
+  def is_wgs = params.hts_type == "WGS";
 
   versions = Channel.empty()
   multiqc  = Channel.empty()
@@ -407,16 +410,6 @@ if(params.known_indels_vcf!=null) {
 
   
 
-  /***************************************************
-   *
-   * BUILD A PEDIGREE FROM META INFO
-   *
-   */
-  META_TO_PED(metadata, bams_ch.map{it[0]})
-	versions = versions.mix(META_TO_PED.out.versions)
-
-  pedigree_ch = META_TO_PED.out.pedigree_gatk
-  trios_ped_ch = META_TO_PED.out.pedigree_gatk //TODO check this, should be a pedigree of trios
 
   /***************************************************
    *
@@ -448,10 +441,15 @@ if(params.known_indels_vcf!=null) {
    */
   // stats from mosdepth will be used by graphtyper
   mosdepth_summary_ch = Channel.empty()
+
+  def run_bam_qc = parseBoolean(params.with_bam_qc) ||
+        (params.mosdepth_min_depth as double) > 0.0 ||
+        parseBoolean(params.with_graphtyper);
+
   // stats are required if graphtyper is used
-  if( parseBoolean(params.with_bam_qc) || parseBoolean(params.with_graphtyper)) {
+  if( run_bam_qc ) {
       BAM_QC(
-        metadata.plus([:]),
+        metadata.plus([with_collect_metrics: parseBoolean(params.with_collect_metrics)]),
         PREPARE_ONE_REFERENCE.out.fasta,
 			  PREPARE_ONE_REFERENCE.out.fai,
 			  PREPARE_ONE_REFERENCE.out.dict,
@@ -462,35 +460,134 @@ if(params.known_indels_vcf!=null) {
       multiqc = multiqc.mix(BAM_QC.out.multiqc)
       mosdepth_summary_ch = BAM_QC.out.mosdepth_summary
   }
+  /***************************************************
+   *
+   *  filter samples on quality ? mosdepth row 'total' must be greater than treshold.
+   *
+   */
+  if( (params.mosdepth_min_depth as double) > 0.0 && run_bam_qc) {
+    qual_bam_ch = mosdepth_summary_ch
+        .splitCsv(header:true,sep:'\t')
+        .filter{meta,row->row.chrom=="total"}
+        .map{meta,row->meta.plus(coverage_depth: (row.chrom.mean as double)) }
+        .map{meta->[meta, meta.coverage_depth >= (params.mosdepth_min_depth as double)] }
+        .map{meta,depth_status->[meta.id,meta,depth_status]}
+        .join(bams_ch.map{meta,bam,bai->[meta.id,meta,bam,bai]}, failOnMismatch:true, failOnDuplicate:true)
+        .map{_sample_id,meta1,depth_status,meta2,_bam,bai->[meta1,depth_status,meta2,bam,bai]}
+  
+    // emit a warning if depth is too low
+    qual_bam_ch
+      .filter{_meta1,depth_status,_meta2,_bam,_bai->depth_status==false}
+      .map{meta1,depth_status,meta2,bam,bai->log.warn("The following BAM have a low depth: ${meta1} ${bam}"); return 0;}
+
+    if(params.on_low_bam_quality=="skip") {
+      bams_ch = qual_bam_ch
+        .filter{_meta1,depth_status,_meta2,_bam,_bai->depth_status==true}
+        .map{_meta1,_depth_status,meta2,bam,bai->[meta2,bam,bai]}
+      }
+    else if(params.on_low_bam_quality=="abort") {
+      bams_ch =  bams_ch .count()
+            .combine(qual_bam_ch
+                .filter{meta1,depth_status,meta2,bam,bai->depth_status==true}
+                .count()
+                )
+            .filter{N1,N2->N1==N2} //same number of bam after filtering on DEPTH
+            .combine(bams_ch)
+            .map{_N1,_N2,meta,bam,bai->[meta,bam,bai]}
+      }
+    else
+      {
+      // do nothing
+      }
+  }
 
 
+  /***************************************************
+   *
+   * UPDATE SEX to meta if unknown
+   *
+   */ 
+  if( run_bam_qc) {
+   bams_ch = bams_ch.map{meta,bam,bai->[meta.id,meta,bam,bai]}
+      .join(BAM_QC.out.sample_sex_ch.map{meta->[meta.id,meta]}, failOnMismatch:true,failOnDuplicate:true )
+      .map{_sample_id,meta1,bam,bai,meta2->
+        if(!isBlank(meta1.sex) && meta1.sex.matches("(male|female)")) {
+           if(!isBlank(meta2.sex) && meta2.sex.matches("(male|female)") && meta1.sex!=meta2.sex) {
+            log.warn("inferred sex is not the same as declared sex ${meta1} ${meta2}");
+            }
+          return [meta1,bam,bai];
+          }
+        if(!isBlank(meta2.sex) && meta2.sex.matches("(male|female)")) return [meta1.plus(sex:meta2.sex),bam,bai];
+        return [meta1,bam,bai];
+      }
+  }
+  
 
+  /***************************************************
+   *
+   * BUILD A PEDIGREE FROM META INFO
+   *
+   */
+  META_TO_PED(metadata, bams_ch.map{it[0]})
+	versions = versions.mix(META_TO_PED.out.versions)
+
+  pedigree_ch = META_TO_PED.out.pedigree_gatk
+  trios_ped_ch = META_TO_PED.out.pedigree_gatk //TODO check this, should be a pedigree of trios
 
   /***************************************************
    *
    * SOMALIER
    *
-   */ 
-  if(parseBoolean(params.with_somalier==true) && is_wgs) {
-        user_sites = Channel.of([[:],[],[]]) //custom sites
-        SOMALIER_BAMS(
-            metadata,
-            PREPARE_ONE_REFERENCE.out.fasta,
-            PREPARE_ONE_REFERENCE.out.fai,
-			      PREPARE_ONE_REFERENCE.out.dict,
-            bams_ch,
-            META_TO_PED.out.pedigree_gatk,
-            user_sites
-            )
-        versions = versions.mix(SOMALIER_BAMS.out.versions)
+   */
+  if(parseBoolean(params.with_somalier) && is_wgs) {
+    // vcf for somalier
+    if(params.somalier_vcf_sites!=null) {
+        SOMALIER_SITES_VCF_INPUT(
+          metadata.plus([
+            arg_name : "somalier_vcf_sites",
+            path: params.somalier_vcf_sites,
+            require_index : true,
+            required : true,
+            unique : true
+            ])
+          )
+        versions = versions.mix(SOMALIER_SITES_VCF_INPUT.out.versions)
+        user_sites = SOMALIER_SITES_VCF_INPUT.out.vcf.first()
+        }
+      else
+        {
+        user_sites = Channel.of([[id:"no_user_sites_somalier"],[],[]]).first()
+        }
+
+
+    SOMALIER_BAMS(
+          metadata,
+          PREPARE_ONE_REFERENCE.out.fasta,
+          PREPARE_ONE_REFERENCE.out.fai,
+          PREPARE_ONE_REFERENCE.out.dict,
+          bams_ch,
+          META_TO_PED.out.pedigree_gatk,
+          user_sites
+          )
+    versions = versions.mix(SOMALIER_BAMS.out.versions)
+    multiqc = multiqc.mix(SOMALIER_BAMS.out.multiqc)
     }
+  
   /***************************************************
    *
    * MANTA
    *
    */
-  if(parseBoolean(params.with_manta) && is_wgs) {
-    MANTA_SINGLE(
+  if(parseBoolean(params.with_manta)) {
+    if(is_wgs) {
+        manta_bed = [[id:"no_bed"],[]]
+        }
+    else
+        {
+        manta_bed =  bed
+        }
+
+    MANTA(
         metadata.plus(
           with_truvari : parseBoolean(params.with_truvari)
           ),
@@ -498,9 +595,10 @@ if(params.known_indels_vcf!=null) {
         PREPARE_ONE_REFERENCE.out.fai,
 			  PREPARE_ONE_REFERENCE.out.dict,
         bams_ch,
-        [[:],[]] //No bed
+        manta_bed
         )
-    versions = versions.mix(MANTA_SINGLE.out.versions)
+    versions = versions.mix(MANTA.out.versions)
+    multiqc = multiqc.mix(MANTA.out.multiqc)
     }
 
 /***************************************************
@@ -771,7 +869,7 @@ if(params.known_indels_vcf!=null) {
    *  MULTIQC
    *
    */
-  if( params.with_multiqc ==true) {
+  if( parseBoolean(params.with_multiqc)) {
     COMPILE_VERSIONS(versions.collect().map{it.sort()})
     multiqc = multiqc.mix(COMPILE_VERSIONS.out.multiqc.map{[[id:"versions"],it]})
     // in case of problem multiqc_ch.filter{!(it instanceof List) || it.size()!=2}.view{"### FIX ME ${it} MULTIQC"}

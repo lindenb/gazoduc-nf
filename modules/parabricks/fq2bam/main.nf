@@ -49,8 +49,6 @@ process PB_FQ2BAM {
       tuple val(meta), path("*.md5"),optional:true, emit:md5
       path("*.log")
       path("versions.yml"),emit:versions
-  when:
-        task.ext.when == null || task.ext.when
   script:
 
     def sample = task.ext.prefix?:meta.id

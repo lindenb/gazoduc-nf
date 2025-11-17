@@ -360,8 +360,6 @@ tag "${meta.id?:""} ${condition.id}"
 label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
-when:
-    task.ext.when == null || task.ext.when
 input:
     tuple val(meta ),path("VCFS/*"),val(condition)
     tuple val(meta2),path(optional_bed)
@@ -443,8 +441,6 @@ tag "${meta.id?:""}"
 label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
-when:
-    task.ext.when == null || task.ext.when
 input:
     tuple val(meta ),path("VCFS/*")
     tuple val(meta2),path(optional_bed)
@@ -524,8 +520,6 @@ tag "${meta.id?:""} ${condition.id}"
 label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
-when:
-    task.ext.when == null || task.ext.when
 input:
     tuple val(meta ),path("VCFS/*"),val(condition)
     tuple val(meta2),path(optional_bed)
@@ -609,8 +603,6 @@ tag "${meta.id?:""} ${condition.tag}"
 label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
-when:
-    task.ext.when == null || task.ext.when
 input:
     tuple val(meta ),path("VCFS/*"),val(condition)
     tuple val(meta2),path(optional_bed)
@@ -691,8 +683,6 @@ tag "${meta.id?:""}"
 label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
-when:
-    task.ext.when == null || task.ext.when
 input:
     tuple val(meta ),path("VCFS/*")
     tuple val(meta2),path(optional_bed)
@@ -755,8 +745,6 @@ tag "${meta.id?:""}"
 label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
-when:
-    task.ext.when == null || task.ext.when
 input:
     tuple val(meta ),path("VCFS/*")
     tuple val(meta2),path(optional_bed)

@@ -27,8 +27,6 @@ tag "${meta.id?:fasta.name}"
 afterScript "rm -rf TMP"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-when:
-    task.ext.when == null || task.ext.when
 input:
     tuple val(meta ),path(fasta)
     tuple val(meta2),path(fai)

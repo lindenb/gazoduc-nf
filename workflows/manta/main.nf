@@ -27,7 +27,7 @@ nextflow.enable.dsl=2
 include { runOnComplete;dumpParams    } from '../../modules/utils/functions.nf'
 include { assertKeyExistsAndNotEmpty  } from '../../modules/utils/functions.nf'
 include { META_TO_BAMS                } from '../../subworkflows/samtools/meta2bams1'
-include { MANTA_SINGLE                } from '../../subworkflows/manta/single' 
+include { MANTA                       } from '../../subworkflows/manta' 
 include { PREPARE_ONE_REFERENCE       } from '../../subworkflows/samtools/prepare.one.ref'
 if( params.help ) {
     dumpParams(params);
@@ -85,7 +85,7 @@ workflow {
 		bed = PREPARE_USER_BED.out.bed
 		}
 
-	MANTA_SINGLE(
+	MANTA(
 		metadata,
 		PREPARE_ONE_REFERENCE.out.fasta,
 		PREPARE_ONE_REFERENCE.out.fai,

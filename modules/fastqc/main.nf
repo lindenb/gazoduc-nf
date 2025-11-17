@@ -34,8 +34,12 @@ output:
 	tuple val(meta), path("OUT/*.html"),emit:html
 	path("versions.yml"),emit:versions
 script:
+	def args1 = task.ext.args1?:""
 	def prefix0 = task.ext.prefix?:""
 	def prefix = "${prefix0}${meta.id}."
+	def memory_mega = task.memory.mega
+	// fastqc doesn't allow more than 10000M
+	def fastqc_memory = java.lang.Math.min(memory_mega,10000)
 """
 mkdir -p TMP/FQ OUT
 
@@ -45,12 +49,12 @@ do
 done
 
 fastqc \\
---dir TMP \\
---memory ${task.memory.mega} \\
---threads ${task.cpus} \\
--o OUT \\
--f "fastq" \\
-TMP/FQ/* 1>&2
+  --dir TMP \\
+  --memory ${fastqc_memory} \\
+  --threads ${task.cpus} \\
+  -o OUT \\
+  -f "fastq" \\
+  TMP/FQ/* 1>&2
 
 cat <<-END_VERSIONS > versions.yml
 "${task.process}":
