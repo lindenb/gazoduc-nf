@@ -82,7 +82,7 @@ validateParameters()
 
 
 if( params.help ) {
-  log.info(paramsHelp())
+    log.info(paramsHelp())
     exit 0
 }  else {
   // Print summary of supplied parameters
