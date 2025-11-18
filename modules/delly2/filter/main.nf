@@ -36,12 +36,15 @@ process FILTER_DELLY {
         path("versions.yml"),emit:versions
     script:
         def prefix = task.ext.prefix?:"${meta.id}.sv"
+	def args = task.ext.args?:""
+	def type = task.ext.type?:"germline"
+	def tag = task.ext.tag?:"--tag"
     """
     export LC_ALL=C
     export PATH=\${PWD}:\${PATH}
     mkdir -p TMP
 
-    delly filter ${tag} -f germline -o TMP/jeter.bcf "${vcfin}" 1>&2
+    delly filter ${args} ${tag} -f ${type} -o TMP/jeter.bcf "${vcfin}" 1>&2
 
     bcftools sort --max-mem "${task.memory.giga}G" -T TMP/sort -O v -o "TMP/jeter1.vcf" TMP/jeter.bcf
 

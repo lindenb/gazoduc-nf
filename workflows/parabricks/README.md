@@ -84,3 +84,29 @@ Smoove: 'Structural variant calling and genotyping with existing tools, but, smo
 |-----------|-----------|-----------|-----------|-----------|-----------|
 | `with_indexcov` | Run Goleft/indexcov. | `boolean` |  |  |  |
 | `indexcov_batchsize` | group BAMs by batch of 'x' bams. Useful when manupulating thousands of bams | `number` |  |  |  |
+
+## CNVnator
+
+CNVnator: a tool for CNV discovery and genotyping from depth-of-coverage by mapped reads  : https://github.com/abyzovlab/CNVnator
+
+| Parameter | Description | Type | Default | Required | Pattern |
+|-----------|-----------|-----------|-----------|-----------|-----------|
+| `with_cnvnator` | Run CNVnator | `boolean` |  |  |  |
+| `cnvnator_bin_size` | CNVnator 'bin' size | `number` |  |  |  |
+
+## SNV Calling
+
+General parameters for the SNV calling
+
+| Parameter | Description | Type | Default | Required | Pattern |
+|-----------|-----------|-----------|-----------|-----------|-----------|
+| `makewindows_args` | Arguments for 'betools makewindows' Before calling the SNVs, the genome or the capture will be divided into smaller parts. For exome this parameter is quite useless unless the window size is lower than the fragment size. See also --bed_cluster_args2  | `string` |  |  |  |
+| `bed_cluster_args2` | Arguments for 'jvarkit bed cluster' group the fragments generated using --makewindows_args into bed file of size 'x'. For example for exomes, you can imagine grouping the fragments by group of 'x' bp. Used by graphtyper. | `string` |  |  |  |
+
+## Graphtyper
+
+Population-scale genotyping using pangenome graphs :  https://github.com/DecodeGenetics/graphtyper
+
+| Parameter | Description | Type | Default | Required | Pattern |
+|-----------|-----------|-----------|-----------|-----------|-----------|
+| `with_graphtyper` | Run graphtyper | `boolean` |  |  |  |

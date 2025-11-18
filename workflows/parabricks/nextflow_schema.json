@@ -198,6 +198,48 @@
             "description": "group BAMs by batch of 'x' bams. Useful when manupulating thousands of bams"
             }
           }
+        },
+     "cnvnator_params": {
+        "title": "CNVnator",
+        "type": "object",
+        "description": "CNVnator: a tool for CNV discovery and genotyping from depth-of-coverage by mapped reads  : https://github.com/abyzovlab/CNVnator",
+        "properties": {
+          "with_cnvnator":{
+            "type": "boolean",
+            "description":"Run CNVnator"
+            },
+          "cnvnator_bin_size":{
+            "type": "number",
+            "minimum": 100,
+            "description":"CNVnator 'bin' size"
+            }
+          }
+        },
+      "calling_params": {
+        "title": "SNV Calling",
+        "type": "object",
+        "description": "General parameters for the SNV calling",
+        "properties": {
+          "makewindows_args":{
+            "type": "string",
+            "description":"Arguments for 'betools makewindows' Before calling the SNVs, the genome or the capture will be divided into smaller parts. For exome this parameter is quite useless unless the window size is lower than the fragment size. See also --bed_cluster_args2 "
+            },
+          "bed_cluster_args2":{
+            "type": "string",
+            "description":"Arguments for 'jvarkit bed cluster' group the fragments generated using --makewindows_args into bed file of size 'x'. For example for exomes, you can imagine grouping the fragments by group of 'x' bp. Used by graphtyper."
+            }
+          }
+      },
+     "graphtyper_params": {
+        "title": "Graphtyper",
+        "type": "object",
+        "description": "Population-scale genotyping using pangenome graphs :  https://github.com/DecodeGenetics/graphtyper",
+        "properties": {
+          "with_graphtyper":{
+            "type": "boolean",
+            "description":"Run graphtyper"
+            }
+          }
         }
   },
   "allOf": [
@@ -208,6 +250,9 @@
     { "$ref": "#/$defs/manta_params" },
     { "$ref": "#/$defs/smoove_params" },
     { "$ref": "#/$defs/delly_params" },
-    { "$ref": "#/$defs/indexcov_params" }
+    { "$ref": "#/$defs/indexcov_params" },
+    { "$ref": "#/$defs/cnvnator_params" },
+    { "$ref": "#/$defs/calling_params" },
+    { "$ref": "#/$defs/graphtyper_params" }
   ]
 }

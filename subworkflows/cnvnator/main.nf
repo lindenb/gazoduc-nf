@@ -22,6 +22,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include {isBlank } from '../../modules/utils/functions.nf'
+include {verify  } from '../../modules/utils/functions.nf'
+
 workflow CNVNATOR {
 take:
     metadata
@@ -31,11 +34,12 @@ take:
     bams // tuple(meta,bam,bai)
 main:
     versions  = Channel.empty()
+    multiqc = Channel.empty()
     ONE_FILE_PER_CONTIG(fasta,fai)
     versions = versions.mix(ONE_FILE_PER_CONTIG.out.versions)
 
     each_contig_ch = ONE_FILE_PER_CONTIG.out.chroms_list.
-        map{it[1]}.
+        map{meta,f->f}.
         splitText().
         map{it.trim()}
 
@@ -49,9 +53,9 @@ main:
     versions = versions.mix(CALL_CNV.out.versions)
 
     CNVNATOR_CONCAT_VCFS(
-        CALL_CNV.out.vcf.map{[it[0],[it[1],it[2]]]}.
-            groupTuple().
-            map{[it[0],it[1].flatten()]}
+        CALL_CNV.out.vcf
+            .groupTuple()
+            .map{meta,vcfs,idxs->[meta,vcfs.plus(idxs).flatten().sort()]}
         )
     versions = versions.mix(CNVNATOR_CONCAT_VCFS.out.versions)
 
@@ -64,7 +68,7 @@ main:
     versions = versions.mix(CNVNATOR_CONCAT_BEDS.out.versions)
 emit:
     versions
-
+    multiqc
 
 }
 
@@ -114,7 +118,8 @@ cut -f1 '${fai}' > CHROMS/chroms.txt
 
 process CALL_CNV {
 tag "${meta.id} ${contig} ${bam.name}"
-label "process_short"
+label "process_single"
+label "array100"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/cnvnator.yml"
 
@@ -128,7 +133,7 @@ output:
         tuple val(meta),path("*.bed.gz"),emit:bed
         path("versions.yml"),emit:versions
 script:
-        if(!meta1.containsKey("ucsc_name")) throw new IllegalArgumentException("undefined ucsc_name");
+        verify(!isBlank(meta1.ucsc_name),"undefined ucsc_name in ${meta1}?");
         def bin = task.ext.bin?:5000
         def prefix = (task.ext.prefix?:meta.id)+"."+contig+"."+bin
 """
@@ -175,7 +180,7 @@ fi
 
         cnvnator2VCF.pl \\
                 -prefix "${bin}" \
-                -reference  '${meta1.usc_name}' \\
+                -reference  '${meta1.ucsc_name}' \\
                 "TMP/output.tsv" \
                 "${contigdir}" > TMP/jeter.vcf
 
@@ -225,9 +230,10 @@ input:
     tuple val(meta),path("VCFS/*")
 output:
     tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
+    tuple val(meta),path("*.md5")
     path("versions.yml"),emit:versions
 script:
-    def prefix=task.ext.prefix?:meta.id
+    def prefix=task.ext.prefix?:"${meta.id}.cnvnator"
 """
 hostname 1>&2
 set -o pipefail
@@ -237,6 +243,8 @@ bcftools concat -a -D --threads ${task.cpus} --write-index --file-list TMP/jeter
 
 mv TMP/jeter.bcf ${prefix}.bcf
 mv TMP/jeter.bcf.csi ${prefix}.bcf.csi
+
+md5sum ${prefix}.bcf  > ${prefix}.bcf.md5
 
 cat << END_VERSIONS > versions.yml
 ${task.process}:

@@ -668,13 +668,14 @@ if(params.known_indels_vcf!=null) {
       bams_ch
       )
     versions = versions.mix(CNVNATOR.out.versions)
+     multiqc = multiqc.mix(CNVNATOR.out.multiqc)
     }
 
 
 
-  /* cut the bed/genome into parts for SV calling per region */
+  /* cut the bed/genome into parts for SNV calling per region */
   BEDTOOLS_MAKEWINDOWS(
-	(params.bed!=null?bed:PREPARE_ONE_REFERENCE.out.scatter_bed)//TODO
+	    (params.bed!=null?bed:PREPARE_ONE_REFERENCE.out.scatter_bed)//TODO
 	)
   versions = versions.mix(BEDTOOLS_MAKEWINDOWS.out.versions)
 
@@ -766,7 +767,7 @@ if(params.known_indels_vcf!=null) {
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
       mosdepth_summary_ch,
-      cluster_bed1,
+      cluster_bed2,
       bams_ch
       )
     versions = versions.mix(GRAPHTYPER.out.versions)

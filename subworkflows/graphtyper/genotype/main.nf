@@ -24,15 +24,15 @@ SOFTWARE.
 */
 
 include { GRAPHTYPER as GTYPER                 }  from '../../../modules/graphtyper/genotype'
-include { BCFTOOLS_CONCAT                      }  from '../../../modules/bcftools/concat2'
-include { JOIN_VCF_TBI                         } from '../../../subworkflows/bcftools/join.vcf.tbi'
+include { BCFTOOLS_CONCAT                      }  from '../../../modules/bcftools/concat3'
+include { verify                               }  from '../../../modules/utils/functions.nf'
 
 
 
 
 workflow GRAPHTYPER {
 take:
-    meta
+    metadata
     fasta
     fai
     dict
@@ -41,26 +41,36 @@ take:
     bams // meta,bam,bai
 main:
     versions = Channel.empty()
+    multiqc = Channel.empty()
 
+    // check uniq bed
+    beds.map{meta,bed->[meta.id,bed]}
+        .groupTuple()
+        .map{
+            verify(it[1].size()==1,"GRAPHTYPER : bed id should be unique ${it}.");
+            return -1;
+            }
+   
     // create a key as pivot to join mosdepth and bams
-    ch1 = mosdepth_summary.map{[it[0].id]+it}
-    ch2 = bams.map{[it[0].id]+it}
+    ch1 = mosdepth_summary.map{meta,f->[meta.id,meta,f]}
+    ch2 = bams.map{meta,bam,bai->[meta.id, meta,bam,bai]}
     
     ch3 = ch1.join(ch2).//sample, meta1,summary,meta2,bam,bai
-        map{[it[3],it[4],it[5],it[2]]} // meta, bam,bai, summary
+        map{_meta_id,meta1,summary,meta2,bam,bai->[meta2,bam,bai,summary]} // meta, bam,bai, summary
 
     COVERAGE_DIVIDE_READLENGTH(fasta,fai,ch3)
     versions = versions.mix(COVERAGE_DIVIDE_READLENGTH.out.versions)
 
     merged = COVERAGE_DIVIDE_READLENGTH.out.output
-        .map{it[1]}
+        .map{meta,f->f}
         .collectFile(name: 'lengths.tsv')
         .map{[[id:"gtyper"],it]}
         .first()
 
     
-    bam_bed_ch = beds.combine(bams.map{[it[1],it[2]]}.collect().map{[it]})
-        .map{[it[0],it[2],it[1]]}//meta, BAMS, bed
+    bam_bed_ch = beds
+        .combine(bams.map{_meta,bam,bai->[bam,bai]}.flatMap().collect().map{it.sort()}.toSortedList())
+        .map{meta,bed,bams->[meta,bams,bed]}//meta, BAMS, bed
         
 
     GTYPER(
@@ -71,24 +81,20 @@ main:
         )
     versions = versions.mix(GTYPER.out.versions)
 
-
-
     BCFTOOLS_CONCAT(
-        [[id:"nobed"],[]],
         GTYPER.out.vcf
-            .map{[it[1],it[2]]}//gvcf,tbi
+            .map{_meta,vcf,tbi->[vcf,tbi]}//gvcf,tbi
+             .flatMap()
              .collect()
-             .map{[[id:"graphtyper"],it]},
+             .map{[[id:"graphtyper"],it.sort()]},
         )
     versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
     
-    vcf_out = JOIN_VCF_TBI(
-			BCFTOOLS_CONCAT.out.vcf,
-			BCFTOOLS_CONCAT.out.tbi
-			).vcf
+
 emit:
     versions
-    vcf = vcf_out
+    vcf = BCFTOOLS_CONCAT.out.vcf
+    multiqc
 }
 
 
@@ -97,6 +103,7 @@ emit:
 process COVERAGE_DIVIDE_READLENGTH {
 tag "${meta.id?:""}"
 label "process_single"
+label "array100"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
