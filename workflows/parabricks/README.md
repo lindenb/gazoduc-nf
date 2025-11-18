@@ -83,3 +83,4 @@ Smoove: 'Structural variant calling and genotyping with existing tools, but, smo
 | Parameter | Description | Type | Default | Required | Pattern |
 |-----------|-----------|-----------|-----------|-----------|-----------|
 | `with_indexcov` | Run Goleft/indexcov. | `boolean` |  |  |  |
+| `indexcov_batchsize` | group BAMs by batch of 'x' bams. Useful when manupulating thousands of bams | `number` |  |  |  |

@@ -38,6 +38,7 @@ workflow INDEXCOV {
 
      main:
         versions = Channel.empty()
+		multiqc = Channel.empty()
 
 		ch1 = bams.branch{
 			rebuild: it.size()==2 || it[1].name.endsWith(".cram") || (it[0].force_rebuild && it[0].force_rebuild==true)
@@ -99,4 +100,5 @@ workflow INDEXCOV {
 		zip = APPLY_INDEXCOV.out.zip
 		vcf  = JVARKIT_INDEXCOV2VCF.out.vcf
 		versions
+		multiqc
 	}

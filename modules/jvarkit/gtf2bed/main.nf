@@ -22,8 +22,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-
-
 process GTF_TO_BED {
 	label "process_single"
 	tag "${meta.id?:""} "
@@ -37,24 +35,26 @@ process GTF_TO_BED {
         tuple val(meta ),path(gtf)
 	output:
 		tuple val(meta), path("*.bed"),emit:bed
+		tuple val(meta), path("*.bed.gz"),path("*.bed.gz.tbi"),emit:tabix
 		path("versions.yml"),emit:versions
 	script:
 		def args = task.ext.args?:""
         def prefix = task.ext.prefix?:"${meta.id}"
         def jvm =  task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -XX:-UsePerfData"
         def awk_expr = task.ext.awk_expr?:"(1==1)"
+		def cmd1 = task.ext.cmd1?:"cat"
+		def cmd2 = task.ext.cmd2?:"cat"
     """
 	hostname 1>&2
     mkdir -p TMP
 	
-    ${gtf.name.endsWith(".gz")?"gunzip -c ":"cat"} ${gtf} |\\	
+    ${gtf.name.endsWith(".gz")?"gunzip -c ":"cat"} ${gtf} |\\
+		${cmd1} |\\
         awk -F '\t' '${awk_expr}' |\\
-	jvarkit  ${jvm}  gtf2bed \\
-		-R "${fasta}" \\
-		${args} \\
-		${gtf} |\\
+		jvarkit  ${jvm}  gtf2bed -R "${fasta}" ${args}  ${gtf} |\\
+		${cmd2} |\\
         sort -T TMP -t '\t' -k1,1 -k2,2n |\\
-	uniq > TMP/jeter.bed
+		uniq > TMP/jeter.bed
     
     cp TMP/jeter.bed ${prefix}.bed
 

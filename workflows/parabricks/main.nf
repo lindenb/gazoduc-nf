@@ -47,7 +47,7 @@ include {SCATTER_TO_BED                           } from '../../subworkflows/gat
 include {BAM_QC                                   } from '../../subworkflows/bamqc'
 include {SOMALIER_BAMS                            } from '../../subworkflows/somalier/bams'
 include {MANTA                                    } from '../../subworkflows/manta'
-include {INDEXCOV                                 } from '../../subworkflows/indexcov/simple'
+include {INDEXCOV                                 } from '../../subworkflows/indexcov'
 include {DELLY                                    } from '../../subworkflows/delly2'
 include {CNVNATOR                                 } from '../../subworkflows/cnvnator'
 include {BEDTOOLS_MAKEWINDOWS                     } from '../../modules/bedtools/makewindows'
@@ -625,14 +625,15 @@ if(params.known_indels_vcf!=null) {
    */
   if(parseBoolean(params.with_indexcov) && is_wgs) {
     INDEXCOV(
-      metadata,
+      metadata.plus(batch_size: params.indexcov_batchsize),
       PREPARE_ONE_REFERENCE.out.fasta,
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
       META_TO_PED.out.pedigree_gatk,
-      bams_ch.map{meta,bambai->[meta,bam]/* no BAI please */}
+      bams_ch.map{meta,bam,bai->[meta,bam]/* no BAI please */}
       )
     versions = versions.mix(INDEXCOV.out.versions)
+    multiqc = multiqc.mix(INDEXCOV.out.multiqc)
   }
   /***************************************************
    *

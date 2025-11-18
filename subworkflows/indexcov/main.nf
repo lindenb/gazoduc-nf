@@ -37,7 +37,9 @@ workflow INDEXCOV {
 		bams
      main:
         versions = Channel.empty()
+		multiqc = Channel.empty()
 
+		
 		ch1 = bams.branch{
 			ok: it.size()==2
 			other: true
@@ -53,10 +55,15 @@ workflow INDEXCOV {
 			)
 		versions = versions.mix(INDEXCOV_REBUILD_BAI.out.versions)
 
+	
+		
+		if(meta.batch_size==null) {
+			log.warn("INDEXCOV: meta.batch_size undefined");
+			}
 		def collate_size = ((meta.batch_size?:1000) as int)
 
 		bams2_ch = INDEXCOV_REBUILD_BAI.out.bam
-			.map{[it[1],it[2]]} //bam,bai
+			.map{meta,bam,bai->[bam,bai]} //bam,bai
 			.collect(flat:false)
 			.flatMap{
 				def L1=[];
@@ -66,7 +73,7 @@ workflow INDEXCOV {
 				while(i < L3.size()) {
 					if(L2.size()==collate_size*2 /* because bam and bai */) {
 						L1.add(L2);
-						L2=[]
+						L2=[];
 						}
 					L2.add(L3[i][0]);//bam
 					L2.add(L3[i][1]);//bai
@@ -95,10 +102,10 @@ workflow INDEXCOV {
 		)
 	versions = versions.mix(JVARKIT_INDEXCOV2VCF.out.versions)
 
-
 	emit:
 		bed  = MERGE_BEDS.out.bed
 		zip = APPLY_INDEXCOV.out.zip
 		vcf  = JVARKIT_INDEXCOV2VCF.out.vcf
+		multiqc
 		versions
 	}

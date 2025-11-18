@@ -191,6 +191,11 @@
           "with_indexcov":{
             "type": "boolean",
             "description":"Run Goleft/indexcov."
+            },
+          "indexcov_batchsize": {
+            "type": "number",
+            "minimum": 10,
+            "description": "group BAMs by batch of 'x' bams. Useful when manupulating thousands of bams"
             }
           }
         }
