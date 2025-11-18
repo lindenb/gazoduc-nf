@@ -36,7 +36,7 @@ output:
 	path("versions.yml"),emit:versions
 script:
 	def prefix = task.ext.prefix?:meta.id+".paste"
-	def limit = 200
+	def limit = (task.ext.limit?:200) as int
 """
 	hostname 1>&2
 	# smoove will write to the system TMPDIR. For large cohorts, make sure to set this to something with a lot of space
@@ -74,7 +74,8 @@ script:
 
 	fi
 
-
+bcftools sort  -T TMP/sort  --max-mem "${task.memory.giga}G" -O z -o TMP/jeter.vcf.gz  "${prefix}.smoove.square.vcf.gz"
+mv -v TMP/jeter.vcf.gz "${prefix}.smoove.square.vcf.gz"
 bcftools index --threads ${task.cpus} -t -f "${prefix}.smoove.square.vcf.gz"
 
 

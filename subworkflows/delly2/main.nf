@@ -39,6 +39,8 @@ take:
 	bams_ch
 main:
     versions = Channel.empty()
+    multiqc = Channel.empty()
+
 
      /* if there is no meta.status, treat everyone as case */
     bams_ch.map{meta,bam,bai->[
@@ -95,6 +97,7 @@ main:
 emit:
     vcf = FILTER_DELLY.out.vcf
     versions
+    multiqc
 }
 
 /*

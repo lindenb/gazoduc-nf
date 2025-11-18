@@ -22,6 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include {isBlank      } from  '../../../modules/utils/functions.nf'
 
 process DOWNLOAD_GNOMAD_SV {
 tag "${meta1.id?:fasta.name}"
@@ -33,47 +34,77 @@ input:
     tuple val(meta2),path(fai)
     tuple val(meta3),path(dict)
 output:
-	tuple val(meta1),path("*.{vcf.gz,bcf}"),path("*.{csi,tbi}"),emit:vcf
+	tuple val(meta1),path("*.vcf.gz"),path("*.tbi"),emit:vcf
 	path("versions.yml"),emit:versions
 script:
-	def url = "";
-    if(meta1.ucsc_name && meta1.ucsc_name.equals("hg19")) {
-        url = "https://storage.googleapis.com/gcp-public-data--gnomad/papers/2019-sv/gnomad_v2.1_sv.sites.vcf.gz";
+	def url = task.ext.url?:"";
+    def prefix = task.ext.suffix?:""
+    if(!isBlank(url)) {
+        //nothing
         }
-    else if(meta1.ucsc_name && meta1.ucsc_name.equals("hg38")) {
+    else if(isBlank(meta1.ucsc_name)) {
+        url = ""
+        }
+    else if(meta1.ucsc_name == "hg19") {
+        url = "https://storage.googleapis.com/gcp-public-data--gnomad/papers/2019-sv/gnomad_v2.1_sv.sites.vcf.gz";
+        if(isBlank(prefix)) prefix = "gnomad_v2.1_sv.sites"
+        }
+    else if(meta1.ucsc_name == "hg38") {
         url = "https://storage.googleapis.com/gcp-public-data--gnomad/release/4.1/genome_sv/gnomad.v4.1.sv.sites.vcf.gz";
+        if(isBlank(prefix)) prefix = "gnomad_v4.1_sv.sites"
         }
     else {
-        throw new IllegalArgumentException("${task.process}: url is undefined.");
+        url = ""
         }
-    def prefix  = task.ext.prefix?:"gnomadsv.sites"
-	def suffix =  task.ext.suffix?:".bcf"
+    if(isBlank(prefix)) prefix="gnomadsv.sites";
+	def suffix =  task.ext.suffix?:".vcf.gz"
+    def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -XX:-UsePerfData"
+    if(isBlank(url)) {
+        log.warn("Empty url for ${task.process}");
+        }
 """
 hostname 1>&2
 mkdir -p TMP
 
-curl -o TMP/jeter.vcf.gz -L "${url}"
+if ${!isBlank(url)}
+then
+    curl -L -o TMP/jeter.vcf.gz -L "${url}"
+else
+
+# create dummy VCF, in the telomeric region of chr22
+
+cat << EOF > jeter.vcf
+#fileformat=VCFv4.2
+##FILTER=<ID=PASS,Description="All filters passed">
+##FILTER=<ID=LOW_CALL_RATE,Description="">
+##INFO=<ID=POPMAX_AF,Number=1,Type=Float,Description="Maximum allele frequency across any population (biallelic sites only).">
+22\t1\t.\tN\t<DEL>\t1\tLOW_CALL_RATE \tPOPMAX_AF=0.9
+EOF
+
+bgzip jeter.vcf
+
+fi
 
 bcftools query -f "%CHROM\\n"  TMP/jeter.vcf.gz |\\
     uniq | sort -T TMP | uniq |\\
     awk '{printf("%s\t%s\\n",\$1,\$1);}' |\\
-	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -XX:-UsePerfData bedrenamechr --column 2 -R "${fasta}" --convert SKIP > TMP/chroms.tsv
+	jvarkit  bedrenamechr --column 2 -R "${fasta}" --convert SKIP > TMP/chroms.tsv
 
 	bcftools annotate --rename-chrs TMP/chroms.tsv TMP/jeter.vcf.gz |\\
 	bcftools sort \\
         -T TMP/sort \\
         --max-mem "${task.memory.giga}G" \\
-        -O ${suffix.contains("b")?"b":"z"} \\
-        -o TMP/jeter.bcf
+        -O z \\
+        -o TMP/jeter.vcf.gz
 
     bcftools index \\
         --threads ${task.cpus} \\
         --force \\
-        ${suffix.contains("b")?"":"--tbi"} \\
-        TMP/jeter.bcf
+        --tbi \\
+        TMP/jeter.vcf.gz
 
-mv  TMP/jeter.bcf "${prefix}${suffix}"
-mv  TMP/jeter.bcf.csi "${prefix}${suffix}.csi"
+mv  TMP/jeter.vcf.gz "${prefix}.vcf.gz"
+mv  TMP/jeter.vcf.gz.tbi "${prefix}.vcf.gz.tbi"
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":

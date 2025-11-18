@@ -1,25 +1,26 @@
 nextflow_process {
 
-    name "Test Process DOWNLOAD_GTF_OR_GFF3"
-    script "modules/gtf/download/main.nf"
-    process "DOWNLOAD_GTF_OR_GFF3"
+    name "Test Process DOWNLOAD_GNOMAD_SV"
+    script "modules/gnomad_sv/download.vcf/main.nf"
+    process "DOWNLOAD_GNOMAD_SV"
     tag "gitlab_ci"
     tag "modules"
-    tag "modules/gtf"
-    tag "modules/gtf/download"
-    config "./nextflow.config"
+    tag "modules/gnomad_sv"
+    tag "modules/gnomad_sv/download.vcf"
 
-    test("GTF_HG19") {
+    test("HG19") {
+
         when {
             params {
-               ucsc_name = "hg19"
-               suffix   = "gtf"
+                // define parameters here. Example:
+                // outdir = "tests/results"
             }
             process {
                 """
 	            input[0] = [[id:"r", ucsc_name:"hg19"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
                 input[1] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
                 input[2] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
+
                 """
             }
         }
@@ -30,18 +31,42 @@ nextflow_process {
         }
     }
 
+    test("HG38") {
 
-    test("GFF_HG19") {
         when {
             params {
-               ucsc_name = "hg19"
-               suffix   = "gff3"
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            process {
+                """
+	            input[0] = [[id:"r", ucsc_name:"hg38"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[1] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[2] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
+
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+    }
+
+test("NOT_HUMAN") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
             }
             process {
                 """
 	            input[0] = [[id:"r", ucsc_name:"hg19"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
                 input[1] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
                 input[2] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
+
                 """
             }
         }
@@ -51,51 +76,4 @@ nextflow_process {
             //assert snapshot(process.out).match()
         }
     }
-
-
-
-    test("GTF_HG38") {
-        when {
-            params {
-               ucsc_name = "hg38"
-               suffix   = "gtf"
-            }
-            process {
-                """
-	            input[0] = [[id:"r",ucsc_name:"hg38"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
-                input[1] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
-                input[2] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
-                """
-            }
-        }
-
-        then {
-            assert process.success
-            //assert snapshot(process.out).match()
-        }
-    }
-
-
-    test("GFF_HG38") {
-        when {
-            params {
-               ucsc_name = "hg38"
-               suffix   = "gff3"
-            }
-            process {
-                """
-	            input[0] = [[id:"r", ucsc_name:"hg19"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
-                input[1] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
-                input[2] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
-                """
-            }
-        }
-
-        then {
-            assert process.success
-            //assert snapshot(process.out).match()
-        }
-    }
-
-
 }

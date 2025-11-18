@@ -650,6 +650,7 @@ if(params.known_indels_vcf!=null) {
             bams_ch
             )
       versions = versions.mix(DELLY.out.versions)
+      multiqc = multiqc.mix(DELLY.out.multiqc)
   }
 
 
