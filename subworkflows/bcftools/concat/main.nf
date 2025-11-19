@@ -22,23 +22,31 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include {BCFTOOLS_CONCAT as CONCAT0 } from '../../../modules/bcftools/concat2'
 include {BCFTOOLS_CONCAT as CONCAT1 } from '../../../modules/bcftools/concat2'
 include {BCFTOOLS_CONCAT as CONCAT2 } from '../../../modules/bcftools/concat2'
-include {makeKey                    } from '../../../modules/utils/functions.nf'
-include {JOIN_VCF_TBI               } from '../../../subworkflows/join.vcf.tbi'
+include { makeKey                   } from '../../../modules/utils/functions.nf'
+include { isBlank                   } from '../../../modules/utils/functions.nf'
+include { verify                    } from '../../../modules/utils/functions.nf'
 
 
-List makeSQRT(def min_group,def meta,def vcf_files) {
+
+List makeSQRT(def meta,def vcf_files) {
 	def L = vcf_files.sort();
 	int n = (int)Math.ceil(Math.sqrt(L.size()));
-	if(n<min_group) n=min_group;
 	def returnList = [];
 	def currList = [];
 	int i=0;
+	// save current group_id
 	for(;;) {
-		if(i<L.size()) currList.add(L.get(i));
+		if(i < L.size()) currList.add(L.get(i));
 		if(i==L.size() || currList.size()==n) {
-			if(!currList.isEmpty()) returnList.add([meta,currList]);
+			if(!currList.isEmpty()) {
+				def h = [:];
+				h =  h.plus(group_id: meta.id);
+				h =  h.plus(id: meta.id+"_g"+i);
+				returnList.add([h, currList]);
+				}
 			if(i==L.size()) break;
 			currList=[];
 			}
@@ -49,32 +57,60 @@ List makeSQRT(def min_group,def meta,def vcf_files) {
 
 workflow BCFTOOLS_CONCAT {
 take:
-	meta
-	bed //meta,bed
-	vcfs // tuple [meta,vcf,idx]
+	metadata
+	bed
+	vcfs /* IMPORTANT : tuple [meta,vcf,idx] all VCF will be grouped by ID, so if you want to group everything, all the vcf will be grouped to one  */
 main:
-	def min_group = (meta.min_group_size?:25)
+	if(metadata.min_group_size==null) {
+		log.warn("undefined BCFTOOLS_CONCAT metadata.min_group_size");
+		}
+	def min_group_size = (metadata.min_group_size?:100)
 	versions = Channel.empty()
+	multiqc = Channel.empty()
+	vcf_out = Channel.empty()
 
 
-	ch1 = vcfs
-		.map{meta,vcf,idx->[meta,[vcf,idx]]}
+	/** group by id and count number of vcf per group */
+	group1_ch = vcfs.map{meta,vcf,tbi->[meta.id,1]}
 		.groupTuple()
-		.flatMap{meta,vcf_files->makeSQRT(min_group,meta,vcf_files)}
-		.map{meta,vcf_files->[meta, vcf_files.flatten().sort()]}
-		
+		.map{group_id,array->[[id:group_id], (array.size() <= min_group_size) ]}
 
-	CONCAT1(bed,ch1)
-	versions = versions.mix(CONCAT1.out.versions)
+	ch1 = vcfs.combine(group1_ch)
+		.filter{meta1,vcf,tbi,meta2,flag-> meta1.id == meta2.id}
+		.branch {meta1,vcf,tbi,meta2,flag->
+			level0  : flag == true //no need to split by sqrt
+			level12 : true
+			}
 
+	CONCAT0(
+		bed,
+		ch1.level0.map{meta,vcf,tbi,_meta2,_flag->[meta.id,meta,[vcf,tbi]]}
+			.groupTuple()
+			.map{_group_id,metas,files->[ metas[0],files.flatten().sort()] }
+		)
+	versions = vcf_out.mix(CONCAT0.out.versions)
+	vcf_out = vcf_out.mix(CONCAT0.out.vcf)
 	
 
-	ch2 = CONCAT1.out.vcf
-		.map{meta,vcf,tbi->[meta,(vcf instanceof List?vcf:[vcf]),(tbi instanceof List?tbi:[tbi]) ]}
-		.map{meta,vcfs,tbis->[meta.id,vcfs.plus(tbis)]}
+	ch2 = ch1.level12
+		.map{meta,vcf,idx,_meta2,_flag->[[id:meta.id],[vcf,idx]]}
 		.groupTuple()
-		
+		.flatMap{meta,vcf_files->makeSQRT(meta,vcf_files)}
+		.map{meta,vcf_files->[meta, vcf_files.flatten().sort()]}
+	
 
+	CONCAT1(bed,ch2)
+	versions = vcf_out.mix(CONCAT1.out.versions)
+	vcf_out = vcf_out.mix(CONCAT1.out.vcf)
+
+	
+	ch3 = CONCAT1.out.vcf.view()
+		.map{meta,vcf,tbi->[ meta.plus(id: meta.group_id)  , [ vcf,tbi]  ]}
+		.groupTuple()
+		.view()
+		//.map{meta,vcf_files->[meta, vcf_files.flatten().sort()]}
+		//.view()		
+	/*
 	CONCAT2(
 		bed,
 		ch2.map{meta,vcffiles->[
@@ -83,21 +119,10 @@ main:
 				]},
 		)
 	versions = versions.mix(CONCAT2.out.versions)
-
-	vcf_out = CONCAT2.out.vcf
-		.map{meta,vcf,tbi->[meta,(vcf instanceof List?vcf:[vcf]),(tbi instanceof List?tbi:[tbi]) ]}
-		.flatMap{meta,vcfs,tbis->{
-			def L=[];
-			def X1 = vcfs.sort();
-			def X2 = tbis.sort();
-			for(int i=0;i< X1.size();i++) {
-				L.add([meta,X1[i],X2[i]]);
-				}
-			return L;
-			}}
-		
+	*/
 	
 emit:	
 	versions
+	multiqc
 	vcf = vcf_out //meta,vcf,tbi
 }

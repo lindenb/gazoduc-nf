@@ -11,7 +11,7 @@ General Parameters
 | `fasta` | Path to FASTA REFERENCE file. | `string` |  | True | ^\S+\.(fasta|fa|fna)?(\.gz)?$ |
 | `prefix` | prefix for the save files. A good prefix would be 'YYYY-MM-DD.project_name.'  <details><summary>Help</summary><small>Ouput file prefix</small></details>| `string` |  |  | ^[a-zA-z0-9_\.]+\.$ |
 | `hts_type` | Type of analysis (WES or WGS). If WES, --capture (bed) is expected. <details><summary>Help</summary><small>Type of HTS analysis</small></details>| `string` |  |  | ^(WES|WGS)$ |
-| `bed` | Path to BED file that was used as the capture. Required for --hts_type=WES. <details><summary>Help</summary><small>Capture BED</small></details>| `string` |  |  |  |
+| `bed` | Path to BED file that was used as the capture. Required for --hts_type=WES. For WGS a good idea is to make a BED excluding the hard-to-sequence regions (e.g: https://github.com/Boyle-Lab/Blacklist/  ) <details><summary>Help</summary><small>Capture BED</small></details>| `string` |  |  |  |
 | `outdir` | The output directory where the results will be saved. You have to use absolute paths to storage on Cloud infrastructure. <details><summary>Help</summary><small>output directory</small></details>| `string` |  |  |  |
 | `help` |  | `boolean` |  |  |  |
 
@@ -110,3 +110,20 @@ Population-scale genotyping using pangenome graphs :  https://github.com/DecodeG
 | Parameter | Description | Type | Default | Required | Pattern |
 |-----------|-----------|-----------|-----------|-----------|-----------|
 | `with_graphtyper` | Run graphtyper | `boolean` |  |  |  |
+
+## Freebayes
+
+Freebayes :  Bayesian haplotype-based genetic polymorphism discovery and genotyping. https://github.com/freebayes/freebayes 
+
+| Parameter | Description | Type | Default | Required | Pattern |
+|-----------|-----------|-----------|-----------|-----------|-----------|
+| `with_freebayes` | Run freebayes | `boolean` |  |  |  |
+| `freebayes_args` | extra parametes for freebayes | `string` |  |  |  |
+
+## Bcftools
+
+Bcftools  call variants with bcftools . https://github.com/samtools/bcftools 
+
+| Parameter | Description | Type | Default | Required | Pattern |
+|-----------|-----------|-----------|-----------|-----------|-----------|
+| `with_bcftools_call` | Run bcftools call | `boolean` |  |  |  |

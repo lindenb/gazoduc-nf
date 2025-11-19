@@ -25,6 +25,7 @@ SOFTWARE.
 process BCFTOOLS_CALL {
 tag "${meta.id?:""} ${optional_bed?optional_bed.name:""}"
 label "process_single"
+label "array100"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:

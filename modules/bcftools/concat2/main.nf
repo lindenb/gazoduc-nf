@@ -33,7 +33,7 @@ input:
 	tuple val(meta1),path(optional_bed)
 	tuple val(meta ),path("VCFS/*")
 output:
-    tuple val(meta),path("*.vcf.gz",arity: '1..*'),emit:vcf
+    	tuple val(meta),path("*.vcf.gz",arity: '1..*'),emit:vcf
 	tuple val(meta),path("*.vcf.gz.tbi",arity: '1..*'),emit:tbi
     tuple val(meta),path("*.md5"),optional:true,emit:md5
 	path("versions.yml"),emit:versions

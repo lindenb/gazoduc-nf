@@ -73,6 +73,8 @@ include { VCF_INPUT as DBSNP_VCF_INPUT            } from '../../subworkflows/nf/
 include { VCF_INPUT as KNOWN_INDELS_VCF_INPUT     } from '../../subworkflows/nf/vcf_input'
 include { VCF_INPUT as SOMALIER_SITES_VCF_INPUT   } from '../../subworkflows/nf/vcf_input' 
 include { GTF_INPUT                               } from '../../subworkflows/nf/gtf_input' 
+include { ENCODE_BLACKLIST                        } from '../../modules/encode/blacklist' 
+include { BEDTOOLS_SUBTRACT                       } from '../../modules/bedtools/subtract' 
 
 
 
@@ -670,13 +672,30 @@ if(params.known_indels_vcf!=null) {
     versions = versions.mix(CNVNATOR.out.versions)
      multiqc = multiqc.mix(CNVNATOR.out.multiqc)
     }
+ /***************************************************
+   *
+   * Download encode black list
+   *
+   */
+  ENCODE_BLACKLIST(PREPARE_ONE_REFERENCE.out.dict)
+  versions = versions.mix(ENCODE_BLACKLIST.out.versions)
 
+  snv_calling_bed =  (params.bed!=null?bed:PREPARE_ONE_REFERENCE.out.scatter_bed)
+
+ /***************************************************
+   *
+   * Remove blacklisted region for calling
+   *
+   */
+  if(parseBoolean(params.exclude_encode_blacklist)) {
+    BEDTOOLS_SUBTRACT(snv_calling_bed.combine(ENCODE_BLACKLIST.out.bed).map{meta1,bed1,meta2,bed2->[meta1,bed1,bed2]})
+    versions = versions.mix(BEDTOOLS_SUBTRACT.out.versions)
+    snv_calling_bed = BEDTOOLS_SUBTRACT.out.bed.first()
+    }
 
 
   /* cut the bed/genome into parts for SNV calling per region */
-  BEDTOOLS_MAKEWINDOWS(
-	    (params.bed!=null?bed:PREPARE_ONE_REFERENCE.out.scatter_bed)//TODO
-	)
+  BEDTOOLS_MAKEWINDOWS( snv_calling_bed )
   versions = versions.mix(BEDTOOLS_MAKEWINDOWS.out.versions)
 
   /* if it's an exome , group the small genome together in BED */

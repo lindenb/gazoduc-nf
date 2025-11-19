@@ -23,6 +23,7 @@ SOFTWARE.
 
 */
 include {MOSDEPTH                   } from '../../modules/mosdepth'
+include {BEDTOOLS_SUBTRACT          } from '../../modules/bedtools/subtract'
 include {SAMTOOLS_STATS             } from '../../modules/samtools/stats'
 include {SAMTOOLS_FLAGSTATS         } from '../../modules/samtools/flagstats'
 include {SAMTOOLS_IDXSTATS          } from '../../modules/samtools/bamidxstats'
@@ -43,7 +44,7 @@ main:
 	versions_ch = Channel.empty()
 	reports_ch  = Channel.empty()
 	metadata_ch = Channel.empty()
-	
+	bed_outliers = bed
 	sample_sex_ch =  Channel.empty()
 	mosdepth_global = Channel.empty()
 	mosdepth_summary = Channel.empty()
@@ -123,7 +124,7 @@ main:
 			ch1 = mosdepth_summary
 				.combine(treshold_ch)
 				.map{meta,summary,fold->[meta.id,meta.plus(treshold:fold),summary]}
-				.join(bams.map{[it[0].id,it[0],it[1],it[2]]})
+				.join(bams.map{[it[0].id,it[0],it[1],it[2]]}, )
 				.combine(bed)
 				.map{sample,meta1,summary,meta2,bam,bai,meta3,bed->[meta1,summary,bam,bai,bed]}
 			
@@ -133,6 +134,21 @@ main:
 
 			DEPTH_OUTLIER_MERGE_ALL_SAMPLES(DEPTH_OUTLIER.out.bed.map{meta,bed,tbi->[[id:"outliers",treshold:meta.treshold],bed]}.groupTuple())
 			versions_ch = versions_ch.mix(DEPTH_OUTLIER_MERGE_ALL_SAMPLES.out.versions)
+
+			BEDTOOLS_SUBTRACT(
+				bed.combine(DEPTH_OUTLIER_MERGE_ALL_SAMPLES.out.bed).map{meta1,bed,meta2,tabix,idx->[
+					meta1.plus(treshold : meta2.treshold).plus(id:"subtract.${meta2.treshold}"),
+					bed,
+					tabix
+					]})
+			bed_outliers = BEDTOOLS_SUBTRACT.out.bed.
+				collect(flat:false)
+				.filter{it.size()>0}
+				.view()
+				.map{
+					def L= it.sort{a,b-> a[0].treshold <=> b[0].treshold}
+					return L[0];
+					}
 			}
 		
 		}

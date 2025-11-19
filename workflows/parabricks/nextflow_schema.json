@@ -35,7 +35,7 @@
         "bed": {
           "type": "string",
           "format": "file-path",
-          "description": "Path to BED file that was used as the capture. Required for --hts_type=WES.",
+          "description": "Path to BED file that was used as the capture. Required for --hts_type=WES. For WGS a good idea is to make a BED excluding the hard-to-sequence regions (e.g: https://github.com/Boyle-Lab/Blacklist/  )",
           "help_text": "Capture BED"
         },
         "outdir": {
@@ -227,6 +227,10 @@
           "bed_cluster_args2":{
             "type": "string",
             "description":"Arguments for 'jvarkit bed cluster' group the fragments generated using --makewindows_args into bed file of size 'x'. For example for exomes, you can imagine grouping the fragments by group of 'x' bp. Used by graphtyper."
+            },
+          "exclude_encode_blacklist": {
+            "type": "boolean",
+            "description":"Exclude encode balcklist regions from the calling regions"
             }
           }
       },
@@ -240,8 +244,34 @@
             "description":"Run graphtyper"
             }
           }
+        },
+      "freebayes_params": {
+        "title": "Freebayes",
+        "type": "object",
+        "description": "Freebayes :  Bayesian haplotype-based genetic polymorphism discovery and genotyping. https://github.com/freebayes/freebayes ",
+        "properties": {
+          "with_freebayes":{
+            "type": "boolean",
+            "description":"Run freebayes"
+            },
+          "freebayes_args":{
+            "type": "string",
+            "description":"extra parametes for freebayes"
+            }
+          }
+        } ,
+      "bcftools_params": {
+        "title": "Bcftools",
+        "type": "object",
+        "description": "Bcftools  call variants with bcftools . https://github.com/samtools/bcftools ",
+        "properties": {
+          "with_bcftools_call":{
+            "type": "boolean",
+            "description":"Run bcftools call"
+            }
+          }
         }
-  },
+},
   "allOf": [
     { "$ref": "#/$defs/input_and_output_params" },
     { "$ref": "#/$defs/mapping_fastqs" },
@@ -253,6 +283,8 @@
     { "$ref": "#/$defs/indexcov_params" },
     { "$ref": "#/$defs/cnvnator_params" },
     { "$ref": "#/$defs/calling_params" },
-    { "$ref": "#/$defs/graphtyper_params" }
+    { "$ref": "#/$defs/graphtyper_params" },
+    { "$ref": "#/$defs/freebayes_params" },
+    { "$ref": "#/$defs/bcftools_params" }
   ]
 }
