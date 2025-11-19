@@ -62,7 +62,7 @@ nextflow_process {
             }
             process {
                 """
-               input[0] = [ [id:"bed"],  file("${projectDir}/tests/data/rotavirus_rf.bed") ]
+               input[0] = [ [id:"bed"],  file("${projectDir}/tests/data/rotavirus_rf.01.bed") ]
                input[1] = SPLIT_N_VARIANTS.out.vcf
                             .mix( SPLIT_N_VARIANTS.out.tbi)
                             .map{meta,f->f}
@@ -112,7 +112,7 @@ nextflow_process {
                 }
                 process {
                     """
-                input[0] = [ [id:"bed"],  file("${projectDir}/tests/data/rotavirus_rf.bed") ]
+                input[0] = [ [id:"bed"],  file("${projectDir}/tests/data/rotavirus_rf.01.bed") ]
                 input[1] = SPLIT_N_VARIANTS.out.vcf
                                 .mix( SPLIT_N_VARIANTS.out.tbi)
                                 .map{meta,f->f}

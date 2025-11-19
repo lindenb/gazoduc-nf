@@ -20,7 +20,7 @@ nextflow_process {
             process {
                 """
 		input[0] =  [[id:"ref",ucsc_name:"hg38"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
-		input[1] =  [[id:"bed",ucsc_name:"hg38"],file("${projectDir}/tests/data/rotavirus_rf.bed")]
+		input[1] =  [[id:"bed",ucsc_name:"hg38"],file("${projectDir}/tests/data/rotavirus_rf.01.bed")]
                 """
             }
         }

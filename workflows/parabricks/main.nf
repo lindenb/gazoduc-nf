@@ -742,7 +742,7 @@ if(params.known_indels_vcf!=null) {
       PREPARE_ONE_REFERENCE.out.fasta,
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
-      cluster_bed1,
+      cluster_bed1, // not for calling but joining
       prevent_multi_gpu_ch //prevent multiple GPUs jobs at the same time
         .combine(  bams_ch.map{it + [[]]/* empty file for BQSR */})
         .map{it[1..<it.size()]} // remove item[0] containing multiple GPLUs guard
@@ -763,7 +763,7 @@ if(params.known_indels_vcf!=null) {
       PREPARE_ONE_REFERENCE.out.fasta,
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
-      cluster_bed1,
+      cluster_bed1, // not for calling but joining
       prevent_multi_gpu_ch //prevent multiple GPUs jobs at the same time
         .combine(bams_ch)
         .map{it[1..<it.size()]} // remove item[0] containing multiple GPLUs guard
@@ -880,8 +880,8 @@ if(params.known_indels_vcf!=null) {
     PREPARE_ONE_REFERENCE.out.fasta,
     PREPARE_ONE_REFERENCE.out.fai,
     bed,
-    gtf_ch.map{[it[0],it[1]]}.first(),//meta,gtf
-    [[:],[]],//samples,
+    gtf_ch.map{meta,gtf,idx->[meta,gtf]}.first(),//meta,gtf
+    [[id:"no_samples"],[]],
     vcf_ch.map{[it[0],[it[1],it[2]]]}
     )
   versions = versions.mix(BCFTOOLS_STATS.out.versions)

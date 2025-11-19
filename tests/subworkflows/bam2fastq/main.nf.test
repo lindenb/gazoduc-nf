@@ -93,7 +93,7 @@ test("BAM_SAMTOOLS_BED") {
                			file("${projectDir}/tests/data/rotavirus_rf.fa"),
                			file("${projectDir}/tests/data/rotavirus_rf.fa.fai"),
                			file("${projectDir}/tests/data/rotavirus_rf.dict"),
-               			file("${projectDir}/tests/data/rotavirus_rf.bed")
+               			file("${projectDir}/tests/data/rotavirus_rf.01.bed")
                			]
                		)
                 """

@@ -24,13 +24,13 @@ SOFTWARE.
 */
 include {PB_DEEPVARIANT as DEEPVARIANT         } from '../../../modules/parabricks/deepvariant'
 include {GLNEXUS_GENOTYPE                      } from '../../../modules/glnexus/genotype'
-include {BCFTOOLS_CONCAT                       } from '../../../modules/bcftools/concat'
+include {BCFTOOLS_CONCAT                       } from '../../../modules/bcftools/concat3'
 
 
 
 workflow PB_DEEPVARIANT {
 take:
-    meta
+    metadata
     fasta
     fai
     dict
@@ -44,13 +44,13 @@ main:
     ch1 = DEEPVARIANT.out.gvcf
         .map{[it[1],it[2]]}//gvcf,tbi
         .collect()
-        .map{[[id:"pb_deepvariant"],it]}
+        .map{[[id:"pb_deepvariant"],it.sort()]}
     
     
      
     GLNEXUS_GENOTYPE(
         cluster_beds,
-        [[:],[]], //config
+        [[id:"no_config"],[]], //config
         ch1
         )
      versions = versions.mix(GLNEXUS_GENOTYPE.out.versions)
@@ -60,7 +60,7 @@ main:
         GLNEXUS_GENOTYPE.out.vcf
             .map{[it[1],it[2]]}//gvcf,tbi
              .collect()
-             .map{[[id:"pb_deepvariant"],it,[]]}
+             .map{[[id:"pb_deepvariant"],it.sort()]}
         )
     versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
 

@@ -29,7 +29,7 @@ nextflow_process {
                 """
 				input[0] = [ [id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
                 input[1] = BEDTOOLS_RANDOM.out.bed.combine(
-                            Channel.fromPath("${projectDir}/tests/data/rotavirus_rf.bed")
+                            Channel.fromPath("${projectDir}/tests/data/rotavirus_rf.01.bed")
                             )
                 """
             }
@@ -50,7 +50,7 @@ nextflow_process {
                 """
 				input[0] = [ [id:"ref"],[]]
                 input[1] = BEDTOOLS_RANDOM.out.bed.combine(
-                            Channel.fromPath("${projectDir}/tests/data/rotavirus_rf.bed")
+                            Channel.fromPath("${projectDir}/tests/data/rotavirus_rf.01.bed")
                             )
                 """
             }

@@ -32,7 +32,7 @@ nextflow_process {
                 """
 				input[0] = [ [id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
                 input[1] = BEDTOOLS_RANDOM.out.bed.map{m,f->f}
-                        .combine(Channel.of(file("${projectDir}/tests/data/rotavirus_rf.bed")))
+                        .combine(Channel.of(file("${projectDir}/tests/data/rotavirus_rf.01.bed")))
                         .collect()
                         .map{[[id:"inter"],it]}
                     
@@ -56,7 +56,7 @@ nextflow_process {
                 """
 				input[0] = [ [id:"ref"],[]]
                 input[1] = BEDTOOLS_RANDOM.out.bed.map{m,f->f}
-                        .combine(Channel.of(file("${projectDir}/tests/data/rotavirus_rf.bed")))
+                        .combine(Channel.of(file("${projectDir}/tests/data/rotavirus_rf.01.bed")))
                         .collect()
                         .map{[[id:"inter"],it]}
                     

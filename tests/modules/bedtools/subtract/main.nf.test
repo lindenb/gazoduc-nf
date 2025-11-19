@@ -28,7 +28,7 @@ nextflow_process {
             process {
                 """
                 input[0] = BEDTOOLS_RANDOM.out.bed.combine(
-                            Channel.fromPath("${projectDir}/tests/data/rotavirus_rf.bed")
+                            Channel.fromPath("${projectDir}/tests/data/rotavirus_rf.01.bed")
                             )
                 """
             }

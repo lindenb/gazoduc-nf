@@ -35,7 +35,7 @@ nextflow_process {
                 """
 		input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
                 input[1] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
-                input[2] = [[id:"bed"],file("${projectDir}/tests/data/rotavirus_rf.bed")]
+                input[2] = [[id:"bed"],file("${projectDir}/tests/data/rotavirus_rf.01.bed")]
                 input[3] = [[id:"S1"],file("${projectDir}/tests/data/S1.bam"),file("${projectDir}/tests/data/S1.bam.bai")]
                 """
             }

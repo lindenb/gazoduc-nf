@@ -19,7 +19,7 @@ nextflow_process {
 			file("${projectDir}/tests/data/S1.bam.bai"),
 			file("${projectDir}/tests/data/rotavirus_rf.fa"),
 			file("${projectDir}/tests/data/rotavirus_rf.fa.fai"),
-         		file("${projectDir}/tests/data/rotavirus_rf.bed")
+         		file("${projectDir}/tests/data/rotavirus_rf.01.bed")
 			]
                 """
             }

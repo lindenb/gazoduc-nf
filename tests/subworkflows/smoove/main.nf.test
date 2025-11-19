@@ -20,7 +20,7 @@ nextflow_workflow {
                 input[1] =  [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")]
                 input[2] =  [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
                 input[3] =  [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")]
-                input[4] =  [[id:"xbed"], file("${projectDir}/tests/data/rotavirus_rf.bed")]
+                input[4] =  [[id:"xbed"], file("${projectDir}/tests/data/rotavirus_rf.01.bed")]
                 input[5] =  Channel.of(
                     [[id:"S1",status:"case"], file("${projectDir}/tests/data/S1.bam"),  file("${projectDir}/tests/data/S1.bam.bai")],
                     [[id:"S2",status:"case"], file("${projectDir}/tests/data/S2.bam"),  file("${projectDir}/tests/data/S2.bam.bai")],

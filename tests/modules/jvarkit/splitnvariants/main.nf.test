@@ -42,7 +42,7 @@ nextflow_process {
             }
             process {
                 """
-                input[0] = [ [id:"bed"], file("${projectDir}/tests/data/rotavirus_rf.bed") ]
+                input[0] = [ [id:"bed"], file("${projectDir}/tests/data/rotavirus_rf.01.bed") ]
                 input[1] = [
                     [id:"ref"],
                     file("${projectDir}/tests/data/rotavirus_rf.vcf.gz"),
@@ -93,7 +93,7 @@ nextflow_process {
             }
             process {
                 """
-                input[0] = [ [id:"bed"], file("${projectDir}/tests/data/rotavirus_rf.bed") ]
+                input[0] = [ [id:"bed"], file("${projectDir}/tests/data/rotavirus_rf.01.bed") ]
                 input[1] = [
                     [id:"ref"],
                     file("${projectDir}/tests/data/rotavirus_rf.vcf.gz"),
@@ -144,7 +144,7 @@ test("DISTANCE") {
             }
             process {
                 """
-                input[0] = [ [id:"bed"], file("${projectDir}/tests/data/rotavirus_rf.bed") ]
+                input[0] = [ [id:"bed"], file("${projectDir}/tests/data/rotavirus_rf.01.bed") ]
                 input[1] = [
                     [id:"ref"],
                     file("${projectDir}/tests/data/rotavirus_rf.vcf.gz"),

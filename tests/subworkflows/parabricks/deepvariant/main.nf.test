@@ -1,0 +1,43 @@
+nextflow_workflow {
+
+    name "Test Workflow PB_DEEPVARIANT"
+    script "subworkflows/parabricks/deepvariant/main.nf"
+    workflow "PB_DEEPVARIANT"
+    tag "gitlab_ci"
+    tag "subworkflows"
+    tag "subworkflows/parabricks"
+    tag "subworkflows/parabricks/deepvariant"
+
+    test("STUB") {
+        options "-stub"
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+            input[0] = [id:"meta"]
+            input[1] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")])
+            input[2] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")])
+            input[3] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")])
+            input[4] = Channel.of(
+			[[id:"bed1"], file("${projectDir}/tests/data/rotavirus_rf.01.bed")],
+			[[id:"bed2"], file("${projectDir}/tests/data/rotavirus_rf.02.bed")]
+			)
+            input[5] = Channel.of(1..5)
+                    .flatMap()
+                    .map{v-> [[id:"S\${v}"], "${projectDir}/tests/data/S\${v}.bam"]}
+                    .map{m,f->[m,file(f),file(f+".bai")]}
+            """
+            }
+        }
+
+        then {
+            assert workflow.success
+           // assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

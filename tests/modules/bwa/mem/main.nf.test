@@ -71,7 +71,7 @@ nextflow_process {
 		input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
 		input[1] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
 		input[2] = BWA_INDEX.out.bwa_index
-		input[3] = [[id:"bed"],file("${projectDir}/tests/data/rotavirus_rf.bed")]
+		input[3] = [[id:"bed"],file("${projectDir}/tests/data/rotavirus_rf.01.bed")]
 		input[4] = [[id:"S1"],file("${projectDir}/tests/data/S1.R1.fq.gz"),file("${projectDir}/tests/data/S1.R2.fq.gz")]
                 """
             }
@@ -150,7 +150,7 @@ nextflow_process {
 		input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
 		input[1] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
 		input[2] = BWA_INDEX.out.bwa_index
-		input[3] = [[id:"bed"],file("${projectDir}/tests/data/rotavirus_rf.bed")]
+		input[3] = [[id:"bed"],file("${projectDir}/tests/data/rotavirus_rf.01.bed")]
 		input[4] = [[id:"S1"],file("${projectDir}/tests/data/S1.R1.fq.gz"),[]]
                 """
             }
