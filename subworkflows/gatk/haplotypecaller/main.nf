@@ -146,6 +146,8 @@ emit:
 
 
 process SPLIT_BED {
+label "process_single"
+label "array100"
 tag "${meta.id} ${bed.name} ${src_bed}"
 afterScript "rm -rf TMP"
 conda  "${moduleDir}/../../../conda/bioinfo.01.yml"

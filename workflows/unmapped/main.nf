@@ -28,93 +28,74 @@ include {runOnComplete;dumpParams                 } from '../../modules/utils/fu
 include { SAMTOOLS_STATS                          } from '../../modules/samtools/stats'
 include {MULTIQC                                  } from '../../modules/multiqc'
 include {COMPILE_VERSIONS                         } from '../../modules/versions/main.nf'
-
-
-
-Map assertKeyExists(final Map hash,final String key) {
-    if(!hash.containsKey(key)) throw new IllegalArgumentException("no key ${key}'in ${hash}");
-    return hash;
-}
-
-Map assertKeyExistsAndNotEmpty(final Map hash,final String key) {
-    assertKeyExists(hash,key);
-    def value = hash.get(key);
-    if(value.isEmpty()) throw new IllegalArgumentException("empty ${key}'in ${hash}");
-    return hash;
-}
-
-Map assertKeyMatchRegex(final Map hash,final String key,final String regex) {
-    assertKeyExists(hash,key);
-    def value = hash.get(key);
-    if(!value.matches(regex)) throw new IllegalArgumentException(" ${key}'in ${hash} doesn't match regex '${regex}'.");
-    return hash;
-}
-
-
+include {PREPARE_ONE_REFERENCE                    } from '../../subworkflows/samtools/prepare.one.ref'
+include {META_TO_BAMS                             } from '../../subworkflows/samtools/meta2bams2'
+include { READ_SAMPLESHEET                        } from '../../subworkflows/nf/read_samplesheet'
 
 
 workflow {
+	if(params.fasta==null) {
+			throw new IllegalArgumentException("undefined --fasta");
+			}
+	if(params.samplesheet==null) {
+			throw new IllegalArgumentException("undefined --samplesheet");
+			}
+
+
+
 	def versions = Channel.empty()
-	def to_multiqc  = Channel.empty()
-	def meta = [id:"contaminations"]
-	def acn_file = [meta,file("${moduleDir}/contaminants.txt")];
+	def multiqc  = Channel.empty()
+	def metadata = [id:"contaminations"]
+	def acn_file = [metadata,file("${moduleDir}/contaminants.txt")];
 	if(params.acn_file!=null) {
-		acn_file = [[id:file(params.acn_file).baseName],file(params.acn_file)]
-	}
+		acn_file = [[id:file(params.acn_file).name],file(params.acn_file)]
+		}	
+
+  /***************************************************
+   *
+   *  PREPARE FASTA REFERENCE
+   *
+   */
+	PREPARE_ONE_REFERENCE(
+			metadata,
+			Channel.of(params.fasta).map{file(it)}.map{[[id:it.baseName],it]}
+			)
+	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
 
 
-	bams_ch = Channel.fromPath(params.samplesheet)
-        .splitCsv(header:true,sep:',')
-        .map{assertKeyMatchRegex(it,"sample","^[A-Za-z_0-9\\.\\-]+\$")}
-        .map{assertKeyMatchRegex(it,"bam","^\\S+\\.(bam|cram)\$")}
-		.map{
-            if(it.containsKey("bai")) return it;
-            if(it.bam.endsWith(".cram")) return it.plus(bai : it.bam+".crai");
-            return it.plus(bai:it.bam+".bai");
-        	}
-		.map{assertKeyMatchRegex(it,"bai","^\\S+\\.(bai|crai)\$")}
-		.map{
-				if(it.containsKey("fasta")) return it;
-				if(params.fasta==null || params.fasta.trim().isEmpty()) throw new IllegalArgumentException("undefined --fasta");
-				return it.plus(fasta:params.fasta);
-			}
-			.map{
-				if(it.containsKey("fai")) return it;
-				return it.plus(fai:it.fasta+".fai");
-			}
-			.map{[[id:it.sample], file(it.bam), file(it.bai), file(it.fasta), file(it.fai)]}
+	/* no fastq samplesheet */
+	READ_SAMPLESHEET(
+        [arg_name:"samplesheet"],
+        params.samplesheet
+        )
+	versions = versions.mix(READ_SAMPLESHEET.out.versions)
 
+	META_TO_BAMS(
+		metadata,
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		PREPARE_ONE_REFERENCE.out.dict,
+		READ_SAMPLESHEET.out.samplesheet
+		)
+	versions = versions.mix(META_TO_BAMS.out.versions)
 
-	ch2 = bams_ch.multiMap{
-		fasta: [[id:"ref"],it[3]]
-		fai  : [[id:"ref"],it[4]]
-		bam :  [it[0],it[1],it[2]]
-		}
 	
 
-	SAMTOOLS_STATS(
-		ch2.fasta,
-		ch2.fai,
-	    [[id:"NOBED"],[]],
-		ch2.bam
-	    )
-	versions = versions.mix(SAMTOOLS_STATS.out.versions)
-	to_multiqc = to_multiqc.mix(SAMTOOLS_STATS.out.stats.map{it[1]})
 
 	UNMAPPED(
-		meta,
+		metadata,
 		acn_file,
-		bams_ch
+		META_TO_BAMS.out.bams
 		)
 	versions = versions.mix(UNMAPPED.out.versions)
-	to_multiqc = to_multiqc.mix(UNMAPPED.out.multiqc)
+	multiqc = multiqc.mix(UNMAPPED.out.multiqc)
 
  	COMPILE_VERSIONS(versions.collect())
-	to_multiqc = to_multiqc.mix(COMPILE_VERSIONS.out.multiqc)
+	multiqc = multiqc.mix(COMPILE_VERSIONS.out.multiqc)
 
     MULTIQC(
 		[[id:"no_mqc_config"],[]],
-		to_multiqc.collect().map{[[id:"contaminations"],it]}
+		multiqc.collect().map{[[id:"contaminations"],it]}
 		)
 	}
 

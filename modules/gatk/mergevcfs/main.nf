@@ -30,7 +30,7 @@ tag "${meta.id?:""}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.02.yml"
 input:
-    tuple val(meta ),path(vcf),path("VCFS/*")
+    tuple val(meta ),path("VCFS/*")
 output:
     tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:vcf
     tuple val(meta),path("*.md5"),optional:true,emit:md5
@@ -43,11 +43,8 @@ script:
 """	
 	hostname 1>&2
 	mkdir -p TMP
-	# input must be vcf.gz only
-	find VCFS/ \\( -name "*.vcf" -o -name "*.bcf"  \\)  > TMP/jeter.list
-	test ! -s TMP/jeter.list
-
-	find VCFS/ -name "*.vcf.gz"   | sort -V -T TMP > TMP/jeter.list
+	# input must be vcf.gz only , let it fail if there is any bad file
+	find VCFS/ \\( -name "*.vcf.gz"  -o -name "*.vcf" -o -name "*.bcf" \\) | sort -V -T TMP > TMP/jeter.list
 		
 
 		if test  `wc -l < TMP/jeter.list` -le ${limit}

@@ -24,13 +24,14 @@ SOFTWARE.
 */
 process FIND_GVCF_BLOCKS {
 	label "process_single"
+	label "array100"
 	conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 	afterScript "rm -rf TMP"
 	tag "${meta.id?:""} ${optional_bed?optional_bed.name:""}"
 	input:
 		tuple val(meta),path("GVCFS/*"),path(optional_bed)
 	output:
-		tuple val(meta ),path("*.bed"),path(optional_bed),emit:bed
+		tuple val(meta ),path("*.covered.bed"),path(optional_bed),emit:bed
 		path("versions.yml"),emit:versions
 	script:
 		def args1 = task.ext.args1?:""
@@ -67,15 +68,15 @@ if ${optional_bed?true:false}
 then
 	bedtools intersect -v \\
 		-a <(sort -T TMP -t '\t' -k1,1 -k2,2n ${optional_bed} | bedtools merge) \\
-		-b <(sort -T TMP -t '\t' -k1,1 -k2,2n TMP/jeter.bed | bedtools merge) > TMP/not.covered.bed
+		-b <(sort -T TMP -t '\t' -k1,1 -k2,2n TMP/jeter.bed | bedtools merge) > TMP/not_covered.bed
 
-	if test -s TMP/not.covered.bed
+	if test -s TMP/not_covered.bed
 	then
-		mv TMP/not.covered.bed ./
+		mv TMP/not_covered.bed ./
 	fi
 fi
 
-mv TMP/jeter.bed ${prefix}.bed
+mv TMP/jeter.bed ${prefix}.covered.bed
 
 cat << EOF > versions.yml
 ${task.process}:

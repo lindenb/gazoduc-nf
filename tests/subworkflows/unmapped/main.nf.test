@@ -1,0 +1,44 @@
+nextflow_workflow {
+
+    name "Test Workflow UNMAPPED"
+    script "subworkflows/unmapped/main.nf"
+    workflow "UNMAPPED"
+    tag "gitlab_ci"
+    tag "subworkflows"
+    tag "subworkflows/unmapped"
+
+    test("BASIC") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [:]
+                input[1] = Channel.of("X70276.1").collectFile(name:"snippet.txt", newLine:true).map{f->[[id:"conta"],f]}.first()
+                input[2] = Channel.of(
+                        [[id:"S1"],file("${projectDir}/tests/data/S1.bam"),file("${projectDir}/tests/data/S1.bam.bai")],
+                        [[id:"S2"],file("${projectDir}/tests/data/S2.bam"),file("${projectDir}/tests/data/S2.bam.bai")],
+                        [[id:"S3"],file("${projectDir}/tests/data/S3.bam"),file("${projectDir}/tests/data/S3.bam.bai")]
+                        ).map{meta,bam,bai->[
+                            meta,
+                            bam,
+                            bai,
+                            file("${projectDir}/tests/data/rotavirus_rf.fa"),
+                            file("${projectDir}/tests/data/rotavirus_rf.fa.fai"),
+                            file("${projectDir}/tests/data/rotavirus_rf.dict")
+                            ]}
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

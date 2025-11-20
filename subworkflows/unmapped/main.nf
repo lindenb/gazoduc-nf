@@ -135,6 +135,13 @@ ${task.process}:
     samtools : \$(samtools version | awk 'NR==1 {print \$NF}')
 END_VERSIONS
 """
+stub:
+        def prefix = task.ext.prefix?:acns_file.baseName+".db"
+
+"""
+touch ${prefix}.fa ${prefix}.fa.fai ${prefix}.dict ${prefix}.tsv
+touch versions.yml
+"""
 }
 
 
@@ -146,7 +153,7 @@ process MAP_UNMAPPED {
     afterScript "rm -rf TMP"
     input:
         tuple val(meta5),path(bwaDir)
-        tuple val(meta),path(bam),path(bai),path(fasta),path(fai)
+        tuple val(meta),path(bam),path(bai),path(fasta),path(fai),path(dict)
     output:
         tuple val(meta), path("*.contaminations.tsv"),emit:tsv
         tuple val(meta), path("*.fastq.gz"),optional:true,emit:fastq // still unmapped, for spades
@@ -254,13 +261,19 @@ ${task.process}:
     bwa : \$(bwa 2>&1 | grep Version | tr -d ":")
 END_VERSIONS
 """
+
+stub:
+        def prefix=task.ext.prefix?:meta.id
+"""
+touch versions.yml ${prefix}.contaminations.tsv  ${prefix}.fastq.gz
+"""
 }
 
 
 process MERGE {
 tag "${meta.id}"
 label "label_single"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
     tuple val(meta1),path("database.tsv")
@@ -285,12 +298,18 @@ ${task.process}:
     sort : todo
 END_VERSIONS
 """
+
+stub:
+   def prefix=task.ext.prefix?:"contaminations"
+"""
+touch versions.yml ${prefix}.tsv
+"""
 }
 
 process MERGE_SPADES {
 tag "${meta.id}"
 label "label_single"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
     tuple val(meta ),path("TSV/*")
@@ -315,5 +334,10 @@ cat << END_VERSIONS > versions.yml
 ${task.process}:
     sort : todo
 END_VERSIONS
+"""
+stub:
+   def prefix=task.ext.prefix?:"spades"
+"""
+touch versions.yml ${prefix}.tsv
 """
 }

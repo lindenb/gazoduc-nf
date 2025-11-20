@@ -833,13 +833,13 @@ if(params.known_indels_vcf!=null) {
 
   if(parseBoolean(params.with_haplotype_caller)) {
     HAPLOTYPECALLER(
-      metadata,
+      metadata.plus(gvcf_merge_method:params.hc_gvcf_merge_method),
       PREPARE_ONE_REFERENCE.out.fasta,
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
-      Channel.of([[id:"refs"],[]]),//other ref TODO
+      [[id:"refs"],[]],//other ref TODO
       dbsnp_ch,
-      Channel.of([[id:"ped"],[]]),//TODO ped
+      [[id:"ped"],[]], //TODO ped
       cluster_bed1,
       bams_ch
       )
@@ -867,7 +867,7 @@ if(params.known_indels_vcf!=null) {
   BCFTOOLS_GUESS_PLOIDY(
       PREPARE_ONE_REFERENCE.out.fasta,
       PREPARE_ONE_REFERENCE.out.fai,
-      vcf_ch.view{"#GUESS PLOIDY ${it}"}
+      vcf_ch
       )
   versions = versions.mix(BCFTOOLS_GUESS_PLOIDY.out.versions)
 

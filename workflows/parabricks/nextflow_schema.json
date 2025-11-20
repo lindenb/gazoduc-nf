@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Parabricks",
+  "title": "Parabricks pipeline parameters",
+  "$id": "https://raw.githubusercontent.com/gazoduc/master/nextflow_schema.json",
   "description": "Parabricks Pipeline",
   "type": "object",
   "$defs": {
@@ -270,6 +271,44 @@
             "description":"Run bcftools call"
             }
           }
+        } ,
+      "haplotypcaller_params": {
+        "title": "GATK HaplotypeCaller",
+        "type": "object",
+        "description": "GATK Haplotypecaller in GVCF mode. ",
+        "properties": {
+          "with_haplotype_caller":{
+            "type": "boolean",
+            "description":"Run GATK Haplotypcaller"
+            },
+          "hc_gvcf_merge_method": {
+            "type": "string",
+            "pattern": "^(combinegvcfs|glnexus)$",
+            "description" : "Method to merge and genotype GVCF files ? 'combinegvcfs' or 'glnexus' "
+            }
+          }
+        },
+      "pb_deepvariant_params": {
+        "title": "Parabricks DeepVariant",
+        "type": "object",
+        "description": "Deep Variant :  DeepVariant is an analysis pipeline that uses a deep neural network to call genetic variants from next-generation DNA sequencing data.  https://github.com/google/deepvariant",
+        "properties": {
+          "with_pb_deepvariant":{
+            "type": "boolean",
+            "description":"Run Parabricks DeepVariant"
+            }
+          }
+        },
+      "pb_haplotypecaller_params": {
+        "title": "Parabricks HaplotypeCaller",
+        "type": "object",
+        "description": "Run the parabricks version of haplotypecaller.",
+        "properties": {
+          "with_pb_haplotypecaller":{
+            "type": "boolean",
+            "description":"Run Parabricks haplotypecaller"
+            }
+          }
         }
 },
   "allOf": [
@@ -285,6 +324,9 @@
     { "$ref": "#/$defs/calling_params" },
     { "$ref": "#/$defs/graphtyper_params" },
     { "$ref": "#/$defs/freebayes_params" },
-    { "$ref": "#/$defs/bcftools_params" }
+    { "$ref": "#/$defs/bcftools_params" },
+    { "$ref": "#/$defs/haplotypcaller_params" },
+    { "$ref": "#/$defs/pb_deepvariant_params" },
+    { "$ref": "#/$defs/pb_haplotypecaller_params" }
   ]
 }

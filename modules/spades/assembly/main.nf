@@ -70,4 +70,11 @@ ${task.process}:
 EOF
     """
 
+stub:
+	def prefix = task.ext.prefix?:"${meta.id}.spades"
+"""
+touch ${prefix}.assembled_contigs.fa.gz
+touch ${prefix}.assembled_contigs.tsv.gz
+touch versions.yml
+"""
 }

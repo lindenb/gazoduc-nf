@@ -1,4 +1,4 @@
-# Parabricks
+# gazoduc pipeline parameters
 
 Parabricks Pipeline
 
@@ -102,6 +102,7 @@ General parameters for the SNV calling
 |-----------|-----------|-----------|-----------|-----------|-----------|
 | `makewindows_args` | Arguments for 'betools makewindows' Before calling the SNVs, the genome or the capture will be divided into smaller parts. For exome this parameter is quite useless unless the window size is lower than the fragment size. See also --bed_cluster_args2  | `string` |  |  |  |
 | `bed_cluster_args2` | Arguments for 'jvarkit bed cluster' group the fragments generated using --makewindows_args into bed file of size 'x'. For example for exomes, you can imagine grouping the fragments by group of 'x' bp. Used by graphtyper. | `string` |  |  |  |
+| `exclude_encode_blacklist` | Exclude encode balcklist regions from the calling regions | `boolean` |  |  |  |
 
 ## Graphtyper
 
@@ -127,3 +128,28 @@ Bcftools  call variants with bcftools . https://github.com/samtools/bcftools
 | Parameter | Description | Type | Default | Required | Pattern |
 |-----------|-----------|-----------|-----------|-----------|-----------|
 | `with_bcftools_call` | Run bcftools call | `boolean` |  |  |  |
+
+## GATK HaplotypeCaller
+
+GATK Haplotypecaller in GVCF mode. 
+
+| Parameter | Description | Type | Default | Required | Pattern |
+|-----------|-----------|-----------|-----------|-----------|-----------|
+| `with_haplotype_caller` | Run GATK Haplotypcaller | `boolean` |  |  |  |
+| `hc_gvcf_merge_method` | Method to merge and genotype GVCF files ? 'combinegvcfs' or 'glnexus'  | `string` |  |  | ^(combinegvcfs|glnexus)$ |
+
+## Parabricks DeepVariant
+
+Deep Variant :  DeepVariant is an analysis pipeline that uses a deep neural network to call genetic variants from next-generation DNA sequencing data.  https://github.com/google/deepvariant
+
+| Parameter | Description | Type | Default | Required | Pattern |
+|-----------|-----------|-----------|-----------|-----------|-----------|
+| `with_pb_deepvariant` | Run Parabricks DeepVariant | `boolean` |  |  |  |
+
+## Parabricks HaplotypeCaller
+
+Run the parabricks version of haplotypecaller.
+
+| Parameter | Description | Type | Default | Required | Pattern |
+|-----------|-----------|-----------|-----------|-----------|-----------|
+| `with_pb_haplotypecaller` | Run Parabricks haplotypecaller | `boolean` |  |  |  |

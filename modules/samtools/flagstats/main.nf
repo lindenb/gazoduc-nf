@@ -39,7 +39,7 @@ output:
     path("versions.yml"),emit:versions
 script:
     def prefix = task.ext.prefix?:(meta.id?:bam.baseName)
-    if((optional_bed?true:false) && !task.ext.containsKey("args1")) {
+    if((optional_bed?true:false) && task.ext.args1==null) {
         throw new IllegalArgumentException("${task.process} ext.args1 must be specified e.g '-M' ");
         }
     def args1 = task.ext.args1?:""

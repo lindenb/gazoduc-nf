@@ -122,6 +122,13 @@ git clone https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf.git
 
 note to self:
 
+generate a test:
+
+```
+nf-test generate workflow subworkflows/parabricks/haplotypecaller/main.nf 
+nf-test generate process modules/encode/blacklist/main.nf
+```
+
 ```
 nf-test test --profile micromamba --tag=subworkflows/samtools/prepare.one.ref
 ```

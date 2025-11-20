@@ -26,27 +26,28 @@ process GATHER_VCFS {
 tag "${meta.id?:""}"
 label "process_short"
 afterScript "rm -rf TMP"
-conda "${moduleDir}/../../conda/bioinfo.02.yml"
+conda "${moduleDir}/../../../conda/bioinfo.02.yml"
 input:
 	tuple val(meta),path("VCFS/*")
 output:
 	tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:vcf
     path("versions.yml"),emit:versions
 script:
-    def prefix = task.ext.prefix?:"\${MD5}.gathervcfs"
+    def prefix = task.ext.prefix?:"${meta.id}.gathervcfs"
+	def jvm = task.ext.jvm?:"-XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
+
 """
 hostname 1>&2
 mkdir -p TMP
 # gonna fail if there is a BCF, paranoid
-find VCFS/ \\( -name "*.vcf.gz" -o -name "*.bcf" \\) > TMP/jeter.list
-MD5=`cat TMP/jeter.list | md5sum | cut -d ' ' -f1`
+find VCFS/ \\( -name "*.vcf.gz" -o -name "*.bcf" -o -name "*.vcf"  \\) | sort -V -T TMP > TMP/jeter.list
 
-gatk  --java-options "-Xmx${task.memory.giga}g -XX:-UsePerfData -Djava.io.tmpdir=TMP" GatherVcfs  \\
+gatk  --java-options "${jvm}" GatherVcfs  \\
 	--INPUT TMP/jeter.list \\
 	--REORDER_INPUT_BY_FIRST_VARIANT \\
 	--OUTPUT TMP/jeter.vcf.gz	
 
-bcftools index --force --threads "${task.cpus}" TMP/jeter.vcf.gz
+bcftools index --force -t --threads "${task.cpus}" TMP/jeter.vcf.gz
 
 mv TMP/jeter.vcf.gz "${prefix}.vcf.gz"
 mv TMP/jeter.vcf.gz.tbi "${prefix}.vcf.gz.tbi"
@@ -60,6 +61,6 @@ END_VERSIONS
 
 stub:
 """
-touch versions.yml "${meta.id}.gb.vcf.gz" "${meta.id}.gb.vcf.gz.tbi"
+touch versions.yml "${meta.id}.gathervcfs.vcf.gz" "${meta.id}.gathervcfs.vcf.gz.tbi"
 """
 }

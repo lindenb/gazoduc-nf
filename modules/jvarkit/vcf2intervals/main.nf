@@ -34,8 +34,8 @@ process JVARKIT_VCF_TO_INTERVALS {
 		tuple val(meta),path("*.bed"),optional:true,emit:bed /* chrom/start/end/vcf/idx */
 		path("versions.yml"),emit:versions
 	script:
-		if(!task.ext.containsKey("distance")) throw new IllegalStateException("task.ext.distance missing for ${task.process}");
-		if(!task.ext.containsKey("min_distance")) throw new IllegalStateException("task.ext.min_distance missing for ${task.process}");
+		if(task.ext.distance==null) throw new IllegalStateException("task.ext.distance missing for ${task.process}");
+		if(task.ext.min_distance==null) throw new IllegalStateException("task.ext.min_distance missing for ${task.process}");
 		def distance = task.ext.distance?:"10mb"
 		def min_distance = task.ext.min_distance?:"1kb"
 		def cpu2 = java.lang.Math.max(1,task.cpus-2)
