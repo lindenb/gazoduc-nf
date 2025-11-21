@@ -26,7 +26,7 @@ include {parseBoolean } from '../../utils/functions.nf'
 
 /**
  *
- * ultra simple bcftools concat, producing only one vcf, no bed
+ *  simple bcftools concat, producing only one vcf, no bed
  *
  */
 process BCFTOOLS_CONCAT {
@@ -37,11 +37,12 @@ conda "${moduleDir}/../../../conda/bioinfo.02.yml"
 input:
 	tuple val(meta ),path("VCFS/*")
 output:
-       tuple val(meta),path("*.vcf.gz"),path("*.tbi"),emit:vcf
-       tuple val(meta),path("*.md5"),optional:true,emit:md5
-       path("versions.yml"),emit:versions
+	tuple val(meta),path("*.vcf.gz"),path("*.tbi"),emit:vcf
+	tuple val(meta),path("*.md5"),optional:true,emit:md5
+	path("versions.yml"),emit:versions
 script:
 	def args1 = task.ext.args1?:""
+	def limit = (task.ext.limit?:100) as int
 	def args2 = task.ext.args2?:"--no-version --allow-overlaps --remove-duplicates "
 	def prefix = task.ext.prefix?:"${meta.id}.concat"	
 	def with_md5 =  parseBoolean(task.ext.with_md5?:true)
@@ -51,29 +52,54 @@ script:
 	
 	find VCFS/ \\( -name "*.vcf.gz" -o -name "*.bcf" \\) | sort -V -T TMP > TMP/jeter.list
 
-	set -x
-
-
+	my_concat () {
 		bcftools concat \\
 			--threads ${task.cpus} \\
+			--write-index \\
 			${args1} \\
 			${args2} \\
-			-O z9 \\
-			--file-list TMP/jeter.list \\
-			-o "TMP/jeter.vcf.gz"
-
-		# default write index is CSI, not TBI for vcf.gz
-		bcftools index -f -t --threads ${task.cpus} TMP/jeter.vcf.gz
-
-		mv TMP/jeter.vcf.gz ${prefix}.vcf.gz
-		mv TMP/jeter.vcf.gz.tbi ${prefix}.vcf.gz.tbi
+			--file-list "\${1}" \\
+			-O "\${2}" \\
+			-o "\${3}"
+		}
 
 
-		# Generate MD5 if needed
-		if ${with_md5}
-		then 
-			md5sum ${prefix}.vcf.gz > ${prefix}.vcf.gz.md5
-		fi
+	set -x
+	if test  `wc -l < TMP/jeter.list` -le ${limit}
+	then
+		my_concat TMP/jeter.list z9 TMP/jeter.vcf.gz
+	else
+
+		SQRT=`awk 'END{X=NR;if(X<10){print(X);} else {z=sqrt(X); print (z==int(z)?z:int(z)+1);}}' TMP/jeter.list`
+		split -a 9 --additional-suffix=.list --lines=\${SQRT} TMP/jeter.list TMP/chunck.
+
+
+		find TMP/ -type f -name "chunck*.list" | while read F
+		do
+			my_concat "\${F}" b "\${F}.bcf"
+			
+			echo "\${F}.bcf" >> TMP/jeter2.list
+		done
+
+		test -s TMP/jeter2.list
+		
+		my_concat TMP/jeter2.list z9 TMP/jeter.vcf.gz
+
+	fi
+
+
+	# default write index is CSI, not TBI for vcf.gz
+	bcftools index -f -t --threads ${task.cpus} TMP/jeter.vcf.gz
+
+	mv TMP/jeter.vcf.gz ${prefix}.vcf.gz
+	mv TMP/jeter.vcf.gz.tbi ${prefix}.vcf.gz.tbi
+
+
+	# Generate MD5 if needed
+	if ${with_md5}
+	then 
+		md5sum ${prefix}.vcf.gz > ${prefix}.vcf.gz.md5
+	fi
 
 
 cat << END_VERSIONS > versions.yml
