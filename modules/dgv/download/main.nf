@@ -23,20 +23,16 @@ SOFTWARE.
 
 */
 
-include {isBlank;moduleLoad} from '../utils/functions.nf'
+include {isBlank } from '../../utils/functions.nf'
 
-process DOWNLOAD_DGV_01 {
-tag "${genomeId}"
+process DGV_DOWNLOAD {
+tag "${meta.id}"
 input:
-	val(meta)
-	val(genomeId)
+	tuple val(meta),path(dict)
 output:
-       	path("dgv.bed.gz"),emit:bed
-       	path("dgv.bed.gz.tbi"),emit:index
-        path("version.xml"),emit:version
+       	tuple val(meta),path("*.bed.gz"),path("*.bed.gz.tbi"),emit:bed
+        path("versions.xml"),emit:versions
 script:
-	def genome = params.genomes[genomeId]
-	def reference = genome.fasta
 	def url= genome.dgv_url
 	def whatis ="DGV (Database of Genomic Variants) as BED file from ${url}"
 if(!isBlank(url))
@@ -84,4 +80,11 @@ cat << EOF > version.xml
 </properties>
 EOF
 """
+
+
+stub:
+"""
+touch versions.yml ${prefix}.bed.gz ${prefix}.bed.gz.tbi
+"""
+
 }

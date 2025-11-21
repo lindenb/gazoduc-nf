@@ -34,7 +34,7 @@ process PB_FQ2BAM {
   label 'process_gpu'
   label 'parabricks'
   afterScript "rm -rf TMP"
-
+  stageInMode "copy" // parabricks needs plain files, not just symlinks
   input:
     tuple val(meta2),path(fasta)
     tuple val(meta3),path(fai)
@@ -42,7 +42,7 @@ process PB_FQ2BAM {
     tuple val(meta5),path(known_indels), path(known_indels_tbi)
     tuple val(meta), path(fq_R1), path(fq_R2)
   output:
-	    tuple val(meta), path("*.cram") ,path("*.crai"),emit: bam,    optional: true
+      tuple val(meta), path("*.cram") ,path("*.crai"),emit: bam,    optional: true
       tuple val(meta), path("*.duplicate.metrics.txt"), emit:duplicate_metrics, optional:true
       tuple val(meta), path("*.bqsr.report.txt"), emit:bqsr_report, optional:true
       tuple val(meta), path("*.qc_metrics"),optional:true, emit:qc_metrics
@@ -60,23 +60,40 @@ process PB_FQ2BAM {
     def bqsr_args = with_bqsr && known_indels? "--knownSites \"${known_indels.name}\"   --out-recal-file \"${sample}.bqsr.report.txt\"   " : ""
     def low_memory = task.ext.low_memory==true || task.attempt>1 ? "--low-memory" : ""
     def fixmate_args = (parseBoolean(task.ext.with_fixmate?:true)?"--fix-mate":"")
-    //TODO   add    ‑‑out‑qc‑metrics‑dir "TMP/OUT/${sample}.qc_metrics" 
  """
 	mkdir -p TMP/TMP
-	mkdir -p TMP/REF
-  mkdir -p TMP/OUT
-  
+	# mkdir -p TMP/REF
+  	mkdir -p TMP/OUT
+set -x  
+
+
 	# pb doesn't like the symlinks ?
 
   find ${bwa_index_dir}/  1>&2
-  cp -v  ${bwa_index_dir}/*.ann TMP/REF/${fasta.name}.ann
-  cp -v  ${bwa_index_dir}/*.pac TMP/REF/${fasta.name}.pac
-  cp -v  ${bwa_index_dir}/*.sa  TMP/REF/${fasta.name}.sa
-  cp -v  ${bwa_index_dir}/*.amb TMP/REF/${fasta.name}.amb
-  cp -v  ${bwa_index_dir}/*.alt TMP/REF/${fasta.name}.alt || true
-  cp -v  ${bwa_index_dir}/*.bwt TMP/REF/${fasta.name}.bwt
-  cp -v  "${fasta}"  TMP/REF/${fasta.name}
-  cp -v  "${fai}"  TMP/REF/${fasta.name}.fai
+  # cp -v  ${bwa_index_dir}/*.ann TMP/REF/${fasta.name}.ann
+  # cp -v  ${bwa_index_dir}/*.pac TMP/REF/${fasta.name}.pac
+  # cp -v  ${bwa_index_dir}/*.sa  TMP/REF/${fasta.name}.sa
+  # cp -v  ${bwa_index_dir}/*.amb TMP/REF/${fasta.name}.amb
+  # cp -v  ${bwa_index_dir}/*.alt TMP/REF/${fasta.name}.alt || true
+  # cp -v  ${bwa_index_dir}/*.bwt TMP/REF/${fasta.name}.bwt
+  # cp -v  "${fasta}"  TMP/REF/${fasta.name}
+  # cp -v  "${fai}"  TMP/REF/${fasta.name}.fai
+
+   # check bwa internal files have the correct prefix. Must be the very same
+   # as the fasta name , my module use the basename
+   for SUFFIX in ann pac sa amb alt bwt
+   do
+	   if test -f "${bwa_index_dir}/${fasta.baseName}.\${SUFFIX}"
+	   then
+		      mv -v "${bwa_index_dir}/${fasta.baseName}.\${SUFFIX}" "${bwa_index_dir}/${fasta.name}.\${SUFFIX}"
+	   fi
+   done
+
+
+    mv -v ${fasta} "${bwa_index_dir}"
+    mv -v ${fai} "${bwa_index_dir}"
+
+
 	ls -lah 1>&2
 
 	# show what's here
@@ -91,7 +108,7 @@ process PB_FQ2BAM {
       --bwa-cpu-thread-pool ${cpu_per_gpu} \\
       --num-cpu-threads-per-stage ${cpu_per_gpu} \\
       --memory-limit ${task.memory.giga} \\
-      --ref TMP/REF/${fasta.name} \\
+      --ref "${bwa_index_dir}/${fasta.name}" \\
       --in-fq ${fq_R1} ${fq_R2?"${fq_R2}":""} \\
       --out-bam "TMP/OUT/${sample}.cram" \\
       --read-group-sm "${sample}" \\

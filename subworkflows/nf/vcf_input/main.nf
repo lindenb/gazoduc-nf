@@ -70,7 +70,6 @@ main:
             metadata.path.endsWith(".vcf.bgz")  || 
             metadata.path.endsWith(".bcf") ) {
             ch1 = Channel.of(metadata.path).map{[vcf:it]}
-            ch1.view{"##OK123 HERE $it"}
             }
      else if(metadata.path.endsWith(".list") || metadata.path.endsWith(".txt")) {
             ch1 = Channel.fromPath(metadata.path)
