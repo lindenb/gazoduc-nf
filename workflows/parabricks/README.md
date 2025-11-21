@@ -1,4 +1,4 @@
-# gazoduc pipeline parameters
+# Parabricks pipeline parameters
 
 Parabricks Pipeline
 
@@ -153,3 +153,12 @@ Run the parabricks version of haplotypecaller.
 | Parameter | Description | Type | Default | Required | Pattern |
 |-----------|-----------|-----------|-----------|-----------|-----------|
 | `with_pb_haplotypecaller` | Run Parabricks haplotypecaller | `boolean` |  |  |  |
+
+## De Novo assembly of unmapped reads
+
+Assemble unmapped reads with spades
+
+| Parameter | Description | Type | Default | Required | Pattern |
+|-----------|-----------|-----------|-----------|-----------|-----------|
+| `with_unmapped` | try to assemble unmapped reads with spades | `boolean` |  |  |  |
+| `unmapped_fast_mode` | fast mode: use the last reads in the bam with unmapped ('*') chromosome. Slow mode: scan the whole bam, extracting discordant read in pairs where one read is unmapped. | `boolean` |  |  |  |

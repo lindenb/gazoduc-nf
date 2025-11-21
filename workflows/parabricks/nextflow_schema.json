@@ -309,6 +309,21 @@
             "description":"Run Parabricks haplotypecaller"
             }
           }
+        },
+      "unmapped_params": {
+        "title": "De Novo assembly of unmapped reads",
+        "type": "object",
+        "description": "Assemble unmapped reads with spades",
+        "properties": {
+          "with_unmapped":{
+            "type": "boolean",
+            "description":"try to assemble unmapped reads with spades"
+            },
+          "unmapped_fast_mode":{
+            "type": "boolean",
+            "description":"fast mode: use the last reads in the bam with unmapped ('*') chromosome. Slow mode: scan the whole bam, extracting discordant read in pairs where one read is unmapped."
+            }
+          }
         }
 },
   "allOf": [
@@ -327,6 +342,7 @@
     { "$ref": "#/$defs/bcftools_params" },
     { "$ref": "#/$defs/haplotypcaller_params" },
     { "$ref": "#/$defs/pb_deepvariant_params" },
-    { "$ref": "#/$defs/pb_haplotypecaller_params" }
+    { "$ref": "#/$defs/pb_haplotypecaller_params" },
+    { "$ref": "#/$defs/unmapped_params" }
   ]
 }

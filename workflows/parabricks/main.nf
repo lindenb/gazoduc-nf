@@ -75,6 +75,7 @@ include { VCF_INPUT as SOMALIER_SITES_VCF_INPUT   } from '../../subworkflows/nf/
 include { GTF_INPUT                               } from '../../subworkflows/nf/gtf_input' 
 include { ENCODE_BLACKLIST                        } from '../../modules/encode/blacklist' 
 include { BEDTOOLS_SUBTRACT                       } from '../../modules/bedtools/subtract' 
+include {UNMAPPED                                 } from '../../subworkflows/unmapped'
 
 
 
@@ -846,6 +847,25 @@ if(params.known_indels_vcf!=null) {
     versions = versions.mix(HAPLOTYPECALLER.out.versions)
     vcf_ch = vcf_ch.mix(HAPLOTYPECALLER.out.vcf)
     }   
+
+  /**
+   *
+   * UNMAPPED reads with spades
+   *
+   */
+  if(parseBoolean(params.with_unmapped)) {
+    UNMAPPED(
+      metadata,
+      [[id:"contaminants"],file("${moduleDir}/../unmapped/contaminants.txt")],
+      bams_ch
+        .combine(PREPARE_ONE_REFERENCE.out.fasta)
+        .combine(PREPARE_ONE_REFERENCE.out.fai)
+        .combine(PREPARE_ONE_REFERENCE.out.dict)
+        .map{meta1,bam,bai,m2,fa,m3,fai,m4,dict->[meta1,bam,bai,fa,fai,dict]}
+      )
+    versions = versions.mix(UNMAPPED.out.versions)
+    multiqc = multiqc.mix(UNMAPPED.out.multiqc)
+  }
 
   /***************************************************
    *

@@ -26,6 +26,8 @@ SOFTWARE.
 
 
 process GLNEXUS_GENOTYPE {
+label "process_single"
+label "array100"
 tag "${optional_bed?optional_bed.name:""} ${meta.id?:""}"
 conda "${moduleDir}/../../../conda/glnexus.yml"
 afterScript  "rm -rf TMP GLnexus.DB"

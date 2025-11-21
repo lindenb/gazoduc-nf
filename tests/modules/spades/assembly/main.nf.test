@@ -1,0 +1,51 @@
+nextflow_process {
+
+    name "Test Process SPADES_ASSEMBLY"
+    script "modules/spades/assembly/main.nf"
+    process "SPADES_ASSEMBLY"
+    tag "modules"
+    tag "modules/spades"
+    tag "modules/spades/assembly"
+
+
+    test("SE") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            process {
+                """
+                input[0] =  [[id:"S1"], file("${projectDir}/tests/data/S1.R1.fq.gz"),[]]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+ test("PE") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            process {
+                """
+                input[0] =  [[id:"S1"], file("${projectDir}/tests/data/S1.R1.fq.gz"), file("${projectDir}/tests/data/S1.R2.fq.gz")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+}

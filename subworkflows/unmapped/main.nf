@@ -24,10 +24,11 @@ SOFTWARE.
 */
 include { BWA_INDEX       } from '../../modules/bwa/index/main.nf'
 include { SPADES_ASSEMBLY } from '../../modules/spades/assembly'
+include { parseBoolean    } from '../../modules/utils/functions.nf'
 
 workflow UNMAPPED {
 take:
-    meta
+    metadata
     acn_file
     bams // tuple (meta,bam,bai,fasta,fai)
 main:
@@ -48,30 +49,33 @@ main:
         )
     versions  = versions.mix(MAP_UNMAPPED.out.versions)
 
+    MERGE_CONTAMINANTS_MAPPING(
+        FETCH_ACNS.out.database,
+        MAP_UNMAPPED.out.tsv
+            .map{meta,tsv->tsv}
+            .collect()
+            .map{[[id:"contaminations"],it.sort()]}
+        )
+    versions  = versions.mix(MERGE_CONTAMINANTS_MAPPING.out.versions)
+
     SPADES_ASSEMBLY(
         MAP_UNMAPPED.out.fastq.map{[it[0],it[1],[]/* no fastq_2 */]}
         )
     versions  = versions.mix(SPADES_ASSEMBLY.out.versions)
 
-    MERGE(
-        FETCH_ACNS.out.database,
-        MAP_UNMAPPED.out.tsv
-            .map{it[1]}
-            .collect()
-            .map{[[id:"contaminations"],it]}
-        )
+
     
     MERGE_SPADES(
         SPADES_ASSEMBLY.out.assembled_contigs_tsv
-            .map{it[1]}
+            .map{meta,tsv->tsv}
             .collect()
-            .map{[[id:"contaminations"],it]}
+            .map{[[id:"contaminations"],it.sort()]}
         )
     versions  = versions.mix(MERGE_SPADES.out.versions)
 emit:
     versions
     multiqc
-    output = MERGE.out.output
+    spades_tsv_gz = MERGE_SPADES.out.tsv_gz
 
 }
 
@@ -163,8 +167,8 @@ process MAP_UNMAPPED {
         def cpusargs1 = task.cpus > 5? "--threads ${task.cpus -5 }":""
         def tresholdN = 0.3
         def repeats=6
-	def min_size  = task.ext.min_size?:50
-        def fast = task.ext.fast?:false /*      Output the unmapped reads at the end of the file */
+	    def min_size  = task.ext.min_size?:50
+        def fast = parseBoolean(task.ext.fast?:false) /*      Output the unmapped reads at the end of the file */
 """
 mkdir -p TMP
 set -x
@@ -225,7 +229,7 @@ samtools view ${cpusargs1} --uncompressed --reference ${fasta} -f 4 -F 3840 "${b
     samtools fastq -n - |\\
     paste - - - - |\\
     awk -F '\t' -f TMP/jeter.awk |\\
-    gzip --best > TMP/unmapped.fastq.gz
+    gzip > TMP/unmapped.fastq.gz
 
 
 bwa mem \\
@@ -238,7 +242,7 @@ bwa mem \\
 # still unmapped
 samtools view --uncompressed --reference ${fasta} -f 4 -F 3840 TMP/jeter.bam |\\
     samtools fastq -n - |\\
-    gzip --best > TMP/unmapped2.fastq.gz
+    gzip  > TMP/unmapped2.fastq.gz
 
 samtools view -F 3844  --uncompressed TMP/jeter.bam |\\
 samtools sort  -m '${task.memory.giga}G' --threads '${task.cpus}' -o TMP/jeter2.bam -O BAM -T TMP/tmp -
@@ -270,7 +274,7 @@ touch versions.yml ${prefix}.contaminations.tsv  ${prefix}.fastq.gz
 }
 
 
-process MERGE {
+process MERGE_CONTAMINANTS_MAPPING {
 tag "${meta.id}"
 label "label_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
@@ -279,7 +283,7 @@ input:
     tuple val(meta1),path("database.tsv")
     tuple val(meta ),path("TSV/*")
 output:
-    tuple val(meta),path("*.tsv",arity:"1"),emit:output
+    tuple val(meta),path("*.tsv",arity:"1"),emit:tsv
     path("versions.yml"),emit:versions
 script:
     def prefix=task.ext.prefix?:"contaminations"
@@ -314,7 +318,7 @@ afterScript "rm -rf TMP"
 input:
     tuple val(meta ),path("TSV/*")
 output:
-    tuple val(meta),path("*.tsv",arity:"1"),emit:output
+    tuple val(meta),path("*.tsv.gz",arity:"1"),emit:tsv_gz
     path("versions.yml"),emit:versions
 script:
     def prefix=task.ext.prefix?:"spades"
@@ -324,10 +328,11 @@ mkdir -p TMP
 echo -e 'LENGTH\tNAME\tSAMPLE\tFASTA' >> TMP/jeter.a
 
 find TSV/ -type l -exec cat '{}' ';' |\\
-    sort -t '\t' -k1,1nr -T TMP >> TMP/jeter.a
+    gunzip -c |\\
+    sort -t '\t' -k1,1nr -T TMP  >> TMP/jeter.a
 
-
-mv TMP/jeter.a ${prefix}.tsv
+gzip --best TMP/jeter.a
+mv  TMP/jeter.a.gz ${prefix}.tsv.gz
 
 
 cat << END_VERSIONS > versions.yml
@@ -338,6 +343,6 @@ END_VERSIONS
 stub:
    def prefix=task.ext.prefix?:"spades"
 """
-touch versions.yml ${prefix}.tsv
+touch versions.yml ${prefix}.tsv.gz
 """
 }
