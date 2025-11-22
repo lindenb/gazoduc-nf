@@ -77,6 +77,10 @@
           "pattern": "^(bwa|pb|parabricks|dragmap)$",
           "description": "wich mapper to use. one of 'bwa,pb,parabricks,dragmap'"
         },
+        "bwa_index_args": {
+           "type": "string",
+           "description":"extra parameters for bwa index. e.g. for option -b See: https://github.com/lh3/bwa/issues/104"
+        },
         "known_indels_vcf":  {
           "type": "string",
           "pattern": "^\\S+\\.vcf\\.gz$",
