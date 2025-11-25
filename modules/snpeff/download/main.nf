@@ -24,7 +24,7 @@ SOFTWARE.
 */
 process SNPEFF_DOWNLOAD {
 label "process_single"
-tag "${snpeff_db}"
+tag "${fai.name}"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP SNPEFFX"
 input:
@@ -73,6 +73,14 @@ cat << END_VERSIONS > versions.yml
         snpeff: "todo"
         snpeffdb: "${snpeff_db}"
 END_VERSIONS
+"""
+
+stub:
+   def snpeff_db = "GRCh37.75"
+   def prefix = task.ext.prefix?:"SNPEFF"
+"""
+mkdir -p  "${prefix}.${snpeff_db}.DB"
+touch versions.yml "${snpeff_db}.name.txt"
 """
 }
 

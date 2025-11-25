@@ -168,6 +168,10 @@ if( params.help ) {
     paired_end = FASTP.out.paired_end
     single_end = FASTP.out.single_end
     }
+   else
+	{
+	paired_end = paired_end.map{meta,fqs->[meta,fqs[0],fqs[1]]}
+	}
 
   /***************************************************
    *
