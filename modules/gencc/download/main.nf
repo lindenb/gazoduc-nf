@@ -24,27 +24,25 @@ SOFTWARE.
 */
 
 process GENCC_DOWNLOAD {
-	tag "${meta1.id?:fasta.name}"
+	tag "${meta.id?:fasta.name}"
 	afterScript "rm -rf TMP"
 	label "process_single"
 	conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 	input:
-		tuple val(meta1),path(fasta)
-		tuple val(meta2),path(fai)
-		tuple val(meta3),path(dict)
-		tuple val(meta4),path(gtf),path(gtf_tbi)
+		tuple val(meta),path(gtf)
 	output:
-		tuple val(meta1),path("*.bed.gz"), path("*.bed.gz.tbi"), path("*.header"), emit:bed
+		tuple val(meta),path("*.bed.gz"), path("*.bed.gz.tbi"), path("*.header"), emit:bed
 		path("versions.yml"),emit:versions
 	script:
 		def url = task.ext.url?:"https://search.thegencc.org/download/action/submissions-export-tsv"
+		def prefix = task.ext.prefix?:"${meta.id}.gencc"
 	"""
 	hostname 1>&2
 	export LC_ALL=C
 	mkdir -p TMP
 	set -x
 
-	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP gtf2bed  --columns "gtf.feature,gene_name" -R "${fasta}"  "${gtf}" |\\
+	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP gtf2bed  --columns "gtf.feature,gene_name" "${gtf}" |\\
 		awk -F '\t' '\$4=="gene" && \$5!="." && \$5!=""' |\\
 		cut -f1,2,3,5 |\\
 		LC_ALL=C sort --buffer-size=${task.memory.mega}M -t '\t' -k4,4 -T TMP  |\\
@@ -66,13 +64,12 @@ process GENCC_DOWNLOAD {
 	bgzip TMP/jeter.bed
         tabix --comment '#' -f -p bed TMP/jeter.bed.gz
 
-	mv TMP/jeter.bed.gz gencc.bed.gz
-	mv TMP/jeter.bed.gz.tbi gencc.bed.gz.tbi
+	mv TMP/jeter.bed.gz ${prefix}.bed.gz
+	mv TMP/jeter.bed.gz.tbi gencc.${prefix}.bed.gz.tbi
 
-	echo '##INFO=<ID=GENCC_MONDO,Number=.,Type=String,Description="Mondo database identifier. The Gene Curation Coalition brings together groups engaged in the evaluation of gene-disease validity with a willingness to share data publicly, to develop consistent terminology for gene curation activities, and to facilitate the consistent assessment of genes that have been reported in association with disease ${url}.">' > gencc.header
-    echo '##INFO=<ID=GENCC_DISEASE,Number=.,Type=String,Description="Disease Name, The Gene Curation Coalition brings together groups engaged in the evaluation of gene-disease validity with a willingness to share data publicly, to develop consistent terminology for gene curation activities, and to facilitate the consistent assessment of genes that have been reported in association with disease ${url}.">' >> gencc.header
-    echo '##INFO=<ID=GENCC_HPO,Number=.,Type=String,Description="The Human Phenotype Ontology identifier. The Gene Curation Coalition brings together groups engaged in the evaluation of gene-disease validity with a willingness to share data publicly, to develop consistent terminology for gene curation activities, and to facilitate the consistent assessment of genes that have been reported in association with disease ${url}.">' >> gencc.header
-
+    echo '##INFO=<ID=GENCC_MONDO,Number=.,Type=String,Description="Mondo database identifier. The Gene Curation Coalition brings together groups engaged in the evaluation of gene-disease validity with a willingness to share data publicly, to develop consistent terminology for gene curation activities, and to facilitate the consistent assessment of genes that have been reported in association with disease ${url}.">' > ${prefix}.header
+    echo '##INFO=<ID=GENCC_DISEASE,Number=.,Type=String,Description="Disease Name, The Gene Curation Coalition brings together groups engaged in the evaluation of gene-disease validity with a willingness to share data publicly, to develop consistent terminology for gene curation activities, and to facilitate the consistent assessment of genes that have been reported in association with disease ${url}.">' >> ${prefix}.header
+    echo '##INFO=<ID=GENCC_HPO,Number=.,Type=String,Description="The Human Phenotype Ontology identifier. The Gene Curation Coalition brings together groups engaged in the evaluation of gene-disease validity with a willingness to share data publicly, to develop consistent terminology for gene curation activities, and to facilitate the consistent assessment of genes that have been reported in association with disease ${url}.">' >> ${prefix}.header
 
 
 cat << END_VERSIONS > versions.yml
@@ -80,5 +77,10 @@ cat << END_VERSIONS > versions.yml
 	url: "${url}"
 END_VERSIONS
 """
-}
 
+stub:
+	def prefix="xxx"
+"""
+touch versions.yml ${prefix}.bed.gz ${prefix}.bed.gz.tbi ${prefix}.header
+"""
+}

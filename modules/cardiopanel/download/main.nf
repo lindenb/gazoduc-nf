@@ -48,9 +48,9 @@ fi
 jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP gtf2bed  \\
 		--columns "gtf.feature,gene_name" -R "${fasta}"  "${gtf}" |\\
 	awk -F '\t' '\$4=="gene" && \$5!="." && \$5!=""' |\\
-	grep -f  TMP/genes.txt -F |\\
+	(grep -f  TMP/genes.txt -F || true) |\\
 	cut -f1,2,3,5 |\\
-    LC_ALL=C sort --buffer-size=${task.memory.mega}M -t '\t' -k4,4 -T TMP  |\\
+	LC_ALL=C sort --buffer-size=${task.memory.mega}M -t '\t' -k4,4 -T TMP  |\\
 	uniq > TMP/genes.bed
 
 

@@ -23,24 +23,31 @@ SOFTWARE.
 
 */
 
-include {k1_signature} from '../../../modules/utils/k1.nf'
 
 process CLINVAR_DOWNLOAD {
 afterScript "rm -rf TMP"
+tag "${meta.id}"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-    tuple val(meta1),path(fasta)
-    tuple val(meta2),path(fai)
-    tuple val(meta3),path(dict)
-    tuple val(meta4),path(bed)
+    tuple val(meta),path(dict)
 output:
-    tuple val(meta1),path("*.bcf"),path("*.bcf.csi"),emit:vcf
+    tuple val(meta),path("*.bcf"),path("*.bcf.csi"),optional:true,emit:vcf
     path("versions.yml"),emit:versions
 script:
-    def k1= k1_signature();
-    def prefix = "clinvar"
-    def base = "https://ftp.ncbi.nlm.nih.gov/pub/clinvar"
+    def prefix = task.ext.prefix?:"${meta.id}.clinvar"
+    def base = task.ext.url?:"https://ftp.ncbi.nlm.nih.gov/pub/clinvar"
+    def url = task.ext.url?:""
+    def ucsc_name = task.ext.ucsc_name?:meta.ucsc_name
+    if(!url.isEmpty()) {
+	// nothing
+	}
+    else if(ucsc_name!=null && ucsc_name=="hg38") {
+	url = "${base}/vcf_GRCh38/clinvar.vcf.gz"
+	}
+    else if(ucsc_name!=null && ucsc_name=="hg19") {
+	url = "${base}/vcf_GRCh37/clinvar.vcf.gz"
+	}
     def local_vcf = task.ext.local_vcf?:"NO_FILE" 
 
 """
@@ -49,37 +56,26 @@ set -x
 mkdir -p TMP
 
 
-if ${bed?true:false}
-then
-       sed 's/^chr//' '${bed}' >  TMP/nochr.bed
-fi
-
-
 if test -f "${local_vcf}" && test -f "${local_vcf}.tbi"
 then
  
-bcftools view -O v ${bed?"--regions-file TMP/nochr.bed":""} "${local_vcf}" |\\
-        jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  vcfsetdict -R "${fasta}"  -n SKIP |\\
+bcftools view -O v "${local_vcf}" |\\
+        jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  vcfsetdict -R "${dict}"  -n SKIP |\\
         bcftools view -O b -o TMP/jeter.bcf
-else
 
-cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:${k1.hg38}\t${base}/vcf_GRCh38/clinvar.vcf.gz
-1:${k1.hg19}\t${base}/vcf_GRCh37/clinvar.vcf.gz
-EOF
+elif ${!url.isEmpty()}
+then
 
-
-awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
-join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv | sort | uniq > TMP/jeter.url
-
-test -s TMP/jeter.url
-
-wget -O - `cat TMP/jeter.url` |\\
-        bcftools view -O v ${bed?"--regions-overlap 1 --targets-file TMP/nochr.bed":""} |\\
-        jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  vcfsetdict -R "${fasta}"  -n SKIP |\\
+curl -L  "${url}" |\\
+        bcftools view -O v  |\\
+        jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  vcfsetdict -R "${dict}"  -n SKIP |\\
         bcftools view -O b -o TMP/jeter.bcf
 
 fi
+
+
+if test -f TMP/jeter.bcf
+then
 
 bcftools view --header-only TMP/jeter.bcf | grep "^##INFO" | cut -d '=' -f 3 | cut -d, -f 1| grep -v "#"  |\\
         awk '{printf("INFO/%s\tCLINVAR_%s\\n",\$1,\$1);}' > TMP/rename.tsv
@@ -98,10 +94,18 @@ bcftools index  \\
 mv TMP/${prefix}.bcf ./
 mv TMP/${prefix}.bcf.csi ./
 
+fi
+
 
 cat << EOF > versions.yml
 ${task.process}:
     bcftools: TODO
 EOF
+"""
+
+stub:
+    def prefix = task.ext.prefix?:"${meta.id}.clinvar"
+"""
+touch versions.yml ${prefix}.bcf ${prefix}.bcf.csi
 """
 }

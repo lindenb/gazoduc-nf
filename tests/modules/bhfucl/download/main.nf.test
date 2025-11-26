@@ -1,0 +1,55 @@
+nextflow_process {
+
+    name "Test Process BHFUCL_DOWNLOAD"
+    script "modules/bhfucl/download/main.nf"
+    process "BHFUCL_DOWNLOAD"
+    tag "modules"
+    tag "modules/bhfucl"
+    tag "modules/bhfucl/download"
+    tag "gitlab_ci"
+
+    test("HG38") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            process {
+                """
+                input[0] = [[id:"gtf"],file("${projectDir}/tests/data/gencode.v49.hg38.annotation.gtf.gz")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+    test("STUB") {
+
+        options "-stub"    
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            process {
+                """
+                input[0] = [[id:"gtf"],file("${projectDir}/tests/data/gencode.v49.hg38.annotation.gtf.gz")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+}

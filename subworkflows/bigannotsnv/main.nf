@@ -22,6 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include {isBlank                   } from '../../modules/utils/functions.nf'
+include {parseBoolean              } from '../../modules/utils/functions.nf'
 include {CARDIOPANEL_DOWNLOAD      } from '../../modules/cardiopanel/download'
 include {ALPHAMISSENSE_DOWNLOAD    } from '../../modules/alphamissense/download'
 include {AVADA_DOWNLOAD            } from '../../modules/avada/download'
@@ -47,10 +49,17 @@ String countVariants(def f) {
         return "\necho  \${LINENO} && bcftools query -f '.\\n' \""+f+"\" | wc -l 1>&2" +"\n"
         }
 
+boolean hasFeature(def hash,def key) {
+    if(isBlank(hash[key]) {
+        log.warn("undefined ${key} in ANNOT_SNV");
+        return false;
+        }
+    return parseBoolean(hash[key]);
+    }
 
 workflow ANNOT_SNV {
 take:
-    meta
+    metadata
     fasta
     fai
     dict
@@ -60,29 +69,48 @@ take:
     vcf // meta, vcf, vcfidx,optional_bed
 main:
     versions = Channel.empty()
+    multiqc = Channel.empty()
 
     //add empty bed if vcf 
     vcf = vcf
         .map{
             if(it.size()==4) return it;
             return [it[0],it[1],it[2],[]]; //add optional bed
+            }
+
+    if(hasFeature(metadata,"cardiopanel")) {
+        CARDIOPANEL_DOWNLOAD( fasta,fai, dict, gtf  )
+        versions = versions.mix(CARDIOPANEL_DOWNLOAD.out.versions)
+        cardiopanel_ch = CARDIOPANEL_DOWNLOAD.out.bed
+        cardiopanel_extended_ch = CARDIOPANEL_DOWNLOAD.out.bed_extended
+        
+        }
+    else
+        {
+        cardiopanel_ch =  [[id:"no_cardiopanel"],[],[],[]]
+        cardiopanel_extended_ch =  [[id:"no_cardiopanelx"],[],[],[]]
         }
 
 
-    CARDIOPANEL_DOWNLOAD( fasta,fai, dict, gtf  )
-    versions = versions.mix(CARDIOPANEL_DOWNLOAD.out.versions)
 
-    ALPHAMISSENSE_DOWNLOAD( fasta,fai, dict, [[id:"nobed"],[]]  )
-    versions = versions.mix(ALPHAMISSENSE_DOWNLOAD.out.versions)
+    if(hasFeature(metadata,"alphamissense")) {
+        ALPHAMISSENSE_DOWNLOAD(dict)
+        versions = versions.mix(ALPHAMISSENSE_DOWNLOAD.out.versions)
+        alphamissense_ch = ALPHAMISSENSE_DOWNLOAD.out.output
+        }
+      else
+        {
+        alphamissense_ch =  [[id:"no_alphamissense"],[],[],[]]
+        }
 
-    if(fasta[0].ucsc_name && fasta[0].ucsc_name.equals("hg19")) {
-        AVADA_DOWNLOAD( fasta,fai, dict )
+
+     if(hasFeature(metadata,"avada")) {
+        AVADA_DOWNLOAD(dict)
         versions = versions.mix(AVADA_DOWNLOAD.out.versions)
-        avada_vcf = AVADA_DOWNLOAD.out.vcf
-    } else 
-    {
+        avada_vcf = AVADA_DOWNLOAD.out.vcf.ifEmpty([ [id:"no_avada"],[],[]] )
+    } else  {
         avada_vcf = [ [id:"no_avada"],[],[]]
-    }
+        }
     
     if(pedigree[1]) {
         valid_trios = VALID_TRIOS(pedigree).pedigree
@@ -93,28 +121,71 @@ main:
         valid_trios =[[id:"no_valid_trio"],[]]
     }
  
+    if(hasFeature(metadata,"clinvar")) {
+        CLINVAR_DOWNLOAD(dict )
+        versions = versions.mix(CLINVAR_DOWNLOAD.out.versions)
+        clinvar_vcf = CLINVAR_DOWNLOAD.out.vcf
+        clinvar_vcf = clinvar_vcf.ifEmpty([[id:"no_clinvar"],[],[]])
+    } else {
+        clinvar_vcf =  [[id:"no_clinvar"],[],[]]
+        }
 
-    CLINVAR_DOWNLOAD( fasta,fai, dict, [[id:"nobed"],[]]  )
-    versions = versions.mix(CLINVAR_DOWNLOAD.out.versions)
 
-    REVEL_DOWNLOAD( fasta,fai, dict)
-    versions = versions.mix(REVEL_DOWNLOAD.out.versions)
+    if(hasFeature(metadata,"revel")) {
+        REVEL_DOWNLOAD( fasta,fai, dict)
+        versions = versions.mix(REVEL_DOWNLOAD.out.versions)
+        revel_ch = REVEL_DOWNLOAD.out.tabix.ifEmpty([[id:"no_revel"],[],[],[]])
+    } else {
+        revel_ch = [[id:"no_revel"],[],[],[]]
+    }
 
-    TISSUES_DOWNLOAD(fasta,fai, dict,gtf)
-    versions = versions.mix(TISSUES_DOWNLOAD.out.versions)
+    if(hasFeature(metadata,"tissues")) {
+        TISSUES_DOWNLOAD(gtf.map{meta,gtf,_tbi->[meta,gtf]})
+        versions = versions.mix(TISSUES_DOWNLOAD.out.versions)
+        tissues_ch = TISSUES_DOWNLOAD.out.bed.ifEmpty([[id:"no_tissues"],[],[],[]])
+        }
+    else
+        {
+        tissues_ch = [[id:"no_tissues"],[],[],[]]
+        }
+
+
+    if(hasFeature(metadata,"diseases")) {
+        DISEASES_DOWNLOAD(gtf.map{meta,gtf,_tbi->[meta,gtf]})
+        versions = versions.mix(DISEASES_DOWNLOAD.out.versions)
+        tissues_ch = DISEASES_DOWNLOAD.out.bed.ifEmpty([[id:"no_diseases"],[],[],[]])
+    } else {
+        revel_ch = [[id:"no_diseases"],[],[],[]]
+    }
     
+    if(hasFeature(metadata,"gencc")) {
+        GENCC_DOWNLOAD(gtf.map{meta,gtf,_tbi->[meta,gtf]})
+        versions = versions.mix(GENCC_DOWNLOAD.out.versions)
+        gencc_ch = GENCC_DOWNLOAD.out.bed.ifEmpty([[id:"no_gencc"],[],[],[]])
+    } else {
+         gencc_ch = [[id:"no_gencc"],[],[],[]]
+    }
+
+
+    if(hasFeature(metadata,"snpeff")) {
+        SNPEFF_DOWNLOAD(fai)
+        versions = versions.mix(SNPEFF_DOWNLOAD.out.versions)
+        snpeff_ch = SNPEFF_DOWNLOAD.out.database
+        }
+    else
+        {
+        snpeff_ch = [[id:"no_snpeff"],[],[],[]]
+        }
     
-    DISEASES_DOWNLOAD(fasta,fai, dict,gtf)
-    versions = versions.mix(DISEASES_DOWNLOAD.out.versions)
-
-    GENCC_DOWNLOAD(fasta,fai, dict,gtf)
-    versions = versions.mix(GENCC_DOWNLOAD.out.versions)
-
-    SNPEFF_DOWNLOAD(fai)
-    versions = versions.mix(SNPEFF_DOWNLOAD.out.versions)
-
-    BHFUCL_DOWNLOAD(fasta,fai, dict,gtf)
-    versions = versions.mix(BHFUCL_DOWNLOAD.out.versions)
+    if(hasFeature(metadata,"bhfucl")) {
+        BHFUCL_DOWNLOAD(fasta,fai, dict,gtf)
+        versions = versions.mix(BHFUCL_DOWNLOAD.out.versions)
+        bhfucl_ch = BHFUCL_DOWNLOAD.out.bed.ifEmpty([[id:"no_bhfucl"],[],[],[]])
+        }
+    else
+        {
+        bhfucl_ch = [[id:"no_bhfucl"],[],[],[]]
+        }
 
     RMSK_DOWNLOAD(fasta,fai, dict)
     versions = versions.mix(RMSK_DOWNLOAD.out.versions)
@@ -155,12 +226,12 @@ main:
         pedigree,
         gtf,
         gff3,
-        CARDIOPANEL_DOWNLOAD.out.bed,
-        CARDIOPANEL_DOWNLOAD.out.bed_extended,
+        cardiopanel_ch,
+        cardiopanel_extended_ch,
         ALPHAMISSENSE_DOWNLOAD.out.output,
         avada_vcf,
-        CLINVAR_DOWNLOAD.out.vcf,
-        REVEL_DOWNLOAD.out.output,
+        clinvar_ch,
+        revel_ch,
         SNPEFF_DOWNLOAD.out.database,
         TISSUES_DOWNLOAD.out.bed,
         DISEASES_DOWNLOAD.out.bed,
@@ -184,6 +255,7 @@ main:
     versions = versions.mix(ANNOTATE.out.versions)
 emit:
     versions
+    multiqc
     vcf = ANNOTATE.out.vcf
 }
 

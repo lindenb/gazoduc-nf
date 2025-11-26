@@ -28,10 +28,7 @@ afterScript "rm -rf TMP"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-    tuple val(meta1),path(fasta)
-    tuple val(meta2),path(fai)
-    tuple val(meta3),path(dict)
-	tuple val(meta4),path(bed)
+    tuple val(meta1),path(dict)
 output:
 	tuple val(meta1),path("*.tsv.gz"),path("*.tsv.gz.tbi"),path("*.header"),emit:output
 	tuple val(meta1),path("*.md"),emit:doc
@@ -66,7 +63,7 @@ else
 		grep -v '^#' |\\
 		cut -f 1 | uniq | LC_ALL=C sort -T TMP | uniq |\\
 		awk '{printf("%s\t%s\\n",\$1,\$1);}' |\\
-		jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedrenamechr -f "${fasta}" --column 2 --convert SKIP |\\
+		jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedrenamechr -f "${dict}" --column 2 --convert SKIP |\\
 		awk -F '\t' '{printf("s|^%s\t|%s\t|\\n",\$1,\$2);}' > TMP/jeter.sed
 
 

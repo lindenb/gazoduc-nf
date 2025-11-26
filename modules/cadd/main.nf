@@ -16,6 +16,7 @@ output:
 script:
     def prefix = task.ext.prefix?:vcf.baseName+".cadd"
     def TAG = task.ext.tag?:"CADD"
+    def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP"
 """
 hostname 1>&2
 mkdir -p TMP OUTPUT
@@ -40,7 +41,7 @@ fi
 cut -f1 TMP/intervals.bed |\\
     sort | uniq |\\
     awk -F '\t' '{printf("%s\t%s\\n",\$1,\$1);}' |\\
-    jvarkit  -Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP bedrenamechr -f "${fasta}" --column 2 --convert SKIP  |\\
+    jvarkit  ${jvm} bedrenamechr -f "${fasta}" --column 2 --convert SKIP  |\\
     awk -F '\t' '{printf("s|^%s\t|%s\t|\\n",\$1,\$2);}' > TMP/jeter.sed
     
 # check not empty

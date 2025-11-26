@@ -24,23 +24,24 @@ SOFTWARE.
 */
 
 process RMSK_DOWNLOAD{
-tag "${meta1.id?:fasta.name}"
+tag "${meta.id}"
 afterScript "rm -rf TMP"
 label "process_single"
 conda "${moduleDir}/../../../../conda/bioinfo.01.yml"
 input:
-    tuple val(meta1),path(fasta)
-    tuple val(meta2),path(fai)
-    tuple val(meta3),path(dict)
+    tuple val(meta),path(dict)
 output:
-	tuple val(meta1),path("*.bed.gz"), path("*.bed.gz.tbi"), path("*.header"),emit:bed
+	tuple val(meta),path("*.bed.gz"), path("*.bed.gz.tbi"), path("*.header"),emit:bed
 	path("versions.yml"),emit:versions
 	path("doc.md"),emit:doc
 script:
-    if(!meta1.ucsc_name || meta1.ucsc_name.isEmpty()) throw new IllegalArgumentException("${task.process} no meta1.ucsc_name");
-    def url = "https://hgdownload.cse.ucsc.edu/goldenPath/${meta1.ucsc_name}/database/rmsk.txt.gz"
+    if(meta.ucsc_name==null || meta.ucsc_name.isEmpty()) throw new IllegalArgumentException("${task.process} no meta1.ucsc_name");
+    def url =task.ext.url?:""
+    if(url.isEmpty()) {
+	url="https://hgdownload.cse.ucsc.edu/goldenPath/${meta.ucsc_name}/database/rmsk.txt.gz"
+	}
     def TAG = task.ext.tag?:"RMSK"
-
+    def prefix = task.ext.prefix?:"${meta.id}.${TAG}"
 """
 hostname 1>&2
 mkdir -p TMP
@@ -49,19 +50,19 @@ set -o pipefail
 curl -L  "${url}" |\\
 	gunzip -c |\\
 	cut -f6-8 |\\
-	jvarkit bedrenamechr -XX:-UsePerfData  -Djava.io.tmpdir=TMP -f "${fasta}" --column 1 --convert SKIP  |\\
+	jvarkit bedrenamechr -XX:-UsePerfData  -Djava.io.tmpdir=TMP -f "${dict}" --column 1 --convert SKIP  |\\
 		sort  -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
 		bedtools merge |\\
 		sed 's/\$/\t1/' |\\
-		bgzip > TMP/${TAG}.bed.gz
+		bgzip > TMP/${prefix}.bed.gz
 	
 
-tabix -p bed -f TMP/${TAG}.bed.gz
+tabix -p bed -f TMP/${prefix}.bed.gz
 
-mv TMP/${TAG}.bed.gz ./
-mv TMP/${TAG}.bed.gz.tbi ./
+mv TMP/${prefix}.bed.gz ./
+mv TMP/${prefix}.bed.gz.tbi ./
 
-echo '##INFO=<ID=${TAG},Number=0,Type=Flag,Description="Repeat Masker from UCSC">' > ${TAG}.header
+echo '##INFO=<ID=${TAG},Number=0,Type=Flag,Description="Repeat Masker from UCSC">' > ${prefix}.header
 
 cat << 'EOF' > doc.md
 # annotations:repeatmasker
@@ -74,6 +75,12 @@ cat << END_VERSIONS > versions.yml
 "${task.process}":
 	url: "${url}"
 END_VERSIONS
+"""
+
+stub:
+ def prefix="rmsk"
+"""
+touch versions.yml doc.md "${prefix}.bed.gz" "${prefix}.bed.gz.tbi" ${prefix}.header
 """
 }
 

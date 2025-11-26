@@ -23,37 +23,39 @@ SOFTWARE.
 
 */
 process REVEL_DOWNLOAD {
-tag "${meta1.id?:fasta.name}"
+tag "${meta.id?:dict.name}"
 label "process_single"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai)
-	tuple val(meta3),path(dict)
+	tuple val(meta),path(dict)
 output:
-	tuple val(meta1),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.header"),emit:output
+	tuple val(meta),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.header"),optional:true,emit:tabix
 	path("versions.yml"),emit:versions
 	path("doc.md"),emit:doc
 script:
 	def TAG = "REVEL"
 	def WHATIZ="REVEL is an ensemble method for predicting the pathogenicity of missense variants in the human genome. https://doi.org/10.1016/j.ajhg.2016.08.016 ."
 	def url = task.ext.url?:"https://zenodo.org/records/7072866/files/revel-v1.3_all_chromosomes.zip?download=1"
+        def ucsc_name = meta.ucsc_name?:""
 	def colpos= -1;
-	if(meta1.ucsc_name && meta1.ucsc_name.equals("hg19")) {
+        if(ucsc_name.isEmpty()) {
+		}
+	if(ucsc_name == "hg19") {
 		colpos=2;
 		}
-	else  if(meta1.ucsc_name && meta1.ucsc_name.equals("hg38")) {
+	else if(ucsc_name == "hg38") {
 		colpos=3;
 		}
-	else {
-		throw new IllegalArgumentException("Bad fai version ${task.process}");
-		}
+	def prefix = task.ext.prefix?:"${TAG}.${meta.id}"
 """
 hostname 1>&2
 mkdir -p TMP
-wget -O TMP/jeter.zip "${url}"
 
+if ${ucsc_name.matches("(hg19|hg38)")}
+then
+
+curl -L -o TMP/jeter.zip "${url}"
 
 unzip -p TMP/jeter.zip  revel_with_transcript_ids |\\
 	tail -n +2 |\\
@@ -61,19 +63,20 @@ unzip -p TMP/jeter.zip  revel_with_transcript_ids |\\
 	cut -f 1,${colpos},4,5,8 |\\
 	awk -F '\t' '\$2!="."' |\\
 	uniq |\\
-	jvarkit  -Djava.io.tmpdir=TMP  bedrenamechr -R "${fasta}" --column 1 --convert SKIP  |\\
+	jvarkit  -Djava.io.tmpdir=TMP  bedrenamechr -R "${dict}" --column 1 --convert SKIP  |\\
 		LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
 		uniq |\\
-		bgzip > TMP/${TAG}.bed.gz
+		bgzip > TMP/${prefix}.bed.gz
 
-tabix -s 1 -b 2 -e 2 -f TMP/${TAG}.bed.gz
+tabix -s 1 -b 2 -e 2 -f TMP/${prefix}.bed.gz
 
 
-mv TMP/${TAG}.bed.gz ./
-mv TMP/${TAG}.bed.gz.tbi ./
+mv TMP/${prefix}.bed.gz ./
+mv TMP/${prefix}.bed.gz.tbi ./
 
 echo '##INFO=<ID=${TAG},Number=1,Type=Float,Description="${WHATIZ} ${url}">' > ${TAG}.header
 
+fi
 
 cat << 'EOF' > doc.md
 # annotations:revel
@@ -89,5 +92,11 @@ cat << END_VERSIONS > versions.yml
 "${task.process}":
 	url: "${url}"
 END_VERSIONS
+"""
+
+stub:
+	def prefix = task.ext.prefix?:"REVEL.${meta.id}"  
+"""
+touch versions.yml ${prefix}.bed.gz ${prefix}.bed.gz.tbi doc.md
 """
 }

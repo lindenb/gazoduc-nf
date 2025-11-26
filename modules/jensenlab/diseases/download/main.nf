@@ -24,44 +24,39 @@ SOFTWARE.
 */
 
 process DISEASES_DOWNLOAD {
-	tag "${meta1.id?:fasta.name}"
+	tag "${meta.id}"
 	afterScript "rm -rf TMP"
 	label "process_single"
 	conda "${moduleDir}/../../../../conda/bioinfo.01.yml"
 	input:
-		tuple val(meta1),path(fasta)
-		tuple val(meta2),path(fai)
-		tuple val(meta3),path(dict)
-		tuple val(meta4),path(gtf),path(gtf_tbi)
+		tuple val(meta),path(gtf)
 	output:
-		tuple val(meta1),path("*.bed.gz"), path("*.bed.gz.tbi"), path("*.header"), emit:bed
+		tuple val(meta),path("*.bed.gz"), path("*.bed.gz.tbi"), path("*.header"), emit:bed
 		path("versions.yml"),emit:versions
 		path("doc.md"),emit:doc
 	script:
 		def url = task.ext.url?:"https://download.jensenlab.org/human_disease_textmining_filtered.tsv"
 		def treshold = task.ext.treshold ?:4.5
 		def TAG = task.ext.tag?:"DISEASES"
-		def enabled = ((task.ext.enabled?:task.attempt<=1).toBoolean()
-		def WHATIZ = (enabled?"DISEASES is a weekly updated web resource that integrates evidence on disease-gene associations from automatic text mining, manually curated literature, cancer mutation data, and genome-wide association studies. ${url}. Treshold=${treshold}": "DISEASE disabled by user or resource not available")
+		def prefix = task.ext.prefix?:"${meta.id}.${TAG}"
+		def WHATIZ = "DISEASES is a weekly updated web resource that integrates evidence on disease-gene associations from automatic text mining, manually curated literature, cancer mutation data, and genome-wide association studies. ${url}. Treshold=${treshold}"
 	"""
 	hostname 1>&2
 	export LC_ALL=C
 	mkdir -p TMP
 	set -x
 
-	if ${enabled}
-	then
 
-	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP gtf2bed  --columns "gtf.feature,gene_name" -R "${fasta}"  "${gtf}" |\\
+	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP gtf2bed  --columns "gtf.feature,gene_name"  "${gtf}" |\\
 		awk -F '\t' '\$4=="gene" && \$5!="." && \$5!=""' |\\
 		cut -f1,2,3,5 |\\
 		LC_ALL=C sort --buffer-size=${task.memory.mega}M -t '\t' -k4,4 -T TMP  |\\
 		uniq > TMP/genes.bed
 
 
-	 curl L- "${url}" |\
+	 curl -L "${url}" |\
 		awk -F '\t' '(\$5 > ${treshold}) {D=\$3; gsub(/[:]/,"_",D); M=\$4; gsub(/[^A-Za-z0-9]+/,"_",M); printf("%s\t%s\t%s\\n",\$2,D,M);}' |\
-		LC_ALL=C sort -T TMP -t '\t' -k1,1 > TMP/jeter.b
+		LC_ALL=C sort --buffer-size=${task.memory.mega}M -T TMP -t '\t' -k1,1 > TMP/jeter.b
 
 	test -s TMP/jeter.b
 
@@ -69,22 +64,15 @@ process DISEASES_DOWNLOAD {
 	join -t '\t' -1 4 -2 1 -o '1.1,1.2,1.3,1.4,2.2,2.3' TMP/genes.bed TMP/jeter.b |\
 		LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n | uniq > TMP/jeter.bed
 
-	else
-	
-		touch TMP/jeter.bed
-	
-	fi
 
 	bgzip TMP/jeter.bed
         tabix --comment '#' -f -p bed TMP/jeter.bed.gz
 
-	mv TMP/jeter.bed.gz diseases.bed.gz
-	mv TMP/jeter.bed.gz.tbi diseases.bed.gz.tbi
+	mv TMP/jeter.bed.gz ${prefix}.bed.gz
+	mv TMP/jeter.bed.gz.tbi ${prefix}.bed.gz.tbi
 
-	echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${WHATIZ}">' > diseases.header
-	echo '##INFO=<ID=${TAG}_DOID,Number=.,Type=String,Description="${WHATIZ}">' >> diseases.header
-
-
+	echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${WHATIZ}">' > ${prefix}.header
+	echo '##INFO=<ID=${TAG}_DOID,Number=.,Type=String,Description="${WHATIZ}">' >> ${prefix}.header
 
 
 cat << 'EOF' > doc.md
@@ -111,5 +99,11 @@ cat << END_VERSIONS > versions.yml
 	url: "${URL}"
 END_VERSIONS
 	"""
-	}
+
+stub:
+	def prefix="xxx"
+"""
+touch versions.yml ${prefix}.bed.gz ${prefix}.bed.gz.tbi ${prefix}.header doc.md
+"""
+}
 

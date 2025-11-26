@@ -1,3 +1,28 @@
+/*
+
+Copyright (c) 2025 Pierre Lindenbaum
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+The MIT License (MIT)
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
+
 
 process SPLIT_N_VARIANTS {
 label "process_single"
@@ -8,8 +33,8 @@ input:
 	tuple val(meta1),path(optional_bed)
 	tuple val(meta ),path(vcf),path(idx)
 output:
-	tuple val(meta),path("OUT/*.vcf.gz",arity:"0..*"),optional:true,emit:vcf
-	tuple val(meta),path("OUT/*.tbi",arity:"0..*"),optional:true,emit:tbi
+	tuple val(meta),path("OUT/*.vcf.gz",arity:"1..*"),optional:true,emit:vcf
+	tuple val(meta),path("OUT/*.tbi",arity:"1..*"),optional:true,emit:tbi
 	tuple val(meta),path("*.MF"),optional:true,emit:manifest
 	path("versions.yml"),emit:versions
 script:
@@ -59,8 +84,19 @@ done
 
 cat << EOF > versions.yml
 ${task.process}:
-	jvarkit: TODO
+	jvarkit: "\$(jvarkit --version)"
 EOF
+"""
+
+stub:
+"""
+mkdir OUT
+for X in 1 2 3 4 5 6 7 8 9 10
+do
+	touch OUT/\${X}.vcf.gz
+	touch OUT/\${X}.vcf.gz.tbi
+done
+touch versions.yml 
 """
 }
 

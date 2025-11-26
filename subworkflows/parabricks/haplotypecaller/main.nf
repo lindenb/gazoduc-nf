@@ -24,45 +24,46 @@ SOFTWARE.
 */
 include {PB_HAPLOTYPECALLER as  PB_HAPCALLER   } from '../../../modules/parabricks/haplotypecaller'
 include {GLNEXUS_GENOTYPE                      } from '../../../modules/glnexus/genotype'
-include {BCFTOOLS_CONCAT                       } from '../../../modules/bcftools/concat'
+include {BCFTOOLS_CONCAT                       } from '../../../modules/bcftools/concat3'
 
 workflow PB_HAPLOTYPECALLER {
 take:
-    meta
+    metadata
     fasta
     fai
-    dict
+    _dict
     cluster_beds // meta,bed
+    glnexus_config
     bams // meta,bam,bai
 main:
     versions = Channel.empty()
+    multiqc = Channel.empty()
+
     PB_HAPCALLER(fasta,fai,bams)
     versions = versions.mix(PB_HAPCALLER.out.versions)
 
     ch1 = PB_HAPCALLER.out.gvcf
-        .map{[it[1],it[2]]}//gvcf,tbi
+        .flatMap{_meta,vcf,tbi->[vcf,tbi]}//gvcf,tbi
         .collect()
-        .map{[[id:"pb_hapcaller"],it]}
-    
-    
+        .map{files->[[id:(metadata.id?:"pb_hapcaller")],files.sort()]}
      
     GLNEXUS_GENOTYPE(
         cluster_beds,
-        [[:],[]], //config
+        glnexus_config, //config
         ch1
         )
-     versions = versions.mix(GLNEXUS_GENOTYPE.out.versions)
-
+    versions = versions.mix(GLNEXUS_GENOTYPE.out.versions)
 
     BCFTOOLS_CONCAT(
         GLNEXUS_GENOTYPE.out.vcf
-            .map{[it[1],it[2]]}//gvcf,tbi
-             .collect()
-             .map{[[id:"pb_hapcaller"],it,[]]}
+            .flatMap{_meta,vcf,tbi->[vcf,tbi]}//gvcf,tbi
+            .collect()
+            .map{files->[[id:(metadata.id?:"pb_hapcaller")],files.sort()]}
         )
     versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
 
 emit:
     versions
+    multiqc
     vcf = BCFTOOLS_CONCAT.out.vcf
 }

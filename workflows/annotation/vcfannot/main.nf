@@ -35,46 +35,61 @@ include {runOnComplete} from '../../../modules/utils/functions.nf'
 include {DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GTF   } from '../../../modules/gtf/download/main.nf'
 include {DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GFF3  } from '../../../modules/gtf/download/main.nf'
 //include {ANNOTATE                               } from '../../../subworkflows/annotation/annotsnv/main.nf'
-include {ANNOTATE                                 } from '../../../subworkflows/annotation/annotsnv/main.nf'
-include {SCATTER_TO_BED                           } from '../../../subworkflows/gatk/scatterintervals2bed/main.nf'
-include {SPLIT_VCF                                } from '../../../subworkflows/jvarkit/splitnvariants/main.nf'
-include {BCFTOOLS_CONCAT                           } from '../../../modules/bcftools/concat/main.nf'
+include {ANNOTATE                                } from '../../../subworkflows/annotation/annotsnv/main.nf'
+include {SPLIT_VCF                               } from '../../../subworkflows/jvarkit/splitnvariants/main.nf'
+include {BCFTOOLS_CONCAT                         } from '../../../modules/bcftools/concat/main.nf'
+include { VCF_INPUT as INPUT_VCF                 } from '../../../subworkflows/nf/vcf_input' 
+include {PREPARE_ONE_REFERENCE                   } from '../../../subworkflows/samtools/prepare.one.ref'
+
 
 workflow {
 	versions = Channel.empty()
-	def ref_hash = [
-		id: file(params.fasta).baseName,
-		name: file(params.fasta).baseName
-		]
-	def fasta =    [ ref_hash, file(params.fasta) ]
-	def fai =      [ ref_hash, file(params.fai) ]
-	def dict =     [ ref_hash, file(params.dict) ]
+	def metadata = [id:"annot"]
+
+
+    if(params.fasta==null) {
+      throw new IllegalArgumentException("undefined --fasta");
+      }
+ 	if(params.input==null) {
+      throw new IllegalArgumentException("undefined --input");
+      }
+
+
+
+  /***************************************************
+   *
+   *  PREPARE FASTA REFERENCE
+   *
+   */
+	PREPARE_ONE_REFERENCE(
+		metadata,
+		Channel.fromPath(params.fasta).map{[[id:it.baseName],it]}
+		)
+	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
+
+
 	def pedigree = [ ref_hash, (params.pedigree ? file(params.pedigree) : []) ]
 	def bed =      [ ref_hash, (params.bed ? file(params.bed) : []) ]
 	
 	
+  /***************************************************
+   *
+   *  INPUT_VCF
+   *
+   */
+ 	INPUT_VCF(
+      metadata.plus([
+        arg_name : "input",
+        path: params.input,
+        require_index : true,
+        required : true,
+        unique : true
+        ])
+      )
+    versions = versions.mix(INPUT_VCF.out.versions)
+    vcfs = INPUT_VCF.out.vcf
 
-
-	vcfs = Channel.fromPath(params.samplesheet)
-		.splitCsv(header:true,sep:",")
-		.map{
-			if(!it.vcf) throw new IllegalArgumentException("vcf missing in ${params.samplesheet}")
-			if(!(it.vcf.endsWith(".vcf.gz") || it.vcf.endsWith(".bcf"))) throw new IllegalArgumentException("bad vcf suffix ${it.vcf} in ${params.samplesheet}")
-			return it;
-			}
-		.map{
-			if(it.containsKey("index")) return it;
-			def suffix = it.vcf.endsWith(".vcf.gz")?".tbi":".csi"
-			return it.plus(index:it.vcf+suffix);
-			}
-		.map{
-			if(it.containsKey("id")) return it;
-			return it.plus(id:file(it.vcf).baseName);
-			}
-		.map {[[id:it.id],file(it.vcf),file(it.index)]}
-		.view()
-
-
+	
 
 	 /** break the VCF into parts */
     SPLIT_VCF(

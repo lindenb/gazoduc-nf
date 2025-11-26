@@ -24,15 +24,12 @@ SOFTWARE.
 */
 
 process TISSUES_DOWNLOAD {
-tag "${fasta.name}"
+tag "${meta1.id}"
 afterScript "rm -rf TMP"
 label "process_single"
 conda "${moduleDir}/../../../../conda/bioinfo.01.yml"
 input:
-    tuple val(meta1),path(fasta)
-    tuple val(meta2),path(fai)
-    tuple val(meta3),path(dict)
-    tuple val(meta4),path(gtf),path(gtf_tbi)
+    tuple val(meta1),path(gtf)
 output:
     tuple val(meta1),path("*.bed.gz"), path("*.bed.gz.tbi"), path("*.header"), emit:bed
     path("versions.yml"),emit:versions
@@ -41,15 +38,16 @@ script:
     def TAG = task.ext.tag?:"TISSUES"
     def URL = task.ext.url?:"https://download.jensenlab.org/human_tissue_knowledge_full.tsv"
     def WHATIZ = "Tissue from https://tissues.jensenlab.org/Search  (${URL})"
+    def prefix = task.ext.prefix?:"${meta1.id}.${TAG}"
 """
 hostname 1>&2
 mkdir -p TMP
 export LC_ALL=C
 
-jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP gtf2bed  --columns "gtf.feature,gene_name" -R "${fasta}"  "${gtf}" |\\
+jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP gtf2bed  --columns "gtf.feature,gene_name"   "${gtf}" |\\
 	awk -F '\t' '\$4=="gene" && \$5!="." && \$5!=""' |\\
 	cut -f1,2,3,5 |\\
-    LC_ALL=C sort --buffer-size=${task.memory.mega}M -t '\t' -k4,4 -T TMP  |\\
+        LC_ALL=C sort --buffer-size=${task.memory.mega}M -t '\t' -k4,4 -T TMP  |\\
 	uniq > TMP/genes.bed
 
 wget -O - "${URL}" |\\
@@ -61,17 +59,17 @@ wget -O - "${URL}" |\\
 LC_ALL=C  join -t '\t' -1 4 -2 1 -o '1.1,1.2,1.3,2.2,2.3' TMP/genes.bed TMP/genes.txt |\\
 	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n |\\
 	uniq |\\
-	bgzip > TMP/${TAG}.bed.gz
+	bgzip > TMP/${prefix}.bed.gz
 
-tabix --force -p bed TMP/${TAG}.bed.gz
+tabix --force -p bed TMP/${prefix}.bed.gz
 
 
 mv TMP/*.bed.gz ./
 mv TMP/*.bed.gz.tbi ./
 
 
-echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${WHATIZ}">' > ${TAG}.header
-echo '##INFO=<ID=${TAG}_BRENDA,Number=.,Type=String,Description="${WHATIZ}">' >> ${TAG}.header
+echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${WHATIZ}">' > ${prefix}.header
+echo '##INFO=<ID=${TAG}_BRENDA,Number=.,Type=String,Description="${WHATIZ}">' >> ${prefix}.header
 
 
 cat << 'EOF' > doc.md
@@ -97,5 +95,11 @@ cat << END_VERSIONS > versions.yml
 "${task.process}":
 	url: "${URL}"
 END_VERSIONS
+"""
+
+stub:
+    def prefix = task.ext.prefix?:"tissues"
+"""
+touch versions.yml ${prefix}.header ${prefix}.bed.gz ${prefix}.bed.gz.tbi doc.md
 """
 }
