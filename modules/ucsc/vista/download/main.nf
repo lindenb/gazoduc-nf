@@ -24,43 +24,59 @@ SOFTWARE.
 */
 
 process VISTA_DOWNLOAD {
-tag "${meta1.id?:fasta.name}"
+tag "${meta.id?:dict.name}"
 afterScript "rm -rf TMP"
 label "process_single"
 conda "${moduleDir}/../../../../conda/bioinfo.01.yml"
 input:
-    tuple val(meta1),path(fasta)
-    tuple val(meta2),path(fai)
-    tuple val(meta3),path(dict)
+    tuple val(meta),path(dict)
 output:
-	tuple val(meta1),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.header"),emit:bed
-	tuple val(meta1),path("*.md"),emit:doc
+	tuple val(meta),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.header"),emit:bed
+	tuple val(meta),path("*.md"),emit:doc
 	path("versions.yml"),emit:versions
 script:
    	def TAG = "VISTA"
 	def whatis="VISTA enhancers"
-	if(!meta1.ucsc_name || meta1.ucsc_name.isEmpty()) throw new IllegalArgumentException("${task.process} missing ucsc name");
-	def url = "https://hgdownload.cse.ucsc.edu/gbdb/${meta1.ucsc_name}/vistaEnhancers/vistaEnhancers.bb"
+	def url =task.ext.url?:""
+    if(url.isEmpty()) {
+		if(meta.ucsc_name==null || meta.ucsc_name.isEmpty()) throw new IllegalArgumentException("${task.process} missing meta.ucsc name");
+		url = "https://hgdownload.cse.ucsc.edu/gbdb/${meta.ucsc_name}/vistaEnhancers/vistaEnhancers.bb"
+		}
+	def jvm  = task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
+	def prefix = task.ext.prefix?:"${meta.id}.${TAG}"
 """
 mkdir -p TMP/CACHE
 
 
-curl -L -o TMP/jeter.bb "${url}"
+if ${!url.isEmpty()}
+then
 
-bigBedToBed -udcDir=TMP/CACHE TMP/jeter.bb stdout |\\
-        cut -f1,2,3,4 |\\
-        jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedrenamechr -R ${fasta} --column 1 --convert SKIP  |\\
-        LC_ALL=C sort -t '\t' -k1,1 -k2,2n -T TMP |\\
-        bgzip > TMP/${TAG}.bed.gz
+	curl -L -o TMP/jeter.bb "${url}"
 
-tabix -p bed -f TMP/${TAG}.bed.gz
+	bigBedToBed -udcDir=TMP/CACHE TMP/jeter.bb stdout |\\
+			cut -f1,2,3,4 |\\
+			jvarkit  ${jvm} bedrenamechr -R ${dict} --column 1 --convert SKIP  |\\
+			LC_ALL=C sort  -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
+			bgzip > TMP/${prefix}.bed.gz
 
-mv TMP/${TAG}.bed.gz ./
-mv TMP/${TAG}.bed.gz.tbi ./
 
-echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${whatis}">' > ${TAG}.header
 
-cat << EOF > ${TAG}.md
+
+	echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${whatis}">' > ${prefix}.header
+
+else
+	 
+	touch  TMP/${prefix}.bed
+	bgzip TMP/${prefix}.bed
+	echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="Not available for ucsc: ${meta.ucsc_name}">' > ${prefix}.header
+
+fi
+
+tabix -p bed -f TMP/${prefix}.bed.gz
+mv TMP/${prefix}.bed.gz ./
+mv TMP/${prefix}.bed.gz.tbi ./
+
+cat << EOF > ${prefix}.md
 Vista enhancer.
 EOF
 
@@ -68,5 +84,11 @@ cat << END_VERSIONS > versions.yml
 "${task.process}":
 	url: "${url}"
 END_VERSIONS
+"""
+
+stub:
+	def prefix = task.ext.prefix?:"vista"
+"""
+touch versions.yml ${prefix}.bed.gz ${prefix}.bed.gz.tbi ${prefix}.header ${prefix}.md
 """
 }

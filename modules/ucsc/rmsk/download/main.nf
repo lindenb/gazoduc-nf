@@ -35,11 +35,11 @@ output:
 	path("versions.yml"),emit:versions
 	path("doc.md"),emit:doc
 script:
-    if(meta.ucsc_name==null || meta.ucsc_name.isEmpty()) throw new IllegalArgumentException("${task.process} no meta1.ucsc_name");
     def url =task.ext.url?:""
     if(url.isEmpty()) {
-	url="https://hgdownload.cse.ucsc.edu/goldenPath/${meta.ucsc_name}/database/rmsk.txt.gz"
-	}
+		if(meta.ucsc_name==null || meta.ucsc_name.isEmpty()) throw new IllegalArgumentException("${task.process} no meta1.ucsc_name");
+		url="https://hgdownload.cse.ucsc.edu/goldenPath/${meta.ucsc_name}/database/rmsk.txt.gz"
+		}
     def TAG = task.ext.tag?:"RMSK"
     def prefix = task.ext.prefix?:"${meta.id}.${TAG}"
 """

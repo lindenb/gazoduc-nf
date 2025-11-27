@@ -1,0 +1,107 @@
+nextflow_workflow {
+
+    name "Test Workflow ANNOT_SNV"
+    script "subworkflows/bigannotsnv/main.nf"
+    workflow "ANNOT_SNV"
+    tag "gitlab_ci"
+    tag "subworkflows"
+    tag "subworkflows/bigannotsnv"
+
+
+    test("STUB_FALSE") {
+        options "-stub"
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [id:"hg38",
+                    cardiopanel: false,
+                    alphamissense: false,
+                    avada: false,
+                    clinvar: false,
+                    revel: false,
+                    tissues: false,
+                    diseases: false,
+                    gencc: false,
+                    snpeff: false,
+                    bhfucl: false,
+                    rmsk: false,
+                    vista: false,
+                    simple_repeats: false,
+                    vep: false,
+                    remap: false,
+                    ensembl_reg: false,
+                    hmc: false,
+                    greendb: false,
+                    gnomad_sv: false,
+                    ]
+                input[1] = Channel.of( [[id:"hg38"], file("${projectDir}/tests/data/rotavirus_rf.fa") ] )
+                input[2] = Channel.of( [[id:"hg38"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai") ] )
+                input[3] = Channel.of( [[id:"hg38"], file("${projectDir}/tests/data/rotavirus_rf.dict") ] )
+		        input[4] = Channel.of( [[id:"ped"],file("${projectDir}/tests/data/fake.ped") ] )
+		        input[5] = Channel.of( [[id:"gtf"],file("${projectDir}/tests/data/rotavirus_rf.gtf.gz"),file("${projectDir}/tests/data/rotavirus_rf.gtf.gz.tbi") ] )               
+		        input[6] = Channel.of( [[id:"gff3"],file("${projectDir}/tests/data/rotavirus_rf.gff3.gz"),file("${projectDir}/tests/data/rotavirus_rf.gff3.gz.tbi") ] )               
+                input[7] = Channel.of( [[id:"gff3"],file("${projectDir}/tests/data/rotavirus_rf.vcf.gz"),file("${projectDir}/tests/data/rotavirus_rf.vcf.gz.tbi") ] )               
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+    test("STUB_TRUE") {
+        options "-stub"
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [id:"hg38",
+                    cardiopanel: true,
+                    alphamissense: true,
+                    avada: true,
+                    clinvar: true,
+                    revel: true,
+                    tissues: true,
+                    diseases: true,
+                    gencc: true,
+                    snpeff: true,
+                    bhfucl: true,
+                    rmsk: true,
+                    vista: true,
+                    simple_repeats: true,
+                    vep: true,
+                    remap: true,
+                    ensembl_reg: true,
+                    hmc: true,
+                    greendb: true,
+                    gnomad_sv: true,
+                    ]
+                input[1] = Channel.of( [[id:"hg38"], file("${projectDir}/tests/data/rotavirus_rf.fa") ] )
+                input[2] = Channel.of( [[id:"hg38"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai") ] )
+                input[3] = Channel.of( [[id:"hg38"], file("${projectDir}/tests/data/rotavirus_rf.dict") ] )
+		        input[4] = Channel.of( [[id:"ped"],file("${projectDir}/tests/data/fake.ped") ] )
+		        input[5] = Channel.of( [[id:"gtf"],file("${projectDir}/tests/data/rotavirus_rf.gtf.gz"),file("${projectDir}/tests/data/rotavirus_rf.gtf.gz.tbi") ] )               
+		        input[6] = Channel.of( [[id:"gff3"],file("${projectDir}/tests/data/rotavirus_rf.gff3.gz"),file("${projectDir}/tests/data/rotavirus_rf.gff3.gz.tbi") ] )               
+                input[7] = Channel.of( [[id:"gff3"],file("${projectDir}/tests/data/rotavirus_rf.vcf.gz"),file("${projectDir}/tests/data/rotavirus_rf.vcf.gz.tbi") ] )               
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

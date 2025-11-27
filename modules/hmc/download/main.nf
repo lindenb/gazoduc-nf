@@ -24,48 +24,66 @@ SOFTWARE.
 */
 
 process HMC_DOWNLOAD{
-tag "${meta1.id?:fasta.name}"
+tag "${meta.id}"
 afterScript "rm -rf TMP"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-    tuple val(meta1),path(fasta)
-    tuple val(meta2),path(fai)
-    tuple val(meta3),path(dict)
+    tuple val(meta),path(dict)
 output:
-	tuple val(meta1),path("*.bed.gz"), path("*.bed.gz.tbi"), path("*.header"),emit:bed
+	tuple val(meta),path("*.bed.gz"), path("*.bed.gz.tbi"), path("*.header"),emit:bed
 	path("versions.yml"),emit:versions
 script:
 	def TAG=  task.ext.tag?:"HMC"
-	def url="";
-    if(meta1.ucsc_name && (meta1.ucsc_name.equals("hg19") || meta1.ucsc_name.equals("hg38"))) {
-        url = "http://hgdownload.soe.ucsc.edu/gbdb/${meta1.ucsc_name}/hmc/hmc.bw"
+	def url= task.ext.url?:""
+    if(url.isEmpty() && meta.ucsc_name!=null && meta.ucsc_name.matches("(hg19|hg38)")) {
+        url = "http://hgdownload.soe.ucsc.edu/gbdb/${meta.ucsc_name}/hmc/hmc.bw"
         }
-    if(url.trim().isEmpty()) {
-        throw new IllegalArgumentException("bad url for ${task.process}");
-    }
+    def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP"
+    def prefix = task.ext.prefix?:"${meta.id}.${TAG}"
 """
 hostname 1>&2
 mkdir -p TMP
 
-curl -L -o TMP/jeter.bw "${url}"
+if ${!url.isEmpty()}
+then
 
-bigWigToBedGraph TMP/jeter.bw stdout |\
-	jvarkit   -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP bedrenamechr -f "${fasta}" --column 1 --convert SKIP  |\
-		LC_ALL=C sort  -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\
-		bgzip > TMP/${TAG}.bed.gz
+    curl -L -o TMP/jeter.bw "${url}"
 
-tabix -p bed -f TMP/${TAG}.bed.gz
+    bigWigToBedGraph TMP/jeter.bw stdout |\\
+        jvarkit ${jvm} bedrenamechr -f "${dict}" --column 1 --convert SKIP  |\\
+            LC_ALL=C sort  -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
+            bgzip > TMP/${prefix}.bed.gz
 
 
-mv TMP/${TAG}.bed.gz ./
-mv TMP/${TAG}.bed.gz.tbi ./
+    echo '##INFO=<ID=${TAG},Number=1,Type=Float,Description="Homologous Missense Constraint (HMC) is a amino acid level measure of genetic intolerance of missense variants within human populations. For all assessable amino-acid positions in Pfam domains, the number of missense substitutions directly observed in gnomAD (Observed) was counted and compared to the expected value under a neutral evolution model (Expected). The upper limit of a 95% confidence interval for the Observed/Expected ratio is defined as the HMC score. Missense variants disrupting the amino-acid positions with HMC<0.8 are predicted to be likely deleterious. This score only covers PFAM domains within coding regions . URL= ${url}">' > ${prefix}.header
 
-echo '##INFO=<ID=${TAG},Number=1,Type=Float,Description="Homologous Missense Constraint (HMC) is a amino acid level measure of genetic intolerance of missense variants within human populations. For all assessable amino-acid positions in Pfam domains, the number of missense substitutions directly observed in gnomAD (Observed) was counted and compared to the expected value under a neutral evolution model (Expected). The upper limit of a 95% confidence interval for the Observed/Expected ratio is defined as the HMC score. Missense variants disrupting the amino-acid positions with HMC<0.8 are predicted to be likely deleterious. This score only covers PFAM domains within coding regions . URL= ${url}">' > ${TAG}.header
+
+else
+    echo '##INFO=<ID=${TAG},Number=1,Type=Float,Description="Homologous Missense Constraint (HMC): Data is NOT available.">' > ${prefix}.header
+
+    touch TMP/${prefix}.bed
+    bgzip TMP/${prefix}.bed
+
+fi
+
+
+tabix -p bed -f TMP/${prefix}.bed.gz
+
+
+mv TMP/${prefix}.bed.gz ./
+mv TMP/${prefix}.bed.gz.tbi ./
+
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
 	url: "${url}"
 END_VERSIONS
+"""
+
+stub:
+    def prefix  = "hmc"
+"""
+touch versions.yml ${prefix}.bed.gz ${prefix}.bed.gz.tbi ${prefix}.header
 """
 }

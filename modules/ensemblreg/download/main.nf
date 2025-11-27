@@ -24,50 +24,71 @@ SOFTWARE.
 */
 
 process ENSEMBL_REG_DOWNLOAD{
-tag "${fasta.name}"
+tag "${meta.id}"
 afterScript "rm -rf TMP"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-    tuple val(meta1),path(fasta)
-    tuple val(meta2),path(fai)
-    tuple val(meta3),path(dict)
+    tuple val(meta),path(dict)
 output:
-	tuple val(meta1),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.header"),emit:bed
+	tuple val(meta),path("*.bed.gz"),path("*.bed.gz.tbi"),path("*.header"),emit:bed
 	path("versions.yml"),emit:versions
 script:
-   	def TAG = "ENSEMBL_REG"
+   	def TAG = task.ext.tag?:"ENSEMBL_REG"
 	def whatis="Ensembl regulatory Features"
-    if(!meta1.ucsc_name) throw new IllegalArgumentException("${task.process} undefined ucsc_name");
-    def url="";
-    if(meta1.ucsc_name.equals("hg38")) {
-        url = "https://ftp.ensembl.org/pub/release-114/regulation/homo_sapiens/GRCh38/annotation/Homo_sapiens.GRCh38.regulatory_features.v114.gff3.gz"
-    } else if(meta1.ucsc_name.equals("hg19")) {
-        url = "https://ftp.ensembl.org/pub/release-114/regulation/homo_sapiens/GRCh37/annotation/Homo_sapiens.GRCh37.regulatory_features.v114.gff3.gz"
-    } else {
-        throw new IllegalArgumentException("${task.process} unknown ucsc_name");
+    def url= task.ext.url?:"";
+    if(url.isEmpty() && meta.ucsc_name!=null) {
+            if(meta.ucsc_name == "hg38") {
+                url = "https://ftp.ensembl.org/pub/release-114/regulation/homo_sapiens/GRCh38/annotation/Homo_sapiens.GRCh38.regulatory_features.v114.gff3.gz"
+            } else if(meta.ucsc_name == "hg19") {
+                url = "https://ftp.ensembl.org/pub/release-114/regulation/homo_sapiens/GRCh37/annotation/Homo_sapiens.GRCh37.regulatory_features.v114.gff3.gz"
+            } 
         }
+    def prefix = task.ext.prefix?:"${meta.id}.${TAG}"
+    def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
 """
 hostname 1>&2
 mkdir -p TMP
 
-curl -L "${url}" |\\
-        gunzip -c |\\
-	    awk -F '\t' '/^[^#]/{printf("%s\t%d\t%s\t%s\\n",\$1,int(\$4)-1,\$5,\$3);}' |\\
-        jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedrenamechr -R ${fasta} --column 1 --convert SKIP  |\\
-        LC_ALL=C sort -t '\t' -k1,1 -k2,2n -T TMP |\\
-	    uniq | bgzip > TMP/${TAG}.bed.gz
-	
-tabix -p bed -f TMP/${TAG}.bed.gz
+if ${!url.isEmpty()}
+then
 
-mv TMP/${TAG}.bed.gz ./
-mv TMP/${TAG}.bed.gz.tbi ./
+    curl -L "${url}" |\\
+            gunzip -c |\\
+            awk -F '\t' '/^[^#]/{printf("%s\t%d\t%s\t%s\\n",\$1,int(\$4)-1,\$5,\$3);}' |\\
+            jvarkit ${jvm} bedrenamechr -R ${dict} --column 1 --convert SKIP  |\\
+            LC_ALL=C sort --buffer-size=${task.memory.mega}M -t '\t' -k1,1 -k2,2n -T TMP |\\
+            uniq | bgzip > TMP/${prefix}.bed.gz
+        
 
-echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${whatis} ${url}">' > ${TAG}.header
+        echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="${whatis} ${url}">' > ${prefix}.header
+
+else
+
+
+    echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="ENSEMBL REG not available">' > ${prefix}.header
+
+    touch TMP/${prefix}.bed
+    bgzip TMP/${prefix}.bed
+
+fi
+
+tabix -p bed -f TMP/${prefix}.bed.gz
+
+mv TMP/${prefix}.bed.gz ./
+mv TMP/${prefix}.bed.gz.tbi ./
+
 
 cat << EOF > versions.yml
 ${task.process}:
 	url: "${url}"
 EOF
+"""
+
+
+stub:
+    def prefix = "${meta.id}.ENSREG"
+"""
+touch ${prefix}.bed.gz ${prefix}.bed.gz.tbi ${prefix}.header versions.yml
 """
 }

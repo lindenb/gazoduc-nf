@@ -43,14 +43,14 @@ include {GENCC_DOWNLOAD            } from '../../modules/gencc/download'
 include {ENSEMBL_REG_DOWNLOAD      } from '../../modules/ensemblreg/download'
 include {HMC_DOWNLOAD              } from '../../modules/hmc/download'
 include {GREENDB_DOWNLOAD          } from '../../modules/greendb/download'
-include {DOWNLOAD_GNOMAD_SV        } from '../../modules/gnomadsv/download'
+include {DOWNLOAD_GNOMAD_SV        } from '../../modules/gnomad_sv/download.vcf'
 
 String countVariants(def f) {
         return "\necho  \${LINENO} && bcftools query -f '.\\n' \""+f+"\" | wc -l 1>&2" +"\n"
         }
 
 boolean hasFeature(def hash,def key) {
-    if(isBlank(hash[key]) {
+    if(hash[key]==null) {
         log.warn("undefined ${key} in ANNOT_SNV");
         return false;
         }
@@ -82,13 +82,10 @@ main:
         CARDIOPANEL_DOWNLOAD( fasta,fai, dict, gtf  )
         versions = versions.mix(CARDIOPANEL_DOWNLOAD.out.versions)
         cardiopanel_ch = CARDIOPANEL_DOWNLOAD.out.bed
-        cardiopanel_extended_ch = CARDIOPANEL_DOWNLOAD.out.bed_extended
-        
         }
     else
         {
         cardiopanel_ch =  [[id:"no_cardiopanel"],[],[],[]]
-        cardiopanel_extended_ch =  [[id:"no_cardiopanelx"],[],[],[]]
         }
 
 
@@ -112,27 +109,25 @@ main:
         avada_vcf = [ [id:"no_avada"],[],[]]
         }
     
-    if(pedigree[1]) {
-        valid_trios = VALID_TRIOS(pedigree).pedigree
-       
+        
+        VALID_TRIOS(pedigree)
         versions = versions.mix(VALID_TRIOS.out.versions)
-    }  
-    else {
-        valid_trios =[[id:"no_valid_trio"],[]]
-    }
+        valid_trios = VALID_TRIOS.out.pedigree
+        valid_trios = valid_trios.ifEmpty([[id:"notrio"],[]])
+  
  
     if(hasFeature(metadata,"clinvar")) {
         CLINVAR_DOWNLOAD(dict )
         versions = versions.mix(CLINVAR_DOWNLOAD.out.versions)
-        clinvar_vcf = CLINVAR_DOWNLOAD.out.vcf
-        clinvar_vcf = clinvar_vcf.ifEmpty([[id:"no_clinvar"],[],[]])
+        clinvar_ch = CLINVAR_DOWNLOAD.out.vcf
+        clinvar_ch = clinvar_ch.ifEmpty([[id:"no_clinvar"],[],[]])
     } else {
-        clinvar_vcf =  [[id:"no_clinvar"],[],[]]
+        clinvar_ch =  [[id:"no_clinvar"],[],[]]
         }
 
 
     if(hasFeature(metadata,"revel")) {
-        REVEL_DOWNLOAD( fasta,fai, dict)
+        REVEL_DOWNLOAD( dict)
         versions = versions.mix(REVEL_DOWNLOAD.out.versions)
         revel_ch = REVEL_DOWNLOAD.out.tabix.ifEmpty([[id:"no_revel"],[],[],[]])
     } else {
@@ -153,9 +148,9 @@ main:
     if(hasFeature(metadata,"diseases")) {
         DISEASES_DOWNLOAD(gtf.map{meta,gtf,_tbi->[meta,gtf]})
         versions = versions.mix(DISEASES_DOWNLOAD.out.versions)
-        tissues_ch = DISEASES_DOWNLOAD.out.bed.ifEmpty([[id:"no_diseases"],[],[],[]])
+        diseases_ch = DISEASES_DOWNLOAD.out.bed.ifEmpty([[id:"no_diseases"],[],[],[]])
     } else {
-        revel_ch = [[id:"no_diseases"],[],[],[]]
+        diseases_ch = [[id:"no_diseases"],[],[],[]]
     }
     
     if(hasFeature(metadata,"gencc")) {
@@ -170,15 +165,15 @@ main:
     if(hasFeature(metadata,"snpeff")) {
         SNPEFF_DOWNLOAD(fai)
         versions = versions.mix(SNPEFF_DOWNLOAD.out.versions)
-        snpeff_ch = SNPEFF_DOWNLOAD.out.database
+        snpeff_db_ch = SNPEFF_DOWNLOAD.out.database
         }
     else
         {
-        snpeff_ch = [[id:"no_snpeff"],[],[],[]]
+        snpeff_db_ch = [[id:"no_snpeff"],[],[],[]]
         }
     
     if(hasFeature(metadata,"bhfucl")) {
-        BHFUCL_DOWNLOAD(fasta,fai, dict,gtf)
+        BHFUCL_DOWNLOAD(gtf.map{meta,gtf,_tbi->[meta,gtf]})
         versions = versions.mix(BHFUCL_DOWNLOAD.out.versions)
         bhfucl_ch = BHFUCL_DOWNLOAD.out.bed.ifEmpty([[id:"no_bhfucl"],[],[],[]])
         }
@@ -187,37 +182,110 @@ main:
         bhfucl_ch = [[id:"no_bhfucl"],[],[],[]]
         }
 
-    RMSK_DOWNLOAD(fasta,fai, dict)
-    versions = versions.mix(RMSK_DOWNLOAD.out.versions)
 
-    VISTA_DOWNLOAD(fasta,fai, dict)
-    versions = versions.mix(VISTA_DOWNLOAD.out.versions)
-   
-    SIMPLE_REPEATS_DOWNLOAD(fasta,fai, dict)
-    versions = versions.mix(SIMPLE_REPEATS_DOWNLOAD.out.versions)
+    if(hasFeature(metadata,"rmsk")) {
+        RMSK_DOWNLOAD(dict)
+        versions = versions.mix(RMSK_DOWNLOAD.out.versions)
+        rmsk_ch = RMSK_DOWNLOAD.out.bed
+        }
+    else
+        {
+        rmsk_ch = [[id:"no_rmsk"],[],[],[]] 
+        }
 
-    VEP_INSTALL_PLUGINS(meta)
-    versions = versions.mix(VEP_INSTALL_PLUGINS.out.versions)
 
-    DOWNLOAD_UTR_ANNOTATOR(fasta)
-    versions = versions.mix(DOWNLOAD_UTR_ANNOTATOR.out.versions)
+    if(hasFeature(metadata,"vista")) {  
+        VISTA_DOWNLOAD(dict)
+        versions = versions.mix(VISTA_DOWNLOAD.out.versions)
+        vista_ch = VISTA_DOWNLOAD.out.bed
+        }
+    else
+        {
+        vista_ch = [[id:"no_vista"],[],[],[]] 
+        }
+    
+    if(hasFeature(metadata,"simple_repeats")) {  
+        SIMPLE_REPEATS_DOWNLOAD(dict)
+        versions = versions.mix(SIMPLE_REPEATS_DOWNLOAD.out.versions)
+        simple_repeats_ch = SIMPLE_REPEATS_DOWNLOAD.out.bed
+        }
+    else
+        {
+        simple_repeats_ch = [[id:"no_s_repeat"],[],[],[]]
+        }
 
-    REMAP_DOWNLOAD(fasta,fai, dict)
-    versions = versions.mix(REMAP_DOWNLOAD.out.versions)
+     if(hasFeature(metadata,"vep")) {  
+        VEP_INSTALL_PLUGINS(meta)
+        versions = versions.mix(VEP_INSTALL_PLUGINS.out.versions)
+        vep_plugin_dir_ch = VEP_INSTALL_PLUGINS.out.directory
+        }
+    else
+        {
+        vep_plugin_dir_ch = [[id:"no_vep_plugins"],[]]
+        }
+    
+     if(hasFeature(metadata,"vep") && hasFeature(metadata,"utr_annotator")) {  
+        DOWNLOAD_UTR_ANNOTATOR(dict)
+        versions = versions.mix(DOWNLOAD_UTR_ANNOTATOR.out.versions)
+        utr_annotator_ch = DOWNLOAD_UTR_ANNOTATOR.out.output
+        }
+    else
+        {
+        utr_annotator_ch  = [[id:"no_utr"],[]]
+        }
 
-    ENSEMBL_REG_DOWNLOAD(fasta,fai, dict)
-    versions = versions.mix(ENSEMBL_REG_DOWNLOAD.out.versions)
+    if(hasFeature(metadata,"remap")) {  
+        REMAP_DOWNLOAD(fdict)
+        versions = versions.mix(REMAP_DOWNLOAD.out.versions)
+        remap_ch = REMAP_DOWNLOAD.out.bed
+        }
+    else
+        {
+        remap_ch = [[id:"no_remap"],[],[],[]]
+        }
 
-    HMC_DOWNLOAD(fasta,fai, dict)
-    versions = versions.mix(HMC_DOWNLOAD.out.versions)   
 
-    GREENDB_DOWNLOAD(fasta,fai, dict)
-    versions = versions.mix(GREENDB_DOWNLOAD.out.versions)   
+    if(hasFeature(metadata,"ensembl_reg")) {  
+        ENSEMBL_REG_DOWNLOAD(dict)
+        versions = versions.mix(ENSEMBL_REG_DOWNLOAD.out.versions)
+        ensembl_reg_ch = ENSEMBL_REG_DOWNLOAD.out.bed
+        }
+    else
+        {
+        ensembl_reg_ch = [[id:"noensembl_reg_ch"],[],[],[]]
+        }
 
-    DOWNLOAD_GNOMAD_SV(fasta,fai, dict)
-    versions = versions.mix(DOWNLOAD_GNOMAD_SV.out.versions)
-    FREQUENT_GNOMADSV(fai, DOWNLOAD_GNOMAD_SV.out.vcf)
-    versions = versions.mix(FREQUENT_GNOMADSV.out.versions)
+    if(hasFeature(metadata,"hmc")) {  
+        HMC_DOWNLOAD(dict)
+        versions = versions.mix(HMC_DOWNLOAD.out.versions)  
+        hmc_ch = HMC_DOWNLOAD.out.bed
+        }
+    else
+        {
+        hmc_ch = [[id:"no_hmc"],[],[],[]]
+        }
+
+     if(hasFeature(metadata,"greendb")) {  
+        GREENDB_DOWNLOAD(dict)
+        versions = versions.mix(GREENDB_DOWNLOAD.out.versions) 
+        greendb_ch = GREENDB_DOWNLOAD.out.bed
+        }
+    else
+        {
+        greendb_ch = [[id:"nogreendb"],[],[],[]]
+        }
+
+
+    if(hasFeature(metadata,"gnomad_sv")) {  
+        DOWNLOAD_GNOMAD_SV(dict)
+        versions = versions.mix(DOWNLOAD_GNOMAD_SV.out.versions)
+        FREQUENT_GNOMADSV(fai, DOWNLOAD_GNOMAD_SV.out.vcf)
+        versions = versions.mix(FREQUENT_GNOMADSV.out.versions)
+
+        gnomad_sv_ch = FREQUENT_GNOMADSV.out.vcf
+    } else {
+        gnomad_sv_ch = [[id:"no_gnomadsv"],[],[]]
+    }
 
     ANNOTATE(
         fasta,
@@ -227,28 +295,28 @@ main:
         gtf,
         gff3,
         cardiopanel_ch,
-        cardiopanel_extended_ch,
-        ALPHAMISSENSE_DOWNLOAD.out.output,
+        [[id:"cardiopanel_exteneded"],[],[],[]],
+        alphamissense_ch,
         avada_vcf,
         clinvar_ch,
         revel_ch,
-        SNPEFF_DOWNLOAD.out.database,
-        TISSUES_DOWNLOAD.out.bed,
-        DISEASES_DOWNLOAD.out.bed,
-        BHFUCL_DOWNLOAD.out.bed,
-        BHFUCL_DOWNLOAD.out.bed_extended,
-        RMSK_DOWNLOAD.out.bed,
-        VISTA_DOWNLOAD.out.bed,
-        VEP_INSTALL_PLUGINS.out.directory,
+        snpeff_db_ch,
+        tissues_ch,
+        diseases_ch,
+        bhfucl_ch,
+        [[id:"bhfucl_extended_ch"],[],[],[]],
+        rmsk_ch,
+        vista_ch,
+        vep_plugin_dir_ch,
         valid_trios,
-        SIMPLE_REPEATS_DOWNLOAD.out.bed,
-        DOWNLOAD_UTR_ANNOTATOR.out.output,
-        REMAP_DOWNLOAD.out.bed,
-        GENCC_DOWNLOAD.out.bed,
-        ENSEMBL_REG_DOWNLOAD.out.bed,
-        HMC_DOWNLOAD.out.bed,
-        GREENDB_DOWNLOAD.out.bed,
-        FREQUENT_GNOMADSV.out.output,
+        simple_repeats_ch,
+        utr_annotator_ch,
+        remap_ch,
+        gencc_ch,
+        ensembl_reg_ch,
+        hmc_ch,
+        greendb_ch,
+        gnomad_sv_ch,
         vcf
     )
 
@@ -387,7 +455,7 @@ then
         ${bcftools_norm_args} \\
         --fasta-ref '${fasta}'  \\
         -O u  \\
-        TMP/jeter1.bcf |\
+        TMP/jeter1.bcf |\\
         bcftools view  \\
             --write-index \\
             -i 'ALT!=\"*\"' \\
@@ -1085,6 +1153,10 @@ cat << END_VERSIONS > versions.yml
     awk: todo
 END_VERSIONS
 """
+stub:
+"""
+touch versions.yml trios.ped.tsv
+"""
 }
 
 process FREQUENT_GNOMADSV {
@@ -1122,5 +1194,9 @@ cat << END_VERSIONS > versions.yml
 "${task.process}":
 	bcftools: todo
 END_VERSIONS
+"""
+stub:
+"""
+touch versions.yml gnomadsv.vcf.gz gnomadsv.vcf.tbi gnomadsv.hdr
 """
 }

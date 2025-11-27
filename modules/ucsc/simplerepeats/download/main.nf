@@ -24,46 +24,70 @@ SOFTWARE.
 */
 
 process SIMPLE_REPEATS_DOWNLOAD {
-tag "${meta1.id?:fasta.name}"
+tag "${meta.id}"
 afterScript "rm -rf TMP"
 label "process_single"
 conda "${moduleDir}/../../../../conda/bioinfo.01.yml"
 input:
-    tuple val(meta1),path(fasta)
-    tuple val(meta2),path(fai)
-    tuple val(meta3),path(dict)
+    tuple val(meta),path(dict)
 output:
-	tuple val(meta1),path("*.bed.gz"), path("*.bed.gz.tbi"), path("*.header"),emit:bed
+	tuple val(meta),path("*.bed.gz"), path("*.bed.gz.tbi"), path("*.header"),emit:bed
 	path("versions.yml"),emit:versions
 script:
-    if(!meta1.ucsc_name || meta1.ucsc_name.isEmpty()) throw new IllegalArgumentException("${task.process} no meta1.ucsc_name");
-    def url = "https://hgdownload.cse.ucsc.edu/goldenPath/${meta1.ucsc_name}/database/simpleRepeat.txt.gz"
+    def url = task.ext.url?:""
+	if(url.isEmpty()) {
+    	if(meta.ucsc_name ==null || meta.ucsc_name.isEmpty()) throw new IllegalArgumentException("${task.process} no meta.ucsc_name");
+		url = "https://hgdownload.cse.ucsc.edu/goldenPath/${meta.ucsc_name}/database/simpleRepeat.txt.gz"
+		}
     def TAG = task.ext.tag?:"SREPEAT"
-
+	def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP"
+	def prefix = task.ext.prefix?:"${meta.id}.${TAG}"
 """
 hostname 1>&2
 mkdir -p TMP
 
-set -o pipefail
+if ${!url.isEmpty()}
+then
+
 curl -L  "${url}" |\\
 	gunzip -c |\\
 	cut -f2-5 |\\
-	jvarkit -Xmx${task.memory.giga}g  -Djava.io.tmpdir=TMP bedrenamechr -f "${fasta}" --column 1 --convert SKIP  |\\
+	jvarkit ${jvm} bedrenamechr -f "${dict}" --column 1 --convert SKIP  |\\
 	LC_ALL=C sort -t '\t' -k1,1 -k2,2n -T TMP |\\
-	bgzip > TMP/${TAG}.bed.gz
+	bgzip > TMP/${prefix}.bed.gz
 
-tabix -p bed -f TMP/${TAG}.bed.gz
+	echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="Simple Repeats from UCSC ${url}">' > ${prefix}.header
 
-mv TMP/${TAG}.bed.gz ./
-mv TMP/${TAG}.bed.gz.tbi ./
 
-echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="Simple Repeats from UCSC">' > ${TAG}.header
+else
+	touch TMP/${prefix}.bed
+	bgzip TMP/${prefix}.bed
+	echo '##INFO=<ID=${TAG},Number=.,Type=String,Description="Simple Repeats from UCSC Not available">' > ${prefix}.header
+
+
+fi
+
+tabix -p bed -f TMP/${prefix}.bed.gz
+
+
+
+
+
+mv TMP/${prefix}.bed.gz ./
+mv TMP/${prefix}.bed.gz.tbi ./
+
 
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
 	url: "${url}"
 END_VERSIONS
+"""
+
+stub:
+def prefix = task.ext.prefix?:"srepeats"
+"""
+touch versions.yml ${prefix}.bed.gz ${prefix}.bed.gz.tbi ${prefix}.header 
 """
 }
 

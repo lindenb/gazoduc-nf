@@ -1,15 +1,15 @@
 nextflow_process {
 
-    name "Test Process REVEL_DOWNLOAD"
-    script "modules/revel/download/main.nf"
-    process "REVEL_DOWNLOAD"
+    name "Test Process VISTA_DOWNLOAD"
+    script "modules/ucsc/vista/download/main.nf"
+    process "VISTA_DOWNLOAD"
     tag "modules"
-    tag "modules/revel"
-    tag "modules/revel/download"
+    tag "modules/ucsc"
+    tag "modules/ucsc/vista"
+    tag "modules/ucsc/vista/download"
     tag "gitlab_ci"
 
-
-   test("HG19") {
+    test("HG19") {
 
         when {
             params {
@@ -51,28 +51,8 @@ nextflow_process {
 
     }
 
-    test("OTHER") {
-
-        when {
-            params {
-                // define parameters here. Example:
-                // outdir = "tests/results"
-            }
-            process {
-                """
-                input[0] = [[id:"xxx",ucsc_name:"xxx"],file("${projectDir}/tests/data/rotavirus_fr.dict")]
-                """
-            }
-        }
-
-        then {
-            assert process.success
-            //assert snapshot(process.out).match()
-        }
-
-    }
     test("STUB") {
-        options "-stub" 
+        options "-stub"
         when {
             params {
                 // define parameters here. Example:
