@@ -79,7 +79,7 @@ END_VERSIONS
 """
 
 stub:
-	def prefix="xxx"
+	def prefix="gencc"
 """
 touch versions.yml ${prefix}.bed.gz ${prefix}.bed.gz.tbi ${prefix}.header
 """

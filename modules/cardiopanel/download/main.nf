@@ -86,4 +86,9 @@ cat << END_VERSIONS > versions.yml
 	url: "${FILE}"
 END_VERSIONS
 """
+stub:
+def prefix="${meta1.id}"
+"""
+touch versions.yml ${prefix}_IN.bed.gz ${prefix}_IN.bed.gz.tbi ${prefix}_OUT.bed.gz ${prefix}_OUT.bed.gz.tbi ${prefix}_IN.header ${prefix}_OUT.header
+"""
 }

@@ -99,6 +99,6 @@ EOF
 stub:
 	def TAG = task.ext.tag?:"ALPHAMISSENSE" 
 """
-touch versions.xml ${TAG}.header ${TAG}.tsv.gz ${TAG}.tsv.gz.tbi ${TAG}.md
+touch versions.yml ${TAG}.header ${TAG}.tsv.gz ${TAG}.tsv.gz.tbi ${TAG}.md
 """
 }

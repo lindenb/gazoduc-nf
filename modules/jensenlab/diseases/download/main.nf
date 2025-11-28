@@ -101,7 +101,7 @@ END_VERSIONS
 	"""
 
 stub:
-	def prefix="xxx"
+	def prefix="diseases"
 """
 touch versions.yml ${prefix}.bed.gz ${prefix}.bed.gz.tbi ${prefix}.header doc.md
 """

@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -135,7 +135,7 @@ main:
     }
 
     if(hasFeature(metadata,"tissues")) {
-        TISSUES_DOWNLOAD(gtf.map{meta,gtf,_tbi->[meta,gtf]})
+        TISSUES_DOWNLOAD(gtf.map{meta,gtffile,_tbi->[meta,gtffile]})
         versions = versions.mix(TISSUES_DOWNLOAD.out.versions)
         tissues_ch = TISSUES_DOWNLOAD.out.bed.ifEmpty([[id:"no_tissues"],[],[],[]])
         }
@@ -146,7 +146,7 @@ main:
 
 
     if(hasFeature(metadata,"diseases")) {
-        DISEASES_DOWNLOAD(gtf.map{meta,gtf,_tbi->[meta,gtf]})
+        DISEASES_DOWNLOAD(gtf.map{meta,gtffile,_tbi->[meta,gtffile]})
         versions = versions.mix(DISEASES_DOWNLOAD.out.versions)
         diseases_ch = DISEASES_DOWNLOAD.out.bed.ifEmpty([[id:"no_diseases"],[],[],[]])
     } else {
@@ -154,7 +154,7 @@ main:
     }
     
     if(hasFeature(metadata,"gencc")) {
-        GENCC_DOWNLOAD(gtf.map{meta,gtf,_tbi->[meta,gtf]})
+        GENCC_DOWNLOAD(gtf.map{meta,gtffile,_tbi->[meta,gtffile]})
         versions = versions.mix(GENCC_DOWNLOAD.out.versions)
         gencc_ch = GENCC_DOWNLOAD.out.bed.ifEmpty([[id:"no_gencc"],[],[],[]])
     } else {
@@ -166,14 +166,15 @@ main:
         SNPEFF_DOWNLOAD(fai)
         versions = versions.mix(SNPEFF_DOWNLOAD.out.versions)
         snpeff_db_ch = SNPEFF_DOWNLOAD.out.database
+        snpeff_db_ch = snpeff_db_ch.ifEmpty([[id:"no_snpeff"],[],[]]) /* meta, dir, name */
         }
     else
         {
-        snpeff_db_ch = [[id:"no_snpeff"],[],[],[]]
+        snpeff_db_ch = [[id:"no_snpeff"],[],[]] /* meta, dir, name */
         }
     
     if(hasFeature(metadata,"bhfucl")) {
-        BHFUCL_DOWNLOAD(gtf.map{meta,gtf,_tbi->[meta,gtf]})
+        BHFUCL_DOWNLOAD(gtf.map{meta,gtffile,_tbi->[meta,gtffile]})
         versions = versions.mix(BHFUCL_DOWNLOAD.out.versions)
         bhfucl_ch = BHFUCL_DOWNLOAD.out.bed.ifEmpty([[id:"no_bhfucl"],[],[],[]])
         }
@@ -215,7 +216,7 @@ main:
         }
 
      if(hasFeature(metadata,"vep")) {  
-        VEP_INSTALL_PLUGINS(meta)
+        VEP_INSTALL_PLUGINS(metadata)
         versions = versions.mix(VEP_INSTALL_PLUGINS.out.versions)
         vep_plugin_dir_ch = VEP_INSTALL_PLUGINS.out.directory
         }
@@ -235,7 +236,7 @@ main:
         }
 
     if(hasFeature(metadata,"remap")) {  
-        REMAP_DOWNLOAD(fdict)
+        REMAP_DOWNLOAD(dict)
         versions = versions.mix(REMAP_DOWNLOAD.out.versions)
         remap_ch = REMAP_DOWNLOAD.out.bed
         }
@@ -277,14 +278,14 @@ main:
 
 
     if(hasFeature(metadata,"gnomad_sv")) {  
-        DOWNLOAD_GNOMAD_SV(dict)
+        DOWNLOAD_GNOMAD_SV(fasta,fai,dict)
         versions = versions.mix(DOWNLOAD_GNOMAD_SV.out.versions)
         FREQUENT_GNOMADSV(fai, DOWNLOAD_GNOMAD_SV.out.vcf)
         versions = versions.mix(FREQUENT_GNOMADSV.out.versions)
 
-        gnomad_sv_ch = FREQUENT_GNOMADSV.out.vcf
+        gnomad_sv_ch = FREQUENT_GNOMADSV.out.tsv
     } else {
-        gnomad_sv_ch = [[id:"no_gnomadsv"],[],[]]
+        gnomad_sv_ch = [[id:"no_gnomadsv"],[],[],[]]
     }
 
     ANNOTATE(
@@ -329,7 +330,7 @@ emit:
 
 process ANNOTATE {
 errorStrategy "terminate"
-tag "${vcf.name} ${optional_bed?optional_bed.name:""}"
+tag "${meta.id} ${optional_bed?optional_bed.name:""}"
 label "process_single"
 afterScript "rm -rf TMP snpEff_genes.txt snpEff_summary.html"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
@@ -1122,6 +1123,13 @@ cat << END_VERSIONS > versions.yml
 	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
 END_VERSIONS
 """
+
+
+stub:
+def prefix = "${meta.id}"
+"""
+touch versions.yml ${prefix}.bcf ${prefix}.bcf.csi
+"""
 }
 
 
@@ -1153,6 +1161,7 @@ cat << END_VERSIONS > versions.yml
     awk: todo
 END_VERSIONS
 """
+
 stub:
 """
 touch versions.yml trios.ped.tsv
@@ -1168,7 +1177,7 @@ input:
     tuple val(meta1),path(fai)
     tuple val(meta),path(vcf),path(vcfidx)
 output:
-    tuple val(meta),path("*.gz"),path("*.tbi"),path("*.hdr"),emit:output
+    tuple val(meta),path("*.gz"),path("*.tbi"),path("*.hdr"),emit:tsv
     path("versions.yml"),emit:versions
 script:
     def tag="GRPMAX_AF"

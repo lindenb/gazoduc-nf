@@ -111,4 +111,10 @@ cat << END_VERSIONS > versions.yml
 	url: "${url}"
 END_VERSIONS
 """
+
+stub:
+	def prefix = "${meta1.id}"
+"""
+touch versions.yml "${prefix}.vcf.gz" "${prefix}.vcf.gz.tbi"
+"""
 }
