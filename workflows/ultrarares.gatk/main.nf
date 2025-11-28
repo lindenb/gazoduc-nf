@@ -25,13 +25,18 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 
-include {ULTRA_RARES_ITERATION as ITER_FIRST} from './iteration.part.nf'
-include {ULTRA_RARES_ITERATION as ITER_SECOND} from './iteration.part.nf'
-include {ULTRA_RARES_ITERATION as ITER_THIRD} from './iteration.part.nf'
-include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
-include {runOnComplete;moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
-include {SIMPLE_PUBLISH_01} from '../../modules/utils/publish.simple.01.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
+include {ULTRA_RARES_ITERATION as ITER_FIRST       } from './iteration.part.nf'
+include {ULTRA_RARES_ITERATION as ITER_SECOND      } from './iteration.part.nf'
+include {ULTRA_RARES_ITERATION as ITER_THIRD       } from './iteration.part.nf'
+include { UNMAPPED                                 } from '../../subworkflows/unmapped'
+include { runOnComplete;dumpParams                 } from '../../modules/utils/functions.nf'
+include { SAMTOOLS_STATS                           } from '../../modules/samtools/stats'
+include { MULTIQC                                  } from '../../modules/multiqc'
+include { COMPILE_VERSIONS                         } from '../../modules/versions/main.nf'
+include { PREPARE_ONE_REFERENCE                    } from '../../subworkflows/samtools/prepare.one.ref'
+include { META_TO_BAMS                             } from '../../subworkflows/samtools/meta2bams1'
+include { READ_SAMPLESHEET                         } from '../../subworkflows/nf/read_samplesheet'
+
 
 
 if( params.help ) {
@@ -45,30 +50,91 @@ if( params.help ) {
 }
 
 
+List fractionate(List L) {
+	L = new ArrayList<>(L);
+	def L10 = [];
+	int i;
+	while(i< L.size())
+		def item = L[i];
+		if(!isBlank(item[0].status) && item[0].status!="case") {
+			L10.add(item);
+			L.remove(i);
+			}
+		else
+			{
+			++i;
+			}
+		}
+	// sort using biggest files first, exomes at the end
+	Collections.sort(L,(A,B)->Long.compare(B[1].size(),A[1].size()))
+	while(L10.size()<10 && !L.isEmpty()) {
+		L10.add(L.remove(0));
+		}
 
-workflow {
-	ch1 = ULTRA_RARES_GATK([:], params.genomeId, params.vcf, file(params.bams), file(params.bed) )
-	html = VERSION_TO_HTML(params,ch1.version)
 	}
 
-runOnComplete(workflow);
+
+workflow {
+	def metadata = [id:"ultrares"]
+	versions = Channel.empty()
+	multiqc  = Channel.empty()
 
 
-workflow ULTRA_RARES_GATK {
-take:
-	meta
-	genomeId
-	vcf
-	bams
-	bed
-main:
-	version_ch = Channel.empty()
+	if(params.fasta==null) {
+			throw new IllegalArgumentException("undefined --fasta");
+			}
+	if(params.samplesheet==null) {
+			throw new IllegalArgumentException("undefined --samplesheet");
+			}
 
-	splitbams_ch = SPLIT_BAMS([:], bams)
-        version_ch = version_ch.mix(splitbams_ch.version)
+  /***************************************************
+   *
+   *  PREPARE FASTA REFERENCE
+   *
+   */
+	PREPARE_ONE_REFERENCE(
+			metadata,
+			Channel.of(params.fasta).map{file(it)}.map{[[id:it.baseName],it]}
+			)
+	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
 
-	iter1_ch  = ITER_FIRST([split_vcf_method:" --variants-count  100000 "], genomeId, vcf, splitbams_ch.output1, bed)
-        version_ch = version_ch.mix(iter1_ch.version)
+
+	/* no fastq samplesheet */
+	READ_SAMPLESHEET(
+        [arg_name:"samplesheet"],
+        params.samplesheet
+        )
+	versions = versions.mix(READ_SAMPLESHEET.out.versions)
+
+	META_TO_BAMS(
+		metadata,
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		PREPARE_ONE_REFERENCE.out.dict,
+		READ_SAMPLESHEET.out.samplesheet
+		)
+	versions = versions.mix(META_TO_BAMS.out.versions)
+
+	
+	ch1 = META_TO_BAMS.out.bams
+		.toArray()
+		.flatMap{fractionate(it)}
+		.branch{v->
+			list10 : v[0] 
+			list100: v[1]
+			list1000: v[2]
+			}
+
+	
+	ITER_FIRST(
+			metadata,
+			PREPARE_ONE_REFERENCE.out.fasta,
+			PREPARE_ONE_REFERENCE.out.fai,
+			PREPARE_ONE_REFERENCE.out.dict,
+			bed,
+			ch1.list10
+			)
+    version_ch = version_ch.mix(ITER_FIRST.out.versions)
 
 	iter2_ch  = ITER_SECOND([split_vcf_method:" --variants-count  10000 "], genomeId, iter1_ch.vcf, splitbams_ch.output2, bed)
         version_ch = version_ch.mix(iter2_ch.version)
@@ -83,51 +149,4 @@ emit:
         index = iter1_ch.index
         version= version_ch
 
-}
-
-process SPLIT_BAMS {
-tag "${bams}"
-executor "local"
-afterScript "rm jeter.list"
-input:
-	val(meta)
-	path(bams)
-output:
-	path("list1.bams.list"),emit:output1
-	path("list2.bams.list"),emit:output2
-	path("list3.bams.list"),emit:output3
-	path("version.xml"),emit:version
-script:
-"""
-# sort, biggest bams first
-xargs -L1 -a "${bams}" stat  --format="%s %n" | LC_ALL=C sort -t ' ' -k1,1nr | cut -d ' ' -f 2 -> jeter.list
-
-test -s "jeter.list"
-
-head -n 10 "jeter.list" > list1.bams.list
-
-test -s list1.bams.list
-
-tail -n +11 "jeter.list" | head -n 100 > list2.bams.list
-
-tail -n +111 "jeter.list" > list3.bams.list
-
-
-if test ! -s "list2.bams.list" ; then
-	head -n 1 "jeter.list" > list2.bams.list
-fi
-
-if test ! -s "list3.bams.list" ; then
-	head -n 1 "jeter.list" > list3.bams.list
-fi
-
-#####
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="name">${task.process}</entry>
-        <entry key="description">split bams into parts for each iteration</entry>
-        <entry key="bams">${bams}</entry>
-</properties>
-EOF
-"""
 }
