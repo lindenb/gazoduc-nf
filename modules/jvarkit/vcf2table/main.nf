@@ -23,55 +23,44 @@ SOFTWARE.
 
 */
 
-process JVARKIT_VCFGNOMAD {
+process JVARKIT_VCF_TO_TABLE {
 	label "process_single"
 	conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 	afterScript "rm -rf TMP"
 	tag "${meta.id}"
 	input:
-		tuple val(meta1),path(gnomadvcf),path(gnomadvcf_idx)
+		tuple val(meta1),path(opt_pedigree)
 		tuple val(meta ),path(vcf)
 	output:
-		tuple val(meta ),path("*.vcf.gz"),optional:true,emit:vcf
+		tuple val(meta),path("*.{html,txt}"),emit:table
 		path("versions.yml"),emit:versions
 	script:
-		def buffer_size  = task.ext.buffer_size?:(task.attempt==1?100:10)
-		def max_af = task.ext.max_af?:1.0
-		def min_af = task.ext.min_af?:0
-		def fields = task.ext.fields?:"AF_nfe"
 		def args1 = task.ext.args1?:""
-		def args2 = task.ext.args2?:""
-		def args3 = task.ext.args3?:""
-		def args4 = task.ext.args4?:""
-		def prefix  = task.ext.prefix?:"${meta.id}.gnomad"
-		def jvm = " -XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
+        def args2 = task.ext.args2?:""
+		def jvm = task.ext.jvm?:"-Djava.io.tmpdir=TMP -Xmx${task.memory.giga}G"
+        def prefix = task.ext.prefix?:"${meta.id}"
+        def suffix = args2.contains("html")?"html":"txt"
+"""
+mkdir -p TMP
+
+bcftools view ${args1} "${vcf}" |\\
+jvarkit ${jvm} vcf2table  \\
+    ${opt_pedigree?"--pedigree ${opt_pedigree}":""} \\
+    ${args2} > TMP/jeter.table
+    
+mv -v TMP/jeter.table ${prefix}.${suffix}
+
+cat << EOF > versions.yml
+${task.process}:
+	jvarkit: TODO
+EOF
 	"""
-	mkdir -p TMP
-
-	bcftools view  ${args1} "${vcf}" |\\
-	jvarkit ${jvm} vcfgnomad \\
-		--bufferSize ${buffer_size} \\
-		--min-af ${min_af} \\
-		--max-af ${max_af} \\
-		--gnomad "${gnomadvcf}" \\
-		--fields "${fields}" |\\
-	bcftools view ${args2} -O z -o TMP/jeter.vcf.gz
-
-    if test \$(bcftools query -f "\\n" TMP/jeter.vcf.gz |wc -l) -gt 0
-	then
-		mv TMP/jeter.vcf.gz ${prefix}.vcf.gz
-	fi
-
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-	jvarkit: todo
-END_VERSIONS
-	"""
-
 
 stub:
-	def prefix = "${meta.prefix}"
+    def args2 = task.ext.args2?:""
+    def prefix = task.ext.prefix?:"${meta.id}"
+    def suffix = args2.contains("html")?"html":"txt"
 """
-touch versions.yml ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi
+touch versions.yml ${prefix}.${suffix}
 """
 }

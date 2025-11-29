@@ -22,51 +22,123 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-nextflow.enable.dsl=2
+include {GATK_BAM2VCF                      } from '../../modules/gatk/bam2vcf'
+include {JVARKIT_VCFGNOMAD                 } from '../../modules/jvarkit/vcfgnomad'
+include {JVARKIT_VCFFILTERJDK              } from '../../modules/jvarkit/vcffilterjdk'
+include {SNPEFF_APPLY                      } from '../../modules/snpeff/apply'
+include { BCFTOOLS_SORT                    } from '../../modules/bcftools/sort'
+include { BCFTOOLS_INDEX                   } from '../../modules/bcftools/index'
+include { BCFTOOLS_CONCAT                  } from '../../modules/bcftools/concat3'
+include { VCF_TO_BED                       } from '../../modules/bcftools/vcf2bed2'
+include { BED_CLUSTER                      } from '../../modules/jvarkit/bedcluster'
+include { BEDTOOLS_SLOP                    } from '../../modules/bedtools/slop'
+include { BEDTOOLS_MERGE                   } from '../../modules/bedtools/merge'
 
-include {moduleLoad;getVersionCmd} from '../../modules/utils/functions.nf'
-include {JVARKIT_VCF_SPLIT_N_VARIANTS_01} from '../../subworkflows/jvarkit/jvarkit.vcfsplitnvariants.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.nf'
-include {BCFTOOLS_CONCAT_01} from '../../subworkflows/bcftools/bcftools.concat.01.nf'
-include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
-include {JVARKIT_VCF_TO_INTERVALS_01} from '../../subworkflows/jvarkit/jvarkit.vcf2intervals.nf'
 
 
 workflow ULTRA_RARES_ITERATION {
 take:
-	meta
-	genomeId
-	vcf
-	bams
-	bed  /* limit to that BED or NO_FILE */
+	metadata
+	fasta
+	fai
+	dict
+	snpeff_db // [meta,directory,name]
+	pedigree_ch // [meta,pedigree]
+	gnomad_vcf //[meta,vcf,tbi]
+	jvarkit_filter // [meta,filter]
+	bed
+	bam_files
 main:
-	version_ch = Channel.empty()
+	versions = Channel.empty()
+	multiqc = Channel.empty()
+	bed = Channel.empty()
+	GATK_BAM2VCF(
+		fasta,
+		fai,
+		dict,
+		[[id:"no_dbsnp"],[],[]],
+		pedigree_ch,
+		[[id:"no_extra_ref"],[]],
+		bam_files.combine(bed)
+			.map{meta1,hts_files,_meta2,bed->[meta1.plus(id:bed.baseName),hts_files,bed]}
+		)
+	versions = versions.mix(GATK_BAM2VCF.out.versions)
+	vcfs = GATK_BAM2VCF.out.vcf.map{meta,vcf,tbi,bed->[meta,vcf]}
+	
+	JVARKIT_VCFFILTERJDK(
+		jvarkit_filter,
+		[[id:"no_ped"],[]],
+		vcfs
+		)
+	versions = versions.mix(JVARKIT_VCFFILTERJDK.out.versions)
+	vcfs = JVARKIT_VCFFILTERJDK.out.vcf
 
-	compile_ch = COMPILE(meta)
-	version_ch = version_ch.mix(compile_ch.version)
+	JVARKIT_VCFGNOMAD(
+		gnomad_vcf,
+		vcfs
+		)
+	versions = versions.mix(JVARKIT_VCFGNOMAD.out.versions)
+	vcfs = 	JVARKIT_VCFGNOMAD.out.vcf
+	
+	SNPEFF_APPLY(
+		snpeff_db,
+		vcfs
+		)
+	versions = versions.mix(SNPEFF_APPLY.out.versions)
+	vcfs = 	SNPEFF_APPLY.out.vcf
+	
+	BCFTOOLS_SORT(vcfs)
+	versions = versions.mix(BCFTOOLS_SORT.out.versions)
+	vcfs = 	BCFTOOLS_SORT.out.vcf
 
-                        
-	split_n_variants_ch = JVARKIT_VCF_SPLIT_N_VARIANTS_01(meta, genomeId, vcf, bed)
-        version_ch = version_ch.mix(split_n_variants_ch.version)
+	BCFTOOLS_INDEX(vcfs)
+	versions = versions.mix(BCFTOOLS_INDEX.out.versions)
+	vcfs = 	BCFTOOLS_INDEX.out.vcf
 
-        perctg_ch = PER_VCF(meta, genomeId, compile_ch.jar, bams, split_n_variants_ch.output.splitText().map{it.trim()})
-        version_ch = version_ch.mix(perctg_ch.version)
+	BCFTOOLS_CONCAT(
+		vcfs.flatMap{meta,vcf,tbi->[vcf,tbi]}
+			.collect(sort:true)
+			.map{files->[[id:metadata.id],files]}
+		)
+	versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
 
+	VCF_TO_BED(
+		BCFTOOLS_CONCAT.out.vcf
+		)
+	versions = versions.mix(VCF_TO_BED.out.versions)
 
-        x3_ch = COLLECT_TO_FILE_01([:], perctg_ch.output.collect())
-        version_ch = version_ch.mix(x3_ch.version)
+	BEDTOOLS_SLOP(
+		fai,
+		VCF_TO_BED.out.bed
+		)
+	versions = versions.mix(BEDTOOLS_SLOP.out.versions)
 
+	BEDTOOLS_MERGE(
+		BEDTOOLS_SLOP.out.bed
+		)
+	versions = versions.mix(BEDTOOLS_MERGE.out.versions)
 
-        concat_ch = BCFTOOLS_CONCAT_01([:], x3_ch.output)
-        version_ch = version_ch.mix(concat_ch.version)
+	BED_CLUSTER(
+		fasta,
+		fai,
+		bed,
+		BEDTOOLS_SLOP.out.bed
 
+		)
+	versions = versions.mix(BED_CLUSTER.out.versions)
 
-        version_ch = MERGE_VERSION(meta, "rare-gatk-iteration", "rare-gatk-iteration",version_ch.collect())
+	bed = BED_CLUSTER.out.bed
+		.map{_meta,bed->bed}
+		.map{it instanceof List?it:[it]}
+		.flatMap()
+		.map{bed->[[id:bed.baseName],bed]}
+	
 
 emit:
-    vcf = concat_ch.vcf
-    index = concat_ch.index
-    version= version_ch
+    versions
+	multiqc
+	bed
+	vcf = BCFTOOLS_CONCAT.out.vcf
 }
 
 

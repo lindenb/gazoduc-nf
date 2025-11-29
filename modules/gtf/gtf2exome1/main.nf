@@ -60,6 +60,8 @@ ${gtf.name.endsWith(".gz")?"gunzip -c":"cat"} "${gtf}" |\\
 cat << END_VERSIONS > versions.yml
 "${task.process}":
 	bcftools: "\$(tabix version | awk '(NR==1) {print \$NF;}')"
+    slop: ${slop}
+    type: ${what}
 END_VERSIONS
 """
 

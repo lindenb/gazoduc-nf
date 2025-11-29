@@ -1,0 +1,54 @@
+nextflow_process {
+
+    name "Test Process BEDTOOLS_SLOP"
+    script "modules/bedtools/slop/main.nf"
+    process "BEDTOOLS_SLOP"
+    config "./nextflow.config"
+    tag "gitlab_ci"
+    tag "modules"
+    tag "modules/bedtools"
+    tag "modules/bedtools/slop"
+
+    test("BASIC") {
+
+        when {
+            
+            process {
+                """
+				input[0] = [ [id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+ 				input[1] = [ [id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.01.bed")]
+               """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+
+
+    test("BASIC") {
+        tag "stub"
+        options "-stub"
+
+        when {
+            
+            process {
+                """
+				input[0] = [ [id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+ 				input[1] = [ [id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.01.bed")]
+               """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+}

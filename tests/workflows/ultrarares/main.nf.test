@@ -12,6 +12,8 @@ nextflow_pipeline {
             params {
                 fasta       = "${projectDir}/tests/data/rotavirus_rf.fa"
                 samplesheet = "${projectDir}/tests/data/samplesheet.bams.01.csv"
+                gnomad = "${projectDir}/tests/data/fake.gnomad.vcf.gz"
+
             }
         }
 
