@@ -36,7 +36,8 @@ include { COMPILE_VERSIONS                         } from '../../modules/version
 include { PREPARE_ONE_REFERENCE                    } from '../../subworkflows/samtools/prepare.one.ref'
 include { META_TO_BAMS                             } from '../../subworkflows/samtools/meta2bams1'
 include { READ_SAMPLESHEET                         } from '../../subworkflows/nf/read_samplesheet'
-
+include { GTF_INPUT                                } from '../../subworkflows/nf/gtf_input/main.nf'
+include { GTF_TO_EXOME                             } from '../../modules/gtf/gtf2exome1'
 
 
 if( params.help ) {
@@ -115,7 +116,41 @@ workflow {
 		)
 	versions = versions.mix(META_TO_BAMS.out.versions)
 
-	
+
+
+	if(params.bed==null) {
+		bed = PREPARE_ONE_REFERENCE.out.scatter_bed,
+		}
+	else if(params.bed=="exome") {
+		/***************************************************
+		*
+		*  DOWNLOAD GTF
+		*
+		*/
+		DOWNLOAD_GTF(
+				metadata.plus([
+					arg_name:"gtf",
+					require_index: true,
+					download: true,
+					path: params.gtf
+					]),
+				PREPARE_ONE_REFERENCE.out.dict
+				)
+		versions = versions.mix(DOWNLOAD_GTF.out.versions)
+
+		GTF_TO_EXOME(
+			PREPARE_ONE_REFERENCE.out.fai,
+			DOWNLOAD_GTF.out.gtf.map{meta,gtf,tbi->[meta,gtf]}
+			)
+		versions = versions.mix(GTF_TO_EXOME.out.versions)
+
+		bed  = GTF_TO_EXOME.out.bed
+		}
+	else
+		{
+		bed = Channel.of(params.fasta).map{file(it)}.map{[[id:it.baseName],it]}
+		}
+
 	ch1 = META_TO_BAMS.out.bams
 		.toArray()
 		.flatMap{fractionate(it)}

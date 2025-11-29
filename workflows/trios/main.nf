@@ -191,10 +191,10 @@ workflow {
             snv: true
          }
 
-        DOWNLOAD_GFF3(fasta,fai,dict)
+        DOWNLOAD_GFF3(dict)
         versions = versions.mix(DOWNLOAD_GFF3.out.versions)
 
-        DOWNLOAD_GTF(fasta,fai,dict)
+        DOWNLOAD_GTF(dict)
         versions = versions.mix(DOWNLOAD_GTF.out.versions)
 
         if(params.bed==null) {

@@ -33,8 +33,6 @@ include { htslibSplitIndex                         }  from '../../../modules/uti
 workflow GTF_INPUT {
 take:
     metadata
-    fasta
-    fai
     dict
 main:
     versions = Channel.empty()
@@ -56,12 +54,8 @@ main:
 
     /** DOWNLOAD IF  path is null */
     if(isBlank(metadata.path) && parseBoolean(metadata.download) ) {
-        log.warn("--${metadata.arg_name} undefined, trying to download one from fasta...")
-        DOWNLOAD_GTF(
-            fasta,
-            fai,
-            dict
-            )
+        log.warn("--${metadata.arg_name} undefined, trying to download one from dict...")
+        DOWNLOAD_GTF(dict)
         versions = versions.mix(DOWNLOAD_GTF.out.versions)
         gtf_out = DOWNLOAD_GTF.out.gtf//tbi added later
             

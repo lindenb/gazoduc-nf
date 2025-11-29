@@ -102,8 +102,8 @@ workflow {
         )
     vcfs = SPLIT_VCF.output.vcf
 	
-	DOWNLOAD_GTF(fasta,fai,dict)
-	DOWNLOAD_GFF3(fasta,fai,dict)
+	DOWNLOAD_GTF(dict)
+	DOWNLOAD_GFF3(dict)
 	
 	ANNOTATE(
 		[id:"annot"],

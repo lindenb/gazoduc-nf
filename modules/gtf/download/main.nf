@@ -26,16 +26,14 @@ include { isBlank      } from '../../utils/functions.nf'
 
 
 process DOWNLOAD_GTF_OR_GFF3 {
-tag "${meta1.id?:fasta.name}"
+tag "${meta.id}"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
-	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai)
-	tuple val(meta3),path(dict)
+	tuple val(meta),path(dict)
 output:
-	tuple val(meta1),path("*.gz"), path("*.gz.tbi"),optional:true,emit:gtf
+	tuple val(meta),path("*.gz"), path("*.gz.tbi"),optional:true,emit:gtf
 	path("versions.yml"),emit:versions
 script:
 	def extension="";
@@ -45,12 +43,12 @@ script:
 		 extension = (task.ext==null || task.ext.suffix==null?
 				(task.process.toString().toLowerCase().endsWith("gtf")?"gtf":
 					(task.process.toString().toLowerCase().endsWith("gff3")?"gff3":""))
-				:task.ext.suffix
+				:(task.ext.suffix?:"")
 				)
 		if(extension.isEmpty()) throw new IllegalArgumentException("suffix missing for ${task.process}");
 
 
-		def ucsc_name = (task.ext.ucsc_name?:meta1.ucsc_name).toString()
+		def ucsc_name = (task.ext.ucsc_name?:meta.ucsc_name).toString()
 		if(isBlank(ucsc_name))  {
 			if(!enable_missing) throw new IllegalArgumentException("undefined ucsc_name for ${task.process}");
 			url = ""
@@ -77,7 +75,7 @@ script:
 		url = url0;
 		extension = url.contains(".gtf")?"gtf":"gff3"
 		}
-	def prefix = task.ext.prefix?:"${fasta.baseName}.${extension}"
+	def prefix = task.ext.prefix?:"${dict.baseName}.${extension}"
 """
 hostname 1>&2
 mkdir -p TMP
@@ -90,7 +88,7 @@ then
 	curl -L -o TMP/gencode.txt.gz "${url}"
 
 	gunzip -c TMP/gencode.txt.gz |\\
-			jvarkit bedrenamechr -f "${fasta}" --column 1 --convert SKIP |\\
+			jvarkit bedrenamechr -f "${dict}" --column 1 --convert SKIP |\\
 			LC_ALL=C sort -T TMP -t '\t' -k1,1 -k4,4n |\\
 			bgzip > "${prefix}.gz"
 
@@ -103,6 +101,19 @@ cat << END_VERSIONS > versions.yml
 	bcftools: "\$(tabix version | awk '(NR==1) {print \$NF;}')"
 	URL: "${url}"
 END_VERSIONS
+"""
+
+stub:
+   def prefix = "${dict.baseName}"
+   def	 extension = (task.ext==null || task.ext.suffix==null?
+				(task.process.toString().toLowerCase().endsWith("gtf")?"gtf":
+					(task.process.toString().toLowerCase().endsWith("gff3")?"gff3":""))
+				:(task.ext.suffix?:"")
+				)
+   if(extension.isEmpty()) throw new IllegalArgumentException("suffix missing for ${task.process}");
+
+"""
+touch versions.yml "${prefix}.${suffix}.gz" "${prefix}.${suffix}.gz.tbi"
 """
 }
 

@@ -119,8 +119,6 @@ workflow {
 				require_index :true,
 				download : true
 				],
-			PREPARE_ONE_REFERENCE.out.fasta,
-			PREPARE_ONE_REFERENCE.out.fai,
 			PREPARE_ONE_REFERENCE.out.dict
 			)
 		versions = versions.mix(GFF3_INPUT.out.versions)

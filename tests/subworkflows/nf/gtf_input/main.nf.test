@@ -22,9 +22,7 @@ nextflow_workflow {
                     require_index:true,
                     path: null
                     ]
-                input[1] = Channel.of([[id:"ref", ucsc_name:"hg38"], file("${projectDir}/tests/data/rotavirus_rf.fa")])
-                input[2] = Channel.of([[id:"ref", ucsc_name:"hg38"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")])
-                input[3] = Channel.of([[id:"ref", ucsc_name:"hg38"], file("${projectDir}/tests/data/rotavirus_rf.dict")])
+                input[1] = Channel.of([[id:"ref", ucsc_name:"hg38"], file("${projectDir}/tests/data/rotavirus_rf.dict")])
                 """
             }
         }
@@ -35,6 +33,36 @@ nextflow_workflow {
         }
 
     }
+
+    test("STUB") {
+	options "-stub"
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [
+                    arg_name:"gtf",
+                    download:true,
+                    require_index:true,
+                    path: null
+                    ]
+                input[1] = Channel.of([[id:"ref", ucsc_name:"hg38"], file("${projectDir}/tests/data/rotavirus_rf.dict")])
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+
+
 
    test("FILENAME") {
         when {
@@ -50,9 +78,7 @@ nextflow_workflow {
                     require_index:true,
                     path : "${projectDir}/tests/data/rotavirus_rf.gtf.gz"
                     ]
-                input[1] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")])
-                input[2] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")])
-                input[3] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")])
+                input[1] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")])
                 """
             }
         }
@@ -78,9 +104,7 @@ nextflow_workflow {
                     require_index:true,
                     path : "${projectDir}/tests/data/rotavirus_rf.gtf.gz##idx##${projectDir}/tests/data/rotavirus_rf.gtf.gz.tbi"
                     ]
-                input[1] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")])
-                input[2] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")])
-                input[3] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")])
+                input[1] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")])
                 """
             }
         }
