@@ -56,6 +56,12 @@ cat << EOF > versions.yml
 	manta: "\$(configManta.py --version)"
 EOF
 """
+
+stub:
+ def prefix = "${vcf.name}.inv"
+"""
+touch versions.yml ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi
+"""
 }
 
 

@@ -27,7 +27,7 @@ include {isBlank               } from '../../utils/functions.nf'
 include {verify                } from '../../utils/functions.nf'
 
 process RUN_ORAD {
-label 'process_short'
+label 'process_single'
 tag "${meta.id}"
 afterScript "rm -rf TMP"
 input:

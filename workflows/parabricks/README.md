@@ -10,6 +10,7 @@ General Parameters
 |-----------|-----------|-----------|-----------|-----------|-----------|
 | `fasta` | Path to FASTA REFERENCE file. | `string` |  | True | ^\S+\.(fasta|fa|fna)?(\.gz)?$ |
 | `prefix` | prefix for the save files. A good prefix would be 'YYYY-MM-DD.project_name.'  <details><summary>Help</summary><small>Ouput file prefix</small></details>| `string` |  |  | ^[a-zA-z0-9_\.]+\.$ |
+| `extra_cluster_options` | extra parameters for the cluster. Can be used to exclude a node for example | `string` |  |  |  |
 | `hts_type` | Type of analysis (WES or WGS). If WES, --capture (bed) is expected. <details><summary>Help</summary><small>Type of HTS analysis</small></details>| `string` |  |  | ^(WES|WGS)$ |
 | `bed` | Path to BED file that was used as the capture. Required for --hts_type=WES. For WGS a good idea is to make a BED excluding the hard-to-sequence regions (e.g: https://github.com/Boyle-Lab/Blacklist/  ) <details><summary>Help</summary><small>Capture BED</small></details>| `string` |  |  |  |
 | `outdir` | The output directory where the results will be saved. You have to use absolute paths to storage on Cloud infrastructure. <details><summary>Help</summary><small>output directory</small></details>| `string` |  |  |  |
@@ -24,6 +25,7 @@ Parameters use to map the reads on a reference genome.
 | `samplesheet` | Path to samplesheet with the appropriate suffix (csv or tsv or json).<br/>For **ora** files or **fastq.gz** from illumina/dragen, the 'sample' column is optional as it can be extracted from the fastq name <details><summary>Help</summary><small>path to fastq samplesheet.</small></details>| `string` |  |  | ^\S+\.(csv|tsv|json)$ |
 | `orad_directory` | ora-d directory containing the sofwtare used to decrompress .ora files. If not defined, the toolbox is downloaded. (But on glicid it's blocked by the proxy) <details><summary>Help</summary><small>path to ora-d directory used to decrompress .ora files.</small></details>| `string` |  |  |  |
 | `mapper` | wich mapper to use. one of 'bwa,pb,parabricks,dragmap' | `string` |  | True | ^(bwa|pb|parabricks|dragmap)$ |
+| `bwa_index_args` | extra parameters for bwa index. e.g. for option -b See: https://github.com/lh3/bwa/issues/104 | `string` |  |  |  |
 | `known_indels_vcf` | Path to  VCF indexed with tabix used as source of known indels for BQSR. | `string` |  |  | ^\S+\.vcf\.gz$ |
 | `with_merge_fastqs` | If true, merge the reads for the same sample. Always true for mapper=parabricks | `boolean` |  |  |  |
 | `with_fastp` | If true, preprocess the Reads with FASTP before mapping the reads | `boolean` |  |  |  |

@@ -33,7 +33,7 @@ include {isBlank                   } from '../../modules/utils/functions'
 
 workflow MANTA {
 take:
-	meta
+	metadata
         fasta
         fai
         dict
@@ -49,7 +49,7 @@ main:
                 }
             .map{meta,bam,bai->[meta.batch,meta,bam,bai]}
             .groupTuple()
-            .branch{batch_id,metas,bams,bais->
+            .branch{_batch_id,metas,_bams,_bais->
                 single: metas.size()==1
                 multi: true
                 }
@@ -63,7 +63,7 @@ main:
                 fai,
                 dict,
                 optional_bed,
-                group_by_batch.single.map{_batch_id,metas,bams,bais->[metas[0],bams[0],bais[0]]}
+                group_by_batch.single.map{_batch_id,metas,xbams,bais->[metas[0],xbams[0],bais[0]]}
                 )
         versions = versions.mix(MANTA_SINGLE.out.versions)
         diploidSV_ch = diploidSV_ch.mix( MANTA_SINGLE.out.diploidSV)
@@ -106,11 +106,11 @@ main:
         versions = versions.mix(MANTA_CANDIDATESV.out.versions)
         
 
-	if(meta.with_truvari==null) {
+	if(metadata.with_truvari==null) {
 		log.warn("MANTA: meta.with_truvari undefined")
 		}        
 
-	if(meta.with_truvari==null || meta.with_truvari==true) {
+	if(metadata.with_truvari==null || metadata.with_truvari==true) {
                 fasta2  = bams
                         .count()
                         .filter{it>1}

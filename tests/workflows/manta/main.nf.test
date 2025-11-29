@@ -1,0 +1,24 @@
+nextflow_pipeline {
+
+    name "Test Workflow main.nf"
+    script "workflows/manta/main.nf"
+    tag "workflows/manta"
+    tag "gitlab_ci"
+    tag "workflows"
+
+    test("STUB") {
+        options "-stub"
+        when {
+            params {
+                fasta       = "${projectDir}/tests/data/rotavirus_rf.fa"
+                samplesheet = "${projectDir}/tests/data/samplesheet.bams.01.csv"
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+
+    }
+
+}

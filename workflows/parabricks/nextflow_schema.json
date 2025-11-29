@@ -26,7 +26,10 @@
           "description": "prefix for the save files. A good prefix would be 'YYYY-MM-DD.project_name.' ",
           "help_text": "Ouput file prefix"
         },
-
+        "extra_cluster_options": {
+          "type": "string",
+          "description": "extra parameters for the cluster. Can be used to exclude a node for example"
+        },
         "hts_type": {
           "type": "string",
           "pattern": "^(WES|WGS)$",

@@ -80,4 +80,18 @@ cat << EOF > versions.yml
 	manta: "\$(configManta.py --version)"
 EOF
 	"""
-	}
+
+
+stub:
+	def prefix = "${meta.id}"
+"""
+touch versions.yml
+
+for X in diploidSV candidateSmallIndels candidateSV
+do
+	touch "${prefix}.\${X}.vcf.gz"
+	touch "${prefix}.\${X}.vcf.gz.tbi"
+done
+
+"""
+}

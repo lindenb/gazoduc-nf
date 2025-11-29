@@ -25,55 +25,71 @@ SOFTWARE.
 nextflow.enable.dsl=2
 //include {ANNOTATE_SV_VCF_01} from "../../subworkflows/annotation/annotation.sv.01.nf"
 include {assertKeyExistsAndNotEmpty          } from '../../modules/utils/functions.nf'
-include {PREPARE_REFERENCE                   } from '../../subworkflows/samtools/prepare.ref'
+include {PREPARE_ONE_REFERENCE               } from '../../subworkflows/samtools/prepare.one.ref'
 include {META_TO_PED                         } from '../../subworkflows/pedigree/meta2ped'
 include {MULTIQC                             } from '../../subworkflows/multiqc'
 include {META_TO_BAMS                        } from '../../subworkflows/samtools/meta2bams1'
 include {DELLY                               } from '../../subworkflows/delly2'
 include {runOnComplete                       } from '../../modules/utils/functions.nf'
+include { READ_SAMPLESHEET                   } from '../../subworkflows/nf/read_samplesheet'
+
 
 workflow {
+	  	if(params.fasta==null) {
+			throw new IllegalArgumentException("undefined --fasta");
+			}
+		if(params.samplesheet==null) {
+			throw new IllegalArgumentException("undefined --samplesheet");
+			}
+
+
         versions = Channel.empty()
         multiqc  = Channel.empty()
 
-		 def hash_ref= [
-      		id: file(params.fasta).baseName,
-      		name: file(params.fasta).baseName,
-      		ucsc_name: (params.ucsc_name?:"undefined")
+		 def metadata= [
+      		id: "delly2"
       		]
-        def fasta = [ hash_ref, file(params.fasta)]
-  		PREPARE_REFERENCE(hash_ref,Channel.of(fasta))
-		fasta = PREPARE_REFERENCE.out.fasta.first()
-  		versions = versions.mix(PREPARE_REFERENCE.out.versions)
+  		PREPARE_ONE_REFERENCE(
+			metadata,
+			Channel.fromPath(params.fasta).map{f->[[id:f.baseName],f]}
+			)
+  		versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
   		
+		
+		READ_SAMPLESHEET(
+			[arg_name:"samplesheet"],
+			params.samplesheet
+			)
+		versions = versions.mix(READ_SAMPLESHEET.out.versions)
   		
   		META_TO_BAMS(
-  			hash_ref,
-  			fasta,
-  			PREPARE_REFERENCE.out.fai.first(),
-  			Channel.fromPath(params.samplesheet).splitCsv(header:true, sep:',')
+  			metadata ,
+			PREPARE_ONE_REFERENCE.out.fasta,
+			PREPARE_ONE_REFERENCE.out.fai,
+  			READ_SAMPLESHEET.out.samplesheet
   			)
   		versions = versions.mix(META_TO_BAMS.out.versions)
   		
   		bams_ch = META_TO_BAMS.out.bams
   		
-  		META_TO_PED(hash_ref, bams_ch.map{it[0]})
+  		META_TO_PED(metadata, bams_ch.map{it[0]})
     	versions = versions.mix(META_TO_PED.out.versions)
     	
-		exclude_bed = PREPARE_REFERENCE.out.complement_bed.first()
+		exclude_bed = PREPARE_ONE_REFERENCE.out.complement_bed.first()
 
 		DOWNLOAD_EXCLUDE(
-			fasta,
-			PREPARE_REFERENCE.out.fai.first(),
+			PREPARE_ONE_REFERENCE.out.fasta,
+			PREPARE_ONE_REFERENCE.out.fai,
+			PREPARE_ONE_REFERENCE.out.dict,
 			exclude_bed
 			)
 		versions = versions.mix(DOWNLOAD_EXCLUDE.out.versions)
 
     	DELLY(
-			hash_ref,
-			fasta,
-			PREPARE_REFERENCE.out.fai.first(),
-			PREPARE_REFERENCE.out.dict.first(),
+			metadata,
+			PREPARE_ONE_REFERENCE.out.fasta,
+			PREPARE_ONE_REFERENCE.out.fai,
+			PREPARE_ONE_REFERENCE.out.dict,
 			DOWNLOAD_EXCLUDE.out.bed,
 			bams_ch
 			)
@@ -82,7 +98,7 @@ workflow {
 
 
     	MULTIQC(
-            hash_ref.plus("id":"delly2"),
+            metadata.plus("id":"delly2"),
             META_TO_PED.out.sample2collection,
             versions,
 			[[id:"no_mqc_config"],[]],
@@ -239,6 +255,7 @@ conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)
+	tuple val(meta3),path(dict)
 	tuple val(meta ),path(complement_bed)
 output:
 	tuple val(meta ),path("*.bed"),optional:true,emit:bed
@@ -264,7 +281,7 @@ cp ${complement_bed} TMP/exclude.bed
 if ${!url.isEmpty()}
 then
 
-	curl -L "\${url}" |\\
+	curl -L "${url}" |\\
 		cut -f 1,2,3|\\
 		jvarkit bedrenamechr -R "${fasta}" --column 1 --convert SKIP >> TMP/exclude.bed 
 

@@ -34,7 +34,7 @@ process CALL_DELLY {
 		tuple val(meta4),path(optional_genotype_vcf),path(optional_genotype_vcf_tbi)
 		tuple val(meta),path(bam),path(bai)
     output:
-    	tuple val(meta),path("*.bcf"),path("*.bcf.csi"),emit:vcf
+         	tuple val(meta),path("*.bcf"),path("*.bcf.csi"),emit:vcf
 		path("versions.yml"),emit:versions
     script:
 		def args1  = task.ext.args1?:""

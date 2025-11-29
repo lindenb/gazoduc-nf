@@ -48,6 +48,12 @@ cat << EOF > versions.yml
 	bcftools: TODO
 EOF
 """
+
+stub:
+  def prefix="${vcf.name}.gt"
+"""
+touch versions.yml ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi
+"""
 }
 
 

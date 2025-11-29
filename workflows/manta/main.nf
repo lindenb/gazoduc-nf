@@ -25,10 +25,15 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 include { runOnComplete;dumpParams    } from '../../modules/utils/functions.nf'
+include { parseBoolean                } from '../../modules/utils/functions.nf'
 include { assertKeyExistsAndNotEmpty  } from '../../modules/utils/functions.nf'
 include { META_TO_BAMS                } from '../../subworkflows/samtools/meta2bams1'
 include { MANTA                       } from '../../subworkflows/manta' 
 include { PREPARE_ONE_REFERENCE       } from '../../subworkflows/samtools/prepare.one.ref'
+include { READ_SAMPLESHEET            } from '../../subworkflows/nf/read_samplesheet'
+include { PREPARE_USER_BED            } from '../../subworkflows/bedtools/prepare.user.bed'
+
+
 if( params.help ) {
     dumpParams(params);
     exit 0
@@ -39,34 +44,38 @@ if( params.help ) {
 
 
 workflow {
+	if(params.fasta==null) {
+			throw new IllegalArgumentException("undefined --fasta");
+			}
+	if(params.samplesheet==null) {
+		throw new IllegalArgumentException("undefined --samplesheet");
+		}
+	multiqc = Channel.empty()
 	versions = Channel.empty()
-	def metadata = [
-		id: file(params.fasta).baseName,
-		name: file(params.fasta).baseName,
-		ucsc_name: (params.ucsc_name?:"undefined")
-		]
-	def fasta = [ metadata, file(params.fasta)]
-	PREPARE_ONE_REFERENCE(metadata,Channem.of(fasta))
+	def metadata = [id:"manta"]
+		
+
+	PREPARE_ONE_REFERENCE(
+		metadata,
+		Channel.fromPath(params.fasta).map{f->[[id:f.baseName],f]}
+		)
 	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
-
-
-	if(params.samplesheet.endsWith(".json")) {
-		ch0 = Channel.fromPath(params.samplesheet)
-        	.splitJSon()
-		}
-	else
-		{
-		ch0 = Channel.fromPath(params.samplesheet)
-        	.splitCsv(header:true,sep:',')
-		}
-
+	
+	
+	READ_SAMPLESHEET(
+		[arg_name:"samplesheet"],
+		params.samplesheet
+		)
+	versions = versions.mix(READ_SAMPLESHEET.out.versions)
+	
 	META_TO_BAMS(
-  			metadata,
-  			PREPARE_ONE_REFERENCE.out.fasta,
-  			PREPARE_ONE_REFERENCE.out.fai,
-  			ch0
-  			)
-  	versions = versions.mix(META_TO_BAMS.out.versions)
+		metadata ,
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		READ_SAMPLESHEET.out.samplesheet
+		)
+	versions = versions.mix(META_TO_BAMS.out.versions)
+	
 
 
 	bed = [[id:"nobed"],[]]
@@ -82,17 +91,19 @@ workflow {
 			)
 		versions = versions.mix(PREPARE_USER_BED.out.versions)
 
-		bed = PREPARE_USER_BED.out.bed
+		bed = PREPARE_USER_BED.out.bed.first()
 		}
 
 	MANTA(
-		metadata,
+		metadata.plus(with_truvari: parseBoolean(params.with_truvari)),
 		PREPARE_ONE_REFERENCE.out.fasta,
 		PREPARE_ONE_REFERENCE.out.fai,
 		PREPARE_ONE_REFERENCE.out.dict,
 		META_TO_BAMS.out.bams,
 		bed
 		)
+	versions = versions.mix(MANTA.out.versions)
+	multiqc = multiqc.mix(MANTA.out.versions)
 	}
 runOnComplete(workflow)
 
