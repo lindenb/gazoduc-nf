@@ -24,16 +24,15 @@ SOFTWARE.
 */
 process SNPEFF_DOWNLOAD {
 label "process_single"
-tag "${fai.name}"
+tag "${meta.id}"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP SNPEFFX"
 input:
-    tuple val(meta),path(fai)
+    tuple val(meta),path(snpeff_database_directory) //load directoy, may not exit but cannot be null
 output:
     tuple val(meta),path("*.DB"),path("*.name.txt"),emit:database
     path("versions.yml"),emit:versions
 script:
-    def snpeff_database_directory = task.ext.snpeff_database_directory?:"NODIR"
     def snpeff_db = task.ext.db?:""
     if(snpeff_db.isEmpty() && meta.ucsc_name && meta.ucsc_name.equals("hg19")) {
         snpeff_db = "GRCh37.75"

@@ -31,7 +31,8 @@ include {MULTIQC                             } from '../../subworkflows/multiqc'
 include {META_TO_BAMS                        } from '../../subworkflows/samtools/meta2bams1'
 include {DELLY                               } from '../../subworkflows/delly2'
 include {runOnComplete                       } from '../../modules/utils/functions.nf'
-include { READ_SAMPLESHEET                   } from '../../subworkflows/nf/read_samplesheet'
+include {READ_SAMPLESHEET                    } from '../../subworkflows/nf/read_samplesheet'
+include {JVARKIT_VCFFILTERJDK                } from '../../modules/jvarkit/vcffilterjdk'
 
 
 workflow {
@@ -95,6 +96,15 @@ workflow {
 			)
 		versions = versions.mix(DELLY.out.versions)
     	
+		if(params.jvarkit_vcffilter_script!=null) {
+			JVARKIT_VCFFILTERJDK(
+				Channel.fromPath(params.jvarkit_vcffilter_script).map{f->[[id:f.baseName],f]},
+				META_TO_PED.out.pedigree,
+				DELLY.out.vcf
+				)
+			versions = versions.mix(JVARKIT_VCFFILTERJDK.out.versions)
+			vcfs = JVARKIT_VCFFILTERJDK.out.vcf
+			}
 
 
     	MULTIQC(

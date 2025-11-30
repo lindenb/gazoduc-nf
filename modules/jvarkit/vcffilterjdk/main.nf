@@ -40,11 +40,14 @@ process JVARKIT_VCFFILTERJDK {
 	script:
         def has_script_file = (script_file?true:false)
 		def expression = task.ext.expression?:""
-        verify((!isBlank(expression) && !has_script_file) || (has_script_file && !isBlank(expression)),"${task.process}: script file XOR expression must be defined")
-		def jvm = " -XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
+        verify(
+		(isBlank(expression) && has_script_file) ||
+		(!has_script_file && !isBlank(expression)),
+		"${task.process}: script file=${has_script_file} XOR expression=${expression} must be defined")
+	def jvm = " -XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
         def args1 = task.ext.args1?:""
         def args2 = task.ext.args2?:""
-        def prefix =  task.ext.prefix?:""
+        def prefix =  task.ext.prefix?:"${meta.id}.filterjdk"
 	"""
 	mkdir -p TMP
 
@@ -56,7 +59,7 @@ process JVARKIT_VCFFILTERJDK {
         ${isBlank(expression)?"":"--expression '${expression}'"}  | \\
 	bcftools view ${args2} -O z -o TMP/jeter.vcf.gz
 
-    if test \$(bcftools query -f '\\n'  TMP/jeter.vcf.gz |wc -1) -gt 0
+    if test \$(bcftools query -f '\\n'  TMP/jeter.vcf.gz |wc -l) -gt 0
 	then
 		mv TMP/jeter.vcf.gz ${prefix}.vcf.gz
 	fi

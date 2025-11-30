@@ -48,7 +48,8 @@ include { SNPEFF_DOWNLOAD                          } from '../../modules/snpeff/
 include { JVARKIT_VCF_TO_TABLE                     } from '../../modules/jvarkit/vcf2table'
 include { META_TO_PED                              } from '../../subworkflows/pedigree/meta2ped'
 include { VCF_INPUT as GNOMAD_INPUT                } from '../../subworkflows/nf/vcf_input'
-
+include { ENCODE_BLACKLIST                        } from '../../modules/encode/blacklist' 
+include { BEDTOOLS_SUBTRACT                       } from '../../modules/bedtools/subtract' 
 
 List fractionate(List Lsrc,int count) {
 	def L0 = Lsrc.collect() //clone
@@ -156,7 +157,7 @@ workflow {
 		*  DOWNLOAD GTF
 		*
 		*/
-		DOWNLOAD_GTF(
+		GTF_INPUT(
 				metadata.plus([
 					arg_name: "gtf",
 					require_index: true,
@@ -165,11 +166,11 @@ workflow {
 					]),
 				PREPARE_ONE_REFERENCE.out.dict
 				)
-		versions = versions.mix(DOWNLOAD_GTF.out.versions)
+		versions = versions.mix(GTF_INPUT.out.versions)
 
 		GTF_TO_EXOME(
 			PREPARE_ONE_REFERENCE.out.fai,
-			DOWNLOAD_GTF.out.gtf.map{meta,gtf,tbi->[meta,gtf]}
+			GTF_INPUT.out.gtf.map{meta,gtf,tbi->[meta,gtf]}
 			)
 		versions = versions.mix(GTF_TO_EXOME.out.versions)
 
@@ -182,6 +183,18 @@ workflow {
 			.map{[[id:it.baseName],it]}
 		}
 
+	/***************************************************
+	*
+	* Download encode black list
+	*
+	*/
+	ENCODE_BLACKLIST(PREPARE_ONE_REFERENCE.out.dict)
+	versions = versions.mix(ENCODE_BLACKLIST.out.versions)
+	BEDTOOLS_SUBTRACT(bed.combine(ENCODE_BLACKLIST.out.bed).map{meta1,bed1,_meta2,bed2->[meta1,bed1,bed2]})
+    versions = versions.mix(BEDTOOLS_SUBTRACT.out.versions)
+    bed = BEDTOOLS_SUBTRACT.out.bed.first()
+
+
 	BEDTOOLS_MAKEWINDOWS( bed )
   	versions = versions.mix(BEDTOOLS_MAKEWINDOWS.out.versions)
 
@@ -193,7 +206,7 @@ workflow {
 		BEDTOOLS_MAKEWINDOWS.out.bed
 		)
 	versions = versions.mix(BED_CLUSTER.out.versions)
-	cluster_bed = BED_CLUSTER.out.bed
+	bed = BED_CLUSTER.out.bed
 		.map{meta,bed->bed}
 		.map{it instanceof List?it:[it]}
 		.flatMap()
@@ -241,7 +254,9 @@ workflow {
 	* DOWNLOAD SNPEFF
 	*
 	*/
-	SNPEFF_DOWNLOAD(PREPARE_ONE_REFERENCE.out.fai)
+	SNPEFF_DOWNLOAD(PREPARE_ONE_REFERENCE.out.fai
+			.map{meta,_fai->[meta,file(params.snpeff_database_directory)]}
+		)
 	versions = versions.mix(SNPEFF_DOWNLOAD.out.versions)
 
 	ITER_10(
@@ -289,8 +304,8 @@ cat << EOF >> ${prefix}.code
 
 for(Genotype g: variant.getGenotypes()) {
 	boolean has_alt = g.hasAltAllele();
-	if(has_alt && !cases.contains(g.getSample())) return false;
-	if(!has_alt && !ases.contains(g.getSample())) return false;
+	if(!has_alt &&  cases.contains(g.getSampleName())) return false;
+	if( has_alt && !cases.contains(g.getSampleName())) return false;
 	}
 return true;
 EOF

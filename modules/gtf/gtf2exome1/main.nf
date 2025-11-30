@@ -38,11 +38,11 @@ output:
 	path("versions.yml"),emit:versions
 script:
 	def what = task.ext.what?:""
-    verify(!isBlank(what),"${task.process} : task.ext.what must be defined (e.g: 'exon')")
+    verify(!isBlank(what.toString()),"${task.process} : task.ext.what must be defined (e.g: 'exon')")
     def slop = task.ext.slop?:""
-    verify(!isBlank(slop),"${task.process} : task.ext.slop must be defined (e.g: 1000)")
+    verify(!isBlank(slop.toString()),"${task.process} : task.ext.slop must be defined (e.g: 1000)")
     def extra_cmd = task.ext.extra_cmd?:""
-    verify(!isBlank(extra_cmd),"${task.process} : task.ext.extra_cmd must be defined (e.g: grep -F protein_coding or just cat )") 
+    verify(!isBlank(extra_cmd.toString()),"${task.process} : task.ext.extra_cmd must be defined (e.g: grep -F protein_coding or just cat )") 
 
 	def prefix = task.ext.prefix?:"${gtf.baseName}.${what}s.x${slop}"
 """

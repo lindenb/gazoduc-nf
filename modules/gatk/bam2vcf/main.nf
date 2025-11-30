@@ -139,10 +139,10 @@ rm TMP/gvcfs.list
 i=1
 find ./TMP -type f -name "split*.list" | while read F
 do
+	## If you have used -L in the previous steps, you don't need to provide it with the combinegvcf step. https://gatk.broadinstitute.org/hc/en-us/community/posts/360059095192-CombineGVCFs-4-1-2-0-throws-java-lang-IllegalArgumentException-Features-added-out-of-order
 	gatk --java-options "${jvm}" \\
 		CombineGVCFs \\
 		-R "${fasta}" \\
-		-L "${bed}" \\
 		-V "\${F}" \\
 		${args2} \\
 		-O "TMP/combined.\${i}.g.vcf.gz" \\
@@ -158,11 +158,11 @@ done
 
 if [[ \$(wc -l < TMP/gvcfs.list) -gt 1  ]]
 then
-
+	
+	## If you have used -L in the previous steps, you don't need to provide it with the combinegvcf step. https://gatk.broadinstitute.org/hc/en-us/community/posts/360059095192-CombineGVCFs-4-1-2-0-throws-java-lang-IllegalArgumentException-Features-added-out-of-order
 	gatk --java-options "${jvm}" \\
 		CombineGVCFs \\
 		-R "${fasta}" \\
-		-L "${bed}" \\
 		${args3} \\
 		-V "TMP/gvcfs.list" \\
 		-O TMP/combined.all.g.vcf.gz \\

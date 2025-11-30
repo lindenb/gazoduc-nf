@@ -46,12 +46,12 @@ take:
 	pedigree_ch // [meta,pedigree]
 	gnomad_vcf //[meta,vcf,tbi]
 	jvarkit_filter // [meta,filter]
-	bed
+	bed_in
 	bam_files
 main:
 	versions = Channel.empty()
 	multiqc = Channel.empty()
-	bed = Channel.empty()
+
 	GATK_BAM2VCF(
 		fasta,
 		fai,
@@ -59,7 +59,7 @@ main:
 		[[id:"no_dbsnp"],[],[]],
 		pedigree_ch,
 		[[id:"no_extra_ref"],[]],
-		bam_files.combine(bed)
+		bam_files.combine(bed_in)
 			.map{meta1,hts_files,_meta2,bed->[meta1.plus(id:bed.baseName),hts_files,bed]}
 		)
 	versions = versions.mix(GATK_BAM2VCF.out.versions)
@@ -121,13 +121,12 @@ main:
 	BED_CLUSTER(
 		fasta,
 		fai,
-		bed,
+		dict,
 		BEDTOOLS_SLOP.out.bed
-
 		)
 	versions = versions.mix(BED_CLUSTER.out.versions)
 
-	bed = BED_CLUSTER.out.bed
+	bed_out = BED_CLUSTER.out.bed
 		.map{_meta,bed->bed}
 		.map{it instanceof List?it:[it]}
 		.flatMap()
@@ -137,7 +136,7 @@ main:
 emit:
     versions
 	multiqc
-	bed
+	bed = bed_out
 	vcf = BCFTOOLS_CONCAT.out.vcf
 }
 
