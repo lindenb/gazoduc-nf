@@ -38,8 +38,8 @@ process JVARKIT_VCF_TO_TABLE {
 		def args1 = task.ext.args1?:""
         def args2 = task.ext.args2?:""
 		def jvm = task.ext.jvm?:"-Djava.io.tmpdir=TMP -Xmx${task.memory.giga}G"
-        def prefix = task.ext.prefix?:"${meta.id}"
-        def suffix = args2.contains("html")?"html":"txt"
+        def prefix = task.ext.prefix?:"${meta.id}.table"
+        def suffix = args2.contains("html") || "${task.process}".toLowerCase().contains("html")?"html":"txt"
 """
 mkdir -p TMP
 
