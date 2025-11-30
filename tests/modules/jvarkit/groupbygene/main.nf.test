@@ -1,12 +1,12 @@
 nextflow_process {
 
-    name "Test Process JVARKIT_FILTER_LOWQUAL"
-    script "modules/jvarkit/lowqual/main.nf"
-    process "JVARKIT_FILTER_LOWQUAL"
+    name "Test Process GROUP_BY_GENE"
+    script "modules/jvarkit/groupbygene/main.nf"
+    process "GROUP_BY_GENE"
     tag "gitlab_ci"
     tag "modules"
     tag "modules/jvarkit"
-    tag "modules/jvarkit/lowqual"
+    tag "modules/jvarkit/groupbygene"
 
     test("BASIC") {
 
@@ -16,7 +16,9 @@ nextflow_process {
              }
             process {
                 """
-                input[0] = [ [id:"vcf"], file("${projectDir}/tests/data/rotavirus_rf.vcf.gz") ]
+                input[0] = [ [id:"case"], []] 
+                input[1] = [ [id:"ctrls"], []] 
+                input[2] = [ [id:"vcf"], file("${projectDir}/tests/data/rotavirus_rf.ann.vcf.gz") ]
                 """
             }
         }
@@ -37,7 +39,9 @@ nextflow_process {
             }
             process {
                 """
-                 input[0] = [ [id:"vcf"], file("${projectDir}/tests/data/rotavirus_rf.vcf.gz") ]
+                input[0] = [ [id:"case"], []] 
+                input[1] = [ [id:"ctrls"], []] 
+                input[2] = [ [id:"stub"], file("${projectDir}/tests/data/rotavirus_rf.ann.vcf.gz") ]
                 """
             }
         }
