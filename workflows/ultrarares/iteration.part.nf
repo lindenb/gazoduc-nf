@@ -32,7 +32,8 @@ include { BCFTOOLS_CONCAT                  } from '../../modules/bcftools/concat
 include { VCF_TO_BED                       } from '../../modules/bcftools/vcf2bed2'
 include { BED_CLUSTER                      } from '../../modules/jvarkit/bedcluster'
 include { BEDTOOLS_SLOP                    } from '../../modules/bedtools/slop'
-include { BEDTOOLS_MERGE                   } from '../../modules/bedtools/merge'
+include { BEDTOOLS_MERGE as BEDTOOLS_MERGE1} from '../../modules/bedtools/merge'
+include { BEDTOOLS_MERGE as BEDTOOLS_MERGE2} from '../../modules/bedtools/merge'
 
 
 
@@ -103,40 +104,44 @@ main:
 	versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
 
 	VCF_TO_BED(
-		BCFTOOLS_CONCAT.out.vcf
+		BCFTOOLS_CONCAT.out.vcf.map{meta,vcf,tbi->[meta,vcf]}
 		)
 	versions = versions.mix(VCF_TO_BED.out.versions)
 
-	BEDTOOLS_SLOP(
-		fai,
+	BEDTOOLS_MERGE1(
 		VCF_TO_BED.out.bed
 		)
-	versions = versions.mix(BEDTOOLS_SLOP.out.versions)
-
-	BEDTOOLS_MERGE(
-		BEDTOOLS_SLOP.out.bed
-		)
-	versions = versions.mix(BEDTOOLS_MERGE.out.versions)
+	versions = versions.mix(BEDTOOLS_MERGE1.out.versions)
 
 	BED_CLUSTER(
 		fasta,
 		fai,
 		dict,
-		BEDTOOLS_SLOP.out.bed
+		BEDTOOLS_MERGE1.out.bed
 		)
 	versions = versions.mix(BED_CLUSTER.out.versions)
 
-	bed_out = BED_CLUSTER.out.bed
+	cluster_ch = BED_CLUSTER.out.bed
 		.map{_meta,bed->bed}
 		.map{it instanceof List?it:[it]}
 		.flatMap()
 		.map{bed->[[id:bed.baseName],bed]}
 	
+	BEDTOOLS_SLOP(
+		fai,
+		cluster_ch
+		)
+	versions = versions.mix(BEDTOOLS_SLOP.out.versions)
+
+	BEDTOOLS_MERGE2(
+		BEDTOOLS_SLOP.out.bed
+		)
+	versions = versions.mix(BEDTOOLS_MERGE2.out.versions)
 
 emit:
     versions
 	multiqc
-	bed = bed_out
+	bed = BEDTOOLS_MERGE2.out.bed
 	vcf = BCFTOOLS_CONCAT.out.vcf
 }
 

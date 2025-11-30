@@ -22,13 +22,16 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include { verify  } from '../../../modules/utils/functions.nf'
+include { isBlank } from '../../../modules/utils/functions.nf'
+
 workflow META_TO_PED{
 take:
-	meta
+	metadata
 	metas
 main:
 	MAKE_PED(
-		meta,
+		metadata,
 		metas
 			.map{[ /* weird bug, if I don't use quote, just it?:something, it doesn't work... */
 			"${it.id?:(it.sample?:"")}",
@@ -43,11 +46,13 @@ main:
 		)
 
 	cases = MAKE_PED.out.cases.ifEmpty([[id:"no.cases"],[]])
-	controls = MAKE_PED.out.cases.ifEmpty([[id:"no.controls"],[]])
-	pedigree = MAKE_PED.out.ped.ifEmpty([[id:"noped"],[]])
+	controls = MAKE_PED.out.controls.ifEmpty([[id:"no.controls"],[]])
+	pedigree = MAKE_PED.out.ped.ifEmpty([[id:"nojvarkitped"],[]])
 	sample2collection = MAKE_PED.out.sample2col.ifEmpty( [[id:"nosn2col"],[]])
 	pedigree_gatk  = MAKE_PED.out.gatk.ifEmpty( [[id:"nogatkped"],[]])
 	sample2status = MAKE_PED.out.sample2status.ifEmpty( [[id:"nosample2status"],[]])
+	males = MAKE_PED.out.males.ifEmpty([[id:"no.males"],[]])
+	females = MAKE_PED.out.females.ifEmpty([[id:"no.females"],[]])
 emit:
 	cases
 	controls
@@ -55,6 +60,8 @@ emit:
 	pedigree_gatk
 	sample2collection
 	sample2status
+	males
+	females
 	versions = MAKE_PED.out.versions
 }
 
@@ -65,17 +72,20 @@ input:
 	val(meta)
 	val(L)
 output:
-	tuple val(meta),path("pedigree4gatk.ped"),optional:true,emit:gatk
-	tuple val(meta),path("raw.ped"),optional:true,emit:ped
-	tuple val(meta),path("males.txt"),optional:true,emit:males
-	tuple val(meta),path("females.txt"),optional:true,emit:females
-	tuple val(meta),path("cases.txt"),optional:true,emit:cases
-	tuple val(meta),path("controls.txt"),optional:true,emit:controls
-	tuple val(meta),path("sample2collection.tsv"),optional:true,emit:sample2col
-	tuple val(meta),path("sample2status.tsv"),optional:true,emit:sample2status
+	tuple val(meta),path("*.pedigree4gatk.ped"),optional:true,emit:gatk
+	tuple val(meta),path("*.jvarkit.ped"),optional:true,emit:ped
+	tuple val(meta),path("*.males.txt"),optional:true,emit:males
+	tuple val(meta),path("*.females.txt"),optional:true,emit:females
+	tuple val(meta),path("*.cases.txt"),optional:true,emit:cases
+	tuple val(meta),path("*.controls.txt"),optional:true,emit:controls
+	tuple val(meta),path("*.sample2collection.tsv"),optional:true,emit:sample2col
+	tuple val(meta),path("*.sample2status.tsv"),optional:true,emit:sample2status
 	
 	path("versions.yml"),emit:versions
 script:
+
+	def prefix= task.ext.prefix?:"${meta.id?:""}"
+	verify(prefix!=null && !isBlank(prefix.toString()),"${task.process} meta.id must be defined")
 """
 cat << EOF | sort -T . | uniq > raw.ped
 ${L.join("\n")}
@@ -83,14 +93,30 @@ EOF
 
 python3 ${moduleDir}/ped.py raw.ped > /dev/null
 
-for F in males.txt females.txt cases.txt controls.txt sample2collection.tsv pedigree4gatk.ped sample2status.tsv raw.ped
+for F in males.txt females.txt cases.txt controls.txt sample2collection.tsv pedigree4gatk.ped sample2status.tsv jvarkit.ped
 do
 	if test ! -s "\${F}"
 	then
 		rm -fv "\${F}"
+	else
+		mv -v "\${F}" "${prefix}.\${F}"
 	fi
 done
 
+cat << EOF > versions.yml
+${task.process}:
+	python: todo
+EOF
+"""
+
+stub:
+	def prefix= task.ext.prefix?:"${meta.id?:""}"
+	verify(prefix!=null && !isBlank(prefix.toString()),"${task.process} meta.id must be defined")
+"""
+for F in males.txt females.txt cases.txt controls.txt sample2collection.tsv pedigree4gatk.ped sample2status.tsv jvarkit.ped
+do
+	touch "${prefix}.\${F}"
+done
 touch versions.yml
 """
 }

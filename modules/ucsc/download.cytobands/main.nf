@@ -21,43 +21,50 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include {isBlank} from '../../utils/functions.nf'
 
 process DOWNLOAD_CYTOBAND {
-tag "${meta1.ucsc_name?:fasta.name}"
+tag "${meta.id}"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
-	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai)
-	tuple val(meta3),path(dict)
+	tuple val(meta),path(dict)
 output:
-	tuple val(meta1),path("*.cytoBandIdeo.txt"),emit:bed
+	tuple val(meta),path("*.bed.gz"),path("*.bed.gz"),emit:tabix
+	tuple val(meta),path("*.bed"),emit:bed
 	path("versions.yml"),emit:versions
-script:
-	def ucsc_name = (meta1.ucsc_name?:"")
-	def base = task.ext.base?:"https://hgdownload.cse.ucsc.edu/goldenPath"
-	def prefix = task.ext.prefix?:"${ucsc_name}"
-	def url = "${base}/${ucsc_name}/database/cytoBandIdeo.txt.gz"
+script:	
+	def ucsc_name = (meta.ucsc_name?:"")
+	def url = task.ext.url?:""
+	if(task.ext.url==null) {
+		url = "https://hgdownload.cse.ucsc.edu/goldenPath/${ucsc_name}/database/cytoBandIdeo.txt.gz"	
+		}
+	def prefix = task.ext.prefix?:"${meta.id}"
 
 """
 hostname 1>&2
 mkdir -p TMP
-set -o pipefail
 
-if ${ucsc_name.isEmpty() || ucsc_name.equals("undefined")}
+
+if ${isBlank(url)}
 then
 
-	touch "${prefix}.empty.cytoBandIdeo.txt"
+	touch "${prefix}.cytoBandIdeo.bed"
+	
 
 else
 
-	curl -L -o TMP/cytoBandIdeo.txt.gz "${url}"
-
-	gunzip -c TMP/cytoBandIdeo.txt.gz |\\
-			jvarkit bedrenamechr -f "${fasta}" --column 1 --convert SKIP > "${prefix}.cytoBandIdeo.txt" 
+	curl -L  "${url}" |\\
+			gunzip -c |\\
+			jvarkit bedrenamechr -f "${dict}" --column 1 --convert SKIP |\\
+			LC_ALL=C sort -S ${task.memory.kilo}  -T TMP -t '\t' -k1,1 -k2,2n  > "${prefix}.cytoBandIdeo.bed" 
 
 fi
+
+
+cat "${prefix}.cytoBandIdeo.bed" | bgzip >  "${prefix}.cytoBandIdeo.bed.gz"
+tabix -p bed   "${prefix}.cytoBandIdeo.bed.gz"
 
 cat << EOF > versions.yml
 "${task.process}":
@@ -66,8 +73,9 @@ EOF
 """
 
 stub:
+	def prefix = task.ext.prefix?:"${meta.id}"
 """
-touch versions.yml "${meta1.ucsc_name?:"undefined"}.empty.cytoBandIdeo.txt" 
+touch versions.yml "${prefix}.cytoBandIdeo.bed" "${prefix}.cytoBandIdeo.bed.gz" "${prefix}.cytoBandIdeo.bed.gz.tbi"
 """
 }
 

@@ -43,8 +43,6 @@ hostname 1>&2
 set -o pipefail
 mkdir -p TMP
 
-cut -f1,2  ${fai} |\\
-    LC_ALL=C sort --buffer-size=${task.memory.mega}M -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter.genome
 
 bcftools query ${args1} -f '%CHROM\t%POS0\t%END\\n' "${vcf}" |\\
 	LC_ALL=C sort --buffer-size=${task.memory.mega}M -T TMP -t '\t' -k1,1 -k2,2n |\\

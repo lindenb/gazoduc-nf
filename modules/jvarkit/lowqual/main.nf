@@ -29,15 +29,14 @@ process JVARKIT_FILTER_LOWQUAL {
 	afterScript "rm -rf TMP"
 	tag "${meta.id?:vcf.name}"
 	input:
-		tuple val(meta ),path(vcf),path(idx)
+		tuple val(meta ),path(vcf)
 	output:
-		tuple val(meta ),path("*.bcf"),path("*.bcf.csi"),emit:vcf
+		tuple val(meta ),path("*.vcf.gz"),emit:vcf
 		path("versions.yml"),emit:versions
 	script:
-		def size  = task.ext.size?:10
 		def args1 = task.ext.args1?:""
 		def args2 = task.ext.args2?:""
-		def prefix  = task.ext.prefix?:vcf.baseName+".lowqual"
+		def prefix  = task.ext.prefix?:"${meta.id}.lowqual"
         
 		def minRatioSingleton = task.ext.ad_ratio?:0.2
         def minGQ = task.ext.minGQ?:60
@@ -120,14 +119,18 @@ bcftools view  ${args1} "${vcf}" |\\
 	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcffilterjdk \\
             --extra-filters 'LOW_MQRankSum,LOW_MQ,LOW_ReadPosRankSum,HIGH_FS,HIGH_SOR,LOW_QD,LOW_GQ,LOW_DEPTH,HIGH_DEPTH,HET_BAD_AD_RATIO' \\
             -f TMP/jeter.code |\\
-	bcftools view ${args2} --write-index -O b -o TMP/${prefix}.bcf
+	bcftools view ${args2}  -O z -o TMP/${prefix}.vcf.gz
 
-	mv TMP/${prefix}.bcf ./
-	mv TMP/${prefix}.bcf.csi ./
+	mv TMP/${prefix}.vcf.gz ./
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
 	jvarkit: todo
 END_VERSIONS
 	"""
-	}
+stub:
+def prefix  = task.ext.prefix?:"${meta.id}.lowqual"
+"""
+touch versions.yml ${prefix}.vcf.gz
+"""
+}

@@ -29,6 +29,11 @@ include { paramsHelp                               } from 'plugin/nf-schema'
 include { paramsSummaryLog                         } from 'plugin/nf-schema'
 include { samplesheetToList                        } from 'plugin/nf-schema'
 include {ULTRA_RARES_ITERATION as ITER_10          } from './iteration.part.nf'
+include {ULTRA_RARES_ITERATION as ITER_100         } from './iteration.part.nf'
+include {ULTRA_RARES_ITERATION as ITER_250         } from './iteration.part.nf'
+include {ULTRA_RARES_ITERATION as ITER_500         } from './iteration.part.nf'
+include {ULTRA_RARES_ITERATION as ITER_1000        } from './iteration.part.nf'
+include {ULTRA_RARES_ITERATION as ITER_ALL         } from './iteration.part.nf'
 /*include {ULTRA_RARES_ITERATION as ITER_SECOND      } from './iteration.part.nf'
 include {ULTRA_RARES_ITERATION as ITER_THIRD       } from './iteration.part.nf'*/
 include { UNMAPPED                                 } from '../../subworkflows/unmapped'
@@ -45,33 +50,42 @@ include { GTF_TO_EXOME                             } from '../../modules/gtf/gtf
 include { BEDTOOLS_MAKEWINDOWS                     } from '../../modules/bedtools/makewindows'
 include { BED_CLUSTER                              } from '../../modules/jvarkit/bedcluster'
 include { SNPEFF_DOWNLOAD                          } from '../../modules/snpeff/download'
-include { JVARKIT_VCF_TO_TABLE                     } from '../../modules/jvarkit/vcf2table'
+include { JVARKIT_VCF_TO_TABLE as VCF_TO_HTML      } from '../../modules/jvarkit/vcf2table'
+include { JVARKIT_VCF_TO_TABLE as VCF_TO_TXT       } from '../../modules/jvarkit/vcf2table'
+include { JVARKIT_FILTER_LOWQUAL                   } from '../../modules/jvarkit/lowqual'
 include { META_TO_PED                              } from '../../subworkflows/pedigree/meta2ped'
 include { VCF_INPUT as GNOMAD_INPUT                } from '../../subworkflows/nf/vcf_input'
 include { ENCODE_BLACKLIST                        } from '../../modules/encode/blacklist' 
 include { BEDTOOLS_SUBTRACT                       } from '../../modules/bedtools/subtract' 
 
 List fractionate(List Lsrc,int count) {
-	def L0 = Lsrc.collect() //clone
-	def L = [];
-	int i = 0;
-	while(i< L0.size()) {
-		def item = L0[i];
-		if(!isBlank(item[0].status) && item[0].status=="case") {
-			L.add(item);
-			L0.remove(i);
+	try {
+		def L0 = Lsrc.collect() //clone
+		def L = [];
+		int i = 0;
+		while(i< L0.size()) {
+			def item = L0[i];
+			if(!isBlank(item[0].status) && item[0].status=="case") {
+				L.add(item);
+				L0.remove(i);
+				}
+			else
+				{
+				++i;
+				}
 			}
-		else
-			{
-			++i;
+		// sort using biggest files first, exomes at the end
+		Collections.sort(L0,(A,B)->Long.compare(B[1].size(),A[1].size()))
+		while((L.size()< count || count< 0) && !L0.isEmpty()) {
+			L.add(L0.remove(0));
 			}
+		return L;
 		}
-	// sort using biggest files first, exomes at the end
-	Collections.sort(L0,(A,B)->Long.compare(B[1].size(),A[1].size()))
-	while((L.size()< count || count< 0) && !L0.isEmpty()) {
-		L.add(L0.remove(0));
+	catch(Throwable err) {
+		log.warn(String.valueOf(err.getMessage()));
+		err.printStackTrace();
+		throw err;
 		}
-	return L;
 	}
 
 
@@ -219,6 +233,36 @@ workflow {
 		.collect(flat:true,sort:true)
 		.map{files->[[id:"list10"],files]}
 
+	bams_list100   = META_TO_BAMS.out.bams.collect(flat:false)
+		.flatMap{fractionate(it,100)}
+		.flatMap{meta,bam,bai->[bam,bai]}
+		.collect(flat:true,sort:true)
+		.map{files->[[id:"list100"],files]}
+
+	bams_list250   = META_TO_BAMS.out.bams.collect(flat:false)
+		.flatMap{fractionate(it,250)}
+		.flatMap{meta,bam,bai->[bam,bai]}
+		.collect(flat:true,sort:true)
+		.map{files->[[id:"list250"],files]}
+
+	bams_list500   = META_TO_BAMS.out.bams.collect(flat:false)
+		.flatMap{fractionate(it,500)}
+		.flatMap{meta,bam,bai->[bam,bai]}
+		.collect(flat:true,sort:true)
+		.map{files->[[id:"list500"],files]}
+	
+	bams_list1000   = META_TO_BAMS.out.bams.collect(flat:false)
+		.flatMap{fractionate(it,1000)}
+		.flatMap{meta,bam,bai->[bam,bai]}
+		.collect(flat:true,sort:true)
+		.map{files->[[id:"list1000"],files]}
+
+	bams_listALL   = META_TO_BAMS.out.bams.collect(flat:false)
+		.flatMap{fractionate(it,-1)}
+		.flatMap{meta,bam,bai->[bam,bai]}
+		.collect(flat:true,sort:true)
+		.map{files->[[id:"list_all"],files]}
+
 	/***************************************************
 	*
 	*  LOCATE GNOMAD
@@ -273,13 +317,98 @@ workflow {
 		)
 	versions = versions.mix(ITER_10.out.versions)
 	multiqc = multiqc.mix(ITER_10.out.multiqc)
-	bed = ITER_10.out.bed
 
 
-	JVARKIT_VCF_TO_TABLE(
-		META_TO_PED.out.pedigree,
-		ITER_10.out.vcf
+
+	ITER_100(
+		metadata.plus([id:"list100"]),
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		PREPARE_ONE_REFERENCE.out.dict,
+		SNPEFF_DOWNLOAD.out.database,
+		META_TO_PED.out.pedigree_gatk,
+		GNOMAD_INPUT.out.vcf.first(),
+		jvarkit_filter,
+		ITER_10.out.bed,
+		bams_list100
 		)
+	versions = versions.mix(ITER_100.out.versions)
+	multiqc = multiqc.mix(ITER_100.out.multiqc)
+
+	ITER_250(
+		metadata.plus([id:"list250"]),
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		PREPARE_ONE_REFERENCE.out.dict,
+		SNPEFF_DOWNLOAD.out.database,
+		META_TO_PED.out.pedigree_gatk,
+		GNOMAD_INPUT.out.vcf.first(),
+		jvarkit_filter,
+		ITER_100.out.bed,
+		bams_list250
+		)
+	versions = versions.mix(ITER_250.out.versions)
+	multiqc = multiqc.mix(ITER_250.out.multiqc)
+
+
+	ITER_500(
+		metadata.plus([id:"list500"]),
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		PREPARE_ONE_REFERENCE.out.dict,
+		SNPEFF_DOWNLOAD.out.database,
+		META_TO_PED.out.pedigree_gatk,
+		GNOMAD_INPUT.out.vcf.first(),
+		jvarkit_filter,
+		ITER_250.out.bed,
+		bams_list500
+		)
+	versions = versions.mix(ITER_500.out.versions)
+	multiqc = multiqc.mix(ITER_500.out.multiqc)
+
+	ITER_1000(
+		metadata.plus([id:"list1000"]),
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		PREPARE_ONE_REFERENCE.out.dict,
+		SNPEFF_DOWNLOAD.out.database,
+		META_TO_PED.out.pedigree_gatk,
+		GNOMAD_INPUT.out.vcf.first(),
+		jvarkit_filter,
+		ITER_500.out.bed,
+		bams_list1000
+		)
+	versions = versions.mix(ITER_1000.out.versions)
+	multiqc = multiqc.mix(ITER_1000.out.multiqc)
+
+	ITER_ALL(
+		metadata.plus([id:"list_all"]),
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		PREPARE_ONE_REFERENCE.out.dict,
+		SNPEFF_DOWNLOAD.out.database,
+		META_TO_PED.out.pedigree_gatk,
+		GNOMAD_INPUT.out.vcf.first(),
+		jvarkit_filter,
+		ITER_1000.out.bed,
+		bams_listALL
+		)
+	versions = versions.mix(ITER_ALL.out.versions)
+	multiqc = multiqc.mix(ITER_ALL.out.multiqc)
+
+	JVARKIT_FILTER_LOWQUAL(ITER_ALL.out.vcf.map{meta,vcf,tbi->[meta,vcf]})
+	versions = versions.mix(JVARKIT_FILTER_LOWQUAL.out.versions)
+
+	VCF_TO_HTML(
+		META_TO_PED.out.pedigree,
+		JVARKIT_FILTER_LOWQUAL.out.vcf
+		)
+	versions = versions.mix(VCF_TO_HTML.out.versions)
+	VCF_TO_TXT(
+		META_TO_PED.out.pedigree,
+		JVARKIT_FILTER_LOWQUAL.out.vcf
+		)
+	versions = versions.mix(VCF_TO_TXT.out.versions)
 }
 
 process GENERATE_DEFAULT_SCRIPT {

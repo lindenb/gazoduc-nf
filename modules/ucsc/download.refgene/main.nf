@@ -22,58 +22,59 @@ SOFTWARE.
 
 */
 
-include {k1_signature} from '../../utils/k1.nf'
+include {isBlank} from '../../utils/functions.nf'
 
 process DOWNLOAD_REFGENE {
-tag "${meta1.id?:fasta.name}"
+tag "${meta.id}"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
-	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai)
-	tuple val(meta3),path(dict)
+	tuple val(meta),path(dict)
 output:
-	tuple val(meta1),path("*.refGene.txt.gz"),path("*.refGene.txt.gz.tbi"),emit:output
+	tuple val(meta),path("*.txt.gz"),path("*.txt.gz.tbi"),emit:tabix
 	path("versions.yml"),emit:versions
 script:
-	def k1 = k1_signature()
-	def base="https://hgdownload.cse.ucsc.edu/goldenPath"
+	def ucsc_name = (meta.ucsc_name?:"")
+	def url = task.ext.url?:""
+	if(task.ext.url==null) {
+		url = "https://hgdownload.cse.ucsc.edu/goldenPath/${ucsc_name}/database/refGene.txt.gz"	
+		}
+	def prefix = task.ext.prefix?:"${meta.id}"
 """
 hostname 1>&2
 mkdir -p TMP
-set -o pipefail
+if ${!url.isEmpty()}
+then
 
+curl -L "${url}" |\\
+		gunzip -c |\\
+		jvarkit bedrenamechr -f "${dict}" --column 3 --convert SKIP |\\
+		LC_ALL=C sort -S ${task.memory.kilo}  -T TMP -t '\t' -k3,3 -k5,5n |\\
+		bgzip > "TMP/${prefix}.refGene.txt.gz"
 
-cat << EOF | sort -T TMP -t '\t' -k1,1 > TMP/jeter1.tsv
-1:${k1.hg38}\t${base}/hg38/database/refGene.txt.gz
-1:${k1.hg19}\t${base}/hg19/database/refGene.txt.gz
-1:${k1.canFam3}\t${base}/canFam3/database/refGene.txt.gz
-1:${k1.canFam4}\t${base}/canFam4/database/refGene.txt.gz
-EOF
+else
 
-awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' |\\
-	sed 's/^chr//' | sort -T TMP -t '\t' -k1,1 > TMP/jeter2.tsv
+	touch TMP/${prefix}.refGene.txt
+	bgzip TMP/${prefix}.refGene.txt
 
-join -t '\t' -1 1 -2 1 -o '1.2' TMP/jeter1.tsv TMP/jeter2.tsv |\\
-	sort | uniq > TMP/jeter.url
+fi
 
-test -s TMP/jeter.url
+tabix -f -0 -b 5 -e 6 -s 3 "TMP/${prefix}.refGene.txt.gz"
 
-
-wget -O TMP/refGene.txt.gz `cat TMP/jeter.url`
-gunzip -c TMP/refGene.txt.gz |\\
-		jvarkit bedrenamechr -f "${fasta}" --column 3 --convert SKIP |\\
-		LC_ALL=C sort -T TMP -t '\t' -k3,3 -k5,5n |\\
-		bgzip > "${fasta.baseName}.refGene.txt.gz"
-
-tabix -f -0 -b 5 -e 6 -s 3 "${fasta.baseName}.refGene.txt.gz"
-
+mv "TMP/${prefix}.refGene.txt.gz" ./
+mv "TMP/${prefix}.refGene.txt.gz.tbi" ./
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	url: "\$(cat TMP/jeter.url)"
+	url: "${url}"
 END_VERSIONS
+"""
+
+stub:
+	def prefix = task.ext.prefix?:"${meta.id}"
+"""
+touch versions.yml "${prefix}.refGene.txt.gz" "${prefix}.refGene.txt.gz.tbi" 
 """
 }
 

@@ -1,0 +1,51 @@
+nextflow_process {
+
+    name "Test Process JVARKIT_FILTER_LOWQUAL"
+    script "modules/jvarkit/lowqual/main.nf"
+    process "JVARKIT_FILTER_LOWQUAL"
+    tag "gitlab_ci"
+    tag "modules"
+    tag "modules/jvarkit"
+    tag "modules/jvarkit/lowqual"
+
+    test("BASIC") {
+
+        when {
+            params {
+               
+             }
+            process {
+                """
+                input[0] = [ [id:"vcf"], file("${projectDir}/tests/data/rotavirus_rf.vcf.gz") ]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+    test("STUB") {
+        tag "stub"
+        options "s-tub"
+        when {
+            params {
+              
+            }
+            process {
+                """
+                 input[0] = [ [id:"vcf"], file("${projectDir}/tests/data/rotavirus_rf.vcf.gz") ]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+}

@@ -30,11 +30,11 @@ conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	tuple val(meta),path(vcf)
 output:
-	tuple val(meta),path("*.gz"),emit:vcf
+	tuple val(meta),path("*.vcf.gz"),emit:vcf
 	path("versions.yml"),emit:versions
 script:
     def cmd1  = task.ext.args1?:""
-	def prefix = task.ext.prefix?:"${meta.id}"
+	def prefix = task.ext.prefix?:"${meta.id}.sort"
 """
 mkdir -p TMP
 set -o pipefail

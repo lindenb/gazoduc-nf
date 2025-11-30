@@ -39,7 +39,7 @@ script:
 	def args2=task.ext.args2?:"-nodownload"
 	def args3=task.ext.args3?:""
 	def jvm = task.ext.jvm?:" -XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
-	def prefix = task.ext.prefix?:"${meta.id}"
+	def prefix = task.ext.prefix?:"${meta.id}.snpeff"
 	def accessions  = task.ext.accessions?:""
 """
 mkdir -p TMP

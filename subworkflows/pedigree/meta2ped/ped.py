@@ -65,12 +65,12 @@ def process_table(rows):
     # Third, check father/mother sex
     for row in rows:
         id, father, mother, sex, status, pop = row
-        if is_empty(father)==False:
+        if not is_empty(father):
             father_row = id_to_row[father]
             father_sex = father_row[3]
             if father_sex == "female":
                 raise ValueError(f"Father {father} for individual {id} has sex 'female'")
-        if is_empty(mother)==False:
+        if not is_empty(mother):
             mother_row = id_to_row[mother]
             mother_sex = mother_row[3]
             if mother_sex == "male":
@@ -88,7 +88,7 @@ def main():
         sys.exit(1)
     filename = sys.argv[1]
     rows = read_tsv(filename)
-    updated_rows = process_table(rows)
+    process_table(rows)
 
     samples = [row[0] for row in rows if row[3] == "male"]
     if samples:
@@ -112,16 +112,41 @@ def main():
                 f.write(sample_id + "\n")
     with open("sample2collection.tsv", "w") as f:
         for row in rows:
-            if is_empty(row[3]) == False:
+            if not is_empty(row[3]):
                 f.write(row[0] + "\t" + row[3] + "\n")
-            if is_empty(row[4]) == False:
+            if not is_empty(row[4]) :
                  f.write(row[0] + "\t" + row[4] + "\n")
-            if is_empty(row[5]) == False:
+            if not is_empty(row[5]):
                  f.write(row[0] + "\t" + row[5] + "\n")
     with open("sample2status.tsv", "w") as f:
         for row in rows:
-            if is_empty(row[4]) == False and (row[4] == "control" or row[4] == "case"):
+            if not is_empty(row[4]) and (row[4] == "control" or row[4] == "case"):
                 f.write(row[0] + "\t" + row[4] + "\n")
+    # write standard pedigree
+    with open("jvarkit.ped","w") as f:
+        for row in rows:
+            f.write(row[0])
+            f.write("\t")
+            f.write(row[0])
+            f.write("\t")
+            f.write(row[1])
+            f.write("\t")
+            f.write(row[2])
+            f.write("\t")
+            if row[3]=="male":
+                f.write("male")
+            elif row[3]=="female":
+                f.write("female")
+            else:
+                f.write("undefined")
+            f.write("\t")
+            if row[4]=="case":
+                f.write("case")
+            elif row[4]=="control":
+                f.write("control")
+            else:
+                f.write("undefined")
+            f.write("\n")
     # write pedigree for GATK
     with open("pedigree4gatk.ped","w") as f:
         for row in rows:
