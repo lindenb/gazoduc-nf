@@ -53,10 +53,17 @@ include { SNPEFF_DOWNLOAD                          } from '../../modules/snpeff/
 include { JVARKIT_VCF_TO_TABLE as VCF_TO_HTML      } from '../../modules/jvarkit/vcf2table'
 include { JVARKIT_VCF_TO_TABLE as VCF_TO_TXT       } from '../../modules/jvarkit/vcf2table'
 include { JVARKIT_FILTER_LOWQUAL                   } from '../../modules/jvarkit/lowqual'
+include { GROUP_BY_GENE                            } from '../../modules/jvarkit/groupbygene'
 include { META_TO_PED                              } from '../../subworkflows/pedigree/meta2ped'
 include { VCF_INPUT as GNOMAD_INPUT                } from '../../subworkflows/nf/vcf_input'
-include { ENCODE_BLACKLIST                        } from '../../modules/encode/blacklist' 
-include { BEDTOOLS_SUBTRACT                       } from '../../modules/bedtools/subtract' 
+include { ENCODE_BLACKLIST                         } from '../../modules/encode/blacklist' 
+include { BEDTOOLS_SUBTRACT                        } from '../../modules/bedtools/subtract' 
+include { BCFTOOLS_QUERY                           } from '../../modules/bcftools/query'
+include { BCFTOOLS_SORT as BCFTOOLS_SORT2           } from '../../modules/bcftools/sort' 
+include { BCFTOOLS_INDEX as BCFTOOLS_INDEX2        } from '../../modules/bcftools/index' 
+include { DOWNLOAD_CYTOBAND                        } from '../../modules/ucsc/download.cytobands'
+include { DOWNLOAD_REFGENE                         } from '../../modules/ucsc/download.refgene'
+include { IGV_REPORT                               } from '../../modules/igv/igv_report1'
 
 List fractionate(List Lsrc,int count) {
 	try {
@@ -409,6 +416,60 @@ workflow {
 		JVARKIT_FILTER_LOWQUAL.out.vcf
 		)
 	versions = versions.mix(VCF_TO_TXT.out.versions)
+
+
+	DOWNLOAD_CYTOBAND(PREPARE_ONE_REFERENCE.out.dict)
+	versions = versions.mix(DOWNLOAD_CYTOBAND.out.versions)
+	DOWNLOAD_REFGENE(PREPARE_ONE_REFERENCE.out.dict)
+	versions = versions.mix(DOWNLOAD_REFGENE.out.versions)
+
+	BCFTOOLS_SORT2(JVARKIT_FILTER_LOWQUAL.out.vcf)
+	versions = versions.mix(BCFTOOLS_SORT2.out.versions)
+
+	BCFTOOLS_INDEX2(BCFTOOLS_SORT2.out.vcf)
+	versions = versions.mix(BCFTOOLS_INDEX2.out.versions)
+
+
+	GROUP_BY_GENE(
+		META_TO_PED.out.cases,
+		META_TO_PED.out.controls,
+		BCFTOOLS_INDEX2.out.vcf
+		)
+	versions = versions.mix(GROUP_BY_GENE.out.versions)
+
+	BCFTOOLS_QUERY(BCFTOOLS_INDEX2.out.vcf.map{meta,vcf,_tbi->[meta,vcf]})
+	versions = versions.mix(BCFTOOLS_QUERY.out.versions)
+	ch1 = BCFTOOLS_QUERY.out.output
+		.map{meta,f->f}
+		.splitCsv(header:false,sep:'\t')
+		.map{v->[
+			id : String.join("_",v[0],v[1],v[2],v[3]),
+			contig: v[0],
+			start : v[1],
+			end : v[2],
+			ref: v[3]
+			]}
+		.combine(META_TO_BAMS.out.bams
+			.filter{meta,bam,bai->meta.status=="case"}
+			.map{meta,bam,bai->[bam,bai]}
+			)
+		.groupTuple()
+
+
+	
+
+	IGV_REPORT(
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		PREPARE_ONE_REFERENCE.out.dict,
+		DOWNLOAD_CYTOBAND.out.bed,
+		DOWNLOAD_REFGENE.out.tabix,
+		[[id:"no_sample"],[]],
+		META_TO_PED.out.pedigree,
+		BCFTOOLS_INDEX2.out.vcf,
+		ch1
+		)
+	versions = versions.mix(IGV_REPORT.out.versions)
 }
 
 process GENERATE_DEFAULT_SCRIPT {
