@@ -24,16 +24,21 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 //include {ANNOTATE_SV_VCF_01} from "../../subworkflows/annotation/annotation.sv.01.nf"
-include {assertKeyExistsAndNotEmpty          } from '../../modules/utils/functions.nf'
-include {PREPARE_ONE_REFERENCE               } from '../../subworkflows/samtools/prepare.one.ref'
-include {META_TO_PED                         } from '../../subworkflows/pedigree/meta2ped'
-include {MULTIQC                             } from '../../subworkflows/multiqc'
-include {META_TO_BAMS                        } from '../../subworkflows/samtools/meta2bams1'
-include {DELLY                               } from '../../subworkflows/delly2'
-include {runOnComplete                       } from '../../modules/utils/functions.nf'
-include {READ_SAMPLESHEET                    } from '../../subworkflows/nf/read_samplesheet'
-include {JVARKIT_VCFFILTERJDK                } from '../../modules/jvarkit/vcffilterjdk'
-
+include { assertKeyExistsAndNotEmpty               } from '../../modules/utils/functions.nf'
+include { PREPARE_ONE_REFERENCE                    } from '../../subworkflows/samtools/prepare.one.ref'
+include { META_TO_PED                              } from '../../subworkflows/pedigree/meta2ped'
+include { MULTIQC                                  } from '../../subworkflows/multiqc'
+include { META_TO_BAMS                             } from '../../subworkflows/samtools/meta2bams1'
+include { DELLY                                    } from '../../subworkflows/delly2'
+include { runOnComplete                            } from '../../modules/utils/functions.nf'
+include { READ_SAMPLESHEET                         } from '../../subworkflows/nf/read_samplesheet'
+include { JVARKIT_VCFFILTERJDK                     } from '../../modules/jvarkit/vcffilterjdk'
+include { JVARKIT_VCF_TO_TABLE as VCF_TO_HTML      } from '../../modules/jvarkit/vcf2table'
+include { JVARKIT_VCF_TO_TABLE as VCF_TO_TXT       } from '../../modules/jvarkit/vcf2table'
+include { ANNOTSV                                  } from '../../subworkflows/annotsv'
+include { BCFTOOLS_QUERY                           } from '../../modules/bcftools/query'
+include { PLOT_COVERAGE_01                         } from '../../subworkflows/plotdepth'
+include { GTF_INPUT                                } from '../../subworkflows/nf/gtf_input'
 
 workflow {
 	  	if(params.fasta==null) {
@@ -100,10 +105,46 @@ workflow {
 			JVARKIT_VCFFILTERJDK(
 				Channel.fromPath(params.jvarkit_vcffilter_script).map{f->[[id:f.baseName],f]},
 				META_TO_PED.out.pedigree,
-				DELLY.out.vcf
+				DELLY.out.vcf.map{meta,vcf,idx->[meta,vcf]}
 				)
 			versions = versions.mix(JVARKIT_VCFFILTERJDK.out.versions)
-			vcfs = JVARKIT_VCFFILTERJDK.out.vcf
+
+
+			VCF_TO_HTML(
+				META_TO_PED.out.pedigree,
+				JVARKIT_VCFFILTERJDK.out.vcf
+				)
+			versions = versions.mix(VCF_TO_HTML.out.versions)
+			VCF_TO_TXT(
+				META_TO_PED.out.pedigree,
+				JVARKIT_VCFFILTERJDK.out.vcf
+				)
+			versions = versions.mix(VCF_TO_TXT.out.versions)
+
+
+			BCFTOOLS_QUERY( JVARKIT_VCFFILTERJDK.out.vcf )
+			versions = versions.mix(BCFTOOLS_QUERY.out.versions)
+
+
+			PLOT_COVERAGE_01(
+				metadata,
+				PREPARE_ONE_REFERENCE.out.fasta,
+				PREPARE_ONE_REFERENCE.out.fai,
+				PREPARE_ONE_REFERENCE.out.dict,
+				BCFTOOLS_QUERY.out.output,
+				bams_ch
+				)
+
+
+			ANNOTSV(
+				metadata,
+				PREPARE_ONE_REFERENCE.out.fasta,
+				PREPARE_ONE_REFERENCE.out.fai,
+				PREPARE_ONE_REFERENCE.out.dict,
+				JVARKIT_VCFFILTERJDK.out.vcf
+				)
+			versions = versions.mix(ANNOTSV.out.versions)
+			multiqc = versions.mix(ANNOTSV.out.multiqc)
 			}
 
 

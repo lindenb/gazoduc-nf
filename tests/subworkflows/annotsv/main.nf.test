@@ -1,0 +1,60 @@
+nextflow_workflow {
+
+    name "Test Workflow ANNOTSV"
+    script "subworkflows/annotsv/main.nf"
+    workflow "ANNOTSV"
+    tag "gitlab_ci"
+    tag "subworkflows"
+    tag "subworkflows/annotsv"
+
+    test("STUB") {
+        tag "stub"
+        options "-stub"
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+               input[0] = [id:"meta"]
+               input[1] = [[id:"ref",ucsc_name:"hg19"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+               input[2] = [[id:"ref",ucsc_name:"hg19"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+               input[3] = Channel.of([[id:"ref",ucsc_name:"hg19"],file("${projectDir}/tests/data/rotavirus_rf.dict")])
+               input[4] =  Channel.of([[id:"vcf"],file("${projectDir}/tests/data/rotavirus_rf.vcf.gz")])
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+     test("NOT_HUMAN_SKIP") {
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+               input[0] = [id:"meta"]
+               input[1] = [[id:"ref",ucsc_name:"zzzzz"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+               input[2] = [[id:"ref",ucsc_name:"zzzzz"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+               input[3] = Channel.of([[id:"ref",ucsc_name:"zzzzz"],file("${projectDir}/tests/data/rotavirus_rf.dict")])
+               input[4] =  Channel.of([[id:"vcf"],file("${projectDir}/tests/data/rotavirus_rf.vcf.gz")])
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

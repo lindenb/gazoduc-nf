@@ -27,7 +27,7 @@ include {PDF_NAVIGATION                   } from '../../modules/pdf/navigation'
 
 workflow PLOT_COVERAGE_01 {
 	take:
-		meta
+		metadata
 		fasta
 		fai
 		dict
@@ -40,10 +40,8 @@ workflow PLOT_COVERAGE_01 {
 		versions = versions.mix(EXTEND_BED.out.versions)
 
 		c1_ch = EXTEND_BED.out.bed.
-			map{it[1]}.
+			map{_meta,f->f}.
 			splitCsv(header: true,sep:'\t',strip:true)
-
-
 
 		DRAW_COVERAGE(fasta,fai,dict,gtf,c1_ch.combine(bams))
 		versions = versions.mix(DRAW_COVERAGE.out.versions)
@@ -56,7 +54,7 @@ workflow PLOT_COVERAGE_01 {
 		versions = versions.mix(GHOSTSCRIPT_MERGE.out.versions)
 
 
-		PDF_NAVIGATION(GHOSTSCRIPT_MERGE.out.pdf.map{it[1]}.collect().map{[meta,it]})
+		PDF_NAVIGATION(GHOSTSCRIPT_MERGE.out.pdf.map{_meta,pdf->pdf}.collect().map{[metadata,it]})
 		versions = versions.mix(PDF_NAVIGATION.out.versions)
 	emit:
 		zip =PDF_NAVIGATION.out.zip
@@ -119,6 +117,12 @@ EOF
 	mv TMP/extend.bed ./
 
 	touch versions.yml
+	"""
+	stub:
+	"""
+	touch versions.yml
+	echo "chrom\tdelstart\tdelend\ttitle\tstart\tend" >  extend.bed
+	awk -F '\t' '{printf("%s\t%s\t%s\ttitle\t%s\t%s\\n",\$1,\$2,\$3,\$2,\$3);}' ${bed} >> extend.bed
 	"""
 	}
 
@@ -188,6 +192,10 @@ R --vanilla < TMP/jeter.R
 mv TMP/jeter.pdf "${row.chrom}_${row.start}_${row.end}.${meta.id}.pdf"
 
 touch versions.yml
+"""
+stub:
+"""
+touch versions.yml "${row.chrom}_${row.start}_${row.end}.${meta.id}.pdf"
 """
 }
 

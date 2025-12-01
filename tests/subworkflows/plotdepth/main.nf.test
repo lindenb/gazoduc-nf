@@ -1,0 +1,43 @@
+nextflow_workflow {
+
+    name "Test Workflow PLOT_COVERAGE_01"
+    script "subworkflows/plotdepth/main.nf"
+    workflow "PLOT_COVERAGE_01"
+    tag "gitlab_ci"
+    tag "subworkflows"
+    tag "subworkflows/plotdepth"
+
+
+    test("STUB") {
+        tag "stub"
+        options "-stub"
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [id:"plotdepth"]
+                input[1] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[2] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[3] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[4] = [[id:"no_gtf"], [], [] ]
+                input[5] = [[id:"bed1"], file("${projectDir}/tests/data/rotavirus_rf.01.bed")]
+                input[6] = Channel.of(1..5)
+                        .flatMap()
+                        .map{v-> [[id:"S\${v}"], "${projectDir}/tests/data/S\${v}.bam"]}
+                        .map{m,f->[m,file(f),file(f+".bai")]}
+
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

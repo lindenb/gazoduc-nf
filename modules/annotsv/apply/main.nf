@@ -30,19 +30,24 @@ label "process_single"
 conda "${moduleDir}/../../../conda/annotsv.yml"
 input:
     tuple val(meta1),path(annotsv_db)
+    tuple val(meta2),path(dict) //for build/ucsc_name
     tuple val(meta),path(vcf)
 output:
 	tuple val(meta),path("OUT/.annotSV.tsv"),optional:true,emit:annot
-    tuple val(meta),path("OUT/*annotSV.unannotated.tsv"),optional:true,emit:unannotated
-
+        tuple val(meta),path("OUT/*annotSV.unannotated.tsv"),optional:true,emit:unannotated
 	path("versions.yml"),emit:versions
 script:
-   def prefix = task.ext.prefix?:"${meta.id}.annotsv" 
+   def prefix = task.ext.prefix?:"${meta.id}.annotsv"
+   def ucsc_name = task.ext.ucsc_name?:"${meta2.ucsc_name}"
+   def build = task.ext.build?:(ucsc_name=="hg38"?"GRCh38":(ucsc_name=="hg19"?"GRCh37":"unknown"))
+   def args1 = task.ext.args1?:""
 """
 mkdir -p OUT
 # run annotSV
 AnnotSV \\
 	-annotationsDir "\${PWD}/${annotsv_db.name}" \\
+	${args1} \\
+	-genomeBuild ${build} \\
 	-SVinputFile "${vcf}" \\
 	-outputDir "OUT" \\
 	-outputFile "${prefix}.annotSV.tsv"
