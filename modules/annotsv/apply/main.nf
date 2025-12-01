@@ -33,8 +33,8 @@ input:
     tuple val(meta2),path(dict) //for build/ucsc_name
     tuple val(meta),path(vcf)
 output:
-	tuple val(meta),path("OUT/.annotSV.tsv"),optional:true,emit:annot
-        tuple val(meta),path("OUT/*annotSV.unannotated.tsv"),optional:true,emit:unannotated
+	tuple val(meta),path("*.annotSV.tsv"),optional:true,emit:annot
+        tuple val(meta),path("*.unannotated.tsv"),optional:true,emit:unannotated
 	path("versions.yml"),emit:versions
 script:
    def prefix = task.ext.prefix?:"${meta.id}.annotsv"
@@ -42,15 +42,18 @@ script:
    def build = task.ext.build?:(ucsc_name=="hg38"?"GRCh38":(ucsc_name=="hg19"?"GRCh37":"unknown"))
    def args1 = task.ext.args1?:""
 """
-mkdir -p OUT
+mkdir -p TMP
+
 # run annotSV
 AnnotSV \\
 	-annotationsDir "\${PWD}/${annotsv_db.name}" \\
 	${args1} \\
 	-genomeBuild ${build} \\
 	-SVinputFile "${vcf}" \\
-	-outputDir "OUT" \\
+	-outputDir "TMP" \\
 	-outputFile "${prefix}.annotSV.tsv"
+
+mv -v TMP/*.tsv ./
 
 touch versions.yml
 """

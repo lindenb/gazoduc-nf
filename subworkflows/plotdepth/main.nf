@@ -36,6 +36,7 @@ workflow PLOT_COVERAGE_01 {
 		bams //[meta,bam,bai]
 	main:
 		versions = Channel.empty()
+		multiqc = Channel.empty()
 		EXTEND_BED(fasta,fai,dict, bed)
 		versions = versions.mix(EXTEND_BED.out.versions)
 
@@ -59,6 +60,7 @@ workflow PLOT_COVERAGE_01 {
 	emit:
 		zip =PDF_NAVIGATION.out.zip
 		versions
+		multiqc
 	}
 
 

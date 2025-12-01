@@ -36,8 +36,8 @@ script:
     def args1  = task.ext.args1?:""
     def format  = task.ext.format?:""
 
-    def cmd1  = task.ext.args1?:""
-	def cmd2  = task.ext.args1?:""
+    def cmd1  = task.ext.cmd1?:""
+	def cmd2  = task.ext.cmd2?:""
 	
 	def prefix = task.ext.prefix?:"${meta.id}.query"
     def suffix = task.ext.suffix?:"txt"

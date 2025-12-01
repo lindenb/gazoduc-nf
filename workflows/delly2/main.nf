@@ -125,16 +125,28 @@ workflow {
 			BCFTOOLS_QUERY( JVARKIT_VCFFILTERJDK.out.vcf )
 			versions = versions.mix(BCFTOOLS_QUERY.out.versions)
 
+			GTF_INPUT(
+				metadata.plus([
+					arg_name: "gtf",
+					require_index: true,
+					download: true,
+					path: params.gtf
+					]),
+				PREPARE_ONE_REFERENCE.out.dict
+				)
+			versions = versions.mix(GTF_INPUT.out.versions)
 
 			PLOT_COVERAGE_01(
 				metadata,
 				PREPARE_ONE_REFERENCE.out.fasta,
 				PREPARE_ONE_REFERENCE.out.fai,
 				PREPARE_ONE_REFERENCE.out.dict,
+				GTF_INPUT.out.gtf,
 				BCFTOOLS_QUERY.out.output,
 				bams_ch
 				)
-
+			versions = versions.mix(PLOT_COVERAGE_01.out.versions)
+			multiqc = versions.mix(PLOT_COVERAGE_01.out.multiqc)
 
 			ANNOTSV(
 				metadata,
