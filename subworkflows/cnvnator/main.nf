@@ -255,7 +255,7 @@ END_VERSIONS
 stub:
  def prefix=task.ext.prefix?:meta.id
 """
-touch versions.yml ${prefix}.bcf ${prefix}.bcf.csi
+touch versions.yml ${prefix}.bcf ${prefix}.bcf.csi  ${prefix}.bcf.md5
 """
 }
 

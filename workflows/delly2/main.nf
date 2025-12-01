@@ -101,9 +101,13 @@ workflow {
 			)
 		versions = versions.mix(DELLY.out.versions)
     	
+		filter_code = [[id:"no_code"],[]]
+		
+
 		if(params.jvarkit_vcffilter_script!=null) {
+			filter_code = Channel.of(params.jvarkit_vcffilter_script).map{f->[[id:f.baseName],f]}
 			JVARKIT_VCFFILTERJDK(
-				Channel.fromPath(params.jvarkit_vcffilter_script).map{f->[[id:f.baseName],f]},
+				filter_code,
 				META_TO_PED.out.pedigree,
 				DELLY.out.vcf.map{meta,vcf,idx->[meta,vcf]}
 				)
@@ -158,7 +162,7 @@ workflow {
 			versions = versions.mix(ANNOTSV.out.versions)
 			multiqc = versions.mix(ANNOTSV.out.multiqc)
 			}
-
+		README(metadata,filter_code)
 
     	MULTIQC(
             metadata.plus("id":"delly2"),
@@ -172,6 +176,83 @@ workflow {
 runOnComplete(workflow)
 
 
+process README {
+executor "local"
+input:
+	val(meta)
+	tuple val(meta2),path(select_code)
+output:
+	tuple val(meta),path("README.md"),emit:readme
+script:
+"""
+
+if ${select_code?true:false}
+then
+cat << '__EOF__' >> README.md
+## Variant Filtration
+
+VCF was filtered with jvarkit:vcffilterjdk :
+```
+__EOF__
+
+cat "${select_code}" >> README.md
+
+cat << '__EOF__' >> README.md
+```
+__EOF__
+
+fi
+
+cat << '__EOF__' >> README.md
+
+## Output
+
+Le fichier *.filterjdk.vcf.gz contient les variants selectionnés.
+
+Le fichier *.annotSV.tsv est annoté avec AnnotSV ( https://lbgi.fr/AnnotSV/ ).
+
+Pour chaque variant DUP/DEL/CNV dans le fichier *.filterjdk.vcf.gz je fais un plot de couverture (dossier 'PDFS').
+Les autres variants (INV, BND) ne sont pas affichés
+Plus le SV est petit moins la variation de couverture va être précise. Donc, il se mefier des petits SV et aller voir directement dans IFV.
+
+Les variants sont affichés sous forme de table en texte ( "*.table.txt" ) ou en html ( "*.table.html") à ouvrir dans un navigateur web
+
+Le dossier pipeline info contient les métadonnées du pipeline d'analyse
+
+```
+.
+|-- ${params.prefix}merge.annotsv.annotSV.tsv
+|-- ${params.prefix}merge.annotsv.annotSV.unannotated.tsv
+|-- ${params.prefix}merge.filterjdk.vcf.gz
+|-- ${params.prefix}merge.sv.bcf
+|-- ${params.prefix}merge.sv.bcf.csi
+|-- ${params.prefix}merge.sv.bcf.md5
+|-- ${params.prefix}merge.table.html
+|-- ${params.prefix}merge.table.txt
+|-- PDFS
+|   |-- chr1_110574180_110574213.pdf
+|   |-- chr1_116681215_116685041.pdf
+|   |-- chr1_117327551_117329315.pdf
+|   |-- chr1_125075396_125085637.pdf
+|   |-- chr1_25958459_25958517.pdf
+|   |-- chr2_26749171_26752412.pdf
+|   |-- chr3_20715450_20715481.pdf
+|   |-- chr4_32809089_32809117.pdf
+|   |-- chr5_36057070_36057553.pdf
+|   |-- chr6_23055342_23055401.pdf
+|   |-- chr6_131451726_131452541.pdf
+|   |-- chr7_109213393_109213421.pdf
+|   `-- index.html
+`-- pipeline_info
+    |-- execution_report_2025-12-01_11-58-08.html
+    |-- execution_timeline_2025-12-01_11-58-08.html
+    |-- execution_trace_2025-12-01_11-58-08.txt
+    `-- pipeline_dag_2025-12-01_11-58-08.html
+
+```
+__EOF__
+"""
+}
 
 
 workflow xxxx{

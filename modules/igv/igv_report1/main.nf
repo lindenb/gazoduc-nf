@@ -153,7 +153,7 @@ mv  TMP/footer2.xml  TMP/footer.xml
 cat << EOF >>  TMP/footer.xml
 <div>
 BAMS: ${bams.collect{"<code>${it.name}</code>"}.join(" , ")}
-Generated on \$(date) by \${USER}.
+Generated on \$(date) by \${USER:-unknown_user}.
 </div>
 EOF
 echo "</div>" >> TMP/footer.xml

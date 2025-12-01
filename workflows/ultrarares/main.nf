@@ -470,6 +470,12 @@ workflow {
 		ch1
 		)
 	versions = versions.mix(IGV_REPORT.out.versions)
+
+
+	README(
+		metadata,
+		jvarkit_filter
+		)
 }
 
 process GENERATE_DEFAULT_SCRIPT {
@@ -507,5 +513,64 @@ stub:
 """
 echo 'return true;' >> ${prefix}.code
 touch versions.yml
+"""
+}
+
+process README {
+executor "local"
+input:
+	val(meta)
+	tuple val(meta2),path(select_code)
+output:
+	tuple val(meta),path("README.md"),emit:readme
+script:
+""""
+
+
+if ${select_code?true:false}
+then
+cat << '__EOF__' >> README.md
+## Variant Filtration
+
+VCF was filtered with jvarkit:vcffilterjdk :
+```
+__EOF__
+
+cat "${select_code}" >> README.md
+
+cat << '__EOF__' >> README.md
+```
+__EOF__
+
+fi
+
+
+
+cat << '__EOF__' >> README.md
+
+# Output
+
+  - `*.list_all.genes.bed` contient la list des gènes trouvés.
+  - `*.list_all.sort.vcf.gz` les variants trouvés, sous forme de fichier VCF
+  - `*.list_all.table.html` les variants trouvés, sous forme de table html à ouvrir dans un navigateur web
+   - `*.list_all.table.txt` les variants trouvés, sous forme de table en texte.
+  - `pipeline_info` meta data about the pipeline
+  - IGV/* context of the variants viewed as web-IGV
+
+```
+|-- ${params.prefix}.list_all.genes.bed
+|-- ${params.prefix}.list_all.sort.vcf.gz
+|-- ${params.prefix}.list_all.table.html
+|-- ${params.prefix}.list_all.table.txt
+|-- IGV
+|   |-- chr1_9377032_9377032_A.igv.html
+|   |-- chr1_130007156_130007156_C.igv.html
+|   |-- chr1_20570747_20570747_G.igv.html
+|   |-- chr1_56584558_56584558_G.igv.html
+|   +-- chr1_36235043_36235043_G.igv.html
++-- pipeline_info
+    +-- execution_report_2025-11-29_22-00-43.html
+```
+__EOF__
 """
 }

@@ -6,7 +6,6 @@ nextflow_process {
     tag "modules"
     tag "modules/vep"
     tag "modules/vep/install.plugins"
-    tag "gitlab_ci"
     config "./nextflow.config"
 
     test("EMPTY") {
@@ -70,6 +69,8 @@ nextflow_process {
     }
 
     test("STUB") {
+	tag "gitlab_ci"
+	tag "stub"
         options "-stub"
         when {
             params {

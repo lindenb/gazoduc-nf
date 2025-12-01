@@ -154,7 +154,7 @@ main:
         otherwise_ch = Channel.of([[id:"no_vcf"],[]])
         }
 
-    if(metadata.unique!=null || arseBoolean(metadata.unique?:false)) {
+    if(metadata.unique!=null || parseBoolean(metadata.unique?:false)) {
         ch1  = ch1.first()
         }
 

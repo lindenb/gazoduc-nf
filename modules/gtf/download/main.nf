@@ -113,7 +113,7 @@ stub:
    if(extension.isEmpty()) throw new IllegalArgumentException("suffix missing for ${task.process}");
 
 """
-touch versions.yml "${prefix}.${suffix}.gz" "${prefix}.${suffix}.gz.tbi"
+touch versions.yml "${prefix}.${extension}.gz" "${prefix}.${extension}.gz.tbi"
 """
 }
 

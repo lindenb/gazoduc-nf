@@ -24,7 +24,7 @@ nextflow_workflow {
                 input[4] = Channel.of(
 			[[id:"bed1"], file("${projectDir}/tests/data/rotavirus_rf.01.bed")],
 			[[id:"bed2"], file("${projectDir}/tests/data/rotavirus_rf.02.bed")])
-		input[5] = [[id:"noconfig"],[]],
+		input[5] = [[id:"noconfig"],[]]
                 input[6] = Channel.of(1..5)
                         .flatMap()
                         .map{v-> [[id:"S\${v}"], "${projectDir}/tests/data/S\${v}.bam"]}

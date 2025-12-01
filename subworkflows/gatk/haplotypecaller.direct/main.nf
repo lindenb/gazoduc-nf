@@ -38,7 +38,7 @@ workflow HAPLOTYPECALLER_DIRECT {
 		bams
 	main:
 
-		version_ch = Channel.empty()
+		versions = Channel.empty()
 		
 		SIMPLE_CALLING(
 			metadata.plus(method:"gatk"),
@@ -53,7 +53,7 @@ workflow HAPLOTYPECALLER_DIRECT {
 		versions = versions.mix(SIMPLE_CALLING.out.versions)
 
 	emit:
-		versions = version_ch
+		versions
 		per_group_vcf = SIMPLE_CALLING.out.per_group_vcf
 		vcf = SIMPLE_CALLING.out.vcf
 	}

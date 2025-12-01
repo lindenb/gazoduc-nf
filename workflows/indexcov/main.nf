@@ -122,7 +122,7 @@ workflow {
 		PREPARE_ONE_REFERENCE.out.fai,
 		PREPARE_ONE_REFERENCE.out.dict,
 		pedigree,
-		bams.ok_ref.map{[[id:it.sample],file(it.bam),file(it.bai)]}
+		bams.ok_ref.map{meta,bam,bai,_fasta,_fai,_dict->[[id:meta.id],bam,bai]}
 			.mix(JVARKIT_BAM_RENAME_CONTIGS.out.bam.map{[it[0].plus([force_rebuild:false]),it[1],it[2]]})
 		)
 	versions = versions.mix(INDEXCOV.out.versions)
