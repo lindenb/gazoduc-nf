@@ -22,41 +22,46 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include {isBlank} from "${moduleDir}/../../../modules/utils/functions.nf"
+
 process BCFTOOLS_NORM {
 label "process_single"
-tag "${meta.id?:""} ${vcf.name} ${optional_bed?optional_bed.name:""}"
+tag "${meta.id?:""}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)
-	tuple val(meta3),path(optional_bed)
-	tuple val(meta),path(vcf),path(vcfidx)
+	tuple val(meta ),path(vcf)
 output:
-	tuple val(meta),path("*.bcf"),path("*.bcf.csi"),emit:vcf
+	tuple val(meta),path("*.vcf.gz"),emit:vcf
 	path("versions.yml"),emit:versions
 script:
 	def args1 = task.ext.args1?:""
-	def args2 = task.ext.args2?:"--remove-duplicates --multiallelics -both --old-rec-tag MULTIALLELIC"
+	def args2 = task.ext.args2?:"-d none --multiallelics -both --old-rec-tag MULTIALLELIC"
 	def args3 = task.ext.args3?:"-i 'ALT!=\"*\"'"
-	def prefix = task.ext.prefix?:vcf.baseName+".norm"
-	def argsbed = optional_bed?"--regions-file \"${optional_bed}\"":""
+	def prefix = task.ext.prefix?:"${meta.id}.norm"
 	def set_id = task.ext.set_id?:"" //eg %VKX
 """
 mkdir -p TMP
 set -o pipefail
 
-bcftools view ${argsbed} ${args1} -O u '${vcf}' |\\
+bcftools view  ${args1} -O u '${vcf}' |\\
 	bcftools norm ${args2} --fasta-ref '${fasta}'  -O u |\\
-	${set_id.isEmpty()?"":"bcftools annotate --set-id '${set_id}' -O u |"}\\
-	bcftools view ${args3} --write-index  -O b -o TMP/${prefix}.bcf
+	${isBlank(set_id)?"":"bcftools annotate --set-id '${set_id}' -O u |"}\\
+	bcftools view ${args3} -O z -o TMP/${prefix}.vcf.gz
 
-mv TMP/${prefix}.bcf ./
-mv TMP/${prefix}.bcf.csi ./
+mv TMP/${prefix}.vcf.gz ./
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
 	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
 END_VERSIONS
+"""
+
+stub:
+def prefix = task.ext.prefix?:"${meta.id}.norm"
+"""
+touch versions.yml ${prefix}.vcf.gz
 """
 }

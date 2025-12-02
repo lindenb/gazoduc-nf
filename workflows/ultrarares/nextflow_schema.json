@@ -73,7 +73,7 @@
           "type": "string",
           "format": "file-path",
           "exists": true,
-          "description": "jvarkit filter"
+          "description": "jvarkit filter that select variants of interest"
         }
       }
     }

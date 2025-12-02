@@ -51,14 +51,20 @@ process JVARKIT_FILTER_LOWQUAL {
 cat << EOF > TMP/jeter.code
 final  VariantContextBuilder vcb = new VariantContextBuilder(variant);
 
-if(variant.getGenotypes().stream()
+if(  variant.getGenotypes().stream().anyMatch(V->V.isHet() && G.hasAD()) &&
+     variant.getGenotypes().stream()
     .filter(G->G.isHet() && G.hasAD())
     .map(G->G.getAD())
-    .filter(A->A.length==2)
-    .allMatch(A->{
-        final double n=A[0]+A[1];
+    .filter(A->A.length>=2)
+    .allMatch(A0->{
+	// if more than 2 item in AD heterozgous, sort and keep the two highest
+	final int[] A= Arrays.copyOf(A0, A0.length);
+	Arrays.sort(A);
+	final int a0 = A[A.length-2];
+	final int a1 = A[A.length-1];
+        final double n = a0 + a1;
         if(n<=0) return true;
-        double r= A[1]/n;
+        double r= a1/n;
         if(r < ${minRatioSingleton} || r> (1.0 - ${minRatioSingleton})) return true;
         return false;
         })) {

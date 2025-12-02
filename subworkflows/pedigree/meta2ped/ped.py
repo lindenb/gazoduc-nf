@@ -107,7 +107,7 @@ def main():
                 f.write(sample_id + "\n")
     samples = [row[0] for row in rows if row[4] == "control"]
     if samples:
-        with open("control.txt", "w") as f:
+        with open("controls.txt", "w") as f:
             for sample_id in samples:
                 f.write(sample_id + "\n")
     with open("sample2collection.tsv", "w") as f:

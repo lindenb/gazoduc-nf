@@ -30,6 +30,8 @@ take:
 	metadata
 	metas
 main:
+	versions = Channel.empty()
+	multiqc = Channel.empty()
 	MAKE_PED(
 		metadata,
 		metas
@@ -44,7 +46,8 @@ main:
 		.map{it.join("\t")}
 		.collect()
 		)
-
+	versions = versions.mix(MAKE_PED.out.versions)
+	
 	cases = MAKE_PED.out.cases.ifEmpty([[id:"no.cases"],[]])
 	controls = MAKE_PED.out.controls.ifEmpty([[id:"no.controls"],[]])
 	pedigree = MAKE_PED.out.ped.ifEmpty([[id:"nojvarkitped"],[]])
@@ -53,6 +56,10 @@ main:
 	sample2status = MAKE_PED.out.sample2status.ifEmpty( [[id:"nosample2status"],[]])
 	males = MAKE_PED.out.males.ifEmpty([[id:"no.males"],[]])
 	females = MAKE_PED.out.females.ifEmpty([[id:"no.females"],[]])
+	
+	MAKE_DEFAULT_SELECT_CODE(cases,controls)
+	versions = versions.mix(MAKE_DEFAULT_SELECT_CODE.out.versions)
+	select_code = MAKE_DEFAULT_SELECT_CODE.out.select_code.ifEmpty([[id:"no.code"],[]])
 emit:
 	cases
 	controls
@@ -62,7 +69,9 @@ emit:
 	sample2status
 	males
 	females
-	versions = MAKE_PED.out.versions
+	select_code
+	versions
+	multiqc
 }
 
 process MAKE_PED {
@@ -117,6 +126,58 @@ for F in males.txt females.txt cases.txt controls.txt sample2collection.tsv pedi
 do
 	touch "${prefix}.\${F}"
 done
+touch versions.yml
+"""
+}
+
+
+process MAKE_DEFAULT_SELECT_CODE {
+executor "local"
+input:
+	tuple val(meta1),path(cases)
+	tuple val(meta2),path(ctrls)
+output:
+	tuple val(meta1),path("default.select.code"),emit:select_code
+	path("versions.yml"),emit:versions
+script:
+"""
+echo 'return true;' > default.select.code
+
+if test -s "${cases?:"NO_CASES"}" && test -s ${ctrls?:"NO_CTRL"}
+then
+
+	echo 'final Set<String> cases = new HashSet<>(Arrays.asList(' > jeter.code
+
+	sed 's/^/"/;s/\$/"/' '${cases}' | paste -sd ',' >> jeter.code
+
+	echo '));' >> jeter.code
+
+
+	echo 'final Set<String> controls = new HashSet<>(Arrays.asList(' >> jeter.code
+
+	sed 's/^/"/;s/\$/"/' '${ctrls}' | paste -sd ',' >> jeter.code
+
+	echo '));' >> jeter.code
+
+cat << '__EOF__' >>  jeter.code
+for(Genotype g: variant.getGenotypes()) {
+        final boolean has_alt = g.hasAltAllele();
+        if(!has_alt &&  cases.contains(g.getSampleName())) return false;
+        if( has_alt &&  controls.contains(g.getSampleName())) return false;
+        }
+return true;
+__EOF__
+
+mv jeter.code default.select.code
+
+fi
+
+
+touch versions.yml
+"""
+stub:
+"""
+echo 'return true;' > default.select.code
 touch versions.yml
 """
 }

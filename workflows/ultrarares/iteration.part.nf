@@ -1,6 +1,6 @@
 /*
 
-Copyright (c) 2024 Pierre Lindenbaum
+Copyright (c) 2025 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -26,6 +26,7 @@ include {GATK_BAM2VCF                      } from '../../modules/gatk/bam2vcf'
 include {JVARKIT_VCFGNOMAD                 } from '../../modules/jvarkit/vcfgnomad'
 include {JVARKIT_VCFFILTERJDK              } from '../../modules/jvarkit/vcffilterjdk'
 include {SNPEFF_APPLY                      } from '../../modules/snpeff/apply'
+include { BCFTOOLS_NORM                    } from '../../modules/bcftools/norm'
 include { BCFTOOLS_SORT                    } from '../../modules/bcftools/sort'
 include { BCFTOOLS_INDEX                   } from '../../modules/bcftools/index'
 include { BCFTOOLS_CONCAT                  } from '../../modules/bcftools/concat3'
@@ -66,6 +67,14 @@ main:
 	versions = versions.mix(GATK_BAM2VCF.out.versions)
 	vcfs = GATK_BAM2VCF.out.vcf.map{meta,vcf,tbi,bed->[meta,vcf]}
 	
+	BCFTOOLS_NORM(
+		fasta,
+		fai,
+		vcfs
+		)
+	versions = versions.mix(BCFTOOLS_NORM.out.versions)
+	vcfs = BCFTOOLS_NORM.out.vcf
+
 	JVARKIT_VCFFILTERJDK(
 		jvarkit_filter,
 		[[id:"no_ped"],[]],
@@ -97,9 +106,11 @@ main:
 	vcfs = 	BCFTOOLS_INDEX.out.vcf
 
 	BCFTOOLS_CONCAT(
-		vcfs.flatMap{meta,vcf,tbi->[vcf,tbi]}
-			.collect(sort:true)
-			.map{files->[[id:metadata.id],files]}
+		vcfs.flatMap{_meta,vcf,tbi->[vcf,tbi]}
+			.flatMap()
+			.collect()
+			.map{files->[[id:"${metadata.id}"],files.sort()]}
+			.view{"###CONCAT ${it}"}
 		)
 	versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
 
@@ -123,7 +134,7 @@ main:
 
 	cluster_ch = BED_CLUSTER.out.bed
 		.map{_meta,bed->bed}
-		.map{it instanceof List?it:[it]}
+		.map{v->v instanceof List?v:[v]}
 		.flatMap()
 		.map{bed->[[id:bed.baseName],bed]}
 	

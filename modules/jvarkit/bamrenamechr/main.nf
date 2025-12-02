@@ -40,9 +40,10 @@ script:
 
 	def args1 = task.ext.args1?:""
 	def args2 = task.ext.args2?:"-i"
-	def prefix  = task.ext.prefix?:bam.baseName+".setdict"
+	def prefix  = task.ext.prefix?:"${meta.id}.setdict"
 	def has_bed = optional_bed?true:false
 	def slop = task.ext.slop?:200
+	def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
 """
 	hostname 1>&2
 	set -o pipefail
@@ -51,7 +52,7 @@ script:
 
 	if ${has_bed} 
 	then
-		jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bedrenamechr \\
+		jvarkit ${jvm} bedrenamechr \\
 					-R ${fasta} -c 1 --convert SKIP  ${optional_bed}  |\\
 				cut -f1,2,3 |\\
 				bedtools slop -i -  -g "${fai}" -b ${slop} |\\
@@ -61,7 +62,7 @@ script:
 
 
 	samtools view ${cpus>1?"--threads ${cpus -1}":""} --uncompressed -T ${fasta} ${args1} ${has_bed?"-M -L TMP/jeter.bed":""} "${bam}" |\\
-	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP bamrenamechr \\
+	jvarkit ${jvm} bamrenamechr \\
 			${args2} \\
 			--dict '${dict_source}' \\
 			--samoutputformat BAM \\
@@ -87,5 +88,11 @@ cat << END_VERSIONS > versions.yml
 	jvarkit: todo
     samtools: "\$(samtools version | awk '(NR==1) {print \$NF;}')"
 END_VERSIONS
+"""
+
+stub:
+def prefix  = task.ext.prefix?:"${meta.id}.setdict"
+"""
+touch versions.yml  ${prefix}.bam ${prefix}.bam.bai
 """
 }

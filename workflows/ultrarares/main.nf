@@ -291,13 +291,14 @@ workflow {
 	*
 	*/
 	if(params.jvarkit_filter!=null) {
-		jvarkit_filter = Channel.of(params.jvarkit_filter).map{file(it)}.map{[[id:it.baseName],it]}
+		jvarkit_filter = Channel.of(params.jvarkit_filter)
+			.map{file(it)}
+			.map{[[id:it.baseName],it]}
+			.first()
 		}
 	else
 		{
-		GENERATE_DEFAULT_SCRIPT(META_TO_PED.out.cases)
-		versions = versions.mix(GENERATE_DEFAULT_SCRIPT.out.versions)
-		jvarkit_filter = GENERATE_DEFAULT_SCRIPT.out.code
+		jvarkit_filter = META_TO_PED.out.select_code
 		}
 	
 	/***************************************************
@@ -478,43 +479,6 @@ workflow {
 		)
 }
 
-process GENERATE_DEFAULT_SCRIPT {
-tag "${meta.id}"
-label "process_single"
-input:
-	tuple val(meta),path(cases)
-output:
-	tuple val(meta),path("*.code"),emit:code
-	path("versions.yml"),emit:versions
-script:
-	def prefix = task.ext.prefix?:"${meta.id}"
-"""
-cat << EOF > ${prefix}.code
-final Set<String> cases = new HashSet<>(Arrays.asList(
-EOF
-
-awk '{printf("\\"%s\\"\\n",\$0);}' "${cases}" | paste -sd ',' >> ${prefix}.code
-
-cat << EOF >> ${prefix}.code
-));
-
-for(Genotype g: variant.getGenotypes()) {
-	boolean has_alt = g.hasAltAllele();
-	if(!has_alt &&  cases.contains(g.getSampleName())) return false;
-	if( has_alt && !cases.contains(g.getSampleName())) return false;
-	}
-return true;
-EOF
-
-touch versions.yml
-"""
-stub:
-	def prefix = task.ext.prefix?:"${meta.id}"
-"""
-echo 'return true;' >> ${prefix}.code
-touch versions.yml
-"""
-}
 
 process README {
 executor "local"
