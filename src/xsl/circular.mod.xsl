@@ -78,13 +78,29 @@
 
 </xsl:template>
 
-
+<!-- convert fraction/radius to X(space)Y coordinate -->
 <xsl:template name="toPoint">
 <xsl:param name="f"/>
 <xsl:param name="r"/>
 <xsl:variable name="angle" select="(($PI * 2) * number($f)) - ($PI div 2)" />
 <xsl:value-of select="number($r)*math:cos($angle)"/>
 <xsl:text> </xsl:text>
+<xsl:value-of select="number($r)*math:sin($angle)"/>
+</xsl:template>
+
+<!-- convert fraction/radius to X coordinate -->
+<xsl:template name="toX">
+<xsl:param name="f"/>
+<xsl:param name="r"/>
+<xsl:variable name="angle" select="(($PI * 2) * number($f)) - ($PI div 2)" />
+<xsl:value-of select="number($r)*math:cos($angle)"/>
+</xsl:template>
+
+<!-- convert fraction/radius to Y coordinate -->
+<xsl:template name="toY">
+<xsl:param name="f"/>
+<xsl:param name="r"/>
+<xsl:variable name="angle" select="(($PI * 2) * number($f)) - ($PI div 2)" />
 <xsl:value-of select="number($r)*math:sin($angle)"/>
 </xsl:template>
 
