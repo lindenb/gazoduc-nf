@@ -524,7 +524,7 @@ input:
 output:
 	tuple val(meta),path("README.md"),emit:readme
 script:
-""""
+"""
 
 
 if ${select_code?true:false}
@@ -533,13 +533,13 @@ cat << '__EOF__' >> README.md
 ## Variant Filtration
 
 VCF was filtered with jvarkit:vcffilterjdk :
-```
+<pre>
 __EOF__
 
 cat "${select_code}" >> README.md
 
 cat << '__EOF__' >> README.md
-```
+</pre>
 __EOF__
 
 fi
@@ -550,14 +550,14 @@ cat << '__EOF__' >> README.md
 
 # Output
 
-  - `*.list_all.genes.bed` contient la list des gènes trouvés.
-  - `*.list_all.sort.vcf.gz` les variants trouvés, sous forme de fichier VCF
-  - `*.list_all.table.html` les variants trouvés, sous forme de table html à ouvrir dans un navigateur web
-   - `*.list_all.table.txt` les variants trouvés, sous forme de table en texte.
-  - `pipeline_info` meta data about the pipeline
-  - IGV/* context of the variants viewed as web-IGV
+  - <code>*.list_all.genes.bed</code> contient la list des genes trouves.
+  - <code>*.list_all.sort.vcf.gz</code> les variants trouves, sous forme de fichier VCF
+  - <code>*.list_all.table.html</code> les variants trouvés, sous forme de table html à ouvrir dans un navigateur web
+  - <code>*.list_all.table.txt</code> les variants trouvés, sous forme de table en texte.
+  - <code>pipeline_info</code> meta data about the pipeline
+  - <code>IGV/*</code> context of the variants viewed as web-IGV
 
-```
+<pre>
 |-- ${params.prefix}.list_all.genes.bed
 |-- ${params.prefix}.list_all.sort.vcf.gz
 |-- ${params.prefix}.list_all.table.html
@@ -570,7 +570,8 @@ cat << '__EOF__' >> README.md
 |   +-- chr1_36235043_36235043_G.igv.html
 +-- pipeline_info
     +-- execution_report_2025-11-29_22-00-43.html
-```
+</pre>
 __EOF__
+
 """
 }
