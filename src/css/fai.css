@@ -1,0 +1,24 @@
+path.contig {
+		fill: gray;
+		fill-opacity:0.3;
+		}
+path.contigY {
+		fill: aliceblue;
+		}
+path.contigX {
+		fill: lightpink;
+		}
+path.contigmod1 {
+		fill:lavender;
+		}
+path.contigmod0 {
+		fill:lavenderblush;
+		}
+line.contig {
+		stroke: gray;
+		stroke-width:1px;
+		stroke-dasharray:2px, 5px;
+		}
+text.contig {
+		text-anchor:middle;
+		}
