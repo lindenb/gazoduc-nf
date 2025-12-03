@@ -16,42 +16,13 @@ this stylesheet converts a faix+jvarkit bed2xml to a SVG fragment
 <xsl:param name="radius">1000</xsl:param>
 
 <xsl:template match="/">
-<xsl:apply-templates select="bed/body"/>
+<g id="contigs">
+<xsl:comment>BEGIN FAIDX</xsl:comment>
+<xsl:apply-templates select="bed/body/rec"/>
+<xsl:comment>END FAIDX</xsl:comment>
+</g>
 </xsl:template>
 
-<xsl:template match="body">
-<svg width="2100" height="2100">
-<style>
-path.contig {
-		fill: gray;
-		fill-opacity:0.3;
-		}
-path.contigY {
-		fill: aliceblue;
-		}
-path.contigX {
-		fill: lightpink;
-		}
-path.contigmod1 {
-		fill:lavender;
-		}
-path.contigmod0 {
-		fill:lavenderblush;
-		}
-line.contig {
-		stroke: gray;
-		stroke-width:1px;
-		stroke-dasharray:2px, 5px;
-		}
-text.contig {
-		text-anchor:middle;
-		}
-</style>
-<g transform="translate(1000,1000)">
-<xsl:apply-templates select="rec"/>
-</g>
-</svg>
-</xsl:template>
 
 
 <xsl:template match="rec">

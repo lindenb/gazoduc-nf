@@ -1,0 +1,60 @@
+nextflow_workflow {
+
+    name "Test Workflow SPLIT_N_VARIANTS"
+    script "subworkflows/jvarkit/split.n.variants/main.nf"
+    workflow "SPLIT_N_VARIANTS"
+    tag "gitlab_ci"
+    tag "subworkflows"
+    tag "subworkflows/jvarkit"
+    tag "subworkflows/jvarkit/split.n.variants"
+    config "./nextflow.config"
+
+    test("BASIC") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [id:"split"]
+                input[1] = Channel.of([[id:"bed"], file("${projectDir}/tests/data/rotavirus_rf.01.bed")])
+                input[2] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.vcf.gz"),  file("${projectDir}/tests/data/rotavirus_rf.vcf.gz.tbi")])
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+
+     test("STUB") {
+        tag "stub"
+        options "-stub"
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [id:"split"]
+                input[1] = Channel.of([[id:"bed"], file("${projectDir}/tests/data/rotavirus_rf.01.bed")])
+                input[2] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.vcf.gz"),  file("${projectDir}/tests/data/rotavirus_rf.vcf.gz.tbi")])
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

@@ -11,7 +11,8 @@
 
 
 <xsl:variable name="PI" select="number(3.14159265359)"/>
-
+<xsl:variable name="lowercase" select="'abcdefghijklmnopqrstuvwxyz'" />
+<xsl:variable name="uppercase" select="'ABCDEFGHIJKLMNOPQRSTUVWXYZ'" />
 
 <xsl:template name="arc">
 <xsl:param name="f1"/>
@@ -139,6 +140,75 @@
 <xsl:value-of select="number($r)*math:cos($angle)"/>
 <xsl:text> </xsl:text>
 <xsl:value-of select="number($r)*math:sin($angle)"/>
+</xsl:template>
+
+
+<xsl:template name="cytoband_color">
+<xsl:param name="stain"/>
+<xsl:choose>
+	<xsl:when test='starts-with($stain,"gneg")'>
+		<xsl:text>lightblue</xsl:text>
+	</xsl:when>
+	<xsl:when test='starts-with($stain,"acen")'>
+		<xsl:text>orange</xsl:text>
+	</xsl:when>
+	<xsl:when test='starts-with($stain,"gvar")'>
+		<xsl:text>slategray</xsl:text>
+	</xsl:when>
+	<xsl:when test='starts-with($stain,"gpos") and string-length($stain) &gt; 4'>
+		<xsl:variable name="percent1" select="number(substring-after($stain,'s'))" />
+		<xsl:variable name="gray" select="format-number( 50 + (215 * $percent1/100.0) , '#')"/>
+		<xsl:text>rgb(</xsl:text>
+		<xsl:value-of select="$gray"/>
+		<xsl:text>,</xsl:text>
+		<xsl:value-of select="$gray"/>
+		<xsl:text>,</xsl:text>
+		<xsl:value-of select="$gray"/>
+		<xsl:text>)</xsl:text>
+	</xsl:when>
+	<xsl:otherwise>
+		<xsl:text>honeydew</xsl:text>
+	</xsl:otherwise>
+    </xsl:choose>
+</xsl:template>
+
+
+<xsl:template name="ucsc_anchor">
+<xsl:param name="build"/>
+<xsl:param name="contig"/>
+<xsl:param name="start"/>
+<xsl:param name="end"/>
+<xsl:variable name="b2" select="translate($build, $lowercase, $uppercase)"/>
+<xsl:variable name="n">
+	<xsl:choose>
+		<xsl:when test="$b2='HG19' or $b2='GRCH37' ">
+			<xsl:text>org=Human&amp;db=hg19</xsl:text>
+		</xsl:when>
+		<xsl:when test="$b2='HG38' or $b2='GRCH38' ">
+			<xsl:text>org=Human&amp;db=hg38</xsl:text>
+		</xsl:when>
+		<xsl:otherwise>
+			<xsl:text></xsl:text>
+		</xsl:otherwise>
+	</xsl:choose>
+</xsl:variable>
+
+<xsl:choose>
+	<xsl:when test="string-length($n) &gt; 0">
+		<xsl:text>http://genome.ucsc.edu/cgi-bin/hgTracks?</xsl:text>
+		<xsl:value-of select="$n"/>
+		<xsl:text>&amp;position=</xsl:text>
+		<xsl:value-of select="$contig"/>
+		<xsl:text>%3A</xsl:text>
+		<xsl:value-of select="$start"/>
+		<xsl:text>-</xsl:text>
+		<xsl:value-of select="$end"/>
+	</xsl:when>
+	<xsl:otherwise>
+		<xsl:text>#</xsl:text>
+	</xsl:otherwise>
+</xsl:choose>
+
 </xsl:template>
 
 </xsl:stylesheet>
