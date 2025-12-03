@@ -26,7 +26,6 @@ SOFTWARE.
 
 process VCF_TO_BED {
 label "process_single"
-
 tag "${meta.id?:""}"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
@@ -38,9 +37,6 @@ output:
 script:	
 	def prefix= task.ext.prefix?:"${meta.id}.vcf2bed"
 	def awk_expr = task.ext.awk_expr?:""
-	if(task.ext.split==null) throw new IllegalArgumentException("ext.split not defined for ${task.process}");
-	// if TRUE : split the final file of N bed records to N files with one bed record
-	def split = (task.ext.split?:false).toBoolean()
 """
 hostname 1>&2
 set -o pipefail
@@ -53,7 +49,7 @@ then
 
 bcftools index -s "${vcf}" |\\
 	awk -F '\t' '${awk_expr}{printf("%s\t0\t%s\\n",\$1,\$2);}' |\\
-	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter.bed
+	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter.bed
 
 else
 
@@ -65,19 +61,15 @@ bcftools query -f '%CHROM\t%POS0\t%END\\n' "${vcf}" |\\
 		if(!(C in M) || E>M[C]) {M[C]=E;}
 		}
 		END {for(C in m) {printf("%s\t%d\t%d\\n",C,m[C],M[C]);}}' |\\
-	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter.bed
+	awk -F '\t' '${awk_expr}{print}' |\\
+	LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter.bed
 
 fi
 
 
 if test -s TMP/jeter.bed
 then
-	if ${split}
-	then
-		split --lines=1 --additional-suffix=.bed -a 9 TMP/jeter.bed "${prefix}."
-	else
-		mv TMP/jeter.bed "${prefix}.bed"
-	fi
+	mv TMP/jeter.bed "${prefix}.bed"
 fi
 
 
@@ -86,12 +78,12 @@ cat << EOF > versions.yml
     bcftools: \$(bcftools version | awk '(NR==1)  {print \$NF}')
 EOF
 """
+
+
 stub:
-if(task.ext.split==null) throw new IllegalArgumentException("ext.split not defined for ${task.process}");
 def prefix = "${meta.id}.vcf2bed"
-def split=false
 """
-touch versions.yml split.${meta.id}.bed
+touch versions.yml
 
 if ${vcf.endsWith("*.vcf.gz")}
 then
@@ -110,12 +102,7 @@ fi
 
 if test -s TMP/jeter.bed
 then
-	if ${split}
-	then
-		split --lines=1 --additional-suffix=.bed -a 9 TMP/jeter.bed "${prefix}."
-	else
 		mv TMP/jeter.bed "${prefix}.bed"
-	fi
 fi
 
 """

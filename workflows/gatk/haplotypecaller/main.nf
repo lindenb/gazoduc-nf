@@ -23,10 +23,16 @@ SOFTWARE.
 
 */
 nextflow.enable.dsl=2
+
+include { validateParameters                 } from 'plugin/nf-schema'
+include { paramsHelp                         } from 'plugin/nf-schema'
+include { paramsSummaryLog                   } from 'plugin/nf-schema'
+include { samplesheetToList                  } from 'plugin/nf-schema'
 include {assertKeyExistsAndNotEmpty          } from '../../../modules/utils/functions.nf'
 include {testKeyExistsAndNotEmpty            } from '../../../modules/utils/functions.nf'
 include {assertKeyMatchRegex                 } from '../../../modules/utils/functions.nf'
 include {parseBoolean                        } from '../../../modules/utils/functions.nf'
+include {isBlank                             } from '../../../modules/utils/functions.nf'
 include {VCF_STATS                           } from '../../../subworkflows/vcfstats'
 include {BEDTOOLS_MAKEWINDOWS                } from '../../../modules/bedtools/makewindows'
 include {BED_CLUSTER                         } from '../../../modules/jvarkit/bedcluster'
@@ -45,6 +51,13 @@ include {PREPARE_USER_BED                    } from '../../../subworkflows/bedto
 include {VCF_INPUT                           } from '../../../subworkflows/nf/vcf_input'
 include {READ_SAMPLESHEET                    } from '../../../subworkflows/nf/read_samplesheet'
 include {META_TO_BAMS                        } from '../../../subworkflows/samtools/meta2bams2'
+include { GTF_INPUT                          } from '../../../subworkflows/nf/gtf_input'
+include { GTF_TO_EXOME                       } from '../../../modules/gtf/gtf2exome1'
+include {JVARKIT_VCFFILTERJDK                } from '../../../modules/jvarkit/vcffilterjdk'
+include {ANNOT_SNV                           } from '../../../subworkflows/annotsnv/annotsnv1'
+include {BCFTOOLS_SORT                       } from '../../../modules/bcftools/sort'
+include {BCFTOOLS_INDEX                      } from '../../../modules/bcftools/index'
+include {BCFTOOLS_CONCAT as CONCAT_ANNOT     } from '../../../modules/bcftools/concat3'
 
 // Print help message, supply typical command line usage for the pipeline
 if (params.help) {
@@ -54,6 +67,18 @@ if (params.help) {
 
 
 workflow {
+
+    if(!workflow.stubRun) {
+		validateParameters()
+		}
+	if( params.help ) {
+		log.info(paramsHelp())
+            exit 0
+        }  else {
+        // Print summary of supplied parameters
+        log.info paramsSummaryLog(workflow)
+        }
+
     /* no fastq samplesheet */
 	if(params.samplesheet==null) {
 		log.error("--samplesheet undefined")
@@ -99,11 +124,26 @@ workflow {
         dbsnp = VCF_INPUT.out.vcf
         }
 
-    def gtf     = [workflow_metadata,[],[]]
+    def gtf     =  Channel.of([workflow_metadata,[],[]]).first()
   
-    if(params.gtf!=null) {
-        gtf = [workflow_metadata,file(params.gtf),file(params.gtf+".tbi")]
-     }
+    if(params.gtf==null) {
+      /***************************************************
+		*
+		*  DOWNLOAD GTF
+		*
+		*/
+		GTF_INPUT(
+				workflow_metadata.plus([
+					arg_name: "gtf",
+					require_index: true,
+					download: true,
+					path: params.gtf
+					]),
+				PREPARE_ONE_REFERENCE.out.dict
+				)
+		versions = versions.mix(GTF_INPUT.out.versions)
+        gtf = GTF_INPUT.out.gtf
+        }
 
 
 	READ_SAMPLESHEET(
@@ -143,7 +183,16 @@ workflow {
 
     if(params.bed==null) {
        bed = PREPARE_ONE_REFERENCE.out.scatter_bed
-    } else {
+        }
+    else if(params.bed=="exome") {
+		GTF_TO_EXOME(
+			PREPARE_ONE_REFERENCE.out.fai,
+			gtf.map{meta,gtf_file,_tbi->[meta,gtf_file]}
+			)
+		versions = versions.mix(GTF_TO_EXOME.out.versions)
+		bed  = GTF_TO_EXOME.out.bed
+        }
+    else {
 		bed = Channel.of([[id:file(params.bed).baseName],file(params.bed)])
         
         PREPARE_USER_BED(
@@ -172,7 +221,7 @@ workflow {
         )
    versions = versions.mix(BED_CLUSTER.out.versions)
    beds_ch = BED_CLUSTER.out.bed
-        .map{meta,beds->beds}
+        .map{_meta,beds->beds}
         .map{beds->beds instanceof List?beds:[beds]}
         .flatMap()
         .map{bed->[[id:bed.baseName],bed]}
@@ -245,7 +294,7 @@ workflow {
  
  /***************************************************
    *
-   * BCFTOOLS STATS FROM VCFS
+   * BCFTOOLS_GUESS_PLOIDY
    *
    */
   BCFTOOLS_GUESS_PLOIDY(
@@ -255,6 +304,76 @@ workflow {
         )
   versions = versions.mix(BCFTOOLS_GUESS_PLOIDY.out.versions)
   multiqc = multiqc.mix(BCFTOOLS_GUESS_PLOIDY.out.output)
+
+    /***************************************************
+    *
+    * JVARKIT FILTERJDK
+    *
+    */
+    if(params.jvarkit_filter!=null) {
+        JVARKIT_VCFFILTERJDK(
+            jvarkit_filter,
+            [[id:"no_ped"],[]],
+            vcf_ch
+		    )
+	    versions = versions.mix(JVARKIT_VCFFILTERJDK.out.versions)
+	    vcfs = JVARKIT_VCFFILTERJDK.out.vcf
+        }
+
+
+    if( parseBoolean(params.with_annotation)) {
+        if(params.snpeff_database_directory==null) {
+            snpeff_database_directory = [[id:"nosnpeffdir"],[]]
+            }
+        else
+            {
+            snpeff_database_directory = PREPARE_ONE_REFERENCE.out.fai
+                .map{meta,_fai->[meta,file(params.snpeff_database_directory)]}
+                
+            }
+  
+        if(params.gnomad==null) {
+            gnomad_vcf = [[id:"gnomad"],[],[]]
+            }
+        else
+            {
+            gnomad_vcf = [[id:"gnomad"],file(params.gnomad),file(params.gnomad+".tbi")]
+            }
+
+        ANNOT_SNV(
+            workflow_metadata.plus(
+                with_snpeff: (params.snpeff_database_directory!=null),
+                with_bcftools_norm : parseBoolean(params.with_bcftools_norm),
+                with_filterso : !isBlank(params.soacn),
+                with_gnomad : (params.gnomad!=null)
+                ),
+            PREPARE_ONE_REFERENCE.out.fasta,
+            PREPARE_ONE_REFERENCE.out.fai,
+            PREPARE_ONE_REFERENCE.out.dict,
+            snpeff_database_directory,
+            gnomad_vcf,
+            [[id:"nogtf"],[]],
+            [[id:"nogff3"],[]],
+            [[id:"noped"],[]],
+            vcf_ch.map{meta,vcf,idx->[meta,vcf]}
+            )
+        versions = versions.mix(ANNOT_SNV.out.versions)
+        multiqc = multiqc.mix(ANNOT_SNV.out.multiqc)
+	    vcfs = ANNOT_SNV.out.vcf
+
+        BCFTOOLS_SORT(vcfs)
+        versions = versions.mix(BCFTOOLS_SORT.out.versions)
+        BCFTOOLS_INDEX(BCFTOOLS_SORT.out.vcf)
+        versions = versions.mix(BCFTOOLS_INDEX.out.versions)
+
+        CONCAT_ANNOT(BCFTOOLS_INDEX.out.vcf
+                .map{meta,vcf,tbi->[meta.plus(id:"${meta.id}.annot"),[vcf,tbi]]}
+                .groupTuple()
+                .map{meta,files->[meta,files.flatten().sort()]}
+            )
+        versions = versions.mix(CONCAT_ANNOT.out.versions)
+        vcfs = CONCAT_ANNOT.out.vcf
+        }
 
 
   /***************************************************
@@ -267,7 +386,7 @@ workflow {
         PREPARE_ONE_REFERENCE.out.fasta,
         PREPARE_ONE_REFERENCE.out.fai,
         bed,
-        Channel.of(gtf).map{[it[0],it[1]]}.first(),//meta,gtf
+        gtf.map{[it[0],it[1]]}.first(),//meta,gtf
         [[:],[]],//samples,
         vcf_ch.map{[it[0],[it[1],it[2]]]}
         )
@@ -285,8 +404,6 @@ workflow {
 		)
     }
 
-    
-    
 }
 
 runOnComplete(workflow)

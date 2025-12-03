@@ -1,0 +1,33 @@
+nextflow_workflow {
+
+    name "Test Workflow SNPEFF"
+    script "subworkflows/snpeff/main.nf"
+    workflow "SNPEFF"
+    tag "gitlab_ci"
+    tag "subworkflows"
+    tag "subworkflows/snpeff"
+    test("STUB") {
+        tag "stub"
+        options "-stub"
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] =  [id:"x1"]
+                input[1] =  Channel.of([[id:"dict",ucsc_name:"hg19"], file("${projectDir}/FAKEDIR")])
+                input[2] =  Channel.of([[id:"dict",ucsc_name:"hg19"], file("${projectDir}/tests/data/rotavirus_rf.vcf.gz")])
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

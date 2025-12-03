@@ -1,13 +1,14 @@
 nextflow_process {
 
-    name "Test Process SPLIT_BED_PER_CHROMOSOME"
-    script "modules/bed/splitchr/main.nf"
-    process "SPLIT_BED_PER_CHROMOSOME"
+    name "Test Process JVARKIT_VCFFILTERSO"
+    script "modules/jvarkit/vcffilterso/main.nf"
+    process "JVARKIT_VCFFILTERSO"
     tag "gitlab_ci"
     tag "modules"
-    tag "modules/bed"
-    tag "modules/bed/splitchr"
-
+    tag "modules/jvarkit"
+    tag "modules/jvarkit/vcffilterso"
+    config "./nextflow.config"
+    
     test("BASIC") {
 
         when {
@@ -17,7 +18,7 @@ nextflow_process {
             }
             process {
                 """
-		input[0] = [ [id:"bed"],file("${projectDir}/tests/data/rotavirus_rf.01.bed")]
+                input[0] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.ann.vcf.gz")]
                 """
             }
         }
@@ -29,11 +30,9 @@ nextflow_process {
 
     }
 
-
-
     test("STUB") {
-	tag "stub"
-	options "-stub"
+        tag "stub"
+        options "-stub"
         when {
             params {
                 // define parameters here. Example:
@@ -41,7 +40,7 @@ nextflow_process {
             }
             process {
                 """
-		input[0] = [ [id:"bed"],file("${projectDir}/tests/data/rotavirus_rf.01.bed")]
+                input[0] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.ann.vcf.gz")]
                 """
             }
         }
@@ -52,6 +51,5 @@ nextflow_process {
         }
 
     }
-
 
 }

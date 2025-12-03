@@ -25,44 +25,34 @@ SOFTWARE.
 include {isBlank          } from '../../../modules/utils/functions.nf'
 include {verify           } from '../../../modules/utils/functions.nf'
 
-process JVARKIT_VCFFILTERJDK {
+process JVARKIT_VCFFILTERSO {
 	label "process_single"
 	conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 	afterScript "rm -rf TMP"
 	tag "${meta.id}"
 	input:
-		tuple val(meta1 ),path(script_file) //optional pr define expression
-		tuple val(meta2 ),path(opt_pedigree)
 		tuple val(meta  ),path(vcf)
 	output:
 		tuple val(meta ),path("*.vcf.gz"),optional:true,emit:vcf
 		path("versions.yml"),emit:versions
 	script:
-        def has_script_file = (script_file?true:false)
-		def expression = task.ext.expression?:""
-        verify(
-		(isBlank(expression) && has_script_file) ||
-		(!has_script_file && !isBlank(expression)),
-		"${task.process}: script file=${has_script_file} XOR expression=${expression} must be defined")
-	def jvm = " -XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
+		def accessions = task.ext.accessions?:""
+        verify(!isBlank(accessions),"${task.process}: ext.accessions must be defined")
+	    def jvm = " -XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
         def args1 = task.ext.args1?:""
         def args2 = task.ext.args2?:""
-        def prefix =  task.ext.prefix?:"${meta.id}.filterjdk"
+        def args3 = task.ext.args3?:""       
+        def prefix =  task.ext.prefix?:"${meta.id}.filterso"
 	"""
 	mkdir -p TMP
 
 	bcftools view  ${args1} "${vcf}" |\\
-	jvarkit ${jvm} vcffilterjdk \\
+	jvarkit ${jvm} vcffilterso \\
         ${args2} \\
-        ${opt_pedigree?"--pedigree \"${opt_pedigree}\"":""} \\
-        ${has_script_file?"--script \"${script_file}\"":""} \\
-        ${isBlank(expression)?"":"--expression '${expression}'"}  | \\
-	bcftools view ${args3} -O z -o TMP/jeter.vcf.gz
-
-    if test \$(bcftools query -f '\\n'  TMP/jeter.vcf.gz |wc -l) -gt 0
-	then
-		mv TMP/jeter.vcf.gz ${prefix}.vcf.gz
-	fi
+        --accession ${accessions} |\\
+	    bcftools view ${args3} -O z -o TMP/jeter.vcf.gz
+    
+    mv TMP/jeter.vcf.gz ./${prefix}.vcf.gz
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
@@ -72,7 +62,9 @@ END_VERSIONS
 
 
 stub:
-	def prefix = "${meta.prefix}"
+    def accessions = task.ext.accessions?:""
+    verify(!isBlank(accessions),"${task.process}: ext.accessions must be defined")
+	def prefix = "${meta.prefix}.so"
 """
 touch versions.yml ${prefix}.vcf.gz 
 """

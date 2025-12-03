@@ -34,36 +34,47 @@ output:
     tuple val(meta),path("*.{bed,bed.gz}",arity:"0..*"),optional:true,emit:beds
     path("versions.yml"),emit:versions
 script:
-    def prefix = task.ext.prefix?:"${meta.id}"
+    def prefix = task.ext.prefix?:"${meta.id}.percontig"
     def with_bgzip = task.ext.with_bgzip?:false
 """
 mkdir -p TMP
 
-${bed.endsWith(".gz")?"gunzip -c":"cat"} ${bed} |grep -vE '^(browser|track|#)' | cut -f1 | uniq | sort -T TMP | uniq |\\
-while read C
-do
+${bed.endsWith(".gz")?"gunzip -c":"cat"} "${bed}" |\\
+	grep -vE '^(browser|track|#)' |\\
+	sort  -S ${task.memory.kilo} -t '\t' -T TMP -k1,1 -k2,2n |\\
+	awk -F '\t' '
+	BEGIN {
+		PREV = "";
+		OFS = "\t";
+		}
+	{
+	C=\$1;
+	if(PREV != C) {
+		if(PREV!="") close(f);
+		PREV=C;
+		f = sprintf("TMP/${prefix}.%s.bed",C);
+		}
+	print >> f;
+	}'
+	
 
-	${bed.endsWith(".gz")?"gunzip -c":"cat"} ${bed} |\\
-		grep -vE '^(browser|track|#)' |\\
-		awk -F '\t' -vC="\$C" '(\$1==C)' |\\
-		sort  -S ${task.memory.kilo} -t '\t' -T TMP -k1,1 -k2,2n > "TMP/${prefix}.\${C}.bed"
-	if ${with_bgzip}
-	then
-		bgzip "TMP/${prefix}.\${C}.bed"
-	fi
-done
+if ${with_bgzip}
+then
+	find ./TMP -name "*.bed" -exec bgzip '{}' ';'
+	mv TMP/*.bed.gz ./ || true
+else
+	mv TMP/*.bed ./ || true
+fi
 
-mv TMP/*.bed ./ || true
-mv TMP/*.bed.gz ./ || true
 
 touch versions.yml
 """
 stub:
-	def prefix = task.ext.prefix?:"${meta.prefix}"
+	def prefix = task.ext.prefix?:"${meta.id}"
 """
 for F in 1 2 3 4 5 6
 do
-	echo "chr\t${F}\t0\t100000" > "${prefix}.\${F}.bed"
+	echo "chr\t\${F}\t0\t100000" > "${prefix}.\${F}.bed"
 done
 touch versions.yml
 """

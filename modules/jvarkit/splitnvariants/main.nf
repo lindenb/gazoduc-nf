@@ -33,8 +33,8 @@ input:
 	tuple val(meta1),path(optional_bed)
 	tuple val(meta ),path(vcf),path(idx)
 output:
-	tuple val(meta),path("OUT/*.vcf.gz",arity:"1..*"),optional:true,emit:vcf
-	tuple val(meta),path("OUT/*.tbi",arity:"1..*"),optional:true,emit:tbi
+	tuple val(meta),path("OUT/*.vcf.gz",arity:"0..*"),emit:vcf
+	tuple val(meta),path("OUT/*.tbi",arity:"0..*"),emit:tbi
 	tuple val(meta),path("*.MF"),optional:true,emit:manifest
 	path("versions.yml"),emit:versions
 script:
@@ -42,12 +42,12 @@ script:
 	if(method.trim().isEmpty()) throw new IllegalArgumentException("method undefined for ${task.process}");
 	def has_bed = optional_bed?true:false
 	def args1 = task.ext.args1?:""
-	def prefix = task.ext.prefix?:"${meta.id}.split"
+	def prefix = task.ext.prefix?:"${meta.id}.split${optional_bed?".${meta1.id}":""}"
 	def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData  -Djava.io.tmpdir=TMP"
 """
 hostname 1>&2
 mkdir -p OUT TMP
-
+set -x
 if ${has_bed}
 then
 	bcftools index -s "${vcf}" |\\
@@ -56,7 +56,7 @@ then
 
 		
 	${has_bed && optional_bed.endsWith(".gz")?"gunzip -c":"cat"} "${optional_bed}" |\\
-		LC_ALL=C  sort -T TMP -t '\t' -k1,1 -k2,2n |\\
+		LC_ALL=C sort -S '${task.memory.kilo}'  -T TMP -t '\t' -k1,1 -k2,2n |\\
 		bedtools merge > TMP/jeter2.bed
 
 	bedtools intersect \\
@@ -69,6 +69,8 @@ then
 	fi
 fi
 
+cat TMP/jeter3.bed
+
 bcftools view ${args1} \\
 	${has_bed?" --regions-file TMP/jeter3.bed":""} \\
 	"${vcf}" |\\
@@ -77,6 +79,7 @@ bcftools view ${args1} \\
 	${method} \\
 	-o OUT/${prefix}
 
+find OUT/
 find OUT/ -type f -name "*.vcf.gz" | while read F
 do
 	bcftools index --threads ${task.cpus} -t --force "\${F}"

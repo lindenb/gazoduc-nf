@@ -51,7 +51,7 @@ process JVARKIT_FILTER_LOWQUAL {
 cat << EOF > TMP/jeter.code
 final  VariantContextBuilder vcb = new VariantContextBuilder(variant);
 
-if(  variant.getGenotypes().stream().anyMatch(V->V.isHet() && G.hasAD()) &&
+if(  variant.getGenotypes().stream().anyMatch(G->G.isHet() && G.hasAD()) &&
      variant.getGenotypes().stream()
     .filter(G->G.isHet() && G.hasAD())
     .map(G->G.getAD())

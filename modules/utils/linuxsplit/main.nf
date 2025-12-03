@@ -33,19 +33,26 @@ output:
         tuple val(meta),path("OUT/*",arity:"0..*"),emit:output
 		path("versions.yml"),emit:versions
 script:
-       	def prefix = task.ext.prefix?:"chunck."
-       	def suffix = task.ext.suffix?:"."+filein.extension
+       	def prefix = task.ext.prefix?:"${meta.id}.chunck."
+
+		if( filein.extension=="gz" && task.ext.suffix==null) {
+			throw new IllegalArgumentException("${task.process} when using gz, suffix should be set");
+			}
+       	def suffix = task.ext.suffix?:".${filein.extension}"
        	def method = task.ext.method?:""
+		def filter = task.ext.filter?:""
 		if(method.trim().isEmpty()) throw new IllegalArgumentException("in ${task.process} method missing");
 """
 
 mkdir -p TMP
-split -a 9 --additional-suffix=${suffix} ${method} "${filein}" "TMP/${prefix}"
+${filein.name.endsWith(".gz")?"gunzip -c":"cat"} "${filein}" |\\
+	${filter.isEmpty()?"":"${filter}  |"} \\
+	split -a 9 --additional-suffix=${suffix} ${method} - "TMP/${prefix}"
 mv TMP OUT
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	split: "todo"
+	split: \$(split --version | awk '(NR==1) {print \$NF}')
 END_VERSIONS
 """
 }
