@@ -9,6 +9,7 @@ nextflow_process {
     tag "modules/jvarkit/gtf2bed"
 
     test("STUB") {
+	tag "stub"
 	options "-stub"
         when {
             params {
@@ -17,11 +18,8 @@ nextflow_process {
             }
             process {
                 """
-	        input[0] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
-	        input[1] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
-	        input[2] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
-	        input[3] = [[id:"b"],file("${projectDir}/tests/data/rotavirus_rf.01.bed")]
-	        input[4] = [[id:"x"],file("${projectDir}/tests/data/rotavirus_rf.gtf")]
+	        input[0] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
+	        input[1] = [[id:"x"],file("${projectDir}/tests/data/rotavirus_rf.gtf")]
                 """
             }
         }

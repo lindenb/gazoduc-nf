@@ -16,17 +16,18 @@ this stylesheet converts a ucsc cytoband +jvarkit bed2xml to a SVG fragment
 <xsl:param name="radius_R1">1000</xsl:param>
 <xsl:param name="radius_R2">990</xsl:param>
 
-<xsl:variable name="build" select="/bed/header/dictionary/@build/text()"/>
+<xsl:variable name="build" select="/bed/header/dictionary/@build"/>
 
 <xsl:template match="/">
 	<g id="cytoband">
+	
 	<xsl:comment> BEGIN CYTOBANDS </xsl:comment>
 	<xsl:apply-templates select="bed/body/rec"/>
 	<xsl:comment> END CYTOBANDS </xsl:comment>
 	</g>
 </xsl:template>
 
-
+<!--===========================================================================-->
 <xsl:template match="rec">
 <xsl:variable name="url">
 	<xsl:call-template name="ucsc_anchor">
@@ -47,7 +48,7 @@ this stylesheet converts a ucsc cytoband +jvarkit bed2xml to a SVG fragment
 
 
 <xsl:choose>
-	<xsl:when test="string-length($url) &gt; 0">
+	<xsl:when test="string-length($url) &gt; 0 and $url!='#'">
 	<a>
 		<xsl:attribute name="href">
 			<xsl:value-of select="$url"/>
@@ -60,6 +61,8 @@ this stylesheet converts a ucsc cytoband +jvarkit bed2xml to a SVG fragment
 	</xsl:otherwise>	
 </xsl:choose>
 </xsl:template>
+
+<!--===========================================================================-->
 
 <xsl:template match="rec" mode="after_url">
 
@@ -98,7 +101,7 @@ this stylesheet converts a ucsc cytoband +jvarkit bed2xml to a SVG fragment
 	<title>
 		<xsl:value-of select="@contig"/>
 		<xsl:text>.</xsl:text>
-		<xsl:value-of select="@name"/>
+		<xsl:value-of select="name/text()"/>
 	</title>
 </path>
 

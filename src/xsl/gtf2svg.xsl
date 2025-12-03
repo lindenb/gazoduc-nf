@@ -16,17 +16,20 @@ this stylesheet converts a ucsc cytoband +jvarkit bed2xml to a SVG fragment
 <xsl:param name="radius_R1">1000</xsl:param>
 <xsl:param name="radius_R2">990</xsl:param>
 
-<xsl:variable name="build" select="/bed/header/dictionary/@build/text()"/>
+<xsl:variable name="build" select="/bed/header/dictionary/@build"/>
+
+<!--===========================================================================-->
 
 <xsl:template match="/">
 	<g id="cytoband">
-	<xsl:comment> BEGIN CYTOBANDS </xsl:comment>
-	<xsl:apply-templates select="bed/body/rec"/>
-	<xsl:comment> END CYTOBANDS </xsl:comment>
+	<xsl:comment> BEGIN GTF </xsl:comment>
+	<xsl:apply-templates select="bed/body/contig/row/rec"/>
+	<xsl:comment> END GTF </xsl:comment>
 	</g>
 </xsl:template>
 
 
+<!--===========================================================================-->
 <xsl:template match="rec">
 <xsl:variable name="url">
 	<xsl:call-template name="ucsc_anchor">
@@ -47,7 +50,7 @@ this stylesheet converts a ucsc cytoband +jvarkit bed2xml to a SVG fragment
 
 
 <xsl:choose>
-	<xsl:when test="string-length($url) &gt; 0">
+	<xsl:when test="string-length($url) &gt; 0 and $url != '#'">
 	<a>
 		<xsl:attribute name="href">
 			<xsl:value-of select="$url"/>
@@ -62,24 +65,20 @@ this stylesheet converts a ucsc cytoband +jvarkit bed2xml to a SVG fragment
 </xsl:template>
 
 
-
+<!--===========================================================================-->
 
 
 <xsl:template match="rec" mode="after_url">
 <xsl:variable name="nrows" select="number(../../@rows)"/>
-
 <xsl:variable name="dr" select="(number($radius_R1) - number($radius_R2)) div $nrows"/>
-
 <xsl:variable name="r1" select="number($radius_R1) - ( number(@y) * $dr)"/>
 <xsl:variable name="r2" select="$r1 - ($dr * 0.95)"/>
 
 <path >
         <xsl:attribute name="class">
                 <xsl:text>gene</xsl:text>
-				<xsl:if test='gene_type="protein_coding"'>
 						<xsl:text> </xsl:text>
-						<xsl:value-of select="gene_type"/>
-				</xsl:if>
+				<xsl:value-of select="gene_biotype"/>
         </xsl:attribute>
         <xsl:attribute name="d">
                 <xsl:call-template name="arc">
@@ -97,7 +96,10 @@ this stylesheet converts a ucsc cytoband +jvarkit bed2xml to a SVG fragment
                         </xsl:with-param>
                 </xsl:call-template>
         </xsl:attribute>
-        <title><xsl:value-of select="name"/></title>
+		
+		<xsl:if test='gene_name/text()!="." and gene_name/text()!=""'>
+       		<title><xsl:value-of select="gene_name"/></title>
+		</xsl:if>
 </path>
 </xsl:template>
 

@@ -15,6 +15,7 @@ this stylesheet converts a ucsc cytoband +jvarkit bed2xml to a SVG fragment
 <xsl:include href="circular.mod.xsl"/>
 <xsl:param name="radius_R1">1000</xsl:param>
 <xsl:param name="radius_R2">990</xsl:param>
+<xsl:param name="style"></xsl:param>
 <xsl:param name="title"></xsl:param>
 
 <xsl:variable name="build" select="/bed/header/dictionary/@build"/>
@@ -27,6 +28,23 @@ this stylesheet converts a ucsc cytoband +jvarkit bed2xml to a SVG fragment
 		<xsl:text>CNV</xsl:text>
 		<xsl:value-of select="$title"/>
 		</xsl:attribute>
+	
+	<xsl:call-template name="donut">
+		<xsl:with-param name="outer_radius">
+			<xsl:value-of select="$radius_R1"/>
+		</xsl:with-param>
+		<xsl:with-param name="inner_radius">
+			<xsl:value-of select="$radius_R2"/>
+		</xsl:with-param>
+		<xsl:with-param name="style">
+			<xsl:value-of select="$style"/>
+		</xsl:with-param>
+		<xsl:with-param name="title">
+			<xsl:value-of select="$title"/>
+		</xsl:with-param>
+	</xsl:call-template>
+
+
 	<circle cx="0" cy="0" r="{$radius_R1}" style="fill:none;stroke:lightgray;stroke-dasharray:0 4 0;"/>
 	<xsl:comment> BEGIN CNV </xsl:comment>
 	<xsl:apply-templates select="bed/body/contig/row/rec"/>
@@ -34,6 +52,11 @@ this stylesheet converts a ucsc cytoband +jvarkit bed2xml to a SVG fragment
 	<text x="0">
 		<xsl:attribute name="y">
 		<xsl:value-of select="($radius_R1 + $radius_R2) div 2.0"/>			
+		</xsl:attribute>
+		<xsl:attribute name="style">
+			<xsl:text>dominant-baseline:middle;text-anchor:middle;font-size:</xsl:text>
+			<xsl:value-of select="($radius_R1 - $radius_R2) * 0.8"/>		
+			<xsl:text>px;</xsl:text>
 		</xsl:attribute>
 		<xsl:value-of select="$title"/>
 	</text>

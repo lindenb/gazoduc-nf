@@ -28,11 +28,8 @@ process GTF_TO_BED {
 	afterScript "rm -rf TMP"
 	conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 	input:
-		tuple val(meta1),path(fasta)
-		tuple val(meta2),path(fai)
-		tuple val(meta3),path(dict)
-		tuple val(meta4),path(opt_bed)
-        tuple val(meta ),path(gtf)
+		tuple val(meta1),path(dict)
+	        tuple val(meta ),path(gtf)
 	output:
 		tuple val(meta), path("*.bed"),emit:bed
 		tuple val(meta), path("*.bed.gz"),path("*.bed.gz.tbi"),emit:tabix
@@ -49,16 +46,16 @@ process GTF_TO_BED {
     mkdir -p TMP
 	
     ${gtf.name.endsWith(".gz")?"gunzip -c ":"cat"} ${gtf} |\\
-		${cmd1} |\\
+	${cmd1} |\\
         awk -F '\t' '${awk_expr}' |\\
-		jvarkit  ${jvm}  gtf2bed -R "${fasta}" ${args}  ${gtf} |\\
-		${cmd2} |\\
-        sort -T TMP -t '\t' -k1,1 -k2,2n |\\
-		uniq > TMP/jeter.bed
+	jvarkit  ${jvm}  gtf2bed -R "${dict}" ${args} |\\
+	${cmd2} |\\
+	sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
+	uniq > TMP/jeter.bed
     
     cp TMP/jeter.bed ${prefix}.bed
 
-    bzip TMP/jeter.bed
+    bgzip TMP/jeter.bed
     tabix -p bed -f  TMP/jeter.bed.gz
 
     mv TMP/jeter.bed.gz ${prefix}.bed.gz

@@ -14,6 +14,69 @@
 <xsl:variable name="lowercase" select="'abcdefghijklmnopqrstuvwxyz'" />
 <xsl:variable name="uppercase" select="'ABCDEFGHIJKLMNOPQRSTUVWXYZ'" />
 
+<xsl:template name="donut">
+<xsl:param name="outer_radius"/>
+<xsl:param name="inner_radius"/>
+<xsl:param name="class"></xsl:param>
+<xsl:param name="style"></xsl:param>
+<xsl:param name="title"></xsl:param>
+
+<path  fill-rule="evenodd">
+ <xsl:attribute name="d">
+ 
+	<xsl:call-template name="circle_as_path">
+		<xsl:with-param name="r" select="$outer_radius"/>
+	</xsl:call-template>
+	<xsl:call-template name="circle_as_path">
+		<xsl:with-param name="r" select="$inner_radius"/>
+	</xsl:call-template>
+
+
+ </xsl:attribute>
+
+	<xsl:if test="string-length(normalize-space($class)) &gt; 0">
+		 <xsl:attribute name="class">
+		 	<xsl:value-of select="$class"/>
+		 </xsl:attribute>
+	</xsl:if>
+
+	<xsl:if test="string-length(normalize-space($style)) &gt; 0">
+		 <xsl:attribute name="style">
+		 	<xsl:value-of select="$style"/>
+		 </xsl:attribute>
+	</xsl:if>
+
+	<xsl:if test="string-length(normalize-space($title)) &gt; 0">
+		<title><xsl:value-of select="$title"/></title>
+	</xsl:if>
+</path>
+
+</xsl:template>
+
+<!-- ==========================================================-->
+<xsl:template name="circle_as_path">
+<xsl:param name="r"/>
+	<xsl:text> M </xsl:text>
+	<xsl:value-of select="$r"/>
+
+	<xsl:text>  0 A </xsl:text>
+	<xsl:value-of select="$r"/>
+	<xsl:text>  </xsl:text>
+	<xsl:value-of select="$r"/>
+	<xsl:text>  0 1 0 </xsl:text>
+	<xsl:value-of select="number($r) * -1"/>
+	<xsl:text>  0 A  </xsl:text>
+
+	<xsl:value-of select="$r"/>
+	<xsl:text>  </xsl:text>
+	<xsl:value-of select="$r"/>
+	<xsl:text>  0 1 0 </xsl:text>
+	<xsl:value-of select="number($r)"/>
+	<xsl:text>  0 Z </xsl:text>
+</xsl:template>
+
+
+<!-- ==========================================================-->
 <xsl:template name="arc">
 <xsl:param name="f1"/>
 <xsl:param name="f2"/>
@@ -157,7 +220,7 @@
 	</xsl:when>
 	<xsl:when test='starts-with($stain,"gpos") and string-length($stain) &gt; 4'>
 		<xsl:variable name="percent1" select="number(substring-after($stain,'s'))" />
-		<xsl:variable name="gray" select="format-number( 50 + (215 * $percent1/100.0) , '#')"/>
+		<xsl:variable name="gray" select="format-number( 50 + (215 * ($percent1 div 100.0)) , '#')"/>
 		<xsl:text>rgb(</xsl:text>
 		<xsl:value-of select="$gray"/>
 		<xsl:text>,</xsl:text>

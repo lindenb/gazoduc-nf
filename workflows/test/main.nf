@@ -197,6 +197,7 @@ process VCF_TO_SVG {
 	def dr = (r0-r1)/count
 	def R0 = r0 - (dr * index)
 	def R1 = R0 - Math.min(50.0,dr*0.95)
+    def fill = (index%2==0?"gainsboro":"lavenderBlush")
     """
     NAME=\$(bcftools query -l "${vcf}")
     bcftools view -O u --apply-filters '.,PASS' -m2 '${vcf}' |\\
@@ -209,12 +210,15 @@ process VCF_TO_SVG {
 	--stringparam title "\${NAME}" \\
         --stringparam radius_R1 ${R0} \\
         --stringparam radius_R2 ${R1} \\
+        --stringparam style "opacity:0.7;stroke-dasharray:0 4 0;stroke:silver;fill:${fill};" \\
          -o "${meta.id}.svg"  ${stylesheet} jeter.xml
 
 
-    # cache5
+    # cache9
 
 cat << EOF > vcf.css
+
+
 path.cnv {
     stroke: blue;
     stroke-width: 2px;
