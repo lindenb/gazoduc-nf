@@ -12,8 +12,8 @@ nextflow_pipeline {
         when {
             params {
                 outdir = "tests-output/results"
-		fasta = "${projectDir}/tests/data/REF/GRCh38.fa"
-		ucsc_name = "hg38"
+		        fasta = "${projectDir}/tests/data/REF/GRCh38.fa"
+		        ucsc_name = "hg38"
                 samplesheet = "${projectDir}/tests/data/REF/GRCh38/BAMS/samplesheet.csv"
             }
         }
