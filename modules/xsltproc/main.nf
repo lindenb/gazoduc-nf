@@ -22,54 +22,45 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-process BED_TO_XML {
+process XSLTPROC {
 	label "process_single"
-	tag "${meta.id?:""} "
+	tag "${meta.id?:""} ${stylesheet.name}"
 	afterScript "rm -rf TMP"
-	conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 	input:
-        tuple val(meta1),path(opt_dict)
-        tuple val(meta ),path(bed)
+        tuple val(meta1),path(stylesheet)
+        tuple val(meta ),path(xml)
 	output:
-		tuple val(meta), path("*.xml"),emit:xml
-		tuple val(meta), path("*.out.dict"),optional:true,emit:dict
+		tuple val(meta), path("*"),emit:xml
 		path("versions.yml"),emit:versions
 	script:
 		def args1 = task.ext.args1?:""
-        def prefix = task.ext.prefix?:"${meta.id?:bed.baseName}."
-        def jvm =  task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -XX:-UsePerfData"
-        def with_validation = (task.ext.with_validation?:true).toBoolean()
-	def with_dict = (task.ext.with_dict?:true).toBoolean()
-        def jvarkit = task.ext.jvarkit?:"java ${jvm} -jar \${HOME}/jvarkit.jar"// TODO update when conda released
-
+        def args2 = task.ext.args2?:""
+        def prefix = task.ext.prefix?:"${meta.id?:xml.baseName}.${meta1.id?:stylesheet.baseName}"
+        def suffix = task.ext.suffix?:".xml"
  """
 	hostname 1>&2
     mkdir -p TMP
 	
-    ${jvarkit} bed2xml  \\
-            ${opt_dict?"-R ${opt_dict}":""} \\
-	    ${(opt_dict?true:false) && with_dict?"--dict-out ${prefix}.out.dict":""} \\
-            ${args1} \\
-            ${bed}  > TMP/jeter.xml
+    xsltproc ${args1} ${args2} -o TMP/jeter.out "${stylesheet.toRealPath()}" "${xml}"
 
-    
-    if ${with_validation}
+    if ${suffix.endsWith(".gz")}
     then
-        xmllint  --nonet --noout  TMP/jeter.xml
+        gzip --best < TMP/jeter.out > "${prefix}.${suffix}"
+    else
+        mv TMP/jeter.out "${prefix}.${suffix}"
     fi
-
-    cp TMP/jeter.xml ${prefix}.xml
 
 cat << EOF > versions.yml
 ${task.process}:
 	jvarkit: "\$(jvarkit --version)"
-    xmllint: \$(xmllint --version 2>&1 |awk '(NR==1) {print \$NF;}')
+    xsltproc: \$(xsltproc --version 2>&1 |awk '(NR==1) {print \$NF;}')
 EOF
 	"""
 	
 stub: 
-        def prefix = task.ext.prefix?:"${meta.id?:bed.baseName}."
+    def prefix = task.ext.prefix?:"${meta.id?:xml.baseName}.${meta1.id?:stylesheet.baseName}"
+    def suffix = task.ext.suffix?:".xml"
 """
-mkdir versions.yml ${prefix}.xml
+mkdir versions.yml ${prefix}.${suffix}
 """
 }
