@@ -22,9 +22,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include { runOnComplete; dumpParams   } from '../../../modules/utils/functions.nf'
-include { PREPARE_ONE_REFERENCE       } from '../../../subworkflows/samtools/prepare.one.ref'
-include { GHOSTSCRIPT_MERGE           } from '../../../modules/gs/merge'
+include { runOnComplete; dumpParams     } from '../../../modules/utils/functions.nf'
+include { PREPARE_ONE_REFERENCE         } from '../../../subworkflows/samtools/prepare.one.ref'
+include { GHOSTSCRIPT_MERGE             } from '../../../modules/gs/merge'
+include { MULTIQC                       } from '../../../modules/multiqc'
+include { BCFTOOLS_INDEX_STATS          } from '../../../modules/bcftools/index.stats'
 
 workflow {
 	if(params.samplesheet==null) {
@@ -77,6 +79,17 @@ workflow {
    		bams.filter{meta,_bam,_bai->meta.type=="truth"}
    		)
     
+	BCFTOOLS_INDEX_STATS(GENOTYPE_TRUTH.out.vcf)		
+	versions=versions.mix(BCFTOOLS_INDEX_STATS.out.versions)
+	stats_ch = BCFTOOLS_INDEX_STATS.out.stats
+		.map{_meta,f->f}
+		.splitCsv(header:false,sep:'\t')
+		.map{v->v.join("\t")}
+		.collectFile(name:"stats.tsv", newLine: true)
+		.map{f->[[id:"idxstats"],f]}
+	
+	PLOT_INDEX_STATS(stats_ch)
+	versions=versions.mix(PLOT_INDEX_STATS.out.versions)
 
    	CONCAT_SITES(
    		PREPARE_ONE_REFERENCE.out.fasta,
@@ -132,6 +145,14 @@ workflow {
 		)
 	versions = versions.mix(MERGE_CONCORDANCES.out.versions)
 
+	MULTIQC(
+		[[id:"no_conf"],[]],
+		multiqc.map{meta,f->f}
+			.collect()
+			.map{f->[[id:metadata.id],f.sort()]}
+		)
+
+
 	README(
 		bed_ch ,
 		gnomad_ch ,
@@ -153,6 +174,9 @@ workflow {
 	)
 
 }
+
+runOnComplete(workflow)
+
 
 process README {
 executor "local"
@@ -619,5 +643,56 @@ stub:
 	def prefix= task.ext.prefix?:"${meta.id}.concordance"
 """
 touch versions.yml ${prefix}.tsv
+"""
+}
+
+
+process PLOT_INDEX_STATS {
+label "process_single"
+tag "${meta.id}"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
+
+input:
+	tuple val(meta),path(tsv)
+output:
+	tuple val(meta),path("*.pdf"),emit:pdf
+	path("versions.yml"),emit:versions
+script:
+	def prefix= task.ext.prefix?:"${meta.id}.plot"
+"""
+touch versions.yml
+mkdir -p TMP
+
+cat << '__EOF__' > TMP/jeter.R
+# Load the TSV file (no header)
+tsv <- read.table("${tsv}", sep="\t", header=FALSE,col.names=c("chromosome", "chromosome_length", "count"))
+
+tsv\$count <- as.numeric(tsv\$count)
+tsv\$chromosome_length <- as.numeric(tsv\$chromosome_length)
+
+pdf("contig.vs.count.pdf")
+boxplot(count ~ chromosome, data=tsv,
+		main="Counts Variants per Chromosome",
+		sub = "Truth",
+        xlab="Chromosome", ylab="Count", las=2)
+dev.off()
+
+pdf("contig.vs.count.norm.pdf")
+boxplot(I(count/chromosome_length) ~ chromosome, data=tsv,
+        main="Normalized Count (Count / Chromosome Length) per Chromosome",
+		sub = "Truth",
+        xlab="Chromosome", ylab="Count / Chromosome Length", las=2)
+dev.off()
+__EOF__
+
+R --vanilla <  TMP/jeter.R
+touch versions.yml 
+"""
+
+stub:
+	def prefix= task.ext.prefix?:"${meta.id}.plot"
+"""
+touch versions.yml 
 """
 }
