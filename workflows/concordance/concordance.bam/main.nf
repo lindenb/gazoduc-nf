@@ -31,19 +31,19 @@ include { BCFTOOLS_INDEX_STATS          } from '../../../modules/bcftools/index.
 workflow {
 	if(params.samplesheet==null) {
 		log.warn("undefined --samplesheet");
-		exit -1
+		java.lang.System.exit(-1);
 		}
 	if(params.fasta==null) {
 		log.warn("undefined --fasta");
-		exit -1
+		java.lang.System.exit(-1);
 		}
 	if(params.bed==null) {
 		log.warn("undefined --bed");
-		exit -1
+		java.lang.System.exit(-1);
 		}
     if(params.gnomad==null) {
 		log.warn("undefined --gnomad");
-		exit -1
+		java.lang.System.exit(-1);
 		}
    versions = Channel.empty()
    multiqc = Channel.empty()

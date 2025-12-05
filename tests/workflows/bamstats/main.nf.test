@@ -8,6 +8,8 @@ nextflow_pipeline {
     config "./nextflow.config"
 
     test("BAMQC") {
+      
+
 
         when {
             params {
