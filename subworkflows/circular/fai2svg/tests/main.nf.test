@@ -1,0 +1,62 @@
+nextflow_workflow {
+
+    name "Test Workflow FAI2SVG"
+    script "subworkflows/circular/fai2svg/main.nf"
+    workflow "FAI_TO_SVG"
+    tag "gitlab_ci"
+    tag "subworkflows"
+    tag "subworkflows/circular"
+    tag "subworkflows/circular/fai2svg"
+
+
+    test("BASIC") {
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0]= [
+                    id: "circular"
+                    ]
+                input[1] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[2] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+    test("STUB") {
+        options "-stub"
+         tag "stub"
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0]= [
+                    id: "circular"
+                    ]
+                input[1] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[2] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

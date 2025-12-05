@@ -61,6 +61,6 @@ stub:
     def prefix = task.ext.prefix?:"${meta.id?:xml.baseName}.${meta1.id?:stylesheet.baseName}"
     def suffix = task.ext.suffix?:".xml"
 """
-mkdir versions.yml ${prefix}.${suffix}
+touch versions.yml ${prefix}.${suffix}
 """
 }

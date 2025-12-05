@@ -1,0 +1,53 @@
+nextflow_process {
+    name "Test Process XSLTPROC"
+    script "modules/xsltproc/main.nf"
+    process "XSLTPROC"
+    tag "modules"
+    tag "modules/xsltproc"
+    tag "gitlab_ci"
+
+    test("STUB") {
+        tag "stub"
+        options "-stub"
+        
+        when {
+            params {
+                plugin_name= ""
+            }
+            process {
+                """
+                input[0] = [[id:"xsl"],file("stylesheet.xslt")]
+                input[1] = [[id:"xml"],file("input.xml")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+    test("BASIC") {
+
+        when {
+            params {
+                plugin_name= ""
+            }
+            process {
+                """
+                input[0] = [[id:"xsl"],file("${projectDir}/src/xsl/fai2svg.xsl")]
+                input[1] = Channel.of("<bed></bed>").collectFile(name:"input.xml").map{v->[[id:"xml"],v]}
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+}

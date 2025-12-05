@@ -65,6 +65,6 @@ EOF
 stub: 
     def prefix = task.ext.prefix?:"${meta.id?:json.baseName}."
 """
-mkdir versions.yml ${prefix}.xml
+touch versions.yml ${prefix}.xml
 """
 }
