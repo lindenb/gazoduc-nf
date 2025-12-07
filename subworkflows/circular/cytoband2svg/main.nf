@@ -29,7 +29,7 @@ workflow CYTOBAND_TO_SVG {
 take:
     metadata
     dict
-    cytoband //meta,bed , optional otherwise will be downloaded
+    cytoband //meta,bed , Channel.empty or otherwise will be downloaded
 main:
     versions = Channel.empty()
     multiqc  = Channel.empty()

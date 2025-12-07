@@ -31,7 +31,7 @@ workflow GTF_TO_SVG {
 take:
     metadata
     dict
-    gtf //meta,bed , Channel.empty or otherwise will be downloaded
+    gtf //meta,gtf , Channel.empty or otherwise will be downloaded
 main:
     versions = Channel.empty()
     multiqc  = Channel.empty()

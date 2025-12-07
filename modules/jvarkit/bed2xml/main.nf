@@ -48,7 +48,7 @@ process BED_TO_XML {
 	
     ${jvarkit} bed2xml  \\
             ${opt_dict?"-R ${opt_dict}":""} \\
-	    ${(opt_dict?true:false) && with_dict?"--dict-out ${prefix}.out.dict":""} \\
+	    ${(opt_dict?true:false) && with_dict?"--dict-out ${prefix}out.dict":""} \\
             ${args1} \\
             ${bed}  > TMP/jeter.xml
 
@@ -70,6 +70,6 @@ EOF
 stub: 
         def prefix = task.ext.prefix?:"${meta.id?:bed.baseName}."
 """
-touch versions.yml ${prefix}.xml
+touch versions.yml ${prefix}.xml ${prefix}.out.dict
 """
 }

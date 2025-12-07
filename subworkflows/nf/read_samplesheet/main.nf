@@ -91,7 +91,7 @@ main:
 					}
 				def L=[];
 				for(int i=0;i< array.size();i++) {
-					L.add(["${label}":array.get(i)]);
+					L.add([(label as String):array.get(i)]);
 					}
 				return L;
 				}

@@ -43,16 +43,38 @@ main:
         dict,
         FAI2BED.out.bed
         )
-     versions = versions.mix(BED_TO_XML.out.versions)
+    versions = versions.mix(BED_TO_XML.out.versions)
    
+    genome_length_ch = BED_TO_XML.out.dict
+            .splitCsv(sep:'\t',header:false)
+            .filter{it[1][0]=="@SQ"}
+            .map{meta,tokens->{
+                def i = 0;
+                def len = 0L;
+                for(i=0; i< tokens.size();i++) {
+                    if(!tokens[i].startsWith("LN:")) continue;
+                    len = tokens[i].substring(3) as long;
+                    break;
+                    }
+                return [meta,len];
+                }
+                }
+            .groupTuple()
+            .map{meta,lengths->[meta,lengths.sum()]}
+
+    dict2 = BED_TO_XML.out.dict
+        .join(genome_length_ch)
+        .map{meta1,dict2,genome_size->[meta1.plus(genome_length:genome_size),dict2]}
+       
+
     XSLTPROC(
-        [[id:"no_stylesheet"],"${projectDir}/src/xsl/fai2svg.xsl"],
+        [[id:"no_stylesheet"],"${moduleDir}/../../../src/xsl/fai2svg.xsl"],
         BED_TO_XML.out.xml
         )
     versions = versions.mix(XSLTPROC.out.versions)
 emit:
     versions
     multiqc
-    dict = BED_TO_XML.out.dict
+    dict = dict2
     svg = XSLTPROC.out.xml
 }

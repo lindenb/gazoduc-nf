@@ -22,39 +22,41 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-process BEDTOOLS_MAKEWINDOWS {
-tag "${bed.name}"
-label "process_quick"
-afterScript "rm -rf TMP"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-input:
-    tuple val(meta),path(bed)
-output:
-    tuple val(meta),path("*.bed"),emit:bed
-    path("versions.yml"),emit:versions
-script:
-    def option1= (bed.name.endsWith(".fai")?"-g":"-b")
-    def args = task.ext.args?:""
-    if((args as String).trim().isEmpty()) throw new IllegalArgumentException("args empty for ${task.process}")
-    def prefix = task.ext.prefix?:"${meta.id?:bed.baseName}.makewindows"
+process DICT_TO_BED {
+	label "process_single"
+	tag "${meta.id?:""} "
+	afterScript "rm -rf TMP"
+	conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+	input:
+        tuple val(meta ),path(dict)
+	output:
+		tuple val(meta), path("*.bed"),emit:bed
+		path("versions.yml"),emit:versions
+	script:
+		def args1 = task.ext.args1?:""
+        def prefix = task.ext.prefix?:"${meta.id}.dict2bed"
+        def jvm =  task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -XX:-UsePerfData"
+        def jvarkit = task.ext.jvarkit?:"java ${jvm} -jar \${HOME}/jvarkit.jar"// TODO update when conda released
+        def cmd = task.ext.cmd?:""
+ """
+	hostname 1>&2
+    mkdir -p TMP
+	
+    ${jvarkit} dict2bed  \\
+            ${args1} \\
+            ${dict}  ${cmd} > TMP/jeter.dict
+
+    mv TMP/jeter.dict ${prefix}.bed
+
+cat << EOF > versions.yml
+${task.process}:
+	jvarkit: "\$(jvarkit --version)"
+EOF
+	"""
+	
+stub: 
+    def prefix = task.ext.prefix?:"${meta.id}.dict2bed"
 """
-mkdir -p TMP
-
-bedtools makewindows ${args} ${option1} "${bed}" |\\
-    sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter.bed
-
-mv TMP/jeter.bed "${prefix}.bed"
-
-
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-    bcftools: \$(bedtools --version | awk '(NR==1)  {print \$NF}')
-END_VERSIONS
-"""
-
-stub:
-"""
-cp "${bed}" "${meta.id?:bed.baseName}.makeWindows.bed"
-touch versions.yml
+touch versions.yml   ${prefix}.bed
 """
 }

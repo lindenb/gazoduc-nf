@@ -119,6 +119,41 @@ nextflow_function {
     }
 
 
+    test("median-1") {
+        function "median"
+        when {
+            function {
+                """
+                input[0] = [1,1,1,1,1,1,1.0 ,0,1000,1,1];
+                """
+            }
+        }
+        then {
+            assert function.success
+            assert function.result == 1.0
+        }
+    }
+
+
+
+    test("median-2") {
+        function "median"
+        when {
+            function {
+                """
+                input[0] = [1,2];
+                """
+            }
+        }
+        then {
+            assert function.success
+            assert function.result == 1.5
+        }
+    }
+
+
+
+
 
 	
 

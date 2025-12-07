@@ -69,10 +69,10 @@ process JVARKIT_VCF_SET_DICTIONARY {
 	mv TMP/${prefix}.${is_bcf?"bcf":"vcf.gz"} ./
 	mv TMP/${prefix}.${is_bcf?"bcf.csi":"vcf.gz.tbi"} ./
 
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-	jvarkit: todo
-END_VERSIONS
+cat << EOF > versions.yml
+${task.process}:
+	jvarkit: "\$(jvarkit --version)"
+EOF
 	"""
 
 stub:

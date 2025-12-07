@@ -22,39 +22,45 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-process BEDTOOLS_MAKEWINDOWS {
-tag "${bed.name}"
-label "process_quick"
-afterScript "rm -rf TMP"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-input:
-    tuple val(meta),path(bed)
-output:
-    tuple val(meta),path("*.bed"),emit:bed
-    path("versions.yml"),emit:versions
-script:
-    def option1= (bed.name.endsWith(".fai")?"-g":"-b")
-    def args = task.ext.args?:""
-    if((args as String).trim().isEmpty()) throw new IllegalArgumentException("args empty for ${task.process}")
-    def prefix = task.ext.prefix?:"${meta.id?:bed.baseName}.makewindows"
+
+process WGS_COVERAGE_PLOTTER  {
+    tag "${meta.id}"
+	label "process_single"
+	conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+	afterScript "rm -rf TMP"
+	input:
+		tuple val(meta1),path(fasta)
+        tuple val(meta2),path(fai)
+        tuple val(meta3),path(dict)
+		tuple val(meta ),path(bam),path(bai)
+	output:
+		tuple val(meta ),path("*.{svg,svg.gz}"),emit:svg
+		path("versions.yml"),emit:versions
+	script:
+		def args = task.ext.args?:""
+        def prefix = task.ext.prefix?:"${meta.id}"
+		def jvm = " -XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
 """
+hostname 1>&2
+set -o pipefail
+
 mkdir -p TMP
+jvarkit ${jvm} wgscoverageplotter \\
+    ${args} \\
+    -R "${fasta}" "${bam}" > TMP/jeter.svg
+    
+mv -v TMP/jeter.svg "${prefix}.svg"
 
-bedtools makewindows ${args} ${option1} "${bed}" |\\
-    sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter.bed
-
-mv TMP/jeter.bed "${prefix}.bed"
-
-
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-    bcftools: \$(bedtools --version | awk '(NR==1)  {print \$NF}')
-END_VERSIONS
+cat << EOF > versions.yml
+${task.process}:
+	jvarkit: "\$(jvarkit --version)"
+EOF
 """
 
 stub:
+   def prefix = task.ext.prefix?:"${meta.id}"
 """
-cp "${bed}" "${meta.id?:bed.baseName}.makeWindows.bed"
-touch versions.yml
+touch versions.yml  ${prefix}.svg
 """
+
 }
