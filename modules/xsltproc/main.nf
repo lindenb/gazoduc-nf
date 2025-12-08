@@ -30,13 +30,13 @@ process XSLTPROC {
         tuple val(meta1),path(stylesheet)
         tuple val(meta ),path(xml)
 	output:
-		tuple val(meta), path("*"),emit:xml
+		tuple val(meta), path("*.xslt.*"),emit:xml
 		path("versions.yml"),emit:versions
 	script:
-		def args1 = task.ext.args1?:""
+	def args1 = task.ext.args1?:""
         def args2 = task.ext.args2?:""
         def prefix = task.ext.prefix?:"${meta.id?:xml.baseName}.${meta1.id?:stylesheet.baseName}"
-        def suffix = task.ext.suffix?:".xml"
+        def suffix = task.ext.suffix?:"xml"
  """
 	hostname 1>&2
     mkdir -p TMP
@@ -45,9 +45,9 @@ process XSLTPROC {
 
     if ${suffix.endsWith(".gz")}
     then
-        gzip --best < TMP/jeter.out > "${prefix}.${suffix}"
+        gzip --best < TMP/jeter.out > "${prefix}.xslt.${suffix}"
     else
-        mv TMP/jeter.out "${prefix}.${suffix}"
+        mv TMP/jeter.out "${prefix}.xslt.${suffix}"
     fi
 
 cat << EOF > versions.yml
@@ -59,8 +59,8 @@ EOF
 	
 stub: 
     def prefix = task.ext.prefix?:"${meta.id?:xml.baseName}.${meta1.id?:stylesheet.baseName}"
-    def suffix = task.ext.suffix?:".xml"
+    def suffix = task.ext.suffix?:"xml"
 """
-touch versions.yml ${prefix}.${suffix}
+touch versions.yml ${prefix}.xslt.${suffix}
 """
 }

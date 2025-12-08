@@ -29,11 +29,14 @@ include { PREPARE_ONE_REFERENCE                    } from '../../subworkflows/sa
 include { META_TO_BAMS                             } from '../../subworkflows/samtools/meta2bams1'
 include { READ_SAMPLESHEET                         } from '../../subworkflows/nf/read_samplesheet'
 include { FAI_TO_SVG                               } from '../../subworkflows/circular/fai2svg'
+include { CYTOBAND_TO_SVG                          } from '../../subworkflows/circular/cytoband2svg'
 include { DICT_TO_BED                              } from '../../modules/jvarkit/dict2bed'
 include { BEDTOOLS_MAKEWINDOWS                     } from '../../modules/bedtools/makewindows'
 include { BEDTOOLS_INTERSECT                       } from '../../modules/bedtools/intersect'
 include { BED_TO_XML                               } from '../../modules/jvarkit/bed2xml'
 include { MOSDEPTH                                 } from '../../modules/mosdepth'
+include { XSLTPROC                                 } from '../../modules/xsltproc'
+include { BATIK                                    } from '../../subworkflows/batik'
 
 workflow {
 
@@ -77,7 +80,7 @@ workflow {
 
 
 	PLOT_WGS_COVERAGE(
-		metadata,
+		metadata.plus(radius: (params.radius as double)),
 		PREPARE_ONE_REFERENCE.out.fasta,
 		PREPARE_ONE_REFERENCE.out.fai,
 		PREPARE_ONE_REFERENCE.out.dict,
@@ -106,6 +109,13 @@ workflow PLOT_WGS_COVERAGE {
 
 		DICT_TO_BED(FAI_TO_SVG.out.dict)
 		versions = versions.mix(DICT_TO_BED.out.versions)
+
+		CYTOBAND_TO_SVG(
+			metadata,
+			FAI_TO_SVG.out.dict,
+			Channel.empty()
+			)
+		versions = versions.mix(CYTOBAND_TO_SVG.out.versions)
 
 		BEDTOOLS_INTERSECT(
 			fai,
@@ -144,33 +154,40 @@ workflow PLOT_WGS_COVERAGE {
             .map{meta,row->[meta,java.lang.Math.max(1.0,(row.mean as double))]}
             .groupTuple()
 			.map{meta,array->[meta,array[0]]}
-			.view()
+			
 			
 		max_cov = mean_cov_ch
 			.map{meta,cov->cov}
 			.collect()
 			.map{L->L.max()}
-			.view()
+			
 
 		regions_ch = MOSDEPTH.out.regions_bed.join(mean_cov_ch)
-			.map{meta,bed,csi,cov->[meta.plus(coverage:cov),bed,csi]}
-			.view()
+			.map{meta,bed,_csi,cov->[meta.plus(coverage:cov),bed]}
 			.combine(max_cov)
-			.map{meta,bed,csi,max_cov->[meta.plus(coverage_max:max_cov),bed,csi]}
+			.map{meta,bed,max_cov->[meta.plus(coverage_max:max_cov),bed]}
 			.collect(flat:false)
 			.flatMap{rows->{
 				def L=rows.collect();
-				log.warn("rows== ${rows}");
-				log.warn("L == ${L}");
+				def r_max = (metadata.radius*1.0)-50;
+				def r_min  = r_max*0.1;
+				def dr = java.lang.Math.min(20.0,(r_max-r_min)/L.size());
+				def r = r_max;
 				L = L.sort{A,B-> A[0].coverage <=>  B[0].coverage}
 				def i=0;
-				for(i=0;i< L.size();i++) {
+				while( i < L.size() ) {
 					def item = L[i];
 					item[0] = item[0].plus(
 						index : i,
-						count: L.size()
+						index_mod2 : (i%2),/* cannot make index%2 work in config... */
+						count: L.size(),
+						outer_radius: r,
+						inner_radius: r - dr *0.95
 						) 
-					}				
+					r -= dr;
+					i++;
+					}
+				
 				return L;
 				}}
 		MOSDEPTH_TO_BED(regions_ch)
@@ -181,108 +198,237 @@ workflow PLOT_WGS_COVERAGE {
 			MOSDEPTH_TO_BED.out.bed
 			)
 		versions = versions.mix(BED_TO_XML.out.versions)
+
+
+		XSLTPROC(
+			[[id:"xslt"],file("${moduleDir}/../../src/xsl/histogram.xsl")],
+			BED_TO_XML.out.xml
+			)
+		versions = versions.mix(XSLTPROC.out.versions)
+
+		BUILD_SVG(
+			MOSDEPTH_TO_BED.out.css
+				.map{meta,css->css}
+				.collect()
+				.map{files->[[id:"css"],files.sort()]},
+			MOSDEPTH_TO_BED.out.defs
+				.map{meta,svg->svg}
+				.collect()
+				.map{files->[[id:"defs"],files.sort()]},
+			FAI_TO_SVG.out.svg,
+			CYTOBAND_TO_SVG.out.svg,
+			XSLTPROC.out.xml
+				.map{meta,svg->svg}
+				.collect()
+				.map{files->[[id:"svgs"],files.sort()]}
+			)
+		versions = versions.mix(BUILD_SVG.out.versions)
+
+		BATIK(
+			metadata,
+			BUILD_SVG.out.svg
+			)
+		versions = versions.mix(BATIK.out.versions)
 	emit:
 		versions
 		multiqc
+		svg  = BUILD_SVG.out.svg
 	}
 
 
 process MOSDEPTH_TO_BED {
+label "process_single"
+tag "${meta.id}"
+
 input:
 	tuple val(meta),path(bed)
 output:
 	tuple val(meta),path("*.bed"),emit:bed
+	tuple val(meta),path("*.css"),emit:css
+	tuple val(meta),path("*.defs.svg"),emit:defs
 	path("versions.yml"),emit:versions
 script:
 	def cov = meta.coverage as double
 	def max_cov = meta.coverage_max as double
 	def prefix = task.ext.prefix?:"${meta.id}"
+	def md5 = "${meta.id.md5().substring(0,5)}.histo"
+	def outer_radius = meta.outer_radius as double
+	def inner_radius = meta.inner_radius as double
+	def index = meta.index?:0
 """
 ${bed.name.endsWith(".gz")?"gunzip -c":"cat"} ${bed} |\\
 	awk -F '\t' '{
-		NORM = ( \$4 / ${cov})* ${max_cov};
-		printf("%s\t%s\t%s\t%s\t%f\\n",\$1,\$2,\$3, \$4, NORM);
+		COV = \$4 * 1.0;
+		printf("%s\t%s\t%s\t%f",\$1,\$2,\$3,COV);
+		printf("\t%f",  ( COV / ${max_cov}) );
+		if( COV >= ${cov} * 2.0) {
+			printf("\tbar DUP");
+			}
+		else if( COV <= ${cov} * 0.5) {
+			printf("\tbar DEL");
+			}
+		else
+			{
+			printf("\tbar PASS");
+			}
+		printf("\\n");
 		}' > ${prefix}.bed
-touch versions.yml
+
+# gradient doesn't work, should use a mask for each bar.. borrrrring
+touch ${prefix}.css
+touch ${prefix}.defs.svg
+
+cat << EOF > versions.yml
+${task.process}:
+	awk: \$(awk --version | awk '(NR==1)')
+EOF
 """
 stub:
 	def prefix = task.ext.prefix?:"${meta.id}"
 """
-touch versions.yml ${prefix}.bed
+touch versions.yml ${prefix}.bed ${prefix}.css ${prefix}.defs.svg
 """
 }
 
 
-process ZIPIT {
-tag "N=${L.size()}"
+process BUILD_SVG {
+tag "${meta.id}"
+label "process_single"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
-	val(meta)
-	val(L)
+    tuple val(meta1),path(css)
+    tuple val(meta2),path(defs)
+	tuple val(meta3),path(fai_svg)
+	tuple val(meta4),path(cytoband_svg)
+	tuple val(meta ),path(fragments)
 output:
-	path("${params.prefix?:""}plots.zip"),emit:zip
+    tuple val(meta),path("*.svg"),emit:svg
+    path("versions.yml"),emit:versions
 script:
+    def prefix = task.ext.prefix?:"${meta.id}.circular"
+    def radius = (task.ext.radius?:1000) as int
+    def xmlns = "http://www.w3.org/2000/svg"
+    def margin = (task.ext.margin?:100) as int
+    def margin_top = (task.ext.margin_top?:margin) as int
+    def margin_left = (task.ext.margin_left?:margin) as int
+    def margin_bottom = (task.ext.margin_bottom?:margin) as int
+    def margin_right = (task.ext.margin_right?:margin) as int
+    def diameter = (radius*2)
+    def image_width = diameter + margin_left + margin_right
+    def image_height = diameter + margin_top + margin_bottom
+    def title = task.ext.title?:"${meta.title?:meta.id}"
 """
-hostname 1>&2
+touch versions.yml
+mkdir -p TMP
 
-cat << __EOF__ >  "${params.prefix?:""}index.html" 
-<html>
-<head>
-<meta charset="UTF-8"/>
-<title>${params.prefix?:""}.IndexCov</title>
-<script>
-var index=0;
-var svgs=[${L.findAll{T->T.toString().endsWith(".svg")}.collect{T->"\""+file(T).name+"\""}.join(",")}];
+cat << EOF > jeter.css
 
-function change(dx) {
-	index+=dx;
-	index = index%svgs.length;
-	var E = document.getElementById("theimg");
-	E.setAttribute("src",svgs[index]);
-	}
-</script>
-</head>
-<body>
-<button onclick="change(-1)">Prev</button>
-<button onclick="change( 1)">Next</button>
-<br/>
-<img id="theimg" src="${file(L[0]).name}" width="1000" />
-</body>
-</html>
-__EOF__
-
-cat << __EOF__ >  "${params.prefix?:""}all.html"
-<html>
-<head>
-<meta charset="UTF-8"/>
-<title>${params.prefix?:""}.WGSPlotCov</title>
-<script>
-function init() {
-	var svgs=[${L.findAll{T->T.toString().endsWith(".svg")}.collect{T->"\""+file(T).name+"\""}.join(",")}];
-	var i;
-	var main=document.getElementById("main");
-	for(i in svgs) {
-		var img = document.createElement("img");
-		img.setAttribute("src",svgs[i]);
-		img.setAttribute("width","1000");
-		main.appendChild(img);
-		var br = document.createElement("br");
-		main.appendChild(br);
-		}
+rect.bckg {
+	stroke:none;
+	fill:rgb(254,254,254);
 	}
 
-window.addEventListener('load', (event) => {init();});
+path.donut_0 {
+		opacity: 0.8;
+        stroke: gray;
+        stroke-dasharray: 2, 2;
+        fill: beige;
+        }
 
-</script>
-</head>
-<body>
-<div id="main"></div>
-</body>
-</html>
+path.donut_1 {
+		opacity: 0.8;
+        stroke: gray;
+        stroke-dasharray: 2, 2;
+        fill: blanchedalmond;
+        }
+
+path.bar {
+	opacity: 0.8;
+	 stroke:gray;
+	stroke-width:0.2;
+	fill:lightgray;
+	}
+
+path.DEL {
+	fill:red;
+	}
+path.DUP {
+	fill:blue;
+	}
+
+line.cross {
+	stroke:gray;
+	stroke-width:1;
+	}
+
+EOF
+cat ${css} >> jeter.css
+cat "${moduleDir}/../../src/css/fai.css" >> jeter.css
+
+echo '<defs xmlns="${xmlns}">' > jeter.defs.xml
+cat ${defs}  >> jeter.defs.xml
+echo '</defs>'  >> jeter.defs.xml
+
+
+echo '<g xmlns="${xmlns}">' > jeter.fragments.xml
+cat ${fragments}  >> jeter.fragments.xml
+echo '</g>'  >> jeter.fragments.xml
+
+cat << __EOF__ > jeter.doc.xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "https://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg
+    version="1.1" 
+    xmlns="${xmlns}"
+    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+    xmlns:foaf="http://xmlns.com/foaf/0.1/"
+    xmlns:dc="http://purl.org/dc/elements/1.1/"
+    xmlns:xi="http://www.w3.org/2001/XInclude"
+    width="${image_width +1}" height="${image_height +1}">
+  <metadata>
+    <rdf:RDF>
+        <rdf:Description rdf:about="">
+            <dc:author>Pierre Lindenbaum</dc:author>
+        </rdf:Description>
+    </rdf:RDF>
+  </metadata>
+  <style>
+  <xi:include parse="text" href="jeter.css"/>
+  </style>
+  <xi:include href="jeter.defs.xml"/>
+  <g>
+    <rect x="0" y="0" width="${image_width}" height="${image_height}" class="bckg"/>
+    <g transform="translate(${margin_left},${margin_top})">
+        <g transform="translate(${radius},${radius})">
+			<xi:include href="${fai_svg.name}"/>
+			<xi:include href="${cytoband_svg.name}"/>
+            <xi:include href="jeter.fragments.xml"/>
+            <!-- central cross -->
+            <text x="0" y="0" class="title"><![CDATA[${title}]]></text>
+            <g>
+                <line x1="-10" y1="0" x2="10"  y2="0" class="cross"/>
+                <line y1="-10" x1="0" y2="10"  x2="0" class="cross"/>
+            </g>
+        </g>
+    </g>
+   
+  </g>
+</svg>
 __EOF__
 
 
-zip -j -9  "${params.prefix?:""}plots.zip" ${L.join(" ")} \
-	"${params.prefix?:""}all.html" \
-	"${params.prefix?:""}index.html"
+xmllint --xinclude jeter.doc.xml > TMP/jeter2.svg
+mv TMP/jeter2.svg TMP/jeter.svg
+
+
+mv TMP/jeter.svg "${prefix}.svg"
+
+gzip --best < "${prefix}.svg" > \${HOME}/jeter.svg.gz
+"""
+stub:
+    def prefix = task.ext.prefix?:"${meta.id}.circular"
+"""
+touch versions.yml  ${prefix}.svg
 """
 }
+

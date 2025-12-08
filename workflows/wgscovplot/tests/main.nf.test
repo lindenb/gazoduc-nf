@@ -1,0 +1,38 @@
+nextflow_pipeline {
+
+    name "Test Workflow wgscovplot"
+    script "workflows/wgscovplot/main.nf"
+    tag "gitlab_ci"
+    tag "workflows"
+    tag "workflows/wgscovplot"
+    tag "sub"
+    options "-stub"
+
+    test("STUB") {
+
+    setup {
+            try(java.io.PrintWriter pw = new java.io.PrintWriter("${launchDir}.samplesheet.list")) {
+                for(int i=01;i< 6;i++) {
+                    pw.println("${projectDir}/tests/data/S"+i+".bam");
+                    }
+                pw.flush();
+                }
+            } 
+
+
+        when {
+            params {
+                // define parameters here. Example: 
+                outdir = "tests-output/results"
+		        fasta = "${projectDir}/tests/data/rotavirus_rf.fa"
+                samplesheet = "${launchDir}.samplesheet.list"
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+
+    }
+
+}

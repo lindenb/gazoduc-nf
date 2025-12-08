@@ -52,7 +52,7 @@ main:
     versions = versions.mix(BED_TO_XML.out.versions)
    
     XSLTPROC(
-        [[id:"no_stylesheet"],"${projectDir}/src/xsl/cytoband2svg.xsl"],
+        [[id:"cyto2svg"],"${moduleDir}/../../../src/xsl/cytoband2svg.xsl"],
         BED_TO_XML.out.xml
         )
     versions = versions.mix(XSLTPROC.out.versions)
