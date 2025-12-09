@@ -47,7 +47,7 @@ workflow INDEXCOV_TO_SVG {
 			.splitCsv(header:false,sep:'\t',limit:1)
 			.flatMap{meta,header,bed->{
 				def L=[];
-				def r_max = (metadata.radius*1.0)-50;
+				def r_max = ((metadata.radius?:1000)*1.0)-50;
 				def r_min  = r_max*0.1;
 				def dr = java.lang.Math.min(50.0,(r_max-r_min)/(header.size()-3));
 				def r = r_max;

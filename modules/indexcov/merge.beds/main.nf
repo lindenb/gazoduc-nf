@@ -84,6 +84,8 @@ touch versions.yml
 stub:
  def prefix = task.ext.prefix?:meta.id+".merge"
 """
-touch versions.yml ${prefix}.bed.gz ${prefix}.bed.gz.tbi
+touch versions.yml  ${prefix}.bed.gz.tbi
+echo -e "chrom\tstart\tend\tS1\tS2\tS3\tS4" > ${prefix}.bed
+gzip ${prefix}.bed
 """
 }
