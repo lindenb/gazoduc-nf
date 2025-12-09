@@ -26,13 +26,14 @@ include {INDEXCOV_REBUILD_BAI                } from '../../../modules/indexcov/r
 include {APPLY_INDEXCOV                      } from '../../../modules/indexcov/apply'
 include {MERGE_BEDS                          } from '../../../modules/indexcov/merge.beds'
 include {JVARKIT_INDEXCOV2VCF                } from '../../../modules/jvarkit/indexcov2vcf'
-
+include {INDEXCOV_TO_SVG                     } from '../../../subworkflows/indexcov/circular'
 workflow INDEXCOV {
      take:
-	 	meta
+	 	metadata
         fasta
 		fai
 		dict
+		scatter_N_bed
 		pedigree
 		bams /* 		meta,bam,(bai)*/
 
@@ -52,7 +53,7 @@ workflow INDEXCOV {
 			)
 		versions = versions.mix(INDEXCOV_REBUILD_BAI.out.versions)
 
-		def collate_size = ((meta.batch_size?:1000) as int)
+		def collate_size = ((metadata.batch_size?:1000) as int)
 
 		bams2_ch = INDEXCOV_REBUILD_BAI.out.bam.mix(ch1.no_need_to_rebuild)
 			.map{[it[1],it[2]]} //bam,bai
@@ -83,17 +84,26 @@ workflow INDEXCOV {
 		APPLY_INDEXCOV.out.bed.
 			map{T->T[1]}.
 			collect().
-			map{[meta,it]}
+			map{[metadata,it]}
 		)
 	versions = versions.mix(MERGE_BEDS.out.versions)
 
 	JVARKIT_INDEXCOV2VCF(
 		fasta,fai,dict,
 		pedigree,
-		MERGE_BEDS.out.bed.map{[it[0],it[1]]}
+		MERGE_BEDS.out.bed.map{meta,bed,_tbi->[meta,bed]}
 		)
 	versions = versions.mix(JVARKIT_INDEXCOV2VCF.out.versions)
-
+	
+	INDEXCOV_TO_SVG(
+		metadata,
+		fasta,
+		fai,
+		dict,
+		scatter_N_bed,
+		MERGE_BEDS.out.bed.map{meta,bed,_tbi->[meta,bed]}
+		)
+	versions = versions.mix(MERGE_BEDS.out.versions)
 
 	emit:
 		bed  = MERGE_BEDS.out.bed

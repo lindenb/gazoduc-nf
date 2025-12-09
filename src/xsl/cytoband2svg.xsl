@@ -11,7 +11,7 @@ this stylesheet converts a ucsc cytoband +jvarkit bed2xml to a SVG fragment
 -->
 
 
-<xsl:output method="xml" encoding="UTF-8" />
+<xsl:output method="xml" encoding="UTF-8" indent="yes" />
 <xsl:include href="circular.mod.xsl"/>
 <xsl:include href="rec.mod.xsl"/>
 <xsl:param name="radius_R1">1000</xsl:param>

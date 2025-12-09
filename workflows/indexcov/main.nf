@@ -24,26 +24,36 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-
+include { validateParameters         } from 'plugin/nf-schema'
+include { paramsHelp                 } from 'plugin/nf-schema'
+include { paramsSummaryLog           } from 'plugin/nf-schema'
+include { samplesheetToList          } from 'plugin/nf-schema'
 include { INDEXCOV                   } from '../../subworkflows/indexcov/simple'
 include { JVARKIT_BAM_RENAME_CONTIGS } from '../../modules/jvarkit/bamrenamechr'
-include { runOnComplete;dumpParams   } from '../../modules/utils/functions.nf'
+include { runOnComplete              } from '../../modules/utils/functions.nf'
 include { COMPILE_VERSIONS           } from '../../modules/versions'
 include { READ_SAMPLESHEET           } from '../../subworkflows/nf/read_samplesheet'
 include { META_TO_BAMS               } from '../../subworkflows/samtools/meta2bams2'
 include { META_TO_PED                } from '../../subworkflows/pedigree/meta2ped'
 include {PREPARE_ONE_REFERENCE       } from '../../subworkflows/samtools/prepare.one.ref'
 
-if( params.help ) {
-    dumpParams(params);
-    exit 0
-}  else {
-    dumpParams(params);
-}
 
 
 
 workflow {
+
+
+	validateParameters()
+
+
+	if( params.help ) {
+		log.info(paramsHelp())
+		exit 0
+	}  else {
+	// Print summary of supplied parameters
+	log.info paramsSummaryLog(workflow)
+	}
+
 
 	/* no fastq samplesheet */
 	if(params.samplesheet==null) {
@@ -55,6 +65,9 @@ workflow {
 		log.error("--fasta undefined")
 		exit -1
 		}
+
+
+
 
 	versions = Channel.empty()
  	def metadata = [ id: "indexcov"   ]
@@ -111,16 +124,17 @@ workflow {
 		)
 	versions =versions.mix(JVARKIT_BAM_RENAME_CONTIGS.out.versions)
 
-
  	
 
 	INDEXCOV(
 		metadata.plus([
-			batch_size:  (params.batch_size as int)
+			batch_size:  (params.batch_size as int),
+			radius: (params.radius as int)
 			]),
 		PREPARE_ONE_REFERENCE.out.fasta,
 		PREPARE_ONE_REFERENCE.out.fai,
 		PREPARE_ONE_REFERENCE.out.dict,
+		PREPARE_ONE_REFERENCE.out.complement_bed,
 		pedigree,
 		bams.ok_ref.map{meta,bam,bai,_fasta,_fai,_dict->[[id:meta.id],bam,bai]}
 			.mix(JVARKIT_BAM_RENAME_CONTIGS.out.bam.map{[it[0].plus([force_rebuild:false]),it[1],it[2]]})

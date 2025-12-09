@@ -8,6 +8,7 @@ nextflow_workflow {
     tag "subworkflows/indexcov"
 
     test("STUB") {
+        tag "stub"
         options "-stub" // rota genome is too small
         when {
             params {
@@ -20,8 +21,9 @@ nextflow_workflow {
                 input[1] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")]
                 input[2] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
                 input[3] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")]
-                input[4] = Channel.of([[id:"noped"], []])
-                input[5] = Channel.of(
+                input[4] = [[id:"no_scatter_bed"],[]]
+                input[5] = Channel.of([[id:"noped"], []])
+                input[6] = Channel.of(
                         [[id:"S1"],"${projectDir}/tests/data/S1.bam"],
                         [[id:"S2"],"${projectDir}/tests/data/S2.bam"],
                         [[id:"S3"],"${projectDir}/tests/data/S3.bam"]

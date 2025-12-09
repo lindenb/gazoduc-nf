@@ -33,6 +33,7 @@ workflow INDEXCOV {
 		fasta
 		fai
 		dict
+		scatter_N_bed
 		pedigree
 		bams
      main:
@@ -91,19 +92,23 @@ workflow INDEXCOV {
 		APPLY_INDEXCOV.out.bed.
 			map{T->T[1]}.
 			collect().
-			map{[meta,it]}
+			map{[[id:meta.id],it]}
 		)
 	versions = versions.mix(MERGE_BEDS.out.versions)
+
+	bed_ch = MERGE_BEDS.out.bed
+
+
 
 	JVARKIT_INDEXCOV2VCF(
 		fasta,fai,dict,
 		pedigree,
-		MERGE_BEDS.out.bed.map{[it[0],it[1]]}
+		bed_ch.map{meta,bed,tbi->[meta,bed]}
 		)
 	versions = versions.mix(JVARKIT_INDEXCOV2VCF.out.versions)
 
 	emit:
-		bed  = MERGE_BEDS.out.bed
+		bed  = bed_ch
 		zip = APPLY_INDEXCOV.out.zip
 		vcf  = JVARKIT_INDEXCOV2VCF.out.vcf
 		multiqc

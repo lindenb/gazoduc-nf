@@ -1,0 +1,57 @@
+nextflow_workflow {
+
+    name "Test Workflow INDEXCOV_TO_SVG"
+    script "subworkflows/indexcov/circular/main.nf"
+    workflow "INDEXCOV_TO_SVG"
+    tag "gitlab_ci"
+    tag "subworkflows"
+    tag "subworkflows/indexcov"
+    tag "subworkflows/indexcov/circular"
+
+    test("STUB") {
+        tag "stub"
+        options "-stub" // rota genome is too small
+
+        setup {
+            try(java.io.PrintWriter pw = new java.io.PrintWriter("${launchDir}/indexcov.bed")) {
+                pw.print("chrom\tstart\tend");
+                 for(int y=0;y< 10;++y) {
+                        pw.print("\tS"+y);
+                        }
+                    pw.println();
+                for(int x=0;x<100;++x) {
+                    pw.print("chr1\t"+(x*1000)+"\t"+((x+1)*1000));
+                    for(int y=0;y< 10;++y) {
+                        pw.print("\t"+java.lang.Math.random());
+                        }
+                    pw.println();
+                    }
+                }
+            } 
+
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [radius:1000,id:"circos"]
+                input[1] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[2] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[3] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[4] = Channel.of([[id:"no_scatter_bed"],file("${projectDir}/tests/data/rotavirus_rf.01.bed")])
+                input[5] = Channel.of([[id:"indexcovbed"],file("${launchDir}/indexcov.bed")])
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

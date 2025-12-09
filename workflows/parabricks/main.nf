@@ -634,6 +634,7 @@ if(params.known_indels_vcf!=null) {
       PREPARE_ONE_REFERENCE.out.fasta,
       PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
+      PREPARE_ONE_REFERENCE.out.complement_bed,
       META_TO_PED.out.pedigree_gatk,
       bams_ch.map{meta,bam,bai->[meta,bam]/* no BAI please */}
       )

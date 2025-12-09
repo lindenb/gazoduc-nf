@@ -423,7 +423,7 @@ mv TMP/jeter2.svg TMP/jeter.svg
 
 mv TMP/jeter.svg "${prefix}.svg"
 
-gzip --best < "${prefix}.svg" > \${HOME}/jeter.svg.gz
+### gzip --best < "${prefix}.svg" > \${HOME}/jeter.svg.gz
 """
 stub:
     def prefix = task.ext.prefix?:"${meta.id}.circular"
