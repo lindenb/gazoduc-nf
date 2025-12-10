@@ -426,49 +426,6 @@ touch versions.yml ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi
 
 
 
-process CONCAT_SITES {
-tag "${meta.id}"
-label "process_single"
-afterScript "rm -rf TMP"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-input:
-	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai)
-	tuple val(meta),path("genotyped??.vcf.gz")
-output:
-	tuple val(meta),path("sites.vcf.gz"),path("sites.vcf.gz.tbi"),emit:vcf
-script:
-"""
-set -x
-mkdir -p TMP
-find ./ -name "*.vcf.gz" | while read F
-do
-	bcftools view -G --header-only "\${F}" > TMP/vcf.header
-	
-	bcftools annotate -x 'ID,QUAL,FILTER,INFO'  "\${F}" |\\
-		bcftools view -G --no-header >> TMP/vcf.body
-	
-done
-
-sort  -T TMP TMP/vcf.body | uniq > TMP/vcf.body2
-
-cat TMP/vcf.header TMP/vcf.body2 |\\
-	bcftools sort --max-mem ${task.memory.giga}G -T TMP/x -O u '-' |\\
-	bcftools norm  --multiallelics +both -O u '-' |\\
-	bcftools view -m 2 -M 2 --type snps -O z -o TMP/jeter.vcf.gz
-	
-bcftools index -f -t TMP/jeter.vcf.gz
-
-
-mv TMP/jeter.vcf.gz sites.vcf.gz
-mv TMP/jeter.vcf.gz.tbi sites.vcf.gz.tbi
-"""
-stub:
-    prefix = "sites"
-"""
-touch versions.yml ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi
-"""
-}
 
 
 

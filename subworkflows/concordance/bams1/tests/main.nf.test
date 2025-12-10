@@ -1,0 +1,81 @@
+nextflow_workflow {
+    name "Test Workflow CONCORDANCE_BAMS"
+    script "subworkflows/concordance/bams1/main.nf"
+    workflow "CONCORDANCE_BAMS"
+    tag "gitlab_ci"
+    tag "subworkflows"
+    tag "subworkflows/concordance"
+    tag "subworkflows/concordance/bams1"
+
+    test("STUB") {
+        tag "stub"
+        options "-stub"
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0]= [
+                    id:"concordance"
+                    ]
+                input[1] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[2] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[3] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[4] = Channel.of([[id:"vcf"],file("${projectDir}/tests/data/rotavirus_rf.vcf.gz"),file("${projectDir}/tests/data/rotavirus_rf.vcf.gz.tbi")])
+                input[5] = Channel.of(
+                            [[id:"S1"],file("${projectDir}/tests/data/S1.bam"),file("${projectDir}/tests/data/S1.bam.bai")],
+                            [[id:"S2"],file("${projectDir}/tests/data/S2.bam"),file("${projectDir}/tests/data/S2.bam.bai")],
+                            [[id:"S3"],file("${projectDir}/tests/data/S3.bam"),file("${projectDir}/tests/data/S3.bam.bai")],
+                            [[id:"S4"],file("${projectDir}/tests/data/S4.bam"),file("${projectDir}/tests/data/S4.bam.bai")],
+                            [[id:"S5"],file("${projectDir}/tests/data/S5.bam"),file("${projectDir}/tests/data/S5.bam.bai")]
+                            )
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+
+    test("BASIC") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0]= [
+                    id:"concordance"
+                    ]
+                input[1] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[2] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[3] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[4] = Channel.of([[id:"vcf"],file("${projectDir}/tests/data/rotavirus_rf.vcf.gz"),file("${projectDir}/tests/data/rotavirus_rf.vcf.gz.tbi")])
+                input[5] = Channel.of(
+                            [[id:"S1"],file("${projectDir}/tests/data/S1.bam"),file("${projectDir}/tests/data/S1.bam.bai")],
+                            [[id:"S2"],file("${projectDir}/tests/data/S2.bam"),file("${projectDir}/tests/data/S2.bam.bai")],
+                            [[id:"S3"],file("${projectDir}/tests/data/S3.bam"),file("${projectDir}/tests/data/S3.bam.bai")],
+                            [[id:"S4"],file("${projectDir}/tests/data/S4.bam"),file("${projectDir}/tests/data/S4.bam.bai")],
+                            [[id:"S5"],file("${projectDir}/tests/data/S5.bam"),file("${projectDir}/tests/data/S5.bam.bai")]
+                            )
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+
+}

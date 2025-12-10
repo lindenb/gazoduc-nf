@@ -8,6 +8,7 @@ nextflow_workflow {
     tag "subworkflows/cnvnator"
 
     test("STUB") {
+        tag "stub"
         options "-stub"
         when {
             params {
