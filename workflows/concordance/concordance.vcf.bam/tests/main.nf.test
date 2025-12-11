@@ -1,0 +1,41 @@
+nextflow_pipeline {
+
+    name "Test Workflow main.nf"
+    script "workflows/concordance/concordance.vcf.bam/main.nf"
+    tag "gitlab_ci"
+    tag "workflows"
+    tag "workflows/concordance"
+    tag "workflows/concordance/concordance.vcf.bam"
+
+
+
+    test("STUB") {
+        tag "stub"
+        options "-stub"
+
+          setup {
+            try(java.io.PrintWriter pw = new java.io.PrintWriter("${launchDir}/samplesheet.csv")) {
+                pw.println("sample,bam");
+                for(int i=1;i< 6;i++) {
+                    pw.println("S"+i+",S"+i+".bam");
+                    }
+                pw.flush();
+                }
+            } 
+
+
+        when {
+            params {
+		        fasta = "${projectDir}/tests/data/rotavirus_rf.fa"
+                vcf =   "${projectDir}/tests/data/rotavirus_rf.vcf.gz"
+                samplesheet = "${launchDir}/samplesheet.csv"
+                }
+            }
+
+        then {
+            assert workflow.success
+        }
+
+    }
+
+}

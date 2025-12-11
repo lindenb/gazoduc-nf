@@ -22,10 +22,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include { runOnComplete; dumpParams     } from '../../../modules/utils/functions.nf'
+include { runOnComplete                 } from '../../../modules/utils/functions.nf'
 include { PREPARE_ONE_REFERENCE         } from '../../../subworkflows/samtools/prepare.one.ref'
 include { MULTIQC                       } from '../../../modules/multiqc'
 include { CONCORDANCE_BAMS              } from '../../../subworkflows/concordance/bams1'
+include { COMPILE_VERSIONS              } from '../../../modules/versions/main.nf'
 
 workflow {
 	if(params.samplesheet==null) {
@@ -74,4 +75,15 @@ workflow {
         bams
         )
     versions = versions.mix(CONCORDANCE_BAMS.out.versions)
+
+    COMPILE_VERSIONS(versions.collect())
+    multiqc = multiqc.mix(COMPILE_VERSIONS.out.multiqc)
+
+    MULTIQC(
+                [[id:"no_mqc_config"],[]],
+                multiqc.collect().map{[[id:metadata.id],it]}
+                )
+
     }
+
+runOnComplete(workflow)
