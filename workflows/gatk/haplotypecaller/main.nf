@@ -58,6 +58,8 @@ include {ANNOT_SNV                           } from '../../../subworkflows/annot
 include {BCFTOOLS_SORT                       } from '../../../modules/bcftools/sort'
 include {BCFTOOLS_INDEX                      } from '../../../modules/bcftools/index'
 include {BCFTOOLS_CONCAT as CONCAT_ANNOT     } from '../../../modules/bcftools/concat3'
+include { JVARKIT_VCF_TO_TABLE as VCF2TXT    } from '../../../modules/jvarkit/vcf2table'
+include { JVARKIT_VCF_TO_TABLE as VCF2HTML   } from '../../../modules/jvarkit/vcf2table'
 
 // Print help message, supply typical command line usage for the pipeline
 if (params.help) {
@@ -375,6 +377,24 @@ workflow {
         vcfs = CONCAT_ANNOT.out.vcf
         }
 
+  /***************************************************
+   *
+   * VCF TO TABLE
+   *
+   */
+   if( parseBoolean(params.with_vcf2table) ) {
+        VCF2TXT(
+            [[id:"no_ped"],[]],
+            vcfs.map{meta,vcf,_tbi->[meta,vcf]}
+            )
+        versions = versions.mix(VCF2TXT.out.versions)
+
+        VCF2HTML(
+            [[id:"no_ped"],[]],
+            vcfs.map{meta,vcf,_tbi->[meta,vcf]}
+            )
+        versions = versions.mix(VCF2HTML.out.versions)
+        }
 
   /***************************************************
    *

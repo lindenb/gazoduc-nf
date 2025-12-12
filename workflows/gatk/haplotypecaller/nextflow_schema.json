@@ -74,7 +74,12 @@
           "format": "file-path",
           "exists": true,
           "description": "jvarkit filter that select variants of interest"
-        }
+        },
+        "with_vcf2table": {
+         "type": "boolean",
+         "exists": true,
+         "description": "produce a vcf2table report"
+       }
       }
     }
     
