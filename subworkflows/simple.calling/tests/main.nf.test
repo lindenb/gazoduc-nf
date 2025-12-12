@@ -21,7 +21,7 @@ nextflow_workflow {
         }
 
     test("GATK") {
-
+	// plante avec gitlab cy
         when {
             params {
                 // define parameters here. Example:
@@ -60,7 +60,7 @@ nextflow_workflow {
 
 
    test("FREEBAYES") {
-
+        tag "gitlab_ci"
         when {
             params {
                 // define parameters here. Example:
@@ -99,6 +99,7 @@ nextflow_workflow {
 
 
    test("BCFTOOLS") {
+        tag "gitlab_ci"
 
         when {
             params {

@@ -3,13 +3,13 @@ nextflow_workflow {
     name "Test Workflow MANTA"
     script "subworkflows/manta/main.nf"
     workflow "MANTA"
-    tag "gitlab_ci"
+        // tag "gitlab_ci"
     tag "subworkflows"
     tag "subworkflows/manta"
     tag "subworkflows/manta/single"
 
     test("BASIC") {
-
+      
         when {
             params {
                 // define parameters here. Example:

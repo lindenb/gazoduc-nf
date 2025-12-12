@@ -69,7 +69,7 @@ then
 	fi
 fi
 
-cat TMP/jeter3.bed
+#cat TMP/jeter3.bed
 
 bcftools view ${args1} \\
 	${has_bed?" --regions-file TMP/jeter3.bed":""} \\

@@ -9,7 +9,7 @@
       "title": "Input / Ouput",
       "type": "object",
       "description": "General Parameters",
-      "required": ["fasta","samplesheet","gnomad"],
+      "required": ["fasta","samplesheet"],
       "properties": {
         "fasta": {
           "type": "string",

@@ -17,6 +17,7 @@ before_script:
   - arch
   - mkdir -p ${HOME}/CONDA
   - export NXF_CONDA_CACHEDIR=${HOME}/CONDA
+  - wget -O ${HOME}/jvarkit.jar "https://uncloud.univ-nantes.fr/public.php/dav/files/EZqMgLBYG4ARJTS"
 
 stages:
   - test

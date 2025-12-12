@@ -3,7 +3,6 @@ nextflow_workflow {
     name "Test Workflow HAPLOTYPECALLER"
     script "subworkflows/gatk/haplotypecaller/main.nf"
     workflow "HAPLOTYPECALLER"
-    tag "gitlab_ci"
     tag "subworkflows"
     tag "subworkflows/gatk"
     tag "subworkflows/gatk/haplotypecaller"
@@ -25,6 +24,7 @@ nextflow_workflow {
 
 
     test("COMBINE_GVCFS") {
+	tag "gitlab_ci"
 
         when {
             params {
@@ -63,6 +63,8 @@ nextflow_workflow {
 
 
     test("GLNEXUS (STUB)") {
+	//tag "gitlab_ci"
+	tag "stub"
 	options "-stub"
         when {
             params {
@@ -99,7 +101,7 @@ nextflow_workflow {
     }
 
     test("DBSNP") {
-
+	tag "gitlab_ci"
         when {
             params {
                 // define parameters here. Example:

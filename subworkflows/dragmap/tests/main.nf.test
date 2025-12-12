@@ -3,7 +3,7 @@ nextflow_workflow {
     name "Test Workflow MAP_DRAGMAP"
     script "subworkflows/dragmap/main.nf"
     workflow "MAP_DRAGMAP"
-    tag "gitlab_ci"
+    // tag "gitlab_ci"
     tag "subworkflows"
     tag "subworkflows/dragmap"
 
