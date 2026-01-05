@@ -43,12 +43,29 @@ take:
 main:
 	versions_ch = Channel.empty()
 	reports_ch  = Channel.empty()
-	metadata_ch = Channel.empty()
-	bed_outliers = bed
 	sample_sex_ch =  Channel.empty()
 	mosdepth_global = Channel.empty()
 	mosdepth_summary = Channel.empty()
 	mosdepth_regions = Channel.empty()
+
+	if(meta.with_mosdepth==null) {
+		log.warn("BAM_QC: undefined meta.with_mosdepth");
+		}
+	if(meta.with_samtools_stats==null) {
+		log.warn("BAM_QC: undefined meta.with_samtools_stats");
+		}
+	if(meta.with_samtools_idxstats==null) {
+		log.warn("BAM_QC: undefined meta.with_samtools_idxstats");
+		}
+	if(meta.with_samtools_flagstats==null) {
+		log.warn("BAM_QC: undefined meta.with_samtools_flagstats");
+		}
+	if(meta.with_collect_metrics==null) {
+		log.warn("BAM_QC: undefined meta.with_collect_metrics");
+		}		
+	if(meta.with_depth_outliers==null) {
+		log.warn("BAM_QC: undefined meta.with_depth_outliers");
+		}		
 
 
 	if(meta.with_mosdepth==null || parseBoolean(meta.with_mosdepth)) {

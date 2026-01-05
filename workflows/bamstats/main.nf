@@ -29,9 +29,9 @@ include {runOnComplete;testKeyExistsAndNotEmpty;assertKeyMatchRegex} from '../..
 include {assertKeyExistsAndNotEmpty                                } from '../../modules/utils/functions.nf'
 include {BAM_QC                                                    } from '../../subworkflows/bamqc'
 include {SCATTER_TO_BED                                            } from '../../subworkflows/gatk/scatterintervals2bed'
-include {MULTIQC                                                   } from '../../modules/multiqc'
-include {COMPILE_VERSIONS                                          } from '../../modules/versions/main.nf'
-include {PREPARE_REFERENCE                                         } from '../../subworkflows/samtools/prepare.ref'
+include {MULTIQC                                                   } from '../../subworkflows/multiqc'
+include {PREPARE_ONE_REFERENCE                                     } from '../../subworkflows/samtools/prepare.one.ref'
+include {PREPARE_USER_BED                                          } from '../../subworkflows/bedtools/prepare.user.bed'
 
 // Print help message, supply typical command line usage for the pipeline
 if (params.help) {
@@ -48,8 +48,7 @@ if (params.help) {
 
 workflow {
 	versions = Channel.empty()
-	to_multiqc = Channel.empty()
-	tozip_ch = Channel.empty()
+	multiqc = Channel.empty()
 
    def project_root = file("${launchDir}")
    if(params.fasta==null) {
@@ -60,26 +59,29 @@ workflow {
 	throw new IllegalArgumentException("--samplesheet undefined")
 	}
 		
-    def hash_ref= [
-      id: file(params.fasta).baseName,
-      name: file(params.fasta).baseName,
-      ucsc_name: (params.ucsc_name?:"undefined")
+    def metadata = [
+      id: "bamstats"
       ]
-	def fasta = [ hash_ref, file(params.fasta)]
   
   
-  PREPARE_REFERENCE(hash_ref, Channel.of(fasta))
-  versions = versions.mix(PREPARE_REFERENCE.out.versions)
-  fai = PREPARE_REFERENCE.out.fai
-  dict = PREPARE_REFERENCE.out.dict
- 
+  PREPARE_ONE_REFERENCE(metadata, Channel.of(file(params.fasta)).map{f->[[id:f.baseName],f]})
+  versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
+
   if(params.bed==null) {
-    SCATTER_TO_BED(hash_ref,fasta,fai,dict)
-    versions = versions.mix(SCATTER_TO_BED.out.versions)
-    bed = SCATTER_TO_BED.out.bed
+    bed = PREPARE_ONE_REFERENCE.out.scatter_bed
   } else {
-      bed = Channel.of([hash_ref, project_root.resolve(file(params.bed)) ])
-  }
+
+	PREPARE_USER_BED(
+			metadata,
+			PREPARE_ONE_REFERENCE.out.fasta,
+			PREPARE_ONE_REFERENCE.out.fai,
+			PREPARE_ONE_REFERENCE.out.dict,
+			PREPARE_ONE_REFERENCE.out.scatter_bed,
+			Channel.of([[id:file(params.bed).baseName],file(params.bed)])
+			)
+	versions = versions.mix(PREPARE_USER_BED.out.versions)
+	bed = PREPARE_USER_BED.out.bed.first()
+  	}
 
 
     bams_ch = Channel.fromPath(params.samplesheet)
@@ -104,38 +106,35 @@ workflow {
 				}
 	
 	BAM_QC(
-		hash_ref,
-		fasta,
-		fai,
-		dict,
+		metadata.plus(
+			with_mosdepth: params.with_mosdepth,
+			with_samtools_stats : params.with_samtools_stats,
+			with_samtools_idxstats : params.with_samtools_idxstats,
+			with_samtools_flagstats : params.with_samtools_flagstat,
+			with_collect_metrics : params.with_CollectWgsMetrics,
+			with_depth_outliers : params.with_depth_outliers
+			),
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		PREPARE_ONE_REFERENCE.out.dict,
 		bed,
 		bams_ch
 		)
-        versions = versions.mix(BAM_QC.out.versions)
+	versions = versions.mix(BAM_QC.out.versions)
+	multiqc  = multiqc.mix(BAM_QC.out.multiqc)
 
-        COMPILE_VERSIONS(versions.collect())
-        to_multiqc = to_multiqc.mix(COMPILE_VERSIONS.out.multiqc)
-
-        MULTIQC(
-			[[id:"no_mqc_config"],[]],
-			to_multiqc.collect().map{[[id:"bamqc"],it]}
-			)
+	
+	MULTIQC(
+		metadata,
+		Channel.of([[id:"no_sample2col"],[]]),
+		versions,
+		Channel.of([[id:"no_mqc_config"],[]]),
+		multiqc
+		)
 
 }
 
 runOnComplete(workflow)
-
-
-process ZIP_IT {
-	input:
-		tuple val(name),path("FILES/*")
-	output:
-		path("${name}.zip"),emit:output
-	script:
-	"""
-	zip -9j "${name}.zip" FILES/*
-	"""
-	}
 
 
 
