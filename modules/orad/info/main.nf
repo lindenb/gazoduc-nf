@@ -72,6 +72,7 @@ ${oradir}/orad \\
 
 mv  TMP/jeter.a "${prefix}.info.txt"
 
+
 cat <<-END_VERSIONS > versions.yml    
 "${task.process}":
     orad: \$(${oradir}/orad --version | awk '(NR==1) {print \$3;}')

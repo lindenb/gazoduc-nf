@@ -531,7 +531,7 @@ touch versions.yml ${prefix}.txt
 process PLOT_CONCORDANCE {
 label "process_single"
 tag "${meta.id} ${meta.sample}"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.02.yml"
 afterScript "rm -rf TMP"
 input:
         tuple val(meta),path(metrics)

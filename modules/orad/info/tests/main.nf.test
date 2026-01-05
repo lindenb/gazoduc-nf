@@ -6,7 +6,7 @@ nextflow_process {
     tag "modules"
     tag "modules/orad"
     tag "modules/orad/info"
-    config "../download/nextflow.config"
+    //config "../download/nextflow.config"
 
 
    

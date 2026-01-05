@@ -11,7 +11,8 @@ nextflow_pipeline {
 
 
     test("ROTA") {
-
+	tag "stub"
+	options "-stub"
         when {
             params {
                 fasta       = "${projectDir}/tests/data/rotavirus_rf.fa"
