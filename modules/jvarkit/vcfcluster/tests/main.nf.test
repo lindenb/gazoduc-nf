@@ -1,0 +1,47 @@
+nextflow_process {
+
+    name "Test Process JVARKIT_VCF_CLUSTER"
+    script "modules/jvarkit/vcfcluster/main.nf"
+    process "JVARKIT_VCF_CLUSTER"
+    tag "gitlab_ci"
+    tag "modules"
+    tag "modules/jvarkit"
+    tag "modules/jvarkit/vcfcluster"
+    config "./nextflow.config"
+    
+    test("BASIC") {
+
+        when {
+            process {
+                """
+                input[0] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.ann.vcf.gz")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+    test("STUB") {
+        tag "stub"
+        options "-stub"
+        when {
+            process {
+                """
+                input[0] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.ann.vcf.gz")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+}

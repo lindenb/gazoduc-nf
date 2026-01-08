@@ -24,6 +24,11 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
+
+include { validateParameters         } from 'plugin/nf-schema'
+include { paramsHelp                 } from 'plugin/nf-schema'
+include { paramsSummaryLog           } from 'plugin/nf-schema'
+include { samplesheetToList          } from 'plugin/nf-schema'
 include { runOnComplete;dumpParams    } from '../../modules/utils/functions.nf'
 include { parseBoolean                } from '../../modules/utils/functions.nf'
 include { assertKeyExistsAndNotEmpty  } from '../../modules/utils/functions.nf'
@@ -34,16 +39,22 @@ include { READ_SAMPLESHEET            } from '../../subworkflows/nf/read_samples
 include { PREPARE_USER_BED            } from '../../subworkflows/bedtools/prepare.user.bed'
 
 
-if( params.help ) {
-    dumpParams(params);
-    exit 0
-}  else {
-    dumpParams(params);
-}
 
 
 
 workflow {
+		validateParameters()
+
+		if( params.help ) {
+			log.info(paramsHelp())
+			exit 0
+		}  else {
+		// Print summary of supplied parameters
+		log.info paramsSummaryLog(workflow)
+		}
+
+
+
 	if(params.fasta==null) {
 			throw new IllegalArgumentException("undefined --fasta");
 			}

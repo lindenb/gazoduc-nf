@@ -26,13 +26,18 @@ nextflow.enable.dsl=2
 
 include {GRAPHTYPER_GENOTYPE_SV           } from '../../../modules/graphtyper/genotype_sv'
 include {runOnComplete;dumpParams         } from '../../../modules/utils/functions.nf'
-include {SCATTER_TO_BED                   } from '../../../subworkflows/gatk/scatterintervals2bed'
+include {removeCommonSuffixes             } from '../../../modules/utils/functions.nf'
 include {MULTIQC                          } from '../../../modules/multiqc'
 include {COMPILE_VERSIONS                 } from '../../../modules/versions/main.nf'
 include {JVARKIT_VCF_SET_DICTIONARY       } from '../../../modules/jvarkit/vcfsetdict'
+include {JVARKIT_VCF_CLUSTER              } from '../../../modules/jvarkit/vcfcluster'
 include {BCFTOOLS_CONCAT                  } from '../../../modules/bcftools/concat'
 include {JVARKIT_BAM_RENAME_CONTIGS       } from '../../../modules/jvarkit/bamrenamechr'
 include {PLOT_COVERAGE_01                 } from '../../../subworkflows/plotdepth'
+include { PREPARE_ONE_REFERENCE           } from '../../../subworkflows/samtools/prepare.one.ref'
+include {READ_SAMPLESHEET as READ_BAMS    } from '../../../subworkflows/nf/read_samplesheet'
+include { META_TO_BAMS                    } from '../../../subworkflows/samtools/meta2bams1'
+include { PREPARE_USER_BED                } from '../../../subworkflows/bedtools/prepare.user.bed'
 
 if(params.help) {
     dumpParams(params);
@@ -41,121 +46,113 @@ if(params.help) {
     dumpParams(params);
 }
 
-Map assertKeyExists(final Map hash,final String key) {
-    if(!hash.containsKey(key)) throw new IllegalArgumentException("no key ${key}'in ${hash}");
-    return hash;
-}
-
-Map assertKeyExistsAndNotEmpty(final Map hash,final String key) {
-    assertKeyExists(hash,key);
-    def value = hash.get(key);
-    if(value.isEmpty()) throw new IllegalArgumentException("empty ${key}'in ${hash}");
-    return hash;
-}
-
-Map assertKeyMatchRegex(final Map hash,final String key,final String regex) {
-    assertKeyExists(hash,key);
-    def value = hash.get(key);
-    if(!value.matches(regex)) throw new IllegalArgumentException(" ${key}'in ${hash} doesn't match regex '${regex}'.");
-    return hash;
-}
 
 
 workflow {
-	def refhash=[
-		id: file(params.fasta).baseName,
-		name: file(params.fasta).baseName,
-		ucsc_name :( params.ucsc_name?:"undefined"),
-		ensembl_name : (params.ensembl_name?:"undefined")
-		]
 	versions = Channel.empty()
 	multiqc = Channel.empty()
 
-	def fasta =    [ refhash, file(params.fasta) ]
-	def fai   =    [ refhash, file(params.fai)  ]
-	def dict  =    [ refhash, file(params.dict) ]
-	def gtf  =    [ refhash, file(params.gtf),file(params.gtf +".tbi") ]
-	def pedigree = [ refhash, []]
-	def vcf = [ [id:file(params.vcf).name], file(params.vcf),file(params.vcf+ (params.vcf.endsWith(".vcf.gz")?".tbi":".csi"))]
 
-	if(params.pedigree!=null) {
-		pedigree = [ [id:file(params.pedigree).name], file(params.pedigree) ]
-	}
+    if(params.fasta==null) {
+        throw new IllegalArgumentException("undefined --fasta");
+        }
+	if(params.samplesheet==null) {
+		throw new IllegalArgumentException("undefined --samplesheet");
+		}
+    if(params.vcf==null) {
+		throw new IllegalArgumentException("undefined --vcf");
+		}
+	multiqc = Channel.empty()
+	versions = Channel.empty()
+	def metadata = [id:"graphtyper.cnv"]
+		
 
-   if(params.bed==null) {
-        SCATTER_TO_BED(refhash,fasta,fai,dict)
-        versions = versions.mix(SCATTER_TO_BED.out.versions)
-        bed = SCATTER_TO_BED.out.bed
-        }
-	else {
-        bed =  [refhash, file(params.bed) ]
-        }
-	
-	SPLIT_VCF( bed, Channel.of(vcf) )
-	versions = versions.mix(SPLIT_VCF.out.versions)
-
-	splitvcf = SPLIT_VCF.out.vcf.map{it[1]}.flatMap().map{[[id:(it.name+".tbi").md5()],it]}
-		.join(SPLIT_VCF.out.tbi.map{it[1]}.flatMap().map{[[id:it.name.md5()],it]})
-
-
-	bams_ch = Channel.fromPath(params.samplesheet)
-        .splitCsv(header:true,sep:',')
-        .map{assertKeyMatchRegex(it,"sample","^[A-Za-z_0-9\\.\\-]+\$")}
-        .map{assertKeyMatchRegex(it,"bam","^\\S+\\.(bam|cram)\$")}
-        .map{
-            if(it.containsKey("batch")) return it;
-            return it.plus(batch:"batch_"+it.sample);
-        }
-        .map{
-            if(it.containsKey("bai")) return it;
-            if(it.bam.endsWith(".cram")) return it.plus(bai : it.bam+".crai");
-            return it.plus(bai:it.bam+".bai");
-        }
-        .map{
-            if(it.containsKey("fasta")) return it;
-            return it.plus(fasta:params.fasta);
-        }
-        .map{
-            if(it.containsKey("fai")) return it;
-            return it.plus(fai:it.fasta+".fai");
-        }
-        .map{
-            if(it.containsKey("dict")) return it;
-            return it.plus(dict: it.fasta.replaceAll("\\.(fasta|fa|fna)\$",".dict"));
-        }
-        .map{assertKeyMatchRegex(it,"bai","^\\S+\\.(bai|crai)\$")}
-        .branch {
-            ok_ref: it.fasta.equals(params.fasta)
-            bad_ref: true
-            }
-
-
-	JVARKIT_BAM_RENAME_CONTIGS(
-		dict,
-		[[id:"nobed"],[]],
-		bams_ch.bad_ref.map{[[id:it.sample],file(it.bam),file(it.bai),file(it.fasta),file(it.fai),file(it.dict)]}
+	PREPARE_ONE_REFERENCE(
+		metadata,
+		Channel.fromPath(params.fasta).map{f->[[id:f.baseName],f]}
 		)
-
-	versions =versions.mix(JVARKIT_BAM_RENAME_CONTIGS.out.versions)
+	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
 	
 
-	bams2_ch = bams_ch.ok_ref.map{[[id:it.sample],file(it.bam),file(it.bai)]}
-			.mix(JVARKIT_BAM_RENAME_CONTIGS.out.bam.map{[it[0],it[1],it[2]]})
 
-	grouped_bams = bams2_ch.map{[it[1],it[2]]}
-                    .collect()
-                    .map{[[id:"gtyper"],it]}
-   
-	GRAPHTYPER_GENOTYPE_SV(
-		fasta,
-		dict,
-		fai,
+	//def gtf  =    [ metadata, file(params.gtf),file(params.gtf +".tbi") ]
+	//def pedigree = [ metadata, []]
+
+	READ_BAMS(
+		[arg_name:"samplesheet"],
+		params.samplesheet
+		)
+	versions = versions.mix(READ_BAMS.out.versions)
+	
+
+	META_TO_BAMS(
+		metadata ,
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		READ_BAMS.out.samplesheet
+		)
+	versions = versions.mix(META_TO_BAMS.out.versions)
+
+
+
+    
+
+	def vcf = Channel.of(params.vcf)
+        .map{vcf-> [
+            [id:removeCommonSuffixes(file(vcf).name)],
+            file(vcf)
+            ]}
+
+
+	JVARKIT_VCF_CLUSTER( vcf )
+	versions = versions.mix(JVARKIT_VCF_CLUSTER.out.versions)
+
+    vcfs = JVARKIT_VCF_CLUSTER.out.vcf
+            .map{meta,f->(f instanceof List?f:[f])}
+            .flatMap()
+            .map{f->[f.name+".tbi",f]}
+    tbis = JVARKIT_VCF_CLUSTER.out.tbi
+            .map{meta,f->(f instanceof List?f:[f])}
+            .flatMap()
+            .map{f->[f.name,f]}
+    vcfs = vcfs.join(tbis)
+        .map{_meta,f,tbi->[
+            [id:removeCommonSuffixes(f.name)],
+            f,
+            tbi
+            ]}
+
+
+
+
+    grouped_bams = META_TO_BAMS.out.bams.map{meta,bam,bai->[bam,bai]}
+        .flatMap()
+        .collect()
+        .map{[[id:"bams"],it.sort()]}
+
+
+    GRAPHTYPER_GENOTYPE_SV(
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		PREPARE_ONE_REFERENCE.out.dict,
 		grouped_bams,
-		splitvcf
+		vcfs
 		)
-	versions = versions.mix(GRAPHTYPER_GENOTYPE_SV.out.versions)
 
+    /*
+    vcfs = JVARKIT_VCF_CLUSTER.out.vcf
+        .map{meta,files->[meta,(files instanceof List?files:[files])]}
+        .flatMap()
+        .map{vcf->[[id:removeCommonSuffixes(vcf.name)],vcf]}
+
+	 = bams2_ch.
+   
 	
+	versions = versions.mix(GRAPHTYPER_GENOTYPE_SV.out.versions)
+    */
+
+    
+	/*
 
 	BCFTOOLS_CONCAT(
        	GRAPHTYPER_GENOTYPE_SV.out.vcf
@@ -199,8 +196,8 @@ workflow {
 		.combine(Channel.of(fasta).map{it[1]})
 		.combine(Channel.of(fai).map{it[1]})
 		.combine(Channel.of(dict).map{it[1]})
-		.combine(grouped_bams.map{[it[1]]}) /* convert to array */
-
+		.combine(grouped_bams.map{[it[1]]}) */ /* convert to array */
+    /*
 	PLOT_COVERAGE_01(
         [id:"graphtyper"],
         fasta,
@@ -211,67 +208,21 @@ workflow {
         bams2_ch
         )
     versions = versions.mix(PLOT_COVERAGE_01.out.versions)
-
+    */
     }
 	
 
     
 
-
+    /*
 	COMPILE_VERSIONS(versions.collect())
        multiqc = multiqc.mix(COMPILE_VERSIONS.out.multiqc)
 
     MULTIQC(multiqc.collect().map{[[id:"gtyper_sv"],it]})
+	*/
 	
-	}
 
 runOnComplete(workflow);
-
-process SPLIT_VCF {
-    label "process_single"
-    tag "${meta.id?:""} ${vcf.name}"
-    afterScript "rm -rf TMP"
-    conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-    input:
-	tuple val(meta1),path(bed)
-	tuple val(meta),path(vcf),path(idx)
-    output:
-	tuple val(meta),path("OUT/*.vcf.gz"),optional:true, emit:vcf
-	tuple val(meta),path("OUT/*.vcf.gz.tbi"),optional:true, emit:tbi
-	path("versions.yml"),emit:versions
-    script:
-	def maxlen = task.ext.maxlen?:1000000
-	def args1 = task.ext.args1?:""
-"""
-mkdir -p TMP/OUT
-set -x
-JD1=`which jvarkit`
-echo "JD1=\${JD1}" 1>&2
-# directory of jvarkit
-JD2=`dirname "\${JD1}"`
-# find the jar itself
-# https://unix.stackexchange.com/questions/62880/how-to-stop-the-find-command-after-first-match
-JVARKIT_JAR=`find "\${JD2}/../.." -type f -name "jvarkit.jar" -print -quit`
-
-test ! -z "\${JVARKIT_JAR}"
-
-cat "${moduleDir}/Minikit.java"  > TMP/Minikit.java
-
-javac -d TMP -cp \${JVARKIT_JAR} TMP/Minikit.java
-
-bcftools view ${args1} -G --targets-file "${bed}" --regions-overlap 2 "${vcf}" |\\
-	java	-Djava.awt.headless=true -cp \${JVARKIT_JAR}:TMP Minikit -o TMP/OUT -L ${maxlen}
-
-
-mv TMP/OUT ./
-cat << EOF > versions.yml
-"${task.process}":
-        jvarkit: todo
-        gatk: todo
-EOF
-"""
-}
-
 
 process GTYPER_DENOVO {
     label "process_single"

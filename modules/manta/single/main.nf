@@ -25,7 +25,8 @@ SOFTWARE.
 
 process MANTA_SINGLE {
     tag "${meta.id?:""}"
-	label "process_medium"
+    label "process_single"
+    label "manta"
     afterScript "rm -rf TMP"
     conda "${moduleDir}/../../../conda/manta.yml"
     input:
