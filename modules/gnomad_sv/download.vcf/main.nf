@@ -30,8 +30,6 @@ afterScript "rm -rf TMP"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-    tuple val(meta1),path(fasta)
-    tuple val(meta2),path(fai)
     tuple val(meta3),path(dict)
 output:
 	tuple val(meta1),path("*.vcf.gz"),path("*.tbi"),emit:vcf

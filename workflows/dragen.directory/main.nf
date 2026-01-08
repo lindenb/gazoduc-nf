@@ -93,8 +93,6 @@ workflow {
     
 
     DOWNLOAD_GNOMAD_SV(
-          PREPARE_ONE_REFERENCE.out.fasta,
-        PREPARE_ONE_REFERENCE.out.fai,
         PREPARE_ONE_REFERENCE.out.dict
         )
      versions = versions.mix(DOWNLOAD_GNOMAD_SV.out.versions)

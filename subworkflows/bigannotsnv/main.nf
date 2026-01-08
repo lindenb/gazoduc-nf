@@ -278,7 +278,7 @@ main:
 
 
     if(hasFeature(metadata,"gnomad_sv")) {  
-        DOWNLOAD_GNOMAD_SV(fasta,fai,dict)
+        DOWNLOAD_GNOMAD_SV(dict)
         versions = versions.mix(DOWNLOAD_GNOMAD_SV.out.versions)
         FREQUENT_GNOMADSV(fai, DOWNLOAD_GNOMAD_SV.out.vcf)
         versions = versions.mix(FREQUENT_GNOMADSV.out.versions)
