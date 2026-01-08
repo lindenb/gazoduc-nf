@@ -1,0 +1,94 @@
+nextflow_workflow {
+
+    name "Test Workflow BATIK"
+    script "subworkflows/batik/main.nf"
+    workflow "BATIK"
+    tag "gitlab_ci"
+    tag "subworkflows"
+    tag "subworkflows/batik"
+
+
+    setup {
+        try(java.io.PrintWriter pw = new java.io.PrintWriter("${launchDir}/samplesheet.svg")) {
+            pw.println("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+            pw.println("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"101\" height=\"101\">");
+            pw.println("  <rect x=\"0\" y=\"0\" width=\"100\" height=\"100\" style=\"fill:yellow;stroke:green;\"/>");
+            pw.println("</svg>");
+            pw.flush();
+            }
+        } 
+
+    test("NONE") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [:]
+                input[1] = Channel.empty()
+                
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+    test("BASIC") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [:]
+                input[1] = Channel.of( [[id:"hg38"], file("${launchDir}/samplesheet.svg") ] )
+                
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+
+    test("STUB") {
+        tag "stub"
+        options "-stub"
+        
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [:]
+                input[1] = Channel.of( [[id:"hg38"], file("${launchDir}/samplesheet.svg") ] )
+                
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+
+}

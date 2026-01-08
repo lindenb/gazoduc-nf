@@ -45,7 +45,7 @@ cut -f1,2 "${fai}" |\\
 cut -f1,2,3 "${bed}" |\\
 sort -T TMP -t '\t' -k1,1 -k2,2n  |\\
 	bedtools complement -i - -g TMP/sizes.txt ${args1} |\\
-    awk -F '\t' '(int(\$2) < int(\$3) || ${awkargs})' |\\
+    awk -F '\t' '(int(\$2) < int(\$3) && ${awkargs})' |\\
      sort -T TMP -t '\t' -k1,1 -k2,2n  > TMP/jeter.bed
 
 mv -v TMP/jeter.bed "${prefix}.bed"

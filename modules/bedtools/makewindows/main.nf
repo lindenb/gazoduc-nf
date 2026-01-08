@@ -35,12 +35,13 @@ output:
 script:
     def option1= (bed.name.endsWith(".fai")?"-g":"-b")
     def args = task.ext.args?:""
-    if(args.trim().isEmpty()) throw new IllegalArgumentException("args empty for ${task.process}")
-    def prefix = task.ext.prefix?:bed.baseName+".makewindows"
+    if((args as String).trim().isEmpty()) throw new IllegalArgumentException("args empty for ${task.process}")
+    def prefix = task.ext.prefix?:"${meta.id?:bed.baseName}.makewindows"
 """
 mkdir -p TMP
-bedtools makewindows ${option1} "${bed}" ${args} |\\
-    sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter.bed
+
+bedtools makewindows ${args} ${option1} "${bed}" |\\
+    sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter.bed
 
 mv TMP/jeter.bed "${prefix}.bed"
 
@@ -53,7 +54,7 @@ END_VERSIONS
 
 stub:
 """
-cp "${bed}" "${bed.baseName}.makeWindows.bed"
+cp "${bed}" "${meta.id?:bed.baseName}.makeWindows.bed"
 touch versions.yml
 """
 }

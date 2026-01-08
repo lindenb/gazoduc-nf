@@ -56,7 +56,8 @@ main:
 
     BCFTOOLS_CONCAT(
         GLNEXUS_GENOTYPE.out.vcf
-            .flatMap{_meta,vcf,tbi->[vcf,tbi]}//gvcf,tbi
+            .flatMap{_meta,vcf,tbi,_bed->[vcf,tbi]}//gvcf,tbi
+            .flatMap()
             .collect()
             .map{files->[[id:(metadata.id?:"pb_hapcaller")],files.sort()]}
         )

@@ -1,0 +1,69 @@
+nextflow_workflow {
+
+    name "Test Workflow MANTA"
+    script "subworkflows/manta/main.nf"
+    workflow "MANTA"
+        // tag "gitlab_ci"
+    tag "subworkflows"
+    tag "subworkflows/manta"
+    tag "subworkflows/manta/single"
+
+    test("BASIC") {
+      
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [with_truvari:true]
+                input[1] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")]).first()
+                input[2] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[3] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[4] = Channel.of(
+                        [[id:"S1"],file("${projectDir}/tests/data/S1.bam"),file("${projectDir}/tests/data/S1.bam.bai")],
+                        [[id:"S2"],file("${projectDir}/tests/data/S2.bam"),file("${projectDir}/tests/data/S2.bam.bai")],
+                        [[id:"S3"],file("${projectDir}/tests/data/S3.bam"),file("${projectDir}/tests/data/S3.bam.bai")]
+                        )
+                input[5] = [[id:"nobed"],[]]
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+ test("ONE_SAMPLE_NO_TRUVARI") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [with_truvari:true]
+                input[1] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")]).first()
+                input[2] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[3] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[4] = Channel.of(
+                        [[id:"S1"],file("${projectDir}/tests/data/S1.bam"),file("${projectDir}/tests/data/S1.bam.bai")]
+                        )
+                input[5] = [[id:"nobed"],[]]
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

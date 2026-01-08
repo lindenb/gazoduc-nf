@@ -1,0 +1,105 @@
+nextflow_workflow {
+
+    name "Test Workflow HAPLOTYPECALLER_DIRECT"
+    script "subworkflows/gatk/haplotypecaller.direct/main.nf"
+    workflow "HAPLOTYPECALLER_DIRECT"
+    // tag "gitlab_ci"
+    tag "subworkflows"
+    tag "subworkflows/gatk"
+    tag "subworkflows/gatk/haplotypecaller.direct"
+
+    setup {
+        run("BEDTOOLS_COMPLEMENT") {
+                script "modules/bedtools/complement/main.nf"
+                process {
+                        """
+                        input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                        input[1] = [[id:"bed"],file("${projectDir}/tests/data/rotavirus_rf.01.bed")]
+                        """
+                        }
+                }
+        }
+
+
+    test("STUB") {
+	tag "gitlab_ci"
+	tag "stub"
+	options "-stub"
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [id:"hc.direct"]
+                input[1] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[2] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[3] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[4] = [[id:"nodbsnp"],[],[]]
+                input[5] = [[id:"noped"],[]]
+                input[6] =  Channel.of([[id:"bed"],file("${projectDir}/tests/data/rotavirus_rf.01.bed")])
+                            .mix(BEDTOOLS_COMPLEMENT.out.bed)
+                            .map{[[id:it[1].baseName],it[1]]}
+                
+                input[7] = Channel.of(
+                            [[id:"S1",batch:"A"],file("${projectDir}/tests/data/S1.bam"),file("${projectDir}/tests/data/S1.bam.bai")],
+                            [[id:"S2",batch:"B"],file("${projectDir}/tests/data/S2.bam"),file("${projectDir}/tests/data/S2.bam.bai")],
+                            [[id:"S3",batch:"A"],file("${projectDir}/tests/data/S3.bam"),file("${projectDir}/tests/data/S3.bam.bai")],
+                            [[id:"S4",batch:"B"],file("${projectDir}/tests/data/S4.bam"),file("${projectDir}/tests/data/S4.bam.bai")],
+                            [[id:"S5",batch:"C"],file("${projectDir}/tests/data/S5.bam"),file("${projectDir}/tests/data/S5.bam.bai")]
+                            )
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+
+    test("BASIC") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [id:"hc.direct"]
+                input[1] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[2] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[3] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[4] = [[id:"nodbsnp"],[],[]]
+                input[5] = [[id:"noped"],[]]
+                input[6] =  Channel.of([[id:"bed"],file("${projectDir}/tests/data/rotavirus_rf.01.bed")])
+                            .mix(BEDTOOLS_COMPLEMENT.out.bed)
+                            .map{[[id:it[1].baseName],it[1]]}
+                
+                input[7] = Channel.of(
+                            [[id:"S1",batch:"A"],file("${projectDir}/tests/data/S1.bam"),file("${projectDir}/tests/data/S1.bam.bai")],
+                            [[id:"S2",batch:"B"],file("${projectDir}/tests/data/S2.bam"),file("${projectDir}/tests/data/S2.bam.bai")],
+                            [[id:"S3",batch:"A"],file("${projectDir}/tests/data/S3.bam"),file("${projectDir}/tests/data/S3.bam.bai")],
+                            [[id:"S4",batch:"B"],file("${projectDir}/tests/data/S4.bam"),file("${projectDir}/tests/data/S4.bam.bai")],
+                            [[id:"S5",batch:"C"],file("${projectDir}/tests/data/S5.bam"),file("${projectDir}/tests/data/S5.bam.bai")]
+                            )
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+
+
+
+
+}

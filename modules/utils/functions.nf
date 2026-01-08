@@ -447,20 +447,19 @@ Object slurpJsonFile(f) {
 
 
 Map assertKeyExists(final Map hash,final String key) {
-    if(!hash.containsKey(key)) throw new IllegalArgumentException("no key ${key}'in ${hash}");
+    if(hash[key]==null) throw new IllegalArgumentException("no key '${key}' in ${hash}.");
     return hash;
 }
 
 boolean testKeyExistsAndNotEmpty(final Map hash,final String key) {
-  if(!hash.containsKey(key)) return false;
-  def value = hash.get(key);
+  def value = hash.get[key];
   if(value==null || value.isEmpty() || value.equals(".")) return false;
   return true;
 }
 
 Map assertKeyExistsAndNotEmpty(final Map hash,final String key) {
     assertKeyExists(hash,key);
-    def value = hash.get(key);
+    def value = hash[key];
     if(value==null || value.isEmpty()) throw new IllegalArgumentException("empty ${key}'in ${hash}");
     return hash;
 }
@@ -629,6 +628,15 @@ boolean verify(boolean t, String msg) {
 	log.warn(String.valueOf(msg));
 	throw new IllegalStateException(String.valueOf(msg));
 	}
+
+/** media https://stackoverflow.com/a/44376148/58082 */
+def median(data) {
+    def copy = data.toSorted()
+    def middle = data.size().intdiv(2)
+
+    // you can omit the return in groovy for the last statement
+    data.size() % 2 ? copy[middle] : (copy[middle - 1] + copy[middle]) / 2
+   }
 
 
 void runOnComplete(def wf) {

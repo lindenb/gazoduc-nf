@@ -1,0 +1,65 @@
+nextflow_workflow {
+
+    name "Test Workflow MAP_DRAGMAP"
+    script "subworkflows/dragmap/main.nf"
+    workflow "MAP_DRAGMAP"
+    // tag "gitlab_ci"
+    tag "subworkflows"
+    tag "subworkflows/dragmap"
+
+	setup {
+        run("DRAGMAP_INDEX") {
+		script "modules/dragmap/index/main.nf"
+		process {
+			"""
+            input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+            input[1] = [[id:"bed"],[]]
+			"""
+			}
+		}
+    }
+	    
+
+
+
+    test("BASIC") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0]= [
+                    with_fastp : false,
+                    with_cram :  true,
+                    fastqc_before : false,
+                    fastqc_after : false,
+                    with_seqkit_split : false,
+                    with_bqsr : false,
+                    markdup_enabled : true,
+                    markdup_method: "gatk"
+                    ]
+                input[1] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[2] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[3] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[4] = DRAGMAP_INDEX.out.dragmap_index
+                input[5] = [[id:"bqsr_files"],[]]
+                input[6] = [[id:"nobed"],[]]
+                input[7] = Channel.of(
+                    [[id:"S1"],file("${projectDir}/tests/data/S1.R1.fq.gz"),file("${projectDir}/tests/data/S1.R2.fq.gz")],
+                    [[id:"S2"],file("${projectDir}/tests/data/S2.R1.fq.gz"),file("${projectDir}/tests/data/S2.R2.fq.gz")]
+                    )
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

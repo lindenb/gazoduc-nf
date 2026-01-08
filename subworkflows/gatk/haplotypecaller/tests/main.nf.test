@@ -1,0 +1,140 @@
+nextflow_workflow {
+
+    name "Test Workflow HAPLOTYPECALLER"
+    script "subworkflows/gatk/haplotypecaller/main.nf"
+    workflow "HAPLOTYPECALLER"
+    tag "subworkflows"
+    tag "subworkflows/gatk"
+    tag "subworkflows/gatk/haplotypecaller"
+    config "./nextflow.config"
+
+
+    setup {
+        run("BEDTOOLS_COMPLEMENT") {
+                script "modules/bedtools/complement/main.nf"
+                process {
+                        """
+                        input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                        input[1] = [[id:"bed"],file("${projectDir}/tests/data/rotavirus_rf.01.bed")]
+                        """
+                        }
+                }
+        }
+
+
+
+    test("COMBINE_GVCFS") {
+	tag "gitlab_ci"
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+             workflow {
+                """
+                input[0] = [id:"hc.gvcf", gvcf_merge_method:"combinegvcfs"]
+                input[1] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[2] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[3] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[4] = [[id:"all_refs"],[]]
+                input[5] = [[id:"nodbsnp"],[],[]]
+                input[6] = [[id:"noped"],[]]
+                input[7] =  Channel.of([[id:"bed"],file("${projectDir}/tests/data/rotavirus_rf.01.bed")])
+                            .mix(BEDTOOLS_COMPLEMENT.out.bed)
+                            .map{[[id:it[1].baseName],it[1]]}
+                input[8] = Channel.of(
+                            [[id:"S1"],file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S1.bam"),file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S1.bam.bai")], 
+                            [[id:"S2"],file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S2.bam"),file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S2.bam.bai")], 
+                            [[id:"S3"],file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S3.bam"),file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S3.bam.bai")], 
+                            [[id:"S4"],file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S4.bam"),file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S4.bam.bai")], 
+                            [[id:"S5"],file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S5.bam"),file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S5.bam.bai")]
+                            )
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+    }
+
+
+
+    test("GLNEXUS (STUB)") {
+	//tag "gitlab_ci"
+	tag "stub"
+	options "-stub"
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+             workflow {
+                """
+                input[0] = [id:"hc.gvcf", gvcf_merge_method:"glnexus"]
+                input[1] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[2] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[3] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[4] = [[id:"all_refs"],[]]
+                input[5] = [[id:"nodbsnp"],[],[]]
+                input[6] = [[id:"noped"],[]]
+                input[7] =  Channel.of([[id:"bed"],file("${projectDir}/tests/data/rotavirus_rf.01.bed")])
+                            .mix(BEDTOOLS_COMPLEMENT.out.bed)
+                            .map{[[id:it[1].baseName],it[1]]}
+                input[8] = Channel.of(
+                            [[id:"S1"],file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S1.bam"),file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S1.bam.bai")], 
+                            [[id:"S2"],file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S2.bam"),file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S2.bam.bai")], 
+                            [[id:"S3"],file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S3.bam"),file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S3.bam.bai")], 
+                            [[id:"S4"],file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S4.bam"),file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S4.bam.bai")], 
+                            [[id:"S5"],file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S5.bam"),file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S5.bam.bai")]
+                            )
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+    }
+
+    test("DBSNP") {
+	tag "gitlab_ci"
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+             workflow {
+                """
+                input[0] = [id:"hc.gvcf", gvcf_merge_method:"combinegvcfs"]
+                input[1] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[2] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[3] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[4] = [[id:"all_refs"],[]]
+                input[5] = [[id:"nodbsnp"],file("${projectDir}/tests/data/rotavirus_rf.vcf.gz"),file("${projectDir}/tests/data/rotavirus_rf.vcf.gz.tbi")]
+                input[6] = [[id:"noped"],[]]
+                input[7] =  Channel.of([[id:"bed"],file("${projectDir}/tests/data/rotavirus_rf.01.bed")])
+                            .mix(BEDTOOLS_COMPLEMENT.out.bed)
+                            .map{[[id:it[1].baseName],it[1]]}
+                input[8] = Channel.of(
+                            [[id:"S1"],file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S1.bam"),file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S1.bam.bai")], 
+                            [[id:"S2"],file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S2.bam"),file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S2.bam.bai")], 
+                            [[id:"S3"],file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S3.bam"),file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S3.bam.bai")], 
+                            [[id:"S4"],file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S4.bam"),file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S4.bam.bai")], 
+                            [[id:"S5"],file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S5.bam"),file("https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/raw/master/tests/data/S5.bam.bai")]
+                            )
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+    }
+
+
+}

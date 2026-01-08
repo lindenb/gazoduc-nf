@@ -3,9 +3,9 @@
  version="1.0"
  xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
  xmlns:h="http://www.w3.org/1999/xhtml"
- xmlns="http://www.w3.org/2000/svg"
  xmlns:math="http://exslt.org/math"
  extension-element-prefixes="math"
+ xmlns="http://www.w3.org/2000/svg"
  >
 
 
@@ -13,6 +13,8 @@
 <xsl:variable name="PI" select="number(3.14159265359)"/>
 <xsl:variable name="lowercase" select="'abcdefghijklmnopqrstuvwxyz'" />
 <xsl:variable name="uppercase" select="'ABCDEFGHIJKLMNOPQRSTUVWXYZ'" />
+
+<!-- ==========================================================-->
 
 <xsl:template name="donut">
 <xsl:param name="outer_radius"/>
@@ -24,13 +26,10 @@
 <path  fill-rule="evenodd">
  <xsl:attribute name="d">
  
-	<xsl:call-template name="circle_as_path">
-		<xsl:with-param name="r" select="$outer_radius"/>
+	<xsl:call-template name="donut_path">
+			<xsl:with-param name="outer_radius" select="$outer_radius"/>
+			<xsl:with-param name="inner_radius" select="$inner_radius"/>
 	</xsl:call-template>
-	<xsl:call-template name="circle_as_path">
-		<xsl:with-param name="r" select="$inner_radius"/>
-	</xsl:call-template>
-
 
  </xsl:attribute>
 
@@ -52,6 +51,24 @@
 </path>
 
 </xsl:template>
+
+
+
+<!-- ==========================================================-->
+
+<xsl:template name="donut_path">
+<xsl:param name="outer_radius"/>
+<xsl:param name="inner_radius"/>
+
+	<xsl:call-template name="circle_as_path">
+		<xsl:with-param name="r" select="$outer_radius"/>
+	</xsl:call-template>
+	<xsl:call-template name="circle_as_path">
+		<xsl:with-param name="r" select="$inner_radius"/>
+	</xsl:call-template>
+
+</xsl:template>
+
 
 <!-- ==========================================================-->
 <xsl:template name="circle_as_path">
@@ -139,6 +156,8 @@
 		<xsl:value-of select="$f1"/>
 	</xsl:with-param>
 </xsl:call-template>
+
+ 
 
 </xsl:template>
 

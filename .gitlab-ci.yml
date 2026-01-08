@@ -3,7 +3,7 @@ image: eclipse-temurin:17-jdk
 before_script:
   - env | grep -i PROXY
   - apt-get update -y
-  - apt-get install -y make wget curl samtools bcftools tabix bedtools python3 bzip2 unzip zip bwa file
+  - apt-get install -y make wget git curl samtools bcftools tabix bedtools python3 bzip2 unzip zip bwa file xsltproc
   - (mkdir -p bin && cd bin && curl -s https://get.nextflow.io | bash && chmod +x nextflow)
   - export PATH="${PWD}/bin:${PATH}"
   - nextflow info
@@ -17,6 +17,7 @@ before_script:
   - arch
   - mkdir -p ${HOME}/CONDA
   - export NXF_CONDA_CACHEDIR=${HOME}/CONDA
+  - ( git clone -b dev --recurse-submodules --single-branch "https://gitlab.univ-nantes.fr/pierre.lindenbaum/jvarkit.git" && cd jvarkit && make  && mv -v dist/jvarkit.jar ${HOME}/ )
 
 stages:
   - test

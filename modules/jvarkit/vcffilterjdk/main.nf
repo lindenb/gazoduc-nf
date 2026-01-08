@@ -47,6 +47,7 @@ process JVARKIT_VCFFILTERJDK {
 	def jvm = " -XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
         def args1 = task.ext.args1?:""
         def args2 = task.ext.args2?:""
+        def args3 = task.ext.args3?:""
         def prefix =  task.ext.prefix?:"${meta.id}.filterjdk"
 	"""
 	mkdir -p TMP

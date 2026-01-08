@@ -63,6 +63,6 @@ EOF
 stub: 
  def prefix = task.ext.prefix?:"${meta.id}.genes"
 """
-mkdir versions.yml ${prefix}.bed
+touch versions.yml ${prefix}.bed
 """
 }

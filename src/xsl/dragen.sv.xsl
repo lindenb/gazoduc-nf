@@ -6,13 +6,14 @@
  >
 <!--
 
-this stylesheet converts a ucsc cytoband +jvarkit bed2xml to a SVG fragment
+this stylesheet converts a bed2xml to a SVG fragment
 
 -->
 
 
 <xsl:output method="xml" encoding="UTF-8" omit-xml-declaration="yes" />
 <xsl:include href="circular.mod.xsl"/>
+<xsl:include href="rec.mod.xsl"/>
 <xsl:param name="radius_R1">1000</xsl:param>
 <xsl:param name="radius_R2">990</xsl:param>
 <xsl:param name="style"></xsl:param>
@@ -64,40 +65,6 @@ this stylesheet converts a ucsc cytoband +jvarkit bed2xml to a SVG fragment
 </xsl:template>
 
 
-<!--===========================================================================-->
-<xsl:template match="rec">
-<xsl:variable name="url">
-	<xsl:call-template name="ucsc_anchor">
-		<xsl:with-param name="build">
-				<xsl:value-of select="$build"/>
-		</xsl:with-param>
-		<xsl:with-param name="contig">
-				<xsl:value-of select="@contig"/>
-		</xsl:with-param>
-		<xsl:with-param name="start">
-				<xsl:value-of select="@start"/>
-		</xsl:with-param>
-		<xsl:with-param name="end">
-				<xsl:value-of select="@end"/>
-		</xsl:with-param>
-</xsl:call-template>
-</xsl:variable>
-
-
-<xsl:choose>
-	<xsl:when test="string-length($url) &gt; 0 and $url != '#'">
-	<a>
-		<xsl:attribute name="href">
-			<xsl:value-of select="$url"/>
-		</xsl:attribute>
-		<xsl:apply-templates select="." mode="after_url"/>
-	</a>
-	</xsl:when>
-	<xsl:otherwise>
-		<xsl:apply-templates select="." mode="after_url"/>
-	</xsl:otherwise>	
-</xsl:choose>
-</xsl:template>
 
 
 <!--===========================================================================-->
