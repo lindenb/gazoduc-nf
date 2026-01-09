@@ -25,14 +25,14 @@ SOFTWARE.
 include {isBlank      } from  '../../../modules/utils/functions.nf'
 
 process DOWNLOAD_GNOMAD_SV {
-tag "${meta1.id?:fasta.name}"
+tag "${meta.id?:dict.name}"
 afterScript "rm -rf TMP"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-    tuple val(meta3),path(dict)
+    tuple val(meta),path(dict)
 output:
-	tuple val(meta1),path("*.vcf.gz"),path("*.tbi"),emit:vcf
+	tuple val(meta),path("*.vcf.gz"),path("*.tbi"),emit:vcf
 	path("versions.yml"),emit:versions
 script:
 	def url = task.ext.url?:"";
@@ -40,14 +40,14 @@ script:
     if(!isBlank(url)) {
         //nothing
         }
-    else if(isBlank(meta1.ucsc_name)) {
+    else if(isBlank(meta.ucsc_name)) {
         url = ""
         }
-    else if(meta1.ucsc_name == "hg19") {
+    else if(meta.ucsc_name == "hg19") {
         url = "https://storage.googleapis.com/gcp-public-data--gnomad/papers/2019-sv/gnomad_v2.1_sv.sites.vcf.gz";
         if(isBlank(prefix)) prefix = "gnomad_v2.1_sv.sites"
         }
-    else if(meta1.ucsc_name == "hg38") {
+    else if(meta.ucsc_name == "hg38") {
         url = "https://storage.googleapis.com/gcp-public-data--gnomad/release/4.1/genome_sv/gnomad.v4.1.sv.sites.vcf.gz";
         if(isBlank(prefix)) prefix = "gnomad_v4.1_sv.sites"
         }
@@ -86,7 +86,7 @@ fi
 bcftools query -f "%CHROM\\n"  TMP/jeter.vcf.gz |\\
     uniq | sort -T TMP | uniq |\\
     awk '{printf("%s\t%s\\n",\$1,\$1);}' |\\
-	jvarkit  bedrenamechr --column 2 -R "${fasta}" --convert SKIP > TMP/chroms.tsv
+	jvarkit  bedrenamechr --column 2 -R "${dict}" --convert SKIP > TMP/chroms.tsv
 
 	bcftools annotate --rename-chrs TMP/chroms.tsv TMP/jeter.vcf.gz |\\
 	bcftools sort \\
@@ -111,7 +111,7 @@ END_VERSIONS
 """
 
 stub:
-	def prefix = "${meta1.id}"
+	def prefix = "${meta.id}"
 """
 touch versions.yml "${prefix}.vcf.gz" "${prefix}.vcf.gz.tbi"
 """

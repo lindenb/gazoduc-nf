@@ -41,6 +41,7 @@ process GTF_TO_BED {
         def awk_expr = task.ext.awk_expr?:"(1==1)"
 		def cmd1 = task.ext.cmd1?:"cat"
 		def cmd2 = task.ext.cmd2?:"cat"
+		def cmd3 = task.ext.cmd3?:"uniq" // e.g: bedtools merge
     """
 	hostname 1>&2
     mkdir -p TMP
@@ -51,7 +52,7 @@ process GTF_TO_BED {
 	jvarkit  ${jvm}  gtf2bed -R "${dict}" ${args} |\\
 	${cmd2} |\\
 	sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
-	uniq > TMP/jeter.bed
+	${cmd3} > TMP/jeter.bed
     
     cp TMP/jeter.bed ${prefix}.bed
 

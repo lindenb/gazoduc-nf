@@ -33,14 +33,15 @@ process TRUVARI_COLLAPSE {
 		tuple val(meta3),path(dict)
 		tuple val(meta ),path("VCFS/*")
     output:
-		tuple val(meta),path("*.bcf"),path("*.bcf.csi"),emit: vcf
+		tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit: vcf
 		path("versions.yml"),emit:versions
     script:
 		def args1 = task.ext.args1?:""
 		def args2 = task.ext.args2?:""
 		def args3 = task.ext.args3?:""
-
+		def awk_expr = task.ext.awk_expr?:"^(chr)?[0-9XY]+\$"
 		def prefix= task.ext.prefix?:meta.id
+		def merge_mode = task.ext.merge_mod?:"id"
     """
 	hostname 1>&2
 	mkdir -p TMP
@@ -54,8 +55,31 @@ process TRUVARI_COLLAPSE {
 	
 	sort -T TMP -t '\t' -k1,1 TMP/jeter.txt | cut -f 2 > TMP/jeter.list
 
-	# bug FORMAT pour dragen
-	bcftools merge --threads ${task.cpus}  ${args1} --force-samples --filter-logic '+'  --file-list TMP/jeter.list  -m none -O u -o TMP/jeter2.bcf
+	awk -F '\t' '(\$1 ~ /${awk_expr}/ ) {printf("%s\t0\t%s\\n",\$1,\$2);}' "${fai}" |\\
+		sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter.bed
+
+	bcftools merge \\
+		--regions-file TMP/jeter.bed \\
+		--threads ${task.cpus} \\
+		${args1} \\
+		--force-samples \\
+		--filter-logic '+' \\
+		--file-list TMP/jeter.list \\
+		-m ${merge_mode} \\
+		-O u \\
+		-o TMP/jeter2.bcf
+
+	mv TMP/jeter2.bcf TMP/jeter.bcf
+
+	#  Truvari: Cannot compare multi-allelic records. Please split
+	bcftools norm \\
+		--threads ${task.cpus} \\
+		--fasta-ref ${fasta} \\
+		--multiallelics -any \\
+		-O u \\
+		-o TMP/jeter2.bcf \\
+		TMP/jeter.bcf
+
 	mv TMP/jeter2.bcf TMP/jeter.bcf
 
 	# optional filter ?
@@ -73,22 +97,22 @@ process TRUVARI_COLLAPSE {
 	bcftools +fill-tags --threads ${task.cpus}  -O u -o TMP/jeter2.bcf TMP/jeter.bcf -- -t  AN,AC,AF,AC_Hom,AC_Het,AC_Hemi,NS
 	mv TMP/jeter2.bcf TMP/jeter.bcf
 		
-	bcftools sort -T TMP/sort -O b -o TMP/${prefix}.bcf TMP/jeter.bcf
+	bcftools sort -T TMP/sort -O z -o TMP/${prefix}.vcf.gz TMP/jeter.bcf
 
-	bcftools index --threads ${task.cpus} -f TMP/${prefix}.bcf
-	mv TMP/${prefix}.bcf ./
-	mv TMP/${prefix}.bcf.csi ./
+	bcftools index -t --threads ${task.cpus} -f TMP/${prefix}.vcf.gz
+	mv TMP/${prefix}.vcf.gz ./
+	mv TMP/${prefix}.vcf.gz.tbi ./
 
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	truvari: todo
+	truvari: \$(truvari version)
 END_VERSIONS
     """
 
 stub:
 def prefix= task.ext.prefix?:meta.id
 """
-touch versions.yml ${prefix}.bcf ${prefix}.bcf.csi
+touch versions.yml ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi
 """
-   }
+}

@@ -68,6 +68,9 @@ main:
 			}*/
 
 		}
+	else if(filename.endsWith(".vcf.gz") || filename.endsWith(".bcf") || filename.endsWith(".vcf")) {
+		ch1 = Channel.of([vcf:filename])
+		}
 	else if(filename.endsWith(".list")) {
 		ch1 = Channel.fromPath(filename)
 			.splitText()

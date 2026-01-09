@@ -24,28 +24,84 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-include {TRUVARI_01} from '../../subworkflows/truvari'
-include {runOnComplete;dumpParams} from '../../modules/utils/functions.nf'
-
-if( params.help ) {
-    dumpParams(params);
-    exit 0
-}  else {
-    dumpParams(params);
-}
-
+include { PREPARE_ONE_REFERENCE       } from '../../subworkflows/samtools/prepare.one.ref'
+include { READ_SAMPLESHEET            } from '../../subworkflows/nf/read_samplesheet'
+include { assertKeyExistsAndNotEmpty  } from '../../modules/utils/functions.nf'
+include { runOnComplete               } from '../../modules/utils/functions.nf'
+include { removeCommonSuffixes        } from '../../modules/utils/functions.nf'
+include { TRUVARI                     } from '../../subworkflows/truvari'
+include { DOWNLOAD_GNOMAD_SV          } from '../../modules/gnomad_sv/download.vcf'
+include { JVARKIT_VCFGNOMADSV         } from '../../modules/jvarkit/vcfgnomadsv'
+include { BCFTOOLS_INDEX              } from '../../modules/bcftools/index'
+include { BCFTOOLS_VIEW               } from '../../modules/bcftools/view'
 
 
 workflow {
-	genome = Channel.of(file(params.fasta),file(params.fai),file(params.dict)).collect()	
-	if(params.vcfs.endsWith(".list")) {
-		vcf_ch = Channel.fromPath(params.vcfs).splitText().map{file(it.trim())}
+	versions = Channel.empty()
+	multiqc = Channel.empty()
+
+
+
+	if(params.fasta==null) {
+		throw new IllegalArgumentException("undefined --fasta");
 		}
-	else
-		{
-		vcf_ch = Channel.fromPath(params.vcfs)
+	if(params.samplesheet==null) {
+		throw new IllegalArgumentException("undefined --samplesheet");
 		}
-	ch1 = TRUVARI_01(genome, vcf_ch)
+
+	def metadata = [id:"truvari"]
+		
+
+	PREPARE_ONE_REFERENCE(
+		metadata,
+		Channel.fromPath(params.fasta).map{f->[[id:f.baseName],f]}
+		)
+	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
+	
+	READ_SAMPLESHEET(
+		[arg_name:"samplesheet"],
+		params.samplesheet
+		)
+	versions = versions.mix(READ_SAMPLESHEET.out.versions)
+	vcf_ch = READ_SAMPLESHEET.out.samplesheet
+		.map{row->assertKeyExistsAndNotEmpty(row,"vcf")}
+		.map{row->file(row.vcf)}
+		.map{f->[[id:removeCommonSuffixes(f.name)], f]}
+	
+	if(params.bed!=null) {
+		BCFTOOLS_VIEW(
+			[[id:"bed"],file(params.bed)],
+			[[id:"nosample"],[]],
+			vcf_ch.map{m,f->[m,f,[]]}
+			)
+		versions = versions.mix(BCFTOOLS_VIEW.out.versions)
+		vcf_ch = BCFTOOLS_VIEW.out.vcf
+		}
+
+
+	DOWNLOAD_GNOMAD_SV( PREPARE_ONE_REFERENCE.out.dict )
+    versions = versions.mix(DOWNLOAD_GNOMAD_SV.out.versions)
+	
+	JVARKIT_VCFGNOMADSV(
+		DOWNLOAD_GNOMAD_SV.out.vcf,
+		vcf_ch
+		)
+	versions = versions.mix(JVARKIT_VCFGNOMADSV.out.versions)
+	vcf_ch = JVARKIT_VCFGNOMADSV.out.vcf
+
+
+	BCFTOOLS_INDEX(JVARKIT_VCFGNOMADSV.out.vcf)
+	versions = versions.mix(BCFTOOLS_INDEX.out.versions)
+	vcf_ch = BCFTOOLS_INDEX.out.vcf
+
+	TRUVARI(
+		metadata,
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		PREPARE_ONE_REFERENCE.out.dict,
+		vcf_ch
+		)
+	versions = versions.mix(TRUVARI.out.versions)
 	}
 
 runOnComplete(workflow)
