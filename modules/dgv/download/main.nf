@@ -23,68 +23,69 @@ SOFTWARE.
 
 */
 
-include {isBlank } from '../../utils/functions.nf'
-
+/**
+DGV (Database of Genomic Variants) as BED file from ${url}
+*/
 process DGV_DOWNLOAD {
+label "process_single"
 tag "${meta.id}"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	tuple val(meta),path(dict)
 output:
-       	tuple val(meta),path("*.bed.gz"),path("*.bed.gz.tbi"),emit:bed
-        path("versions.xml"),emit:versions
+    tuple val(meta),path("*.bed.gz"),path("*.bed.gz.tbi"),emit:bed
+    path("versions.yml"),emit:versions
 script:
-	def url= genome.dgv_url
-	def whatis ="DGV (Database of Genomic Variants) as BED file from ${url}"
-if(!isBlank(url))
+	def url= task.ext.url?:""
+	def prefix = task.ext.prefix?:"${dict.baseName}.dgv"
+	def awk_expr = task.ext.awk_expr?:"(1==1)"
+	def jvm = ""
+
+	if("${url}"=="") {
+		if(meta.ucsc_name=="hg38") {
+			url = "https://dgv.tcag.ca/dgv/docs/GRCh38_hg38_variants_2025-12-01.txt"
+			}
+		else if(meta.ucsc_name=="hg19") {
+			url = "https://dgv.tcag.ca/dgv/docs/GRCh37_hg19_variants_2025-12-01.txt"
+			}
+		else
+			{
+			log.warn("${task.proces} : undefined ucsc_name")
+			}
+		}
 """
-hostname 1>&2
-${moduleLoad("htslib jvarkit bedtools")}
-set -o pipefail
 mkdir TMP
-wget  -O - "${url}" |\
-	awk -F '\t' '{printf("%s\t%s\t%s\t%s",\$2,\$3,\$4,\$1);for(i=5;i<=NF;i++){printf("\t%s",\$i);}printf("\\n");}' |\
-	sed  's/^chr/#chr/' |\
-	java -jar \${JVARKIT_DIST}/bedrenamechr.jar -f "${reference}" --column 1 --convert SKIP |\
-	LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/dgv.bed
+
+if test ! -z "${url}"
+then
+
+	curl -s -L "${url}" |\\
+		awk -F '\t' '(${awk_expr}){printf("%s\t%s\t%s\t%s",\$2,\$3,\$4,\$1);for(i=5;i<=NF;i++){printf("\t%s",\$i);}printf("\\n");}' |\\
+		sed  's/^chr/#chr/' |\\
+		jvarkit ${jvm} bedrenamechr -f "${dict}" --column 1 --convert SKIP |\\
+		LC_ALL=C sort -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n > TMP/dgv.bed
+
+else
+	touch TMP/dgv.bed
+fi
 
 
-bgzip TMP/dgv.bed
+bgzip --force TMP/dgv.bed
 tabix --comment '#'  -p bed -f TMP/dgv.bed.gz
 
-mv TMP/dgv.bed.gz ./
-mv TMP/dgv.bed.gz.tbi ./
+mv TMP/dgv.bed.gz ./${prefix}.bed.gz
+mv TMP/dgv.bed.gz.tbi ./${prefix}.bed.gz.tbi
 
-#########################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="Name">${task.process}</entry>
-        <entry key="description">${whatis}</entry>
-        <entry key="url"><a>${url}</a></entry>
-</properties>
-EOF
-"""
-else
-"""
-${moduleLoad("htslib")}
-touch dgv.bed
-bgzip dgv.bed
-tabix --comment '#' -p bed -f dgv.bed.gz
-echo '<properties/>' > version.xml
-
-#########################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-        <entry key="Name">${task.process}</entry>
-        <entry key="description">${whatis}</entry>
-        <entry key="url">no DGV is available for ${reference}</entry>
-</properties>
+cat << EOF > versions.yml
+${task.process}:
+	url: ${url}
 EOF
 """
 
 
 stub:
+def prefix = task.ext.prefix?:"${dict.baseName}.dgv"
 """
 touch versions.yml ${prefix}.bed.gz ${prefix}.bed.gz.tbi
 """
-
 }

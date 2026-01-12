@@ -1,0 +1,37 @@
+nextflow_process {
+
+    name "Test Process MANTA_MERGER"
+    script "modules/jvarkit/mantamerger/main.nf"
+    process "MANTA_MERGER"
+    tag "gitlab_ci"
+    tag "modules"
+    tag "modules/jvarkit"
+    tag "modules/jvarkit/mantamerger"
+
+
+    test("STUB") {
+        tag "stub"
+        options "-stub"
+        when {
+            params {
+              
+            }
+            process {
+                """
+                 input[0] = [ [id:"nobed"], [] ]
+                 input[1] = [ [id:"vcf"], [
+                    file("${projectDir}/tests/data/S1.vcf.gz"),
+                    file("${projectDir}/tests/data/S2.vcf.gz"),
+                    file("${projectDir}/tests/data/S3.vcf.gz")
+                    ] ]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+}
