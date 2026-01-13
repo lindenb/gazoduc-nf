@@ -40,9 +40,15 @@ include { JVARKIT_VCFGNOMADSV                         } from '../../../modules/j
 include { BEDTOOLS_SLOP                               } from '../../../modules/bedtools/slop'
 include { BEDTOOLS_MERGE                              } from '../../../modules/bedtools/merge'
 include { BCFTOOLS_VIEW                               } from '../../../modules/bcftools/view'
+include { BCFTOOLS_VIEW as BCFTOOLS_VIEW_INV          } from '../../../modules/bcftools/view'
 include { ANNOTSV                                     } from '../../../subworkflows/annotsv'
-
-
+include { DGV_DOWNLOAD                                } from '../../../modules/dgv/download'
+include { READ_SAMPLESHEET                            } from '../../../subworkflows/nf/read_samplesheet'
+include { META_TO_BAMS                                } from '../../../subworkflows/samtools/meta2bams1'
+include { BCFTOOLS_QUERY                              } from '../../../modules/bcftools/query'
+include { COVERAGE_GRID                               } from '../../../modules/jvarkit/coveragegrid'
+include { GHOSTSCRIPT_MERGE                           } from '../../../modules/gs/merge/main.nf'
+include { PDF_NAVIGATION                              } from '../../../modules/pdf/navigation/main.nf'
 workflow {
 		validateParameters()
 
@@ -73,11 +79,32 @@ workflow {
 		)
 	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
 	
+
+	READ_SAMPLESHEET(
+        [arg_name:"samplesheet"],
+        params.samplesheet
+        )
+	versions = versions.mix(READ_SAMPLESHEET.out.versions)
+
+	META_TO_BAMS(
+		metadata,
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		READ_SAMPLESHEET.out.samplesheet
+		)
+	versions = versions.mix(META_TO_BAMS.out.versions)
+
+
+
+
 	DOWNLOAD_GTF(PREPARE_ONE_REFERENCE.out.dict)
 	versions = versions.mix(DOWNLOAD_GTF.out.versions)
 
     DOWNLOAD_GNOMAD_SV( PREPARE_ONE_REFERENCE.out.dict )
     versions = versions.mix(DOWNLOAD_GNOMAD_SV.out.versions)
+
+    DGV_DOWNLOAD( PREPARE_ONE_REFERENCE.out.dict )
+    versions = versions.mix(DGV_DOWNLOAD.out.versions)
 
 
 	VCF_INPUT(
@@ -135,4 +162,65 @@ workflow {
 		JVARKIT_VCFGNOMADSV.out.vcf
 		)
 	versions = versions.mix(ANNOTSV.out.versions)
+
+
+	BCFTOOLS_VIEW_INV(
+		[[id:"nobed"],[]],
+		[[id:"no_sample"],[]],
+		JVARKIT_VCFGNOMADSV.out.vcf.map{meta,vcf->[meta,vcf,[]]}
+		)
+	versions = versions.mix(BCFTOOLS_VIEW_INV.out.versions)
+
+
+	MAKE_SAMPLESHEET2(
+		META_TO_BAMS.out.bams
+			.map{meta,bam,bai->"${meta.id}\tBAMS/${bam.name}\t${meta.status=="case"?"red":"green"}"}
+			.collect()
+			.map{L->[[id:"bams"],L.sort()]}
+	)
+	
+	BCFTOOLS_QUERY(BCFTOOLS_VIEW_INV.out.vcf)
+	versions = versions.mix(BCFTOOLS_QUERY.out.versions)
+	
+	
+
+	COVERAGE_GRID(
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		PREPARE_ONE_REFERENCE.out.dict,
+		DOWNLOAD_GTF.out.gtf,
+		DOWNLOAD_GNOMAD_SV.out.vcf,
+		MAKE_SAMPLESHEET2.out.samplesheet,
+		META_TO_BAMS.out.bams
+			.map{meta,bam,bai->[bam,bai]}
+			.flatMap()
+			.collect()
+			.map{L->[[id:"bams"],L.sort()]},
+		BCFTOOLS_QUERY.out.output
+			.map{_meta,f->f}
+			.splitCsv(header:false,sep:'\t')
+			.map{row->[[id:"${row[0]}_${row[1]}_${row[2]}",title:"${row[0]}:${row[1]}-${row[2]}"],row[0],(row[1] as int),(row[2] as int)]}
+		)
+	versions = versions.mix(COVERAGE_GRID.out.versions)
+
+	GHOSTSCRIPT_MERGE(COVERAGE_GRID.out.postscript)
+	versions = versions.mix(GHOSTSCRIPT_MERGE.out.versions)
+
+	PDF_NAVIGATION(GHOSTSCRIPT_MERGE.out.pdf.map{m,pdf->pdf}.collect().map{L->[[id:"inv"],L.sort()]})
+	versions = versions.mix(PDF_NAVIGATION.out.versions)
+}
+
+process MAKE_SAMPLESHEET2 {
+	executor "local"
+	input:
+		tuple val(meta),val(L)
+	output:
+		tuple val(meta),path("samplesheet.tsv"),emit:samplesheet
+	script:
+"""
+cat << EOF > samplesheet.tsv
+sample\tbam\tcolor
+${L.join("\n")}
+EOF
+"""
 }

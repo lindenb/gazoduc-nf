@@ -22,46 +22,52 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-process GHOSTSCRIPT_MERGE {
-tag "${meta.id?:""}"
-label "process_single"
-conda "${moduleDir}/../../../conda/ghostscript.yml"
-afterScript "rm -rf TMP"
-input:
-        tuple val(meta),path("PDF/*")
-output:
-        tuple val(meta),path("*.pdf"),emit:pdf
-        path("versions.yml"),emit:versions
-script:
-        def cmd = task.ext.cmd?:"| sort -V -T TMP"
-        def prefix  = task.ext.prefix?:meta.id
-	def args1 = task.ext.args1?:"" // e.g: -dDEVICEWIDTHPOINTS=w -dDEVICEHEIGHTPOINTS=h -dPDFFitPage
-"""
-hostname 1>&2
-mkdir -p TMP
 
-find PDF/ -type l \\( -name "*.pdf" -o -name "*.ps" \\) ${cmd} > TMP/jeter.txt
+process JVARKIT_VCFGNOMADSV {
+	label "process_single"
+	conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+	afterScript "rm -rf TMP"
+	tag "${meta.id}"
+	input:
+		tuple val(meta1),path(gnomadvcf),path(gnomadvcf_idx)
+		tuple val(meta ),path(vcf)
+	output:
+		tuple val(meta ),path("*.vcf.gz"),optional:true,emit:vcf
+		path("versions.yml"),emit:versions
+	script:
+		def max_af = task.ext.max_af?:1.0
+		def min_af = task.ext.min_af?:0
+		def args1 = task.ext.args1?:""
+		def args2 = task.ext.args2?:""
+		def args3 = task.ext.args3?:""
+		def prefix  = task.ext.prefix?:"${meta.id}.gnomadsv"
+		def jvm = " -XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
+	"""
+	mkdir -p TMP
 
-gs \\
-	${args1} \\
-	-dBATCH \\
-	-dNOPAUSE \\
-	-q \\
-	-sDEVICE=pdfwrite \\
-	-dPDFSETTINGS=/prepress \\
-	-sOutputFile=TMP/jeter.pdf \\
-	@TMP/jeter.txt
+	bcftools view  ${args1} "${vcf}" |\\
+	jvarkit ${jvm} vcfgnomadsv \\
+		${args2} \\
+		--min-af ${min_af} \\
+		--max-af ${max_af} \\
+		--gnomad "${gnomadvcf}" |\\
+	bcftools view ${args3} -O z -o TMP/jeter.vcf.gz
 
-mv -v TMP/jeter.pdf "${prefix}.pdf"
+    if test \$(bcftools query -f "\\n" TMP/jeter.vcf.gz |wc -l) -gt 0
+	then
+		mv TMP/jeter.vcf.gz ${prefix}.vcf.gz
+	fi
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	gs: "\$(gs --version )"
+	jvarkit: todo
 END_VERSIONS
-"""
+	"""
+
 
 stub:
+	def prefix = "${meta.prefix}"
 """
-touch "${meta.id}.pdf" versions.yml
+touch versions.yml ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi
 """
 }

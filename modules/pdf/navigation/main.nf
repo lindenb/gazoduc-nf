@@ -117,5 +117,11 @@ fi
 
 touch versions.yml
 """
+
+stub:
+	def prefix = task.ext.prefix?:(meta.id?meta.id:"archive")
+"""
+touch versions.yml ${prefix}.zip index.html
+"""
 }
 

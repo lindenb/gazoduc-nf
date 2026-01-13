@@ -35,7 +35,9 @@ output:
 script:
     def args1  = task.ext.args1?:""
     def format  = task.ext.format?:""
-
+    if(format.isEmpty()) {
+	log.warn("${task.process} : empty task.ext.format")
+	}
     def cmd1  = task.ext.cmd1?:""
 	def cmd2  = task.ext.cmd2?:""
 	
@@ -46,7 +48,6 @@ mkdir -p TMP
 set -o pipefail
 
 bcftools query ${args1} -f '${format}' '${vcf}' ${cmd1}  ${cmd2} > "${prefix}.query.${suffix}"
-
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
