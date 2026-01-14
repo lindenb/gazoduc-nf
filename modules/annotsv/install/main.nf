@@ -37,8 +37,16 @@ output:
 script:
   
 """
+set -x
 yes | INSTALL_annotations.sh || true
-touch versions.yml
+find AnnotSV_annotations/ -type f > content.txt
+grep -F -m1 Annotations_Exomiser content.txt
+rm content.txt
+
+cat << EOF >  versions.yml
+${task.process}:
+	annotSV: todo
+EOF
 """
 
 stub:
