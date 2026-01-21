@@ -37,6 +37,7 @@ script:
     def prefix = task.ext.prefix?:"${meta.id}."
     def comment = task.ext.comment ?:""
     def title = task.ext.comment ?:""
+    def args1 = task.ext.args1?:""
 """
 mkdir -p TMP
 export TMPDIR=\${PWD}/TMP
@@ -47,6 +48,7 @@ export LC_ALL=en_US.utf8
 
 multiqc \\
 	${multiqc_config?"--cl-config ${multiqc_config}":""} \\
+        ${args1} \\
 	--filename  "${prefix}multiqc_report.html" \\
     --no-ansi \\
 	${title.isEmpty()?"":"--title \"${title}\""} \\

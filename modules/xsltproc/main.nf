@@ -25,6 +25,7 @@ SOFTWARE.
 process XSLTPROC {
 	label "process_single"
 	tag "${meta.id?:""} ${stylesheet.name}"
+        conda "${moduleDir}/../../conda/xsltproc.yml"
 	afterScript "rm -rf TMP"
 	input:
         tuple val(meta1),path(stylesheet)

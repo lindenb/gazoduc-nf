@@ -28,33 +28,34 @@ tag "${meta.id?:""}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/fastqc.yml"
 input:
-	tuple val(meta),path("IN/*")
+	tuple val(meta),path(fastqs)
 output:
-	tuple val(meta), path("OUT/*.zip", arity: '1..*'),emit:zip /* one zip per fastq */
-	tuple val(meta), path("OUT/*.html"),emit:html
+	tuple val(meta), path("*.zip", arity: '1..*'),emit:zip /* one zip per fastq */
+	tuple val(meta), path("*.html"),emit:html
 	path("versions.yml"),emit:versions
 script:
+	def fastqs0  = (fastqs instanceof List?fastqs:[fastqs]).sort{f1,f2->f1.name<=>f2.name}
 	def args1 = task.ext.args1?:""
-	def prefix0 = task.ext.prefix?:""
-	def prefix = "${prefix0}${meta.id}."
+	def prefix = task.ext.prefix?:"${meta.id}"
 	def memory_mega = task.memory.mega
+	def filetype = task.ext.filetype?:"fastq"
 	// fastqc doesn't allow more than 10000M
 	def fastqc_memory = java.lang.Math.min(memory_mega,10000)
 """
-mkdir -p TMP/FQ OUT
+mkdir -p TMP/FQ TMP/OUT
 
-find "\${PWD}/IN/" -type l | while read F
-do
-	ln -v -s "\${F}" "TMP/FQ/${prefix}\${F##*/}"
-done
+${fastqs0.withIndex().collect{f,idx->"ln -v -s \"\${PWD}/${f.name}\" \"TMP/FQ/${prefix}.${idx+1}.${filetype}.${f.extension}\" 1>&2"}.join("\n\n")}
 
 fastqc \\
   --dir TMP \\
   --memory ${fastqc_memory} \\
   --threads ${task.cpus} \\
-  -o OUT \\
-  -f "fastq" \\
+  -o TMP/OUT \\
+  -f "${filetype}" \\
   TMP/FQ/* 1>&2
+
+mv -v TMP/OUT/*.zip ./
+mv -v TMP/OUT/*.html ./
 
 cat <<-END_VERSIONS > versions.yml
 "${task.process}":
@@ -65,9 +66,8 @@ END_VERSIONS
 stub:
 """
 touch versions.yml
-mkdir -p OUT
-touch OUT/${meta.id}.zip
-touch OUT/${meta.id}.html
+touch ${meta.id}.zip
+touch ${meta.id}.html
 """
 }
 

@@ -58,6 +58,8 @@ main:
         )
     versions  = versions.mix(MERGE_CONTAMINANTS_MAPPING.out.versions)
 
+    if(metadata.with_spades==null || parseBoolean(metadata.with_spades)) {
+
     SPADES_ASSEMBLY(
         MAP_UNMAPPED.out.fastq.map{[it[0],it[1],[]/* no fastq_2 */]}
         )
@@ -72,10 +74,16 @@ main:
             .map{[[id:"contaminations"],it.sort()]}
         )
     versions  = versions.mix(MERGE_SPADES.out.versions)
+    spades_tsv_gz = MERGE_SPADES.out.tsv_gz
+    }
+   else
+	{
+	 spades_tsv_gz = Channel.empty()
+	}
 emit:
     versions
     multiqc
-    spades_tsv_gz = MERGE_SPADES.out.tsv_gz
+    spades_tsv_gz
 
 }
 

@@ -86,7 +86,9 @@ workflow {
         PREPARE_ONE_REFERENCE.out.fai,
         PREPARE_ONE_REFERENCE.out.dict,
         PREPARE_BED.out.bed,
-        dispatch.snv.map{[[id:it.id],file(it.vcf),file(it.tbi)]}
+        dispatch.snv
+		.map{[[id:it.id],file(it.vcf),file(it.tbi)]}
+		.filter{_meta,f,_t->f.parent!=null  && f.parent.name!="VCF"}
         )
      versions = versions.mix(ANNOT_SNV.out.versions)
 
@@ -224,6 +226,7 @@ hostname 1>&2
 mkdir -p TMP
 
 bcftools view --apply-filters '.,PASS' --regions-file "${bed}" "${vcf}" |\\
+    bcftools norm  -f ${fasta} --multiallelics -any -O v |\\ 
     snpEff ${jvm} eff \\
         -dataDir "${params.snpeff_database_directory}" \\
         -nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf "${params.snpeff_db}" |\\
