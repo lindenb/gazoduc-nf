@@ -29,6 +29,11 @@ include {isBlank                     } from '../../modules/utils/functions.nf'
 include {DRAGEN_SCAN_DIRECTORY       } from '../../modules/dragen/scan.directory'
 include {PREPARE_ONE_REFERENCE       } from '../../subworkflows/samtools/prepare.one.ref'
 include {DOWNLOAD_GNOMAD_SV          } from '../../modules/gnomad_sv/download.vcf/main.nf'
+include {MANTA_MERGER                } from '../../modules/jvarkit/mantamerger'
+include {BCFTOOLS_QUERY              } from '../../modules/bcftools/query'
+include {BEDTOOLS_SLOP               } from '../../modules/bedtools/slop'
+include {SAMTOOLS_COVERAGE           } from '../../modules/samtools/coverage'
+
 
 workflow {
     versions = Channel.empty()
@@ -51,6 +56,7 @@ workflow {
         ploidy: v.type=="ploidy"
         snv: v.type=="vcf"
         sv : v.type=="sv"
+        bam: v.type=="bam" && v.bam.endsWith(".cram")
         other:true
         }
 
@@ -109,12 +115,58 @@ workflow {
         )
     versions = versions.mix(ANNOT_SV.out.versions)
 
+
+    MANTA_MERGER(
+        PREPARE_BED.out.bed,
+        dispatch.sv
+            .map{[file(it.vcf),file(it.tbi)]}
+            .flatMap()
+            .collect()
+            .map{f->[[id:"manta"],f.sort()]}
+        )
+    versions = versions.mix(MANTA_MERGER.out.versions)
+
+    BCFTOOLS_QUERY(MANTA_MERGER.out.vcf.map{m,vcf,_tbi->[m,vcf]})
+    versions = versions.mix(BCFTOOLS_QUERY.out.versions)
+    
+    BEDTOOLS_SLOP(
+        PREPARE_ONE_REFERENCE.out.fai,
+        BCFTOOLS_QUERY.out.output
+    )
+    versions = versions.mix(BEDTOOLS_SLOP.out.versions)
+
+    regions_ch = BEDTOOLS_SLOP.out.bed
+        .map{_meta,bed->bed}
+        .splitCsv(sep:'\t',header:false)
+        .map{ctg,start,end->[interval:"${ctg}:${start}-${end}",id:"${ctg}_${start}_${end}"]}
+
+    
+    SAMTOOLS_COVERAGE(
+        PREPARE_ONE_REFERENCE.out.fasta,
+        PREPARE_ONE_REFERENCE.out.fai,
+        dispatch.bam
+                .map{[file(it.bam),file(it.bai)]}
+                .flatMap()
+                .collect()
+                .map{f->[f.sort()]}
+                .combine(regions_ch)
+                .map{bams,meta->[meta,bams]}
+        )
+    versions = versions.mix(SAMTOOLS_COVERAGE.out.versions)
+
+
     MERGE_VARIANTS(
         ANNOT_SNV.out.vcf.map{meta,vcf,tbi->vcf}.collect().map{[[id:"snv"],it.sort()]}.mix(
                 ANNOT_SV.out.vcf.map{meta,vcf,tbi->vcf}.collect().map{[[id:"sv"],it.sort()]}
                 )
     )
-
+    /*
+    BCFTOOLS_QUERY(MERGE_VARIANTS.out.vcf
+        .filter{meta,_f,_t->meta.id=="sv"}
+        .map{meta,f,_t->[meta,f]}
+    )
+    versions = versions.mix(BCFTOOLS_QUERY.out.versions)
+    */
 }
 process PLOIDY {
 label "process_single"
@@ -225,8 +277,8 @@ script:
 hostname 1>&2
 mkdir -p TMP
 
-bcftools view --apply-filters '.,PASS' --regions-file "${bed}" "${vcf}" |\\
-    bcftools norm  -f ${fasta} --multiallelics -any -O v |\\ 
+bcftools view -m2 -M 3 --apply-filters '.,PASS' --regions-file "${bed}" "${vcf}" |\\
+    bcftools norm  -f ${fasta} --multiallelics -any -O v |\\
     snpEff ${jvm} eff \\
         -dataDir "${params.snpeff_database_directory}" \\
         -nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf "${params.snpeff_db}" |\\

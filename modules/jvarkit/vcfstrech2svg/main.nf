@@ -22,50 +22,59 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-process MANTA_MERGER {
+include {verify } from '../../../modules/utils/functions.nf'
+
+process VCF_STRECH_TO_SVG  {
+    tag "${meta.id}"
 	label "process_single"
-	tag "${meta.id?:""} "
-	afterScript "rm -rf TMP"
 	conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+	afterScript "rm -rf TMP"
 	input:
-            tuple val(meta1),path(opt_bed)
-            tuple val(meta ),path("VCFS/*")
+		tuple val(meta1),path(fasta)
+        tuple val(meta2),path(fai)
+        tuple val(meta3),path(dict)
+		tuple val(meta4),path(gtf),path(gtf_tbi)
+		tuple val(meta5 ),path("BAMS/*")
+		tuple val(meta6  ),path(vcf),path(tbi)
+		tuple val(meta),path(bed)
 	output:
-		tuple val(meta), path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:vcf
+		tuple val(meta ),path("*.{svg,svg.gz}"),emit:svg
 		path("versions.yml"),emit:versions
 	script:
 		def args1 = task.ext.args1?:""
-		def args2 = task.ext.args2?:""
-                def prefix = task.ext.prefix?:"${meta.id?:"mantamerger"}."
-                def jvm =  task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -XX:-UsePerfData"
-                def jvarkit = task.ext.jvarkit?:"java ${jvm} -jar \${HOME}/jvarkit.jar"// TODO update when conda released
- """
-	hostname 1>&2
-    mkdir -p TMP
-    find VCFS/ -name "*.vcf.gz" > TMP/jeter.list
-    test -s TMP/jeter.list
+		def args2 = task.ext.args2?:"--hom-ref"
+        //def prefix = task.ext.prefix?:"${meta.id}"
+		def jvm = "-XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
+"""
+hostname 1>&2
+set -o pipefail
 
-    ${jvarkit} mantamerger  \\
-            ${opt_bed?"--bed ${opt_bed}":""} \\
-            ${args1} \\
-            TMP/jeter.list  > TMP/jeter.vcf
+mkdir -p TMP/OUT BAMS
+find BAMS/ -\\( -name "*.bam" -o -name "*.cram" \\) | sort -V -T TMP > TMP/bams.list
 
-     bcftools view ${args2} --threads ${task.cpus} -O z -o TMP/jeter.vcf.gz TMP/jeter.vcf
-     bcftools index --threads ${task.cpus} --force --tbi TMP/jeter.vcf.gz
-
-     mv TMP/jeter.vcf.gz "${prefix}.vcf.gz"
-     mv TMP/jeter.vcf.gz.tbi "${prefix}.vcf.gz.tbi"
+jvarkit ${jvm} vcfstrech2svg \\
+    ${args1} \\
+	${args2} \\
+	--bed "${bed}" \\
+	--bam-list TMP/bams.list \\
+	${gtf?"--gtf \"${gtf}\" ":""} \\
+    -R "${fasta}" \\
+	-o TMP/OUT \\
+	"${vcf}"
     
+mv -v TMP/OUT/*.svg ./ || true
+mv -v TMP/OUT/*.svg.gz ./ || true
 
 cat << EOF > versions.yml
 ${task.process}:
 	jvarkit: "\$(jvarkit --version)"
 EOF
-	"""
-	
-stub: 
-   def prefix = task.ext.prefix?:"${meta.id?:"mantamerger"}."
 """
-touch versions.yml ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi
+
+stub:
+   def prefix = task.ext.prefix?:"${meta.id}"
 """
+touch versions.yml  ${prefix}.svg
+"""
+
 }
