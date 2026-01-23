@@ -22,31 +22,39 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-
-
-process BATIK_DOWNLOAD {
+process GTF_TO_XML {
 label "process_single"
+tag "${meta.id?:""} "
+afterScript "rm -rf TMP"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-	val(meta)
+    tuple val(meta ),path(gtf),path(optional_tbi)
 output:
-	tuple val(meta),path("batik-1.19/batik-rasterizer-1.19.jar"),emit:rasterizer
-	path("versions.yml"),emit:versions
+    tuple val(meta), path("*.xml"),emit:xml
+    path("versions.yml"),emit:versions
 script:
-	def url = "https://www.apache.org/dyn/closer.cgi?filename=/xmlgraphics/batik/binaries/batik-bin-1.19.zip&action=download"
-"""
-curl -L -o batik-bin-1.19.zip "${url}"
-unzip batik-bin-1.19.zip
-rm batik-bin-1.19.zip
+    def args1 = task.ext.args1?:""
+    def prefix = task.ext.prefix?:"${meta.id?:gtf.baseName}."
+    def jvm =  task.ext.jvm?:"-Djdk.xml.entityExpansionLimit=0 -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -XX:-UsePerfData"
+    def jvarkit = task.ext.jvarkit?:"java ${jvm} -jar \${HOME}/jvarkit.jar"// TODO update when conda released
+ """
+mkdir -p TMP
+
+${jvarkit} gtf2xml  \\
+        ${args1} \\
+        ${gtf}  > TMP/jeter.xml
+
+cp TMP/jeter.xml ${prefix}.xml
 
 cat << EOF > versions.yml
-"${task.process}"
-	batik: "${url}"
+${task.process}:
+	jvarkit: "\$(jvarkit --version)"
 EOF
 """
-stub:
+	
+stub: 
+    def prefix = task.ext.prefix?:"${meta.id?:gtf.baseName}."
 """
-touch versions.yml
-mkdir -p batik-1.19
-touch "batik-1.19/batik-rasterizer-1.19.jar"
+touch versions.yml ${prefix}.xml
 """
 }

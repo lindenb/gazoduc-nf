@@ -31,7 +31,7 @@ input:
 	tuple val(meta1),path(optional_bed)
 	tuple val(meta ),path("VCFS/*")
 output:
-        tuple val(meta),path("*.bcf"),path("*.bcf.csi"),emit:vcf
+    tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:vcf
 	path("versions.yml"),emit:versions
 script:
         def args1  = task.ext.args1?:""
@@ -77,14 +77,14 @@ fi
 
 bcftools  +fill-tags \\
 	--threads ${task.cpus} \\
-	-O b  \\
-	-o TMP/jeter.bcf \\
+	-O z  \\
+	-o TMP/jeter.vcf.gz \\
 	TMP/jeter2.bcf -- -t AN,AC,AF,AC_Hom,AC_Het,AC_Hemi,NS
 
-bcftools index  -f --threads ${task.cpus}  TMP/jeter.bcf
+bcftools index  -f -t --threads ${task.cpus}  TMP/jeter.vcf.gz
 
-mv TMP/jeter.bcf     ${prefix}.bcf
-mv TMP/jeter.bcf.csi ${prefix}.bcf.csi
+mv TMP/jeter.vcf.gz     ${prefix}.vcf.gz
+mv TMP/jeter.vcf.gz.tbi ${prefix}.vcf.gz.tbi
 
 cat << END_VERSIONS > versions.yml
 ${task.process}:
@@ -97,6 +97,6 @@ stub:
  // "f"+(meta.id?"."+meta.id.md5():"") + (optional_bed?"."+optional_bed.baseName:"")
 """
 find VCFS/ \\( -name "*.vcf.gz" -o -name "*.bcf"  \\) 
-touch versions.yml ${prefix}.bcf ${prefix}.bcf.csi
+touch versions.yml ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi
 """
 }

@@ -23,30 +23,36 @@ SOFTWARE.
 
 */
 
-
-process BATIK_DOWNLOAD {
+process JENA_DOWNLOAD {
 label "process_single"
 input:
 	val(meta)
 output:
-	tuple val(meta),path("batik-1.19/batik-rasterizer-1.19.jar"),emit:rasterizer
+	tuple val(meta),path("apache-jena/bin/arq"),emit:arq
+    tuple val(meta),path("apache-jena/bin/riot"),emit:riot
+    tuple val(meta),path("apache-jena/bin/tdbquery"),emit:tdbquery
+    tuple val(meta),path("apache-jena/bin/tdbloader"),emit:tdbloader
 	path("versions.yml"),emit:versions
 script:
-	def url = "https://www.apache.org/dyn/closer.cgi?filename=/xmlgraphics/batik/binaries/batik-bin-1.19.zip&action=download"
+    def version = task.ext.version?:"5.6.0"
+	def url = "https://dlcdn.apache.org/jena/binaries/apache-jena-${version}.tar.gz"
 """
-curl -L -o batik-bin-1.19.zip "${url}"
-unzip batik-bin-1.19.zip
-rm batik-bin-1.19.zip
+curl -L -o apache-jena-${version}.tar.gz "${url}"
+tar xvfz apache-jena-${version}.tar.gz
+
+mv -v apache-jena-${version} apache-jena
+find apache-jena 1>&2
 
 cat << EOF > versions.yml
 "${task.process}"
-	batik: "${url}"
+	jena: "${url}"
 EOF
 """
+
 stub:
 """
 touch versions.yml
-mkdir -p batik-1.19
-touch "batik-1.19/batik-rasterizer-1.19.jar"
+mkdir -p apache-jena/bin
+(cd apache-jena/bin && touch arq riot tdbquery tdbloader)
 """
 }

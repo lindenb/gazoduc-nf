@@ -34,31 +34,61 @@ output:
 script:
     def prefix = task.ext.prefix?:"${meta.id}"
     def dir = directory.toRealPath().toString()
-    def grep_cmd = "cat" // "grep -F '/germline_seq/' " 
-    def shift = 1
+    def grep_cmd =  "grep -F '/germline_seq/' " 
 """
+find "${dir}" -type f -name "dragenlicenceUsageAndCoverage.txt"  > jeter.txt
+
+if test -s jeter.txt
+then
+
+find "${dir}" -type f -name "*.cram" |\\
+    awk  -F '/' '{printf("{\\"type\\":\\"bam\\",\\"id\\":\\"%s\\",\\"bam\\":\\"%s\\",\\"bai\\":\\"%s.crai\\"}\\n",\$(NF - 1),\$0,\$0);}' > lines.txt
+
+find "${dir}" -type f -name "*.bam" ||\\
+    awk -F '/' '{printf("{\\"type\\":\\"bam\\",\\"id\\":\\"%s\\",\\"bam\\":\\"%s\\",\\"bai\\":\\"%s.bai\\"}\\n",\$(NF - 1),\$0,\$0);}' >> lines.txt
+
+find "${dir}" -type f -name "*.cnv_sv.vcf.gz" |\\
+    awk -F '/' '{printf("{\\"type\\":\\"cnv_sv\\",\\"id\\":\\"%s\\",\\"vcf\\":\\"%s\\",\\"tbi\\":\\"%s.tbi\\"}\\n",\$(NF - 1),\$0,\$0);}' >> lines.txt
+
+find "${dir}" -type f -name "*.sv.vcf.gz" |\\
+    awk -F '/' '{printf("{\\"type\\":\\"sv\\",\\"id\\":\\"%s\\",\\"vcf\\":\\"%s\\",\\"tbi\\":\\"%s.tbi\\"}\\n",\$(NF- 1 ),\$0,\$0);}' >> lines.txt
+
+find "${dir}" -type f -name "*.hard-filtered.vcf.gz" |\\
+    awk -F '/' '{printf("{\\"type\\":\\"vcf\\",\\"id\\":\\"%s\\",\\"vcf\\":\\"%s\\",\\"tbi\\":\\"%s.tbi\\"}\\n",\$(NF - 1 ),\$0,\$0);}' >> lines.txt
+
+find "${dir}" -type f -name "*.ploidy.vcf.gz" |\\
+    awk -F '/' '{printf("{\\"type\\":\\"ploidy\\",\\"id\\":\\"%s\\",\\"vcf\\":\\"%s\\",\\"tbi\\":\\"%s.tbi\\"}\\n",\$(NF- 1 ),\$0,\$0);}' >> lines.txt
+
+else
+
+
 find "${dir}" -type f -name "*.cram" | ${grep_cmd} | \\
-    awk -F '/' '{printf("{\\"type\\":\\"bam\\",\\"id\\":\\"%s\\",\\"bam\\":\\"%s\\",\\"bai\\":\\"%s.crai\\"}\\n",\$(NF-${shift}),\$0,\$0);}' > lines.txt
+    awk  -F '/' '{printf("{\\"type\\":\\"bam\\",\\"id\\":\\"%s\\",\\"bam\\":\\"%s\\",\\"bai\\":\\"%s.crai\\"}\\n",\$(NF - 2),\$0,\$0);}' > lines.txt
 
 find "${dir}" -type f -name "*.bam" | ${grep_cmd} |\\
-    awk -F '/' '{printf("{\\"type\\":\\"bam\\",\\"id\\":\\"%s\\",\\"bam\\":\\"%s\\",\\"bai\\":\\"%s.bai\\"}\\n",\$(NF-${shift}),\$0,\$0);}' >> lines.txt
+    awk -F '/' '{printf("{\\"type\\":\\"bam\\",\\"id\\":\\"%s\\",\\"bam\\":\\"%s\\",\\"bai\\":\\"%s.bai\\"}\\n",\$(NF - 2),\$0,\$0);}' >> lines.txt
 
 find "${dir}" -type f -name "*.cnv_sv.vcf.gz" | ${grep_cmd} |\\
-    awk -F '/' '{printf("{\\"type\\":\\"cnv_sv\\",\\"id\\":\\"%s\\",\\"vcf\\":\\"%s\\",\\"tbi\\":\\"%s.tbi\\"}\\n",\$(NF-${shift}),\$0,\$0);}' >> lines.txt
+    awk -F '/' '{printf("{\\"type\\":\\"cnv_sv\\",\\"id\\":\\"%s\\",\\"vcf\\":\\"%s\\",\\"tbi\\":\\"%s.tbi\\"}\\n",\$(NF - 2),\$0,\$0);}' >> lines.txt
 
 find "${dir}" -type f -name "*.sv.vcf.gz" | ${grep_cmd} |\\
-    awk -F '/' '{printf("{\\"type\\":\\"sv\\",\\"id\\":\\"%s\\",\\"vcf\\":\\"%s\\",\\"tbi\\":\\"%s.tbi\\"}\\n",\$(NF-${shift}),\$0,\$0);}' >> lines.txt
+    awk -F '/' '{printf("{\\"type\\":\\"sv\\",\\"id\\":\\"%s\\",\\"vcf\\":\\"%s\\",\\"tbi\\":\\"%s.tbi\\"}\\n",\$(NF - 2 ),\$0,\$0);}' >> lines.txt
 
 find "${dir}" -type f -name "*.hard-filtered.vcf.gz" | ${grep_cmd} |\\
-    awk -F '/' '{printf("{\\"type\\":\\"vcf\\",\\"id\\":\\"%s\\",\\"vcf\\":\\"%s\\",\\"tbi\\":\\"%s.tbi\\"}\\n",\$(NF-${shift}),\$0,\$0);}' >> lines.txt
+    awk -F '/' '{printf("{\\"type\\":\\"vcf\\",\\"id\\":\\"%s\\",\\"vcf\\":\\"%s\\",\\"tbi\\":\\"%s.tbi\\"}\\n",\$(NF - 2 ),\$0,\$0);}' >> lines.txt
 
 find "${dir}" -type f -name "*.ploidy.vcf.gz" | ${grep_cmd} |\\
-    awk -F '/' '{printf("{\\"type\\":\\"ploidy\\",\\"id\\":\\"%s\\",\\"vcf\\":\\"%s\\",\\"tbi\\":\\"%s.tbi\\"}\\n",\$(NF-${shift}),\$0,\$0);}' >> lines.txt
+    awk -F '/' '{printf("{\\"type\\":\\"ploidy\\",\\"id\\":\\"%s\\",\\"vcf\\":\\"%s\\",\\"tbi\\":\\"%s.tbi\\"}\\n",\$(NF - 2 ),\$0,\$0);}' >> lines.txt
+
+
+fi
 
 echo '[' > "${prefix}.json"
 cat lines.txt | paste -s -d ',' >> "${prefix}.json"
 echo ']' >> "${prefix}.json"
 
+
+rm jeter.txt
 touch versions.yml
 """
 stub:

@@ -23,30 +23,37 @@ SOFTWARE.
 
 */
 
-
-process BATIK_DOWNLOAD {
+process JENA_ARQ {
 label "process_single"
+tag "${meta.id}"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-	val(meta)
+	tuple val(meta1),path(arq_exe)
+    tuple val(meta2),path(data)
+    tuple val(meta ),path(query)
 output:
-	tuple val(meta),path("batik-1.19/batik-rasterizer-1.19.jar"),emit:rasterizer
+    tuple val(meta ),path("*.result.*"),emit:output
 	path("versions.yml"),emit:versions
 script:
-	def url = "https://www.apache.org/dyn/closer.cgi?filename=/xmlgraphics/batik/binaries/batik-bin-1.19.zip&action=download"
+    def version = task.ext.version?:"5.6.0"
+    def jvm =  task.ext.jvm?:"-Djdk.xml.entityExpansionLimit=0 -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -XX:-UsePerfData"
+    def prefix = task.ext.prefix?:"${meta.id}"
+    def suffix = task.ext.suffix?:"txt"
+    def cmd1 = task.ext.cmd1?:"cat"
 """
-curl -L -o batik-bin-1.19.zip "${url}"
-unzip batik-bin-1.19.zip
-rm batik-bin-1.19.zip
+mkdir -p TMP
+${arq_exe} ${jvm} --data=${data} --query=${query} | ${cmd1} > "${prefix}.result.${suffix}"
 
 cat << EOF > versions.yml
 "${task.process}"
-	batik: "${url}"
+	jena: TODO
 EOF
 """
+
 stub:
+    def prefix = task.ext.prefix?:"${meta.id}"
+    def suffix = task.ext.suffix?:"txt"
 """
-touch versions.yml
-mkdir -p batik-1.19
-touch "batik-1.19/batik-rasterizer-1.19.jar"
+touch versions.yml "${prefix}.result.${suffix}"
 """
 }

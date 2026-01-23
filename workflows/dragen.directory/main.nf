@@ -33,7 +33,7 @@ include {MANTA_MERGER                } from '../../modules/jvarkit/mantamerger'
 include {BCFTOOLS_QUERY              } from '../../modules/bcftools/query'
 include {BEDTOOLS_SLOP               } from '../../modules/bedtools/slop'
 include {SAMTOOLS_COVERAGE           } from '../../modules/samtools/coverage'
-
+include {BCFTOOLS_MERGE              } from '../../modules/bcftools/merge'
 
 workflow {
     versions = Channel.empty()
@@ -87,14 +87,23 @@ workflow {
     versions = versions.mix(PREPARE_BED.out.versions)
 
 
+    BCFTOOLS_MERGE(
+        PREPARE_BED.out.bed,
+        dispatch.snv
+            .map{[file(it.vcf),file(it.tbi)]}
+            .filter{f,_t->f.parent!=null  && f.parent.name!="VCF"}
+            .flatMap()
+            .collect()
+            .map{f->[[id:"snv"],f.sort()]}
+        )
+    versions = versions.mix(BCFTOOLS_MERGE.out.versions)
+
     ANNOT_SNV(
         PREPARE_ONE_REFERENCE.out.fasta,
         PREPARE_ONE_REFERENCE.out.fai,
         PREPARE_ONE_REFERENCE.out.dict,
         PREPARE_BED.out.bed,
-        dispatch.snv
-		.map{[[id:it.id],file(it.vcf),file(it.tbi)]}
-		.filter{_meta,f,_t->f.parent!=null  && f.parent.name!="VCF"}
+        BCFTOOLS_MERGE.out.vcf
         )
      versions = versions.mix(ANNOT_SNV.out.versions)
 
@@ -138,6 +147,7 @@ workflow {
     regions_ch = BEDTOOLS_SLOP.out.bed
         .map{_meta,bed->bed}
         .splitCsv(sep:'\t',header:false)
+        .filter{ctg,_start,_end->ctg.matches("(chr)?[XY0-9]+")}
         .map{ctg,start,end->[interval:"${ctg}:${start}-${end}",id:"${ctg}_${start}_${end}"]}
 
     
@@ -154,12 +164,12 @@ workflow {
         )
     versions = versions.mix(SAMTOOLS_COVERAGE.out.versions)
 
-
+    /*
     MERGE_VARIANTS(
         ANNOT_SNV.out.vcf.map{meta,vcf,tbi->vcf}.collect().map{[[id:"snv"],it.sort()]}.mix(
                 ANNOT_SV.out.vcf.map{meta,vcf,tbi->vcf}.collect().map{[[id:"sv"],it.sort()]}
                 )
-    )
+    )*/
     /*
     BCFTOOLS_QUERY(MERGE_VARIANTS.out.vcf
         .filter{meta,_f,_t->meta.id=="sv"}
@@ -273,6 +283,7 @@ script:
   def gnomadPop = "AF_nfe"
   def soacn = "SO:0001818,SO:0001629"
   def jvm = "-Xmx${task.memory.giga}G  -Djava.io.tmpdir=TMP"
+  def rename = false
 """
 hostname 1>&2
 mkdir -p TMP
@@ -294,12 +305,17 @@ bcftools query -f '.' TMP/jeter.vcf > TMP/count.txt
 
 if test -f TMP/count.txt
 then
-    bcftools query -l TMP/jeter.vcf > TMP/jeter.a
-    bcftools query -l TMP/jeter.vcf | md5sum | cut -d ' ' -f 1 > TMP/jeter.b
-    paste  TMP/jeter.a  TMP/jeter.b >  TMP/jeter.c
+    if ${rename?true:false}
+    then
+        bcftools query -l TMP/jeter.vcf > TMP/jeter.a
+        bcftools query -l TMP/jeter.vcf | md5sum | cut -d ' ' -f 1 > TMP/jeter.b
+        paste  TMP/jeter.a  TMP/jeter.b >  TMP/jeter.c
 
-    bcftools reheader --samples TMP/jeter.c -T TMP/x  TMP/jeter.vcf  |\\
-       bcftools view -O z -o "${prefix}.vcf.gz" 
+        bcftools reheader --samples TMP/jeter.c -T TMP/x  TMP/jeter.vcf  |\\
+        bcftools view -O z -o "${prefix}.vcf.gz"
+    else
+        bcftools view -O z -o "${prefix}.vcf.gz" TMP/jeter.vcf
+    fi
     bcftools index -f -t "${prefix}.vcf.gz"
 fi
 
@@ -361,7 +377,7 @@ touch versions.yml
 """
 }
 
-
+/*
 
 process MERGE_VARIANTS {
 tag "${meta.id}"
@@ -386,4 +402,4 @@ bcftools sort --max-mem ${task.memory.giga}G -T TMP/sort  -O u TMP/jeter.vcf |\\
     bcftools view -O z -o "${prefix}.vcf.gz"
 bcftools index -f -t "${prefix}.vcf.gz"
 """
-}
+}*/

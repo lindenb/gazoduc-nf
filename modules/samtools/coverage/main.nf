@@ -38,6 +38,7 @@ output:
 	path("versions.yml"),emit:versions
 script:
 	def interval = task.ext.interval?:"${meta.interval?:""}"
+	def title = task.ext.title?:"${meta.title?:"${interval}"}"
 	def prefix = task.ext.prefix?:"${meta.id}"
 	def mapq   = task.ext.mapq?:0
 	def args1  = task.ext.args1?:""
@@ -50,7 +51,7 @@ do
 
 echo "\${F}" |\\
 	samtools samples |\\
-	awk -F '\t' '{printf("# %s ${interval} %s\\n",\$1,\$2);}' >> TMP/jeter.txt
+	awk -F '\t' '{printf("# %s ${title} %s\\n",\$1,\$2);}' >> TMP/jeter.txt
 
 samtools coverage \\
 	${args1} \\
