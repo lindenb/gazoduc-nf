@@ -406,7 +406,7 @@ output:
 	path("versions.yml"),emit:versions
 script:
 	def url_hg19="https://raw.githubusercontent.com/hall-lab/speedseq/master/annotations/ceph18.b37.lumpy.exclude.2014-01-15.bed"
-	def url_hg38=" http://cf.10xgenomics.com/supp/genome/GRCh38/sv_blacklist.bed"
+	def url_hg38="http://cf.10xgenomics.com/supp/genome/GRCh38/sv_blacklist.bed"
 	def url0 =(
 		meta1.ucsc_name.equals("hg19")
 		?url_hg19
