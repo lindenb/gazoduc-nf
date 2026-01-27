@@ -38,12 +38,14 @@ output:
 script:	
     def sizes = optional_fai?"-g ${optional_fai}":''
     def prefix = task.ext.prefix?:"\${MD5}.intersect"
+    def args1 = task.ext.args1?:""
 """
 hostname 1>&2
 mkdir -p TMP
 
 bedtools intersect \\
     ${sizes} \\
+    ${args1} \\
     -a ${file1} \\
     -b ${file2} > "TMP/jeter.bed"
 

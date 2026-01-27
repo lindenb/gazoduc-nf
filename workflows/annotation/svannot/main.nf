@@ -41,14 +41,26 @@ include { BEDTOOLS_SLOP                               } from '../../../modules/b
 include { BEDTOOLS_MERGE                              } from '../../../modules/bedtools/merge'
 include { BCFTOOLS_VIEW                               } from '../../../modules/bcftools/view'
 include { BCFTOOLS_VIEW as BCFTOOLS_VIEW_INV          } from '../../../modules/bcftools/view'
+include { BCFTOOLS_VIEW as BCFTOOLS_VIEW_INDEL        } from '../../../modules/bcftools/view'
 include { ANNOTSV                                     } from '../../../subworkflows/annotsv'
 include { DGV_DOWNLOAD                                } from '../../../modules/dgv/download'
 include { READ_SAMPLESHEET                            } from '../../../subworkflows/nf/read_samplesheet'
 include { META_TO_BAMS                                } from '../../../subworkflows/samtools/meta2bams1'
-include { BCFTOOLS_QUERY                              } from '../../../modules/bcftools/query'
+include { BCFTOOLS_QUERY as BCFTOOLS_QUERY_INV        } from '../../../modules/bcftools/query'
+include { BCFTOOLS_QUERY as BCFTOOLS_QUERY_INDEL      } from '../../../modules/bcftools/query'
+include { BCFTOOLS_INDEX                              } from '../../../modules/bcftools/index'
 include { COVERAGE_GRID                               } from '../../../modules/jvarkit/coveragegrid'
+include { JVARKIT_SVLEN                               } from '../../../modules/jvarkit/svlen'
+include { VCF_BED as JVARKIT_VCFBED_DGV               } from '../../../modules/jvarkit/vcfbed'
 include { GHOSTSCRIPT_MERGE                           } from '../../../modules/gs/merge/main.nf'
 include { PDF_NAVIGATION                              } from '../../../modules/pdf/navigation/main.nf'
+include { GTF_ANNOTATION                              } from '../../../modules/gtf/annot1/main.nf'
+include { PLOT_COVERAGE_01                            } from '../../../subworkflows/plotdepth'
+include { BEDTOOLS_INTERSECT as INTERSECT_INV         } from '../../../modules/bedtools/intersect'
+include { BEDTOOLS_INTERSECT as INTERSECT_INDEL         } from '../../../modules/bedtools/intersect'
+
+
+
 workflow {
 		validateParameters()
 
@@ -94,9 +106,6 @@ workflow {
 		)
 	versions = versions.mix(META_TO_BAMS.out.versions)
 
-
-
-
 	DOWNLOAD_GTF(PREPARE_ONE_REFERENCE.out.dict)
 	versions = versions.mix(DOWNLOAD_GTF.out.versions)
 
@@ -140,25 +149,51 @@ workflow {
 	BEDTOOLS_MERGE( BEDTOOLS_SLOP.out.bed )
 	versions = versions.mix(BEDTOOLS_MERGE.out.versions)
 
+	/** add SVLEN attribute if it is missing */
+	JVARKIT_SVLEN(
+		VCF_INPUT.out.vcf.map{meta,f,tbi->[meta,f]}
+		)
+	versions = versions.mix(JVARKIT_SVLEN.out.versions)
+
+	/** index vcf */
+	BCFTOOLS_INDEX(JVARKIT_SVLEN.out.vcf)
+	versions = versions.mix(BCFTOOLS_INDEX.out.versions)
+
+	/** remove small, large indels , non-PASS */
 	BCFTOOLS_VIEW(
 		BEDTOOLS_MERGE.out.bed,
 		[[id:"no_sample"],[]],
-		VCF_INPUT.out.vcf
+		BCFTOOLS_INDEX.out.vcf
 		)
 	versions = versions.mix(BCFTOOLS_VIEW.out.versions)
 
+	/** annotate with DGV */
+	JVARKIT_VCFBED_DGV(
+		DGV_DOWNLOAD.out.bed,
+		BCFTOOLS_VIEW.out.vcf
+		)
+	versions = versions.mix(JVARKIT_VCFBED_DGV.out.versions)
+
+	/** filter out frequent in gnomad */
 	JVARKIT_VCFGNOMADSV(
 		DOWNLOAD_GNOMAD_SV.out.vcf,
-		BCFTOOLS_VIEW.out.vcf
+		JVARKIT_VCFBED_DGV.out.vcf
 		)
 	versions = versions.mix(JVARKIT_VCFGNOMADSV.out.versions)
 
-	ANNOT_WITH_GTF(
+	if(params.genes_of_interest==null) {
+		genes_roi_ch = Channel.of([[id:"roi"],[]])
+	} else {
+		genes_roi_ch = Channel.of([[id:"roi"],file(params.genes_of_interest)])
+	}
+
+	GTF_ANNOTATION(
 		PREPARE_ONE_REFERENCE.out.fai,
-		DOWNLOAD_GTF.out.gtf,
+		DOWNLOAD_GTF.out.gtf.map{meta,gtf,tbi->[meta,gtf]},
+		genes_roi_ch,
 		JVARKIT_VCFGNOMADSV.out.vcf
 		)
-	versions = versions.mix(ANNOT_WITH_GTF.out.versions)
+	versions = versions.mix(GTF_ANNOTATION.out.versions)
 
 
 	ANNOTSV(
@@ -166,17 +201,54 @@ workflow {
 		PREPARE_ONE_REFERENCE.out.fasta,
 		PREPARE_ONE_REFERENCE.out.fai,
 		PREPARE_ONE_REFERENCE.out.dict,
-		JVARKIT_VCFGNOMADSV.out.vcf
+		GTF_ANNOTATION.out.vcf
 		)
 	versions = versions.mix(ANNOTSV.out.versions)
 
+	BCFTOOLS_VIEW_INDEL(
+		[[id:"nobed"],[]],
+		[[id:"no_sample"],[]],
+		GTF_ANNOTATION.out.vcf.map{meta,vcf->[meta,vcf,[]]}
+		)
+	versions = versions.mix(BCFTOOLS_VIEW_INDEL.out.versions)
+
+	/** convert indels to BED */
+	BCFTOOLS_QUERY_INDEL(BCFTOOLS_VIEW_INDEL.out.vcf)
+	versions = versions.mix(BCFTOOLS_QUERY_INDEL.out.versions)
+	
+	if(params.genes_of_interest==null) {
+		plot_indel_bed = BCFTOOLS_QUERY_INDEL.out.output
+		}
+	else
+		{
+		INTERSECT_INDEL(
+			PREPARE_ONE_REFERENCE.out.fai,
+				BCFTOOLS_QUERY_INDEL.out.output.combine(GTF_ANNOTATION.out.roi_bed)
+					.map{meta1,a,meta2,b->[meta2,a,b]}
+				)
+		versions = versions.mix(INTERSECT_INDEL.out.versions)
+		plot_indel_bed = INTERSECT_INDEL.out.bed
+		}
+
+	PLOT_COVERAGE_01(
+		metadata,
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		PREPARE_ONE_REFERENCE.out.dict,
+		DOWNLOAD_GTF.out.gtf,
+		plot_indel_bed,
+		META_TO_BAMS.out.bams
+		)
+	versions = versions.mix(PLOT_COVERAGE_01.out.versions)
+	multiqc = multiqc.mix(PLOT_COVERAGE_01.out.multiqc)
 
 	BCFTOOLS_VIEW_INV(
 		[[id:"nobed"],[]],
 		[[id:"no_sample"],[]],
-		JVARKIT_VCFGNOMADSV.out.vcf.map{meta,vcf->[meta,vcf,[]]}
+		GTF_ANNOTATION.out.vcf.map{meta,vcf->[meta,vcf,[]]}
 		)
 	versions = versions.mix(BCFTOOLS_VIEW_INV.out.versions)
+
 
 
 	MAKE_SAMPLESHEET2(
@@ -186,10 +258,15 @@ workflow {
 			.map{L->[[id:"bams"],L.sort()]}
 	)
 	
-	BCFTOOLS_QUERY(BCFTOOLS_VIEW_INV.out.vcf)
-	versions = versions.mix(BCFTOOLS_QUERY.out.versions)
+	BCFTOOLS_QUERY_INV(BCFTOOLS_VIEW_INV.out.vcf)
+	versions = versions.mix(BCFTOOLS_QUERY_INV.out.versions)
 	
-	
+	INTERSECT_INV(
+		PREPARE_ONE_REFERENCE.out.fai,
+		BCFTOOLS_QUERY_INV.out.output.combine(GTF_ANNOTATION.out.roi_bed)
+			.map{meta1,a,meta2,b->[meta2,a,b]}
+		)
+	versions = versions.mix(INTERSECT_INV.out.versions)
 
 	COVERAGE_GRID(
 		PREPARE_ONE_REFERENCE.out.fasta,
@@ -203,7 +280,7 @@ workflow {
 			.flatMap()
 			.collect()
 			.map{L->[[id:"bams"],L.sort()]},
-		BCFTOOLS_QUERY.out.output
+		BCFTOOLS_QUERY_INV.out.output
 			.map{_meta,f->f}
 			.splitCsv(header:false,sep:'\t')
 			.map{row->[[id:"${row[0]}_${row[1]}_${row[2]}",title:"${row[0]}:${row[1]}-${row[2]}"],row[0],(row[1] as int),(row[2] as int)]}
@@ -217,94 +294,6 @@ workflow {
 	versions = versions.mix(PDF_NAVIGATION.out.versions)
 }
 
-process ANNOT_WITH_GTF {
-label "process_single"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-afterScript "rm -rf TMP"
-input:
-	tuple val(meta1),path(fai)
-	tuple val(meta2),path(gtf),path(gtf_tbi)
-	tuple val(meta3),path(genes_of_interest)
-	tuple val(meta ),path(vcf)
-output:
-	tuple val(meta),path("*.vcf.gz"),emit:vcf
-script:
-	def xstream = task.ext.xstream?:"1000"
-"""
-mkdir -p TMP
-
-gunzip -c "${gtf}" |\\
-	awk -F '\t' '(\$3=="exon") {printf("%s\t%d\t%s\\n",\$1,int(\$2)-1,int(\$3))}' |\\
-	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
-	bedtools merge |\\
-	sed 's/\$/\t1/' > TMP/exons.bed
-
-gunzip -c "${gtf}" |\\
-	awk -F '\t' '(\$3=="CDS") {printf("%s\t%d\t%s\\n",\$1,int(\$2)-1,int(\$3))}' |\\
-	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
-	bedtools merge |\\
-	sed 's/\$/\t1/' > TMP/cds.bed
-
-gunzip -c "${gtf}" |\\
-	awk -F '\t' '(\$3=="gene") {printf("%s\t%d\t%s\\n",\$1,int(\$2)-1,int(\$3))}' |\\
-	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
-	bedtools merge |\\
-	sed 's/\$/\t1/' > TMP/genes.bed
-
-gunzip -c "${gtf}" |\\
-	awk -F '\t' '(\$3=="transcript") {printf("%s\t%d\t%s\\n",\$1,int(\$2)-1,int(\$3))}' |\\
-	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
-	bedtools merge |\\
-	sed 's/\$/\t1/' > TMP/transcript.bed
-
-gunzip -c "${gtf}" |\\
-	grep -F -w protein_coding |\\
-	awk -F '\t' '(\$3=="gene") {printf("%s\t%d\t%s\\n",\$1,int(\$2)-1,int(\$3))}' |\\
-	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
-	bedtools merge |\\
-	sed 's/\$/\t1/' > TMP/protein_coding.bed
-
-bedtools subtract \\
-	-a TMP/transcript.bed \\
-	-b TMP/exons.bed |\\
-	cut -f1,2,3 |\\
-	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
-	bedtools merge |\\
-	sed 's/\$/\t1/' > TMP/introns.bed
-
-gunzip -c "${gtf}" |\\
-	awk -F '\t' '(\$3=="gene") {S=\$7; B=int(\$2)-1;E=int(\$3);if(S=="+") {E=B-1 ; B = B-${xstream}; if(B<0)B=0; if(E<0) E=0;} else {B=E;E=E+${xstream};} printf("%s\t%d\t%s\\n",\$1,B,E)}' |\\
-	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
-	bedtools merge |\\
-	sed 's/\$/\t1/' > TMP/upstream.bed
-
-gunzip -c "${gtf}" |\\
-	awk -F '\t' '(\$3=="gene") {S=\$7; B=int(\$2)-1;E=int(\$3);if(S=="-") {E=B-1 ; B = B-${xstream}; if(B<0)B=0; if(E<0) E=0;} else {B=E;E=E+${xstream};} printf("%s\t%d\t%s\\n",\$1,B,E)}' |\\
-	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
-	bedtools merge |\\
-	sed 's/\$/\t1/' > TMP/downstream.bed
-
-if ${genes_of_interest?true:false}
-then
-
-	cat "${genes_of_interest}" |\\
-		grep -vE '^#' |\\
-		grep -vE '^\$' |\\
-		sort -S ${task.memory.kilo} -t '\t' -k1,1 -T TMP > TMP/jeter.a
-
-	gunzip -c "${gtf}" |\\
-		awk -F '\t' '(\$3=="gene") |\\
-		java -jar \${HOME}/jvarkit.jar gtf2bed -c 'gene_name' |\\
-		sort -S ${task.memory.kilo} -t '\t' -k4,4 -T TMP > TMP/jeter.b
-
-	join -t '\t' -1 1 -2 4 -o '2.1,2.2,2.3,2.4' | uniq > TMP/roi.bed
-
-fi
-
-
-
-"""
-}
 
 process MAKE_SAMPLESHEET2 {
 	executor "local"

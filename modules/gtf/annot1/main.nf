@@ -40,55 +40,55 @@ input:
 	tuple val(meta ),path(vcf)
 output:
 	tuple val(meta),path("*.vcf.gz"),emit:vcf
-    path("versions.yml")
+	tuple val(meta),path("*.roi.bed"),optional:true,emit:roi_bed
+    path("versions.yml"),emit:versions
 script:
 	def xstream = task.ext.xstream?:"1000"
     def prefix = task.ext.prefix?:"${meta.id}.annot"
     def args1 = task.ext.args1?:""
     def args2 = task.ext.args2?:""
+	def jvm =  task.ext.jvm?:" -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -XX:-UsePerfData"
+
 """
 mkdir -p TMP
 
-gunzip -c "${gtf}" |\\
+set -x
+
+${gtf.name.endsWith(".gz")?"gunzip -c":"cat"} "${gtf}" |\\
 	awk -F '\t' '(\$3=="exon") {printf("%s\t%d\t%s\\n",\$1,int(\$4)-1,int(\$5))}' |\\
 	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
-	bedtools merge |\\
-	sed 's/\$/\t1/' > TMP/exon.bed
+	bedtools merge  > TMP/exon.bed
 
 echo '##INFO=<ID=in_exon,Number=0,Type=Flag,Description="In exon of ${gtf.name}">' > TMP/exon.hdr
 
-gunzip -c "${gtf}" |\\
+${gtf.name.endsWith(".gz")?"gunzip -c":"cat"} "${gtf}" |\\
 	awk -F '\t' '(\$3=="CDS") {printf("%s\t%d\t%s\\n",\$1,int(\$4)-1,int(\$5))}' |\\
 	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
-	bedtools merge |\\
-	sed 's/\$/\t1/' > TMP/cds.bed
+	bedtools merge > TMP/cds.bed
 
 echo '##INFO=<ID=in_cds,Number=0,Type=Flag,Description="In CDS of ${gtf.name}">' > TMP/cds.hdr
 
 
-gunzip -c "${gtf}" |\\
+${gtf.name.endsWith(".gz")?"gunzip -c":"cat"} "${gtf}" |\\
 	awk -F '\t' '(\$3=="gene") {printf("%s\t%d\t%s\\n",\$1,int(\$4)-1,int(\$5))}' |\\
 	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
-	bedtools merge |\\
-	sed 's/\$/\t1/' > TMP/gene.bed
+	bedtools merge   > TMP/gene.bed
 
 echo '##INFO=<ID=in_gene,Number=0,Type=Flag,Description="In gene of ${gtf.name}">' > TMP/gene.hdr
 
 
-gunzip -c "${gtf}" |\\
+${gtf.name.endsWith(".gz")?"gunzip -c":"cat"} "${gtf}" |\\
 	awk -F '\t' '(\$3=="transcript") {printf("%s\t%d\t%s\\n",\$1,int(\$4)-1,int(\$5))}' |\\
 	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
-	bedtools merge |\\
-	sed 's/\$/\t1/' > TMP/transcript.bed
+	bedtools merge   > TMP/transcript.bed
 
 echo '##INFO=<ID=in_transcript,Number=0,Type=Flag,Description="In transcripts of ${gtf.name}">' > TMP/transcript.hdr
 
-gunzip -c "${gtf}" |\\
+${gtf.name.endsWith(".gz")?"gunzip -c":"cat"} "${gtf}" |\\
 	grep -F -w protein_coding |\\
 	awk -F '\t' '(\$3=="gene") {printf("%s\t%d\t%s\\n",\$1,int(\$4)-1,int(\$5))}' |\\
 	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
-	bedtools merge |\\
-	sed 's/\$/\t1/' > TMP/protein_coding.bed
+	bedtools merge > TMP/protein_coding.bed
 
 echo '##INFO=<ID=in_protein_coding,Number=0,Type=Flag,Description="In protein coding of ${gtf.name}">' > TMP/protein_coding.hdr
 
@@ -98,25 +98,22 @@ bedtools subtract \\
 	-b TMP/exon.bed |\\
 	cut -f1,2,3 |\\
 	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
-	bedtools merge |\\
-	sed 's/\$/\t1/' > TMP/intron.bed
+	bedtools merge  > TMP/intron.bed
 
 echo '##INFO=<ID=in_intron,Number=0,Type=Flag,Description="In introns of ${gtf.name}">' > TMP/intron.hdr
 
-gunzip -c "${gtf}" |\\
+${gtf.name.endsWith(".gz")?"gunzip -c":"cat"} "${gtf}" |\\
 	awk -F '\t' '(\$3=="gene") {S=\$7; B=int(\$4)-1;E=int(\$5);if(S=="+") {E=B-1 ; B = B-${xstream}; if(B<0)B=0; if(E<0) E=0;} else {B=E;E=E+${xstream};} printf("%s\t%d\t%s\\n",\$1,B,E)}' |\\
 	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
-	bedtools merge |\\
-	sed 's/\$/\t1/' > TMP/upstream.bed
+	bedtools merge > TMP/upstream.bed
 
 echo '##INFO=<ID=in_upstream,Number=0,Type=Flag,Description="Upstream ${xstream}bp of genes in ${gtf.name}">' > TMP/upstream.hdr
 
 
-gunzip -c "${gtf}" |\\
+${gtf.name.endsWith(".gz")?"gunzip -c":"cat"} "${gtf}" |\\
 	awk -F '\t' '(\$3=="gene") {S=\$7; B=int(\$4)-1;E=int(\$5);if(S=="-") {E=B-1 ; B = B-${xstream}; if(B<0)B=0; if(E<0) E=0;} else {B=E;E=E+${xstream};} printf("%s\t%d\t%s\\n",\$1,B,E)}' |\\
 	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
-	bedtools merge |\\
-	sed 's/\$/\t1/' > TMP/downstream.bed
+	bedtools merge  > TMP/downstream.bed
 
 echo '##INFO=<ID=in_downstream,Number=0,Type=Flag,Description="Downstream ${xstream}bp of genes in ${gtf.name}">' > TMP/downstream.hdr
 
@@ -129,24 +126,46 @@ then
 		grep -vE '^\$' |\\
 		sort -S ${task.memory.kilo} -t '\t' -k1,1 -T TMP > TMP/jeter.a
 
-	gunzip -c "${gtf}" |\\
+	${gtf.name.endsWith(".gz")?"gunzip -c":"cat"} "${gtf}" |\\
 		awk -F '\t' '(\$3=="gene")' |\\
-		java -jar \${HOME}/jvarkit.jar gtf2bed -c 'gene_name' |\\
+		java ${jvm} -jar \${HOME}/jvarkit.jar gtf2bed -c 'gene_name,gtf.strand' |\\
 		sort -S ${task.memory.kilo} -t '\t' -k4,4 -T TMP > TMP/jeter.b
+	
 
-	join -t '\t' -1 1 -2 4 -o '2.1,2.2,2.3,2.4' | uniq > TMP/roi.bed
+	join -t '\t' -1 1 -2 4 -o '2.1,2.2,2.3,2.4' TMP/jeter.a TMP/jeter.b | uniq > TMP/roi.bed
 
-    echo '##INFO=<ID=in_roi,Number=0,Type=Flag,Description="in ROI of ${gtf.name}">' > TMP/roi.hdr
+	# save roi of gene_name for any future use
+	mv TMP/roi.bed ${prefix}.roi.bed
+
+    echo '##INFO=<ID=in_roi,Number=0,Type=Flag,Description="in ROI ${genes_of_interest.name} of ${gtf.name}">' > TMP/roi.hdr
+
+	join -t '\t' -1 1 -2 4 -o '2.1,2.2,2.3,2.5' TMP/jeter.a TMP/jeter.b |\\
+		awk -F '\t' '{S=\$4; B=int(\$2)-1;E=int(\$3);if(S=="+") {E=B-1 ; B = B-${xstream}; if(B<0)B=0; if(E<0) E=0;} else {B=E;E=E+${xstream};} printf("%s\t%d\t%s\\n",\$1,B,E)}' |\\
+		sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
+		bedtools merge  > TMP/upstream_roi.bed
+
+	echo '##INFO=<ID=in_roi_upstream,Number=0,Type=Flag,Description="in ROI ${genes_of_interest.name} Upstream ${xstream}bp of genes in ${gtf.name}">' > TMP/roi_upstream.hdr
+
+	join -t '\t' -1 1 -2 4 -o '2.1,2.2,2.3,2.5' TMP/jeter.a TMP/jeter.b |\\
+		awk -F '\t' '{S=\$4; B=int(\$2)-1;E=int(\$3);if(S=="-") {E=B-1 ; B = B-${xstream}; if(B<0)B=0; if(E<0) E=0;} else {B=E;E=E+${xstream};} printf("%s\t%d\t%s\\n",\$1,B,E)}' |\\
+		sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
+		bedtools merge  > TMP/downstream_roi.bed
+
+	echo '##INFO=<ID=in_roi_downstream,Number=0,Type=Flag,Description="in ROI ${genes_of_interest.name} Downstream ${xstream}bp of genes in ${gtf.name}">' > TMP/roi_downstream.hdr
 
 fi
 
 bcftools view --threads "${task.cpus}" -O u -o TMP/jeter.bcf "${vcf}"
 
-for F in exon cds gene transcript protein_coding intron upstream downstream roi
+for F in exon cds gene transcript protein_coding intron upstream downstream roi roi_upstream roi_downstream
 do
     if test -f "TMP/\${F}.bed"
     then
-        cat "TMP/\${F}.bed" | bgzip > TMP/jeter.bed.gz
+		cut -f1,2,3 "TMP/\${F}.bed"  |\\
+	        sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
+			bedtools merge |\\
+			sed 's/\$/\t1/' |\\
+			bgzip > TMP/jeter.bed.gz
         tabix -f -p bed TMP/jeter.bed.gz
 
         cat "TMP/\${F}.hdr"  1>&2
@@ -176,6 +195,6 @@ END_VERSIONS
 stub:
     def prefix = task.ext.prefix?:"${meta.id}.annot"
 """
-touch versions.yml "${prefix}.vcf.gz"
+touch versions.yml "${prefix}.vcf.gz" "${prefix}.roi.bed"
 """
 }
