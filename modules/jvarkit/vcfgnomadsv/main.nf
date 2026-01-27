@@ -42,11 +42,13 @@ process JVARKIT_VCFGNOMADSV {
 		def args3 = task.ext.args3?:""
 		def prefix  = task.ext.prefix?:"${meta.id}.gnomadsv"
 		def jvm = " -XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
+		def jvarkit = "java ${jvm} -jar \${HOME}/jvarkit.jar" //TODO fix me
 	"""
+	hostname 1>&2
 	mkdir -p TMP
 
 	bcftools view  ${args1} "${vcf}" |\\
-	jvarkit ${jvm} vcfgnomadsv \\
+	${jvarkit} vcfgnomadsv \\
 		${args2} \\
 		--min-af ${min_af} \\
 		--max-af ${max_af} \\

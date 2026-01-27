@@ -25,6 +25,7 @@ SOFTWARE.
 nextflow.enable.dsl=2
 //include {ANNOTATE_SV_VCF_01} from "../../subworkflows/annotation/annotation.sv.01.nf"
 include { assertKeyExistsAndNotEmpty               } from '../../modules/utils/functions.nf'
+include { parseBoolean                             } from '../../modules/utils/functions.nf'
 include { PREPARE_ONE_REFERENCE                    } from '../../subworkflows/samtools/prepare.one.ref'
 include { META_TO_PED                              } from '../../subworkflows/pedigree/meta2ped'
 include { MULTIQC                                  } from '../../subworkflows/multiqc'
@@ -37,8 +38,12 @@ include { JVARKIT_VCF_TO_TABLE as VCF_TO_HTML      } from '../../modules/jvarkit
 include { JVARKIT_VCF_TO_TABLE as VCF_TO_TXT       } from '../../modules/jvarkit/vcf2table'
 include { ANNOTSV                                  } from '../../subworkflows/annotsv'
 include { BCFTOOLS_QUERY                           } from '../../modules/bcftools/query'
+include { BCFTOOLS_VIEW                            } from '../../modules/bcftools/view'
 include { PLOT_COVERAGE_01                         } from '../../subworkflows/plotdepth'
 include { GTF_INPUT                                } from '../../subworkflows/nf/gtf_input'
+include { DOWNLOAD_GNOMAD_SV                       } from '../../modules/gnomad_sv/download.vcf'
+include { JVARKIT_VCFGNOMADSV                      } from '../../modules/jvarkit/vcfgnomadsv'
+
 
 workflow {
 	  	if(params.fasta==null) {
@@ -104,15 +109,32 @@ workflow {
 		filter_code = [[id:"no_code"],[]]
 		
 
+		vcf4annotsv_ch = DELLY.out.vcf.map{meta,vcf,idx->[meta,vcf]}
+
+		if(parseBoolean(params.with_gnomadsv)) {
+			DOWNLOAD_GNOMAD_SV( PREPARE_ONE_REFERENCE.out.dict )
+			versions = versions.mix(DOWNLOAD_GNOMAD_SV.out.versions)
+			
+			JVARKIT_VCFGNOMADSV(
+				DOWNLOAD_GNOMAD_SV.out.vcf,
+				vcf4annotsv_ch
+				)
+			versions = versions.mix(JVARKIT_VCFGNOMADSV.out.versions)
+			vcf4annotsv_ch = JVARKIT_VCFGNOMADSV.out.vcf
+			}
+
+
 		if(params.jvarkit_vcffilter_script!=null) {
 			filter_code = Channel.of(params.jvarkit_vcffilter_script).map{f->[[id:f.baseName],f]}
 			JVARKIT_VCFFILTERJDK(
 				filter_code,
 				META_TO_PED.out.pedigree,
-				DELLY.out.vcf.map{meta,vcf,idx->[meta,vcf]}
+				vcf4annotsv_ch
 				)
 			versions = versions.mix(JVARKIT_VCFFILTERJDK.out.versions)
 
+
+			vcf4annotsv_ch = JVARKIT_VCFFILTERJDK.out.vcf
 
 			VCF_TO_HTML(
 				META_TO_PED.out.pedigree,
@@ -151,17 +173,33 @@ workflow {
 				)
 			versions = versions.mix(PLOT_COVERAGE_01.out.versions)
 			multiqc = versions.mix(PLOT_COVERAGE_01.out.multiqc)
+			}
+
+		/**
+		 *
+		 * ANNOTSV
+		 *
+		 */
+		if(parseBoolean(params.with_annotsv)) {
+			/* convert bcf to vcf */
+			BCFTOOLS_VIEW(
+				[[id:"nobed"],[]],
+				[[id:"nosamples"],[]],
+				vcf4annotsv_ch.map{meta,vcf->[meta,vcf,[]]}
+				)
+			versions = versions.mix(BCFTOOLS_VIEW.out.versions)
 
 			ANNOTSV(
 				metadata,
 				PREPARE_ONE_REFERENCE.out.fasta,
 				PREPARE_ONE_REFERENCE.out.fai,
 				PREPARE_ONE_REFERENCE.out.dict,
-				JVARKIT_VCFFILTERJDK.out.vcf
+				BCFTOOLS_VIEW.out.vcf
 				)
 			versions = versions.mix(ANNOTSV.out.versions)
 			multiqc = versions.mix(ANNOTSV.out.multiqc)
 			}
+
 		README(metadata,filter_code)
 
     	MULTIQC(
@@ -304,6 +342,7 @@ workflow xxxx{
 				]}
 			ANNOTATE_SV_VCF_01(reference, for_annot_ch)
 			}
+		
 }
 
 if (false) {
