@@ -1,0 +1,53 @@
+nextflow_process {
+
+    name "Test Process GTF_ANNOTATION"
+    script "modules/gtf/annot1/main.nf"
+    process "GTF_ANNOTATION"
+    tag "gitlab_ci"
+    tag "modules"
+    tag "modules/gtf"
+    tag "modules/gtf/annot1"
+
+
+    test("BASIC") {
+        when {
+            process {
+                """
+	            input[0] = [[id:"fai"],file("${projectDir}/tests/data/rotavirus_rf.fai")]
+                input[1] = [[id:"gtf"],file("${projectDir}/tests/data/gencode.v49.hg38.annotation.gtf.gz")]
+                input[2] = [[id:"roi"],[]]
+                input[3] = [[id:"roi"],file("${projectDir}/tests/data/rotavirus_rf.vcf.gz")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+    }
+
+
+    test("STUB") {
+        options "-stub"
+        when {
+           
+            process {
+                """
+	            input[0] = [[id:"fai"],file("${projectDir}/tests/data/rotavirus_rf.fai")]
+                input[1] = [[id:"gtf"],file("${projectDir}/tests/data/gencode.v49.hg38.annotation.gtf.gz")]
+                input[2] = [[id:"roi"],[]]
+                input[3] = [[id:"roi"],file("${projectDir}/tests/data/rotavirus_rf.vcf.gz")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+    }
+
+
+
+}

@@ -153,6 +153,13 @@ workflow {
 		)
 	versions = versions.mix(JVARKIT_VCFGNOMADSV.out.versions)
 
+	ANNOT_WITH_GTF(
+		PREPARE_ONE_REFERENCE.out.fai,
+		DOWNLOAD_GTF.out.gtf,
+		JVARKIT_VCFGNOMADSV.out.vcf
+		)
+	versions = versions.mix(ANNOT_WITH_GTF.out.versions)
+
 
 	ANNOTSV(
 		metadata,
@@ -208,6 +215,95 @@ workflow {
 
 	PDF_NAVIGATION(GHOSTSCRIPT_MERGE.out.pdf.map{m,pdf->pdf}.collect().map{L->[[id:"inv"],L.sort()]})
 	versions = versions.mix(PDF_NAVIGATION.out.versions)
+}
+
+process ANNOT_WITH_GTF {
+label "process_single"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
+input:
+	tuple val(meta1),path(fai)
+	tuple val(meta2),path(gtf),path(gtf_tbi)
+	tuple val(meta3),path(genes_of_interest)
+	tuple val(meta ),path(vcf)
+output:
+	tuple val(meta),path("*.vcf.gz"),emit:vcf
+script:
+	def xstream = task.ext.xstream?:"1000"
+"""
+mkdir -p TMP
+
+gunzip -c "${gtf}" |\\
+	awk -F '\t' '(\$3=="exon") {printf("%s\t%d\t%s\\n",\$1,int(\$2)-1,int(\$3))}' |\\
+	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
+	bedtools merge |\\
+	sed 's/\$/\t1/' > TMP/exons.bed
+
+gunzip -c "${gtf}" |\\
+	awk -F '\t' '(\$3=="CDS") {printf("%s\t%d\t%s\\n",\$1,int(\$2)-1,int(\$3))}' |\\
+	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
+	bedtools merge |\\
+	sed 's/\$/\t1/' > TMP/cds.bed
+
+gunzip -c "${gtf}" |\\
+	awk -F '\t' '(\$3=="gene") {printf("%s\t%d\t%s\\n",\$1,int(\$2)-1,int(\$3))}' |\\
+	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
+	bedtools merge |\\
+	sed 's/\$/\t1/' > TMP/genes.bed
+
+gunzip -c "${gtf}" |\\
+	awk -F '\t' '(\$3=="transcript") {printf("%s\t%d\t%s\\n",\$1,int(\$2)-1,int(\$3))}' |\\
+	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
+	bedtools merge |\\
+	sed 's/\$/\t1/' > TMP/transcript.bed
+
+gunzip -c "${gtf}" |\\
+	grep -F -w protein_coding |\\
+	awk -F '\t' '(\$3=="gene") {printf("%s\t%d\t%s\\n",\$1,int(\$2)-1,int(\$3))}' |\\
+	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
+	bedtools merge |\\
+	sed 's/\$/\t1/' > TMP/protein_coding.bed
+
+bedtools subtract \\
+	-a TMP/transcript.bed \\
+	-b TMP/exons.bed |\\
+	cut -f1,2,3 |\\
+	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
+	bedtools merge |\\
+	sed 's/\$/\t1/' > TMP/introns.bed
+
+gunzip -c "${gtf}" |\\
+	awk -F '\t' '(\$3=="gene") {S=\$7; B=int(\$2)-1;E=int(\$3);if(S=="+") {E=B-1 ; B = B-${xstream}; if(B<0)B=0; if(E<0) E=0;} else {B=E;E=E+${xstream};} printf("%s\t%d\t%s\\n",\$1,B,E)}' |\\
+	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
+	bedtools merge |\\
+	sed 's/\$/\t1/' > TMP/upstream.bed
+
+gunzip -c "${gtf}" |\\
+	awk -F '\t' '(\$3=="gene") {S=\$7; B=int(\$2)-1;E=int(\$3);if(S=="-") {E=B-1 ; B = B-${xstream}; if(B<0)B=0; if(E<0) E=0;} else {B=E;E=E+${xstream};} printf("%s\t%d\t%s\\n",\$1,B,E)}' |\\
+	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
+	bedtools merge |\\
+	sed 's/\$/\t1/' > TMP/downstream.bed
+
+if ${genes_of_interest?true:false}
+then
+
+	cat "${genes_of_interest}" |\\
+		grep -vE '^#' |\\
+		grep -vE '^\$' |\\
+		sort -S ${task.memory.kilo} -t '\t' -k1,1 -T TMP > TMP/jeter.a
+
+	gunzip -c "${gtf}" |\\
+		awk -F '\t' '(\$3=="gene") |\\
+		java -jar \${HOME}/jvarkit.jar gtf2bed -c 'gene_name' |\\
+		sort -S ${task.memory.kilo} -t '\t' -k4,4 -T TMP > TMP/jeter.b
+
+	join -t '\t' -1 1 -2 4 -o '2.1,2.2,2.3,2.4' | uniq > TMP/roi.bed
+
+fi
+
+
+
+"""
 }
 
 process MAKE_SAMPLESHEET2 {
