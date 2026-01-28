@@ -1,12 +1,87 @@
-include {JENA_DOWNLOAD} from '../../modules/jena/download'
+/*
+
+Copyright (c) 2026 Pierre Lindenbaum
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+The MIT License (MIT)
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
+include { PREPARE_ONE_REFERENCE                   } from '../../subworkflows/samtools/prepare.one.ref'
+include { JENA_DOWNLOAD                           } from '../../modules/jena/download'
+include { GTF_TO_XML                              } from '../../modules/jvarkit/gtf2xml'
+include { XSLTPROC                                } from '../../modules/xsltproc'
+include {DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GTF     } from '../../modules/gtf/download/main.nf'
 
 def XSD_NS = "http://www.w3.org/2001/XMLSchema"
 def U1087_NS = "https://umr1087.univ-nantes.fr/rdf/"
-
 workflow {
-	meta = [id:"knwoledge"]
-	JENA_DOWNLOAD(meta)
-	GTF2XML([[id:"gtf"],file("/LAB-DATA/GLiCID/projects/BiRD_resources/species/human/GRCh38/gencode.v38.annotation.gtf.gz")])
+	metadata = [id:"knowledge"]
+	versions = Channel.empty()
+	multiqc =  Channel.empty()
+	
+	if(params.fasta==null) {
+		log.warn("--fasta missing")
+		exit -1
+		}
+
+	if(params.gtf==null) {
+		log.warn("--gtf missing")
+		exit -1
+		}
+	
+	PREPARE_ONE_REFERENCE(
+			metadata,
+			Channel.fromPath(params.fasta).map{f->[[id:f.baseName],f]}
+			)
+  	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
+
+	JENA_DOWNLOAD(metadata)
+	versions = versions.mix(JENA_DOWNLOAD.out.versions)
+	
+	DOWNLOAD_GTF(PREPARE_ONE_REFERENCE.out.dict)
+	versions = versions.mix(DOWNLOAD_GTF.out.versions)
+
+
+	ch1 = PREPARE_ONE_REFERENCE.out.scatter_bed
+		.map{meta,f->f}
+		.splitCsv(header:false,sep:'\t')
+		.filter{row->row[0].matches("(chr)?[0-9XY]+")}
+		.map{row->[id:"${row[0]}_${(row[1] as int)+1}_${row[2]}",interval:"${row[0]}:${(row[1] as int)+1}-${row[2]}"]}
+		.take(10)
+		.combine(DOWNLOAD_GTF.out.gtf)
+		.map{meta1,meta2,gtf,tbi->[meta2.plus(meta1),gtf,tbi]}
+
+	
+	GTF_TO_XML(
+		PREPARE_ONE_REFERENCE.out.dict ,
+		ch1
+		)
+	versions = versions.mix(GTF_TO_XML.out.versions)
+	
+	XSLTPROC(
+		[[id:"xslt"],file("${moduleDir}/../../src/xsl/gtf2rdf.xsl")],
+		GTF_TO_XML.out.xml
+		)
+	versions = versions.mix(XSLTPROC.out.versions)
+}
+
+/*
 	GWAS_CATALOG([id:"meta"])
 	DOWNLOAD_ONTOLOGY(
 		Channel.of(
@@ -15,7 +90,8 @@ workflow {
 		[ [id:"go"],"https://current.geneontology.org/ontology/go.owl"],
 		[ [id:"mondo"] , "https://github.com/monarch-initiative/mondo/releases/download/v2026-01-06/mondo.owl"],
 		[ [id:"bto"], "http://purl.obolibrary.org/obo/bto.owl" ],
-		[ [id:"uberon"], "http://purl.obolibrary.org/obo/uberon.owl"]
+		[ [id:"uberon"], "http://purl.obolibrary.org/obo/uberon.owl"],
+		[ [id:"so"], "https://github.com/The-Sequence-Ontology/SO-Ontologies/raw/refs/heads/master/Ontology_Files/so-simple.owl"]
 		))
 	DOWNLOAD_GOA([id:"goa"])
 	DOWNLOAD_STRING([id:"stringdb"])
@@ -33,6 +109,7 @@ workflow {
 			.map{meta,f->f}.collect().map{f->[[id:"x"],f.sort()]} 
 		)
 	}
+*/
 
 process DOWNLOAD_NCBI_INFO {
 input:

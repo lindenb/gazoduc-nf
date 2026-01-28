@@ -2,7 +2,7 @@ channels:
   - bioconda
   - conda-forge
 dependencies:
-  - python
+  - python=3.12.10
   - pip
   - pip :
     - alphagenome

@@ -28,6 +28,7 @@ tag "${meta.id?:""} "
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
+    tuple val(meta ),path(dict)
     tuple val(meta ),path(gtf),path(optional_tbi)
 output:
     tuple val(meta), path("*.xml"),emit:xml
@@ -42,9 +43,10 @@ mkdir -p TMP
 
 ${jvarkit} gtf2xml  \\
         ${args1} \\
+	${dict?"--reference \"${dict}\"":""} \
         ${gtf}  > TMP/jeter.xml
 
-cp TMP/jeter.xml ${prefix}.xml
+mv TMP/jeter.xml ${prefix}.xml
 
 cat << EOF > versions.yml
 ${task.process}:

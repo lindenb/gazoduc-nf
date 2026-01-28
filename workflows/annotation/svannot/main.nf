@@ -53,11 +53,9 @@ include { COVERAGE_GRID                               } from '../../../modules/j
 include { JVARKIT_SVLEN                               } from '../../../modules/jvarkit/svlen'
 include { VCF_BED as JVARKIT_VCFBED_DGV               } from '../../../modules/jvarkit/vcfbed'
 include { GHOSTSCRIPT_MERGE                           } from '../../../modules/gs/merge/main.nf'
-include { PDF_NAVIGATION                              } from '../../../modules/pdf/navigation/main.nf'
+include { PDF_NAVIGATION as PDF_NAVIGATION_INV        } from '../../../modules/pdf/navigation/main.nf'
 include { GTF_ANNOTATION                              } from '../../../modules/gtf/annot1/main.nf'
 include { PLOT_COVERAGE_01                            } from '../../../subworkflows/plotdepth'
-include { BEDTOOLS_INTERSECT as INTERSECT_INV         } from '../../../modules/bedtools/intersect'
-include { BEDTOOLS_INTERSECT as INTERSECT_INDEL         } from '../../../modules/bedtools/intersect'
 
 
 
@@ -137,7 +135,7 @@ workflow {
 		versions = versions.mix(GTF_TO_BED.out.versions)
 		bed =  GTF_TO_BED.out.bed
 	} else {
-		bed =Channel.of(params.bed).map{[[id:"bed"],file(f)]}
+		bed =Channel.of(params.bed).map{f->[[id:"bed"],file(f)]}
 	}
 
 	BEDTOOLS_SLOP(
@@ -181,16 +179,11 @@ workflow {
 		)
 	versions = versions.mix(JVARKIT_VCFGNOMADSV.out.versions)
 
-	if(params.genes_of_interest==null) {
-		genes_roi_ch = Channel.of([[id:"roi"],[]])
-	} else {
-		genes_roi_ch = Channel.of([[id:"roi"],file(params.genes_of_interest)])
-	}
 
 	GTF_ANNOTATION(
 		PREPARE_ONE_REFERENCE.out.fai,
 		DOWNLOAD_GTF.out.gtf.map{meta,gtf,tbi->[meta,gtf]},
-		genes_roi_ch,
+		[[id:"no_roi"],[]],
 		JVARKIT_VCFGNOMADSV.out.vcf
 		)
 	versions = versions.mix(GTF_ANNOTATION.out.versions)
@@ -216,27 +209,13 @@ workflow {
 	BCFTOOLS_QUERY_INDEL(BCFTOOLS_VIEW_INDEL.out.vcf)
 	versions = versions.mix(BCFTOOLS_QUERY_INDEL.out.versions)
 	
-	if(params.genes_of_interest==null) {
-		plot_indel_bed = BCFTOOLS_QUERY_INDEL.out.output
-		}
-	else
-		{
-		INTERSECT_INDEL(
-			PREPARE_ONE_REFERENCE.out.fai,
-				BCFTOOLS_QUERY_INDEL.out.output.combine(GTF_ANNOTATION.out.roi_bed)
-					.map{meta1,a,meta2,b->[meta2,a,b]}
-				)
-		versions = versions.mix(INTERSECT_INDEL.out.versions)
-		plot_indel_bed = INTERSECT_INDEL.out.bed
-		}
-
 	PLOT_COVERAGE_01(
 		metadata,
 		PREPARE_ONE_REFERENCE.out.fasta,
 		PREPARE_ONE_REFERENCE.out.fai,
 		PREPARE_ONE_REFERENCE.out.dict,
 		DOWNLOAD_GTF.out.gtf,
-		plot_indel_bed,
+		BCFTOOLS_QUERY_INDEL.out.output,
 		META_TO_BAMS.out.bams
 		)
 	versions = versions.mix(PLOT_COVERAGE_01.out.versions)
@@ -261,12 +240,7 @@ workflow {
 	BCFTOOLS_QUERY_INV(BCFTOOLS_VIEW_INV.out.vcf)
 	versions = versions.mix(BCFTOOLS_QUERY_INV.out.versions)
 	
-	INTERSECT_INV(
-		PREPARE_ONE_REFERENCE.out.fai,
-		BCFTOOLS_QUERY_INV.out.output.combine(GTF_ANNOTATION.out.roi_bed)
-			.map{meta1,a,meta2,b->[meta2,a,b]}
-		)
-	versions = versions.mix(INTERSECT_INV.out.versions)
+
 
 	COVERAGE_GRID(
 		PREPARE_ONE_REFERENCE.out.fasta,
@@ -290,8 +264,8 @@ workflow {
 	GHOSTSCRIPT_MERGE(COVERAGE_GRID.out.postscript)
 	versions = versions.mix(GHOSTSCRIPT_MERGE.out.versions)
 
-	PDF_NAVIGATION(GHOSTSCRIPT_MERGE.out.pdf.map{m,pdf->pdf}.collect().map{L->[[id:"inv"],L.sort()]})
-	versions = versions.mix(PDF_NAVIGATION.out.versions)
+	PDF_NAVIGATION_INV(GHOSTSCRIPT_MERGE.out.pdf.map{m,pdf->pdf}.collect().map{L->[[id:"inversions"],L.sort()]})
+	versions = versions.mix(PDF_NAVIGATION_INV.out.versions)
 }
 
 

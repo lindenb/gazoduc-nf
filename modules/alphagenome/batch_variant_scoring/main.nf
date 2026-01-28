@@ -44,6 +44,9 @@ script:
 """
 hostname 1>&2
 
+ulimit -c unlimited
+
+
 
 cat << __EOF__ > script.py
 from io import StringIO
@@ -177,7 +180,24 @@ if download_predictions:
 df_scores
 __EOF__
 
+
+cat << __EOF__ > script.py
+from alphagenome import colab_utils
+from alphagenome.data import genome
+from alphagenome.models import dna_client
+from alphagenome.models import variant_scorers
+
+variant = genome.Variant('chr3', 39045168, 'A', 'C')
+interval = variant.reference_interval.resize(2**20)
+
+model = dna_client.create("\${ALPHAGENOME_API_KEY}")
+
+results = model.score_variant(interval, variant)
+df_scores = variant_scorers.tidy_scores(results)
+__EOF__
+
 python3 script.py
+touch variant_scores.tsv
 
 gzip --best variant_scores.tsv
 mv variant_scores.tsv.gz ${prefix}.tsv.gz

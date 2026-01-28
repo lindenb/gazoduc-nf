@@ -43,3 +43,6 @@ tests/STUB
 .nf-test
 .theia
 tests-output
+.nextflow.log*
+.nextflow
+work
