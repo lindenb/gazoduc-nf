@@ -30,43 +30,40 @@ process BED_CLUSTER {
 	afterScript "rm -rf TMP"
 	conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 	input:
-		tuple val(meta1),path(fasta)
-		tuple val(meta2),path(fai)
-		tuple val(meta3),path(dict)
+		tuple val(meta1),path(dict)
 		tuple val(meta ),path(bed)
 	output:
-		tuple val(meta), path("BEDS/*.bed",arity:"0..*"),emit:bed
+		tuple val(meta), path("*.bed",arity:"0..*"),emit:bed
 		path("versions.yml"),emit:versions
 	script:
 		def args = task.ext.args?:""
 		if(args.trim().isEmpty()) throw new IllegalArgumentException("args for bedcluter must be defined in ${task.process}")
+		def prefix = task.ext.prefix?:"${meta.id}"
+		def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -XX:-UsePerfData"
+		def jvarkit  = "java ${jvm} -jar \${HOME}/jvarkit.jar" //todo , use conda version
 	"""
-	hostname 1>&2
-	set -o pipefail
-	mkdir -p TMP/TMP2 BEDS
-	jvarkit  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -XX:-UsePerfData bedcluster \\
-		-R "${fasta}" \\
+	mkdir -p TMP/TMP2
+	${jvarkit} bedcluster \\
+		-R "${dict}" \\
+		--prefix "${prefix}" \\
 		${args} \\
 		-o TMP/TMP2 "${bed}"
 
-	#force uniq names for later
-	MD5=\$(pwd | sha1sum  | cut -c 1-10)
-	find TMP/TMP2 -type f -name "*.bed" |\
-	while read F
-	do
-		mv "\${F}" "BEDS/\${MD5}.\$(basename "\$F")"
-	done
+	#  move files if they exists
+	mv -v TMP/TMP2/*.bed ./ || true
 
 cat << EOF > versions.yml
 ${task.process}:
 	jvarkit: "\$(jvarkit --version)"
 EOF
-	"""
+"""
 	
 stub:
+	def prefix = task.ext.prefix?:"${meta.id}"
 """
 mkdir BEDS
-split --additional-suffix=.bed --lines=1 "${bed}" BEDS/cluster
+split --additional-suffix=.bed --lines=1 "${bed}" BEDS/${prefix}.cluster
+mv BEDS/*.bed ./ || true
 touch versions.yml
 """	
 }
