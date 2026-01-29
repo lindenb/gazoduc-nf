@@ -137,7 +137,7 @@ workflow {
   versions =versions.mix(BEDTOOLS_MAKEWINDOWS.out.versions)
   bed = BEDTOOLS_MAKEWINDOWS.out.bed
    
-  BED_CLUSTER(fasta,fai,dict,bed)
+  BED_CLUSTER(dict,bed)
   versions =versions.mix(BED_CLUSTER.out.versions)
 
   bed = BED_CLUSTER.out.bed.flatMap{

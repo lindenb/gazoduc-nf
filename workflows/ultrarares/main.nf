@@ -218,8 +218,6 @@ workflow {
 
 	/* if it's an exome , group the small genome together in BED */
 	BED_CLUSTER(
-		PREPARE_ONE_REFERENCE.out.fasta,
-		PREPARE_ONE_REFERENCE.out.fai,
 		PREPARE_ONE_REFERENCE.out.dict,
 		BEDTOOLS_MAKEWINDOWS.out.bed
 		)

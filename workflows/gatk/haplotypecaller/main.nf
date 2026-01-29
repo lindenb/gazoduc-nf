@@ -216,8 +216,6 @@ workflow {
 
    /* if it's an exome , group the small genome together in BED */
    BED_CLUSTER(
-        PREPARE_ONE_REFERENCE.out.fasta,
-        PREPARE_ONE_REFERENCE.out.fai,
         PREPARE_ONE_REFERENCE.out.dict,
         BEDTOOLS_MAKEWINDOWS.out.bed
         )
@@ -299,14 +297,15 @@ workflow {
    * BCFTOOLS_GUESS_PLOIDY
    *
    */
-  BCFTOOLS_GUESS_PLOIDY(
-        PREPARE_ONE_REFERENCE.out.fasta,
-        PREPARE_ONE_REFERENCE.out.fai,
-        vcf_ch
-        )
-  versions = versions.mix(BCFTOOLS_GUESS_PLOIDY.out.versions)
-  multiqc = multiqc.mix(BCFTOOLS_GUESS_PLOIDY.out.output)
-
+if( parseBoolean(params.with_guess_ploidy)) {
+        BCFTOOLS_GUESS_PLOIDY(
+                PREPARE_ONE_REFERENCE.out.fasta,
+                PREPARE_ONE_REFERENCE.out.fai,
+                vcf_ch
+                )
+        versions = versions.mix(BCFTOOLS_GUESS_PLOIDY.out.versions)
+        multiqc = multiqc.mix(BCFTOOLS_GUESS_PLOIDY.out.output)
+        }
     /***************************************************
     *
     * JVARKIT FILTERJDK

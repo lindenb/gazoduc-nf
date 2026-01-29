@@ -172,7 +172,7 @@ main:
 	.groupTuple()
 	.map{
 		def L0 = it[1].collect{f->f.toRealPath().toString()}.unique()
-		if(L0.size()!=1) throw new IllegalArgumentException("META2BAMS2: your using several FASTA/FAI/DICT sequences with the same name: ${it[1]}.");
+		if(L0.size()!=1) throw new IllegalArgumentException("META2BAMS2: your using several FASTA/FAI/DICT sequences with the same name: ${L0.join(" ")}.");
 		return it;
 		}
         .map{name,fns->fns.sort()[0]}

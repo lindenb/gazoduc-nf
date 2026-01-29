@@ -28,9 +28,10 @@ include { BCFTOOLS_CONCAT                      }  from '../../../modules/bcftool
 include { COMBINE_GENOTYPE_GVCFS               }  from '../combinegenotypegvcfs'
 include { makeKey                              }  from '../../../modules/utils/functions.nf'
 include { flatMapByIndex                       }  from '../../../modules/utils/functions.nf'
-include { FIND_GVCF_BLOCKS                     }  from '../../../modules/jvarkit/findgvcfblocks'
+//include { FIND_GVCF_BLOCKS                     }  from '../../../modules/jvarkit/findgvcfblocks'
 include { GLNEXUS_GENOTYPE                     }  from '../../../modules/glnexus/genotype'
-
+include { BEDTOOLS_MAKEWINDOWS                 }  from '../../../modules/bedtools/makewindows'
+include { BED_CLUSTER                          }  from '../../../modules/jvarkit/bedcluster'
 
 workflow HAPLOTYPECALLER {
 take:
@@ -63,26 +64,29 @@ main:
         )
     versions  = versions.mix(HAPCALLER.out.versions)
 
-	/** group data by meta.bed_id */
-    FIND_GVCF_BLOCKS(
-        HAPCALLER.out.gvcf
-            .map{meta,vcf,tbi,bed->[meta.bed_id,[vcf,tbi],bed]}
-            .groupTuple()
-            .map{bed_id,vcf_files,beds->[ [id:bed_id], vcf_files.flatten().sort(), beds.sort()[0]]}
-        )
-    versions  = versions.mix(FIND_GVCF_BLOCKS.out.versions)
+	/** group data by meta.bed_id  [meta_bed_id,vcf_and_tbi,bed ] */
+ 	group_by_bed_ch = HAPCALLER.out.gvcf
+            .map{meta,vcf,tbi,bed->[meta.bed_id,[vcf,tbi]]}
+			.groupTuple()
+			 .map{bed_id,vcf_files->[ [id:bed_id], vcf_files.flatten().sort()]}
 
-    SPLIT_BED(FIND_GVCF_BLOCKS.out.bed)
-    versions  = versions.mix(SPLIT_BED.out.versions)
 
-    gvcfs_ch = SPLIT_BED.out.beds
-		.map{meta,beds,_srcbed->[meta,(beds instanceof List?beds:[beds])]}
-		.flatMap{flatMapByIndex(it,1)}
-        .combine(HAPCALLER.out.gvcf) //join doesn't support duplicate keys, so use combine
-		.filter{meta1,block_bed,meta2,vcf,tbi,srcbed->meta1.id==meta2.bed_id}
-        .map{meta1,block_bed,meta2,vcf,tbi,srcbed->[meta1,vcf,tbi,block_bed]}
-	
-	
+	BEDTOOLS_MAKEWINDOWS(beds)
+	versions  = versions.mix(BEDTOOLS_MAKEWINDOWS.out.versions)
+
+	BED_CLUSTER(dict,BEDTOOLS_MAKEWINDOWS.out.bed)
+	versions  = versions.mix(BED_CLUSTER.out.versions)
+
+
+	gvcfs_ch = BED_CLUSTER.out.bed
+		.map{meta,bed->[meta,bed instanceof List?bed:[bed]]}
+		.flatMap{row->flatMapByIndex(row,1)}
+		.combine( //join doesn't support duplicate keys, so use combine
+			HAPCALLER.out.gvcf.map{meta,vcf,tbi,bed->[[id:meta.bed_id],vcf,tbi]}
+			)
+		.filter{meta1,_block_bed, meta2, _vcf,_tbi->meta1.id == meta2.id}
+		.map{meta1,block_bed, meta2, vcf,tbi->[[id:block_bed.baseName],vcf,tbi,block_bed]}
+		
 	vcf_out = Channel.empty()
 
 	if(metadata.gvcf_merge_method==null) {
@@ -144,7 +148,7 @@ emit:
     vcf = vcf_out
 }
 
-
+/*
 process SPLIT_BED {
 label "process_single"
 label "array100"
@@ -194,4 +198,4 @@ mkdir -p BEDS
 touch BEDS/a.bed BEDS/b.bed BEDS/c.bed
 touch versions.yml
 """
-}
+}*/

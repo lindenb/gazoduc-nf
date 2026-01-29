@@ -82,17 +82,17 @@ sequence_length = dna_client.SUPPORTED_SEQUENCE_LENGTHS[
 ]
 
 # @markdown Specify which scorers to use to score your variants:
-score_rna_seq = True  # @param { type: "boolean"}
-score_cage = True  # @param { type: "boolean" }
-score_procap = True  # @param { type: "boolean" }
-score_atac = True  # @param { type: "boolean" }
-score_dnase = True  # @param { type: "boolean" }
-score_chip_histone = True  # @param { type: "boolean" }
-score_chip_tf = True  # @param { type: "boolean" }
-score_polyadenylation = True  # @param { type: "boolean" }
-score_splice_sites = True  # @param { type: "boolean" }
-score_splice_site_usage = True  # @param { type: "boolean" }
-score_splice_junctions = True  # @param { type: "boolean" }
+score_rna_seq = False  # @param { type: "boolean"}
+score_cage = False  # @param { type: "boolean" }
+score_procap = False  # @param { type: "boolean" }
+score_atac = False  # @param { type: "boolean" }
+score_dnase = False  # @param { type: "boolean" }
+score_chip_histone = False  # @param { type: "boolean" }
+score_chip_tf = False  # @param { type: "boolean" }
+score_polyadenylation = False  # @param { type: "boolean" }
+score_splice_sites = False  # @param { type: "boolean" }
+score_splice_site_usage = False  # @param { type: "boolean" }
+score_splice_junctions = False  # @param { type: "boolean" }
 
 # @markdown Other settings:
 download_predictions = True  # @param { type: "boolean" }
@@ -181,23 +181,8 @@ df_scores
 __EOF__
 
 
-cat << __EOF__ > script.py
-from alphagenome import colab_utils
-from alphagenome.data import genome
-from alphagenome.models import dna_client
-from alphagenome.models import variant_scorers
-
-variant = genome.Variant('chr3', 39045168, 'A', 'C')
-interval = variant.reference_interval.resize(2**20)
-
-model = dna_client.create("\${ALPHAGENOME_API_KEY}")
-
-results = model.score_variant(interval, variant)
-df_scores = variant_scorers.tidy_scores(results)
-__EOF__
 
 python3 script.py
-touch variant_scores.tsv
 
 gzip --best variant_scores.tsv
 mv variant_scores.tsv.gz ${prefix}.tsv.gz

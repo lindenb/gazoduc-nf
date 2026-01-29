@@ -57,16 +57,21 @@ take:
 
 main:
     versions= Channel.empty()
+    multiqc = Channel.empty()
+
+
     ch1 = gvcfs_bed.map{meta,gvcf,tbi,bed ->
 			[
 			bed.toRealPath(),
 			[gvcf,tbi]
 			]}
+		.view()
 		.groupTuple()
 		.flatMap{bed,vcf_files->makeSQRT(bed,vcf_files)}
-		.map{bed,vcf_files->[bed,vcf_files.flatten()]}
+		.map{bed,vcf_files->[bed,vcf_files.flatten().sort()]}
 		.map{bed,vcf_files->[[id:makeKey([bed,vcf_files])],vcf_files,bed]}
-	
+		
+
 	HC_COMBINE1(
 		fasta,
 		fai,
@@ -75,7 +80,7 @@ main:
 		)
 	versions = versions.mix(HC_COMBINE1.out.versions)
 
-
+	
 	ch2 = HC_COMBINE1.out.gvcf
 		.map{meta,gvcf,tbi,bed->[
 			bed.toRealPath(),
@@ -119,8 +124,11 @@ main:
 			]}
 		.mix(HC_COMBINE2.out.gvcf)
 
+	gvcf = combined
+
 emit:
     versions
-	gvcf = combined
+	multiqc
+	gvcf
 
 }

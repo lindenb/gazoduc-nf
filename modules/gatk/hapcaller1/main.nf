@@ -46,6 +46,8 @@ script:
 """
 hostname 1>&2
 mkdir -p TMP
+
+
 # if not build because no other ref
 mkdir -p REFS
 find \${PWD}/REFS/ \\( -name "*.fasta" -o -name "*.fa" -o -name "*.fna" \\) >> TMP/references.txt
@@ -65,7 +67,7 @@ samtools samples -f "${fasta}" -F TMP/references.txt "${bam}" | cut -f1,3 | head
             else
                 # no the same reference ? change the BED according to chr notation
                 jvarkit ${jvm} bedrenamechr \\
-                        -f "\${REF}" --column 1 --convert SKIP "${optional_bed}" > TMP/${optional_bed.name}
+                        -f "\${REF}" --column 1 --convert SKIP "${optional_bed}"  > TMP/${optional_bed.name}
                 
                 # never empty file
                 if ! test -s TMP/${optional_bed.name}
@@ -101,14 +103,48 @@ samtools samples -f "${fasta}" -F TMP/references.txt "${bam}" | cut -f1,3 | head
         # not the original fasta ?
         if ! cmp "\${REF}.fai" "${fai}"
         then
-            jvarkit ${jvm} vcfsetdict \\
-                -n SKIP \\
-                -R "${fasta}" \\
-                "TMP/jeter.g.vcf.gz" > TMP/jeter2.vcf
+            # make new header
+            bcftools view --header-only  "TMP/jeter.g.vcf.gz" |\\
+                jvarkit ${jvm} vcfsetdict \\
+                    -n SKIP \\
+                    -R "${fasta}"  > TMP/new.header.vcf
 
-            rm -f TMP/jeter.g.vcf.gz.tbi
-            bcftools sort  -T TMP/sort  --max-mem "${task.memory.giga}G" \\
-                -O z -o "TMP/jeter.g.vcf.gz" TMP/jeter2.vcf
+            # extract new chromosomes, duplicate name
+            awk -F '\t' '{printf("%s\t0\t%s\t%s\\n",\$1,\$2,\$1);}' "\${REF}.fai" |\\
+                jvarkit ${jvm} bedrenamechr \\
+                        -f "${fasta}" --column 1 --convert SKIP  > TMP/rename.contigs.0.tsv
+
+            if ! test -s TMP/rename.contigs.0.tsv
+            then
+                tail -n 1 "${fai}" |\\
+                    awk -F '\t' '{printf("%s\t0\t1\t%s\\n",\$1,\$1);}' > TMP/rename.contigs.0.tsv
+            fi
+
+            # OLD CONTIG / NEW CONTIG
+            cut -f 1,4 TMP/rename.contigs.0.tsv > TMP/rename.contigs.1.tsv
+            # OLD BED
+            cut -f 1,2,3 TMP/rename.contigs.0.tsv > TMP/rename.contigs.2.bed
+
+            bcftools view \\
+                -O u \\
+                --targets-file TMP/rename.contigs.2.bed \\
+                --targets-overlap 2 \\
+                "TMP/jeter.g.vcf.gz" |\\
+                bcftools annotate \\
+                    -O u \\
+                    --rename-chrs TMP/rename.contigs.1.tsv |\\
+                    bcftools reheader \\
+                        -h TMP/new.header.vcf \\
+                        --temp-prefix TMP/zorg |\\
+                         bcftools sort  \\
+                            -T TMP/sort \\
+                            --max-mem "${task.memory.giga}G" \\
+                            -O z \\
+                            -o "TMP/jeter2.g.vcf.gz"
+            
+            mv -v "TMP/jeter2.g.vcf.gz" "TMP/jeter.g.vcf.gz" 
+            rm -vf TMP/jeter.g.vcf.gz.tbi
+           
         fi
 
     done

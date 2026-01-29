@@ -135,7 +135,7 @@ workflow {
 	versions = versions.mix(BEDTOOLS_MAKEWINDOWS.out.versions)
 	bed = BEDTOOLS_MAKEWINDOWS.out.bed
 
-	BED_CLUSTER(fasta,fai,dict,bed)
+	BED_CLUSTER(dict,bed)
 	versions = versions.mix(BED_CLUSTER.out.versions)
 
 	beds = BED_CLUSTER.out.bed.map{it[1]}.flatMap().map{[[id:it.name],it]}

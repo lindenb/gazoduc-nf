@@ -43,7 +43,7 @@ main:
 	versions = Channel.empty()
 	
 
-	BED_CLUSTER(fasta,fai,dict,bed)
+	BED_CLUSTER(dict,bed)
 	versions = versions.mix(BED_CLUSTER.out.versions)
 
 	bed = BED_CLUSTER.out.bed.flatMap{

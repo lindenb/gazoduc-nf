@@ -145,8 +145,6 @@ workflow {
   bed = BEDTOOLS_MAKEWINDOWS.out.bed
    
   BED_CLUSTER(
-	PREPARE_ONE_REFERENCE.out.fasta,
-	PREPARE_ONE_REFERENCE.out.fai,
 	PREPARE_ONE_REFERENCE.out.dict,
 	bed
 	)

@@ -46,7 +46,7 @@ main:
 
 	FAI2BED(fai)
 	versions = versions.mix( FAI2BED.out.versions)
-	BED_CLUSTER(fasta,fai,dict,FAI2BED.out.bed)
+	BED_CLUSTER(dict,FAI2BED.out.bed)
 	versions = versions.mix( BED_CLUSTER.out.versions)
 
 	by_bed = BED_CLUSTER.out.bed

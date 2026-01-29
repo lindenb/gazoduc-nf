@@ -7,7 +7,7 @@ nextflow_process {
     tag "modules"
     tag "modules/jvarkit"
     tag "modules/jvarkit/bed2xml"
-
+    tag "gitlab_ci"
     test("BASIC") {
 
         when {
@@ -31,7 +31,7 @@ nextflow_process {
     }
 
     test("STUB") {
-        tag "gitlab_ci"
+       
         tag "stub"
         options "-stub"
         when {

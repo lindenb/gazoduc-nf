@@ -704,8 +704,6 @@ if(params.known_indels_vcf!=null) {
 
   /* if it's an exome , group the small genome together in BED */
   BED_CLUSTER1(
-      PREPARE_ONE_REFERENCE.out.fasta,
-      PREPARE_ONE_REFERENCE.out.fai,
       PREPARE_ONE_REFERENCE.out.dict,
       BEDTOOLS_MAKEWINDOWS.out.bed
       )
@@ -718,8 +716,6 @@ if(params.known_indels_vcf!=null) {
 
   /* But for slow callers like bcftools or freebayes, we need smaller intervals */
   BED_CLUSTER2(
-    PREPARE_ONE_REFERENCE.out.fasta,
-    PREPARE_ONE_REFERENCE.out.fai,
      PREPARE_ONE_REFERENCE.out.dict,
     BEDTOOLS_MAKEWINDOWS.out.bed
     )

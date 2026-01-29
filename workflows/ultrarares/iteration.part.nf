@@ -125,8 +125,6 @@ main:
 	versions = versions.mix(BEDTOOLS_MERGE1.out.versions)
 
 	BED_CLUSTER(
-		fasta,
-		fai,
 		dict,
 		BEDTOOLS_MERGE1.out.bed
 		)

@@ -35,10 +35,11 @@ include {k1_signature          } from '../../../modules/utils/k1.nf'
 workflow PREPARE_REFERENCE {
 take:
 	workflow_meta
-	fasta
+	fasta //meta,fasta
 main:
-	versions=Channel.empty()
-	
+	versions = Channel.empty()
+	multiqc = Channel.empty()
+
 	SAMTOOLS_FAIDX(fasta)
 	versions = versions.mix(SAMTOOLS_FAIDX.out.versions)
 	
@@ -102,6 +103,7 @@ emit:
 	versions
 	fasta
 	fai
+	multiqc
 	dict = SAMTOOLS_DICT.out.dict
 	bed = FAI2BED.out.bed
 	scatter_bed

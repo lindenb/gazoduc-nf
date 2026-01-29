@@ -34,14 +34,20 @@ workflow COMBINE_GENOTYPE_GVCFS {
         gvcfs_bed // [meta, gvcfgz, gvcfgz_tbi, bed]
     main:
         versions = Channel.empty()
+        multiqc = Channel.empty()
+
         COMBINE_GVCFS(meta,fasta,fai,dict,gvcfs_bed)
         versions = versions.mix(COMBINE_GVCFS.out.versions)
-
+        multiqc = multiqc.mix(COMBINE_GVCFS.out.multiqc)
 
         GENOTYPEGVCFS(fasta,fai,dict,dbsnp, COMBINE_GVCFS.out.gvcf)
         versions = versions.mix(GENOTYPEGVCFS.out.versions)
+
+        vcf = GENOTYPEGVCFS.out.vcf
+
     emit:
         versions
-        vcf = GENOTYPEGVCFS.out.vcf
+        multiqc
+        vcf
 
 }
