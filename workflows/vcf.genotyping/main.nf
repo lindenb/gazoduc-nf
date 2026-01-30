@@ -1,24 +1,64 @@
-include {runOnComplete;moduleLoad} from '../../modules/utils/functions.nf'
-include {SAMTOOLS_SAMPLES} from '../../subworkflows/samtools/samtools.samples.03.nf'
-include {VCF_TO_BED} from '../../modules/bcftools/vcf2bed.01.nf'
+/*
+
+Copyright (c) 2026 Pierre Lindenbaum
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+The MIT License (MIT)
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
+include {BCFTOOLS_MERGE             }  from '../../modules/bcftools/merge3'
+
 
 workflow {
-	VCF_GENOTYPING(params.genomeId, file(params.bams), file(params.vcf))
-	}
+		if(params.fasta==null) {
+				throw new IllegalArgumentException("undefined --fasta");
+				}
+		if(params.samplesheet==null) {
+				throw new IllegalArgumentException("undefined --samplesheet");
+				}
 
-runOnComplete(workflow)
 
-workflow VCF_GENOTYPING {
-	take:
-		genomeId
-		bams
-		vcf
-	main:
+		vcf= [[id:"vcf"],file(params.vcf),file(params.vcf+".tbi")]
+
+		bams = Channel.fromPath(params.samplesheet)
+			.splitCsv(header:true,sep:',')
+			.map{row->[[id:row.sample],file(row.bam),file(row.bai)]}
+
+		fasta = [[id:"reference"],file(params.fasta)]
+		fai = [[id:"reference"],file(params.fasta+".fai")]
+		dict = [[id:"reference"],file(params.fasta.replaceAll(".fasta",".dict"))]
+
+		Channel.of(params.fasta).view()
+		Channel.of(dict).view()
+
 		if(params.method.equals("gatk")) {
-			GATK_GENOTYPING(genomeId,bams,vcf)
+			GATK_GENOTYPING(
+				[id:"genotyping"],
+				fasta,
+				fai,
+				dict,
+				bams,
+				vcf
+				)
 			}
 		else if(params.method.equals("bcftools")) {
-			BCFTOOLS_GENOTYPING(genomeId,bams,vcf)
+			//BCFTOOLS_GENOTYPING(genomeId,bams,vcf)
 			}
 		else
 			{
@@ -29,16 +69,26 @@ workflow VCF_GENOTYPING {
 
 workflow GATK_GENOTYPING {
 	take:
-		genomeId
+		meta
+		fasta
+		fai
+		dict
 		bams
 		vcf
 	main:
-		sn_bam_ch = SAMTOOLS_SAMPLES([:],bams)
-		rows = sn_bam_ch.rows.
-			filter{it.genomeId.equals(genomeId)}.
-			map{it.plus("vcf":vcf)}
-		ch1 = GENOTYPE_GATK(genomeId,rows)
-		ch2= MERGE_VCF(ch1.output.splitCsv(header:false,sep:'\t').groupTuple())
+		GENOTYPE_GATK(
+			fasta,
+			fai,
+			dict,
+			bams,
+			vcf
+			)
+		BCFTOOLS_MERGE(GENOTYPE_GATK.out.vcf
+			.map{meta,vcf,tbi->[vcf,tbi]}
+			.flatMap()
+			.collect()
+			.map{files->[[id:"genotyping"],files.sort()]}
+			)
 	}
 
 workflow BCFTOOLS_GENOTYPING {
@@ -58,59 +108,49 @@ workflow BCFTOOLS_GENOTYPING {
 			map{T->T[0].plus(contig:T[1])}
 			
 		ch1 = GENOTYPE_BCFTOOLS(genomeId,rows)
-		ch2 = BCFTOOLS_MERGE(ch1.output.map{T->[T[0],T[1]+"\t"+T[2]]}.groupTuple())
+		ch2 = BCFTOOLS_MERGEx(ch1.output.map{T->[T[0],T[1]+"\t"+T[2]]}.groupTuple())
 	}
 
 
 
 process GENOTYPE_GATK {
-tag "${row.sample}"
+label "process_single"
+tag "${meta.id}"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
-memory "5g"
+array 100
 input:
-	val(genomeId)
-	val(row)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta3),path(dict)
+	tuple val(meta ),path(bam),path(bai)
+	tuple val(meta4 ),path(vcf),path(tbi)
+
 output:
-	path("output.tsv"),emit:output
+	tuple val(meta),path("*.vcf.gz"),path("*.tbi"),emit:vcf
 script:
-	def mapq = 30
-	def bam = row.bam?:""
-	def sample = row.sample?:""
-	def reference = params.genomes[genomeId].fasta
-	def dbsnp = "--dbsnp "+params.genomes[genomeId].dbsnp
+	def prefix = task.ext.meta?:"${meta.id}"
+
 """
-hostname 1>&2
 mkdir -p TMP
-${moduleLoad("gatk/0.0.0 bcftools")}
-
-bcftools index -s "${row.vcf}" | cut -f 1 | while read C
-do
-	bcftools view -O z -o TMP/jeter.vcf.gz "${row.vcf}" "\${C}"
-	bcftools index -ft TMP/jeter.vcf.gz
-
-   gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" HaplotypeCaller \\
-     -I "${row.bam}" \\
-     ${dbsnp} \\
-     -L TMP/jeter.vcf.gz \\
-     -R "${reference}" \
-     --minimum-mapping-quality '${mapq}' \\
-     --alleles TMP/jeter.vcf.gz \\
-     --output-mode EMIT_ALL_CONFIDENT_SITES \\
-     -O "TMP/jeter2.vcf.gz"
 
 
-     bcftools annotate -x 'QUAL,^INFO/DP,INFO/AC,INFO/AN,INFO/AF' -O b -o "TMP/${sample}.\${C}.bcf" TMP/jeter2.vcf.gz
-     bcftools index -ft "TMP/${sample}.\${C}.bcf"
+gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" HaplotypeCaller \\
+	-I "${bam}" \\
+	-L ${vcf} \\
+	-R "${fasta}" \
+	--alleles ${vcf}\\
+	--output-mode EMIT_ALL_CONFIDENT_SITES \\
+	-O "TMP/jeter2.vcf.gz"
 
 
-     rm -v TMP/jeter2.vcf.gz TMP/jeter2.vcf.gz.tbi TMP/jeter.vcf.gz TMP/jeter.vcf.gz.tbi
+bcftools annotate -x 'QUAL,^INFO/DP,INFO/AC,INFO/AN,INFO/AF' -O z -o "TMP/jeter3.vcf.gz" TMP/jeter2.vcf.gz
+bcftools index -ft TMP/jeter3.vcf.gz
 
 
-    echo "\${C}\t\${PWD}/${sample}.\${C}.bcf"  >> output.tsv
-done
 
-mv -v TMP/${sample}.*.bcf ./
-mv -v TMP/${sample}.*.bcf.csi ./
+mv TMP/jeter3.vcf.gz ./${prefix}.vcf.gz
+mv TMP/jeter3.vcf.gz.tbi  ./${prefix}.vcf.gz.tbi
 """
 }
 
@@ -167,14 +207,13 @@ process MERGE_VCF {
 tag "${contig} N=${L.size()}"
 memory "10g"
 input:
-	tuple 	val(contig),val(L)
+	tuple val(L)
 output:
 	path("${params.prefix?:""}${contig}.merged.bcf"),emit:vcf
 	path("${params.prefix?:""}${contig}.merged.bcf.csi"),emit:index
 script:
 """
 hostname 1>&2
-${moduleLoad("gatk bcftools")}
 mkdir -p TMP
 cat << EOF > TMP/jeter.list
 ${L.join("\n")}
@@ -191,7 +230,7 @@ bcftools index "${params.prefix?:""}${contig}.merged.bcf"
 }
 
 
-process BCFTOOLS_MERGE {
+process BCFTOOLS_MERGEx {
 afterScript "rm -rf TMP"
 tag "${contig} N=${L.size()}"
 memory "10g"

@@ -65,7 +65,6 @@ main:
 			bed.toRealPath(),
 			[gvcf,tbi]
 			]}
-		.view()
 		.groupTuple()
 		.flatMap{bed,vcf_files->makeSQRT(bed,vcf_files)}
 		.map{bed,vcf_files->[bed,vcf_files.flatten().sort()]}
