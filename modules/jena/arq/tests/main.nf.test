@@ -1,0 +1,33 @@
+nextflow_process {
+
+    name "Test Process JENA_ARQ"
+    script "modules/jena/arq/main.nf"
+    process "JENA_ARQ"
+    tag "modules"
+    tag "modules/jena/arq"
+    tag "modules/jena/arq"
+    tag "gitlab_ci"
+
+
+
+  test("STUB") {
+        options "-stub"
+        when {
+      
+            process {
+                """
+                input[0] = [[id:"arq"],file("ARQ")]
+                input[1] = [[id:"rdf"],file("file.rdf")]
+                input[2] = [[id:"q"],file("query.sparql")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+}
