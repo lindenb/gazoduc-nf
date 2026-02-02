@@ -13,7 +13,7 @@
 
 <xsl:output method="xml" encoding="UTF-8" indent="yes"/>
 
-
+<xsl:include href="mod.rec.biotype.xslt.xsl"/><!-- generated with SPARQL+XSLT-->
 
 
 <!--===========================================================================-->
@@ -69,143 +69,20 @@
 	<xsl:value-of select="attributes/attribute[@key='gene_biotype']"/>
 </xsl:variable>
 
-<xsl:choose>
-
-  <xsl:when test="$type = 'protein_coding'">
-    <obo:SO_0000010>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0000010>
-  </xsl:when>
-  <xsl:when test="$type = 'processed_pseudogene'">
-    <obo:SO_0000043>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0000043>
-  </xsl:when>
-  <xsl:when test="$type = 'rRNA'">
-    <obo:SO_0000252>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0000252>
-  </xsl:when>
-  <xsl:when test="$type = 'snRNA'">
-    <obo:SO_0000274>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0000274>
-  </xsl:when>
-  <xsl:when test="$type = 'snoRNA'">
-    <obo:SO_0000275>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0000275>
-  </xsl:when>
-  <xsl:when test="$type = 'miRNA'">
-    <obo:SO_0000276>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0000276>
-  </xsl:when>
-  <xsl:when test="$type = 'ribozyme'">
-    <obo:SO_0000374>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0000374>
-  </xsl:when>
-  <xsl:when test="$type = 'vault_RNA'">
-    <obo:SO_0000404>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0000404>
-  </xsl:when>
-  <xsl:when test="$type = 'unitary_pseudogene'">
-    <obo:SO_0001759>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0001759>
-  </xsl:when>
-  <xsl:when test="$type = 'lncRNA'">
-    <obo:SO_0001877>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0001877>
-  </xsl:when>
-  <xsl:when test="$type = 'scaRNA'">
-    <obo:SO_0002095>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0002095>
-  </xsl:when>
-  <xsl:when test="$type = 'IG_C_pseudogene'">
-    <obo:SO_0002100>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0002100>
-  </xsl:when>
-  <xsl:when test="$type = 'IG_J_pseudogene'">
-    <obo:SO_0002101>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0002101>
-  </xsl:when>
-  <xsl:when test="$type = 'IG_V_pseudogene'">
-    <obo:SO_0002102>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0002102>
-  </xsl:when>
-  <xsl:when test="$type = 'TR_V_pseudogene'">
-    <obo:SO_0002103>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0002103>
-  </xsl:when>
-  <xsl:when test="$type = 'TR_J_pseudogene'">
-    <obo:SO_0002104>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0002104>
-  </xsl:when>
-  <xsl:when test="$type = 'translated_processed_pseudogene'">
-    <obo:SO_0002105>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0002105>
-  </xsl:when>
-  <xsl:when test="$type = 'transcribed_unprocessed_pseudogene'">
-    <obo:SO_0001760>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0001760>
-  </xsl:when>
-  <xsl:when test="$type = 'unprocessed_pseudogene'">
-    <obo:SO_0002107>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0002107>
-  </xsl:when>
-  <xsl:when test="$type = 'transcribed_unitary_pseudogene'">
-    <obo:SO_0002108>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0002108>
-  </xsl:when>
-  <xsl:when test="$type = 'transcribed_processed_pseudogene'">
-    <obo:SO_0002109>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0002109>
-  </xsl:when>
-  <xsl:when test="$type = 'IG_C_gene'">
-    <obo:SO_0002123>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0002123>
-  </xsl:when>
-  <xsl:when test="$type = 'IG_D_gene'">
-    <obo:SO_0002124>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0002124>
-  </xsl:when>
-  <xsl:when test="$type = 'IG_J_gene'">
-    <obo:SO_0002125>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0002125>
-  </xsl:when>
-  <xsl:when test="$type = 'IG_V_gene'">
-    <obo:SO_0002126>
-      <xsl:apply-templates select="." mode="gene_content"/>
-    </obo:SO_0002126>
-  </xsl:when>
+<xsl:variable name="element_name">
+<xsl:call-template name="biotype2qname">
+  <xsl:with-param name="type" select="$type"/>
+  <xsl:with-param name="default" ><xsl:text>obo:SO_0000704</xsl:text></xsl:with-param>
+</xsl:call-template>
+</xsl:variable>
 
 
-  <xsl:otherwise>
-	<xsl:message>undefined gene_type <xsl:value-of select="$type"/> for <xsl:value-of select="attributes/attribute[@key='gene_id']"/></xsl:message>
-	<obo:SO_0000704>
+<xsl:element name="{$element_name}">
 		<xsl:apply-templates select="." mode="gene_content"/>
-	</obo:SO_0000704>
-  </xsl:otherwise>
-</xsl:choose>
+</xsl:element>
+
 </xsl:template>
+
 
 <xsl:template match="gene" mode="gene_content">
 

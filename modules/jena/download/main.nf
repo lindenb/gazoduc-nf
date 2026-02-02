@@ -39,7 +39,7 @@ script:
 """
 curl -L -o apache-jena-${version}.tar.gz "${url}"
 tar xvfz apache-jena-${version}.tar.gz
-
+rm apache-jena-${version}.tar.gz
 mv -v apache-jena-${version} apache-jena
 find apache-jena 1>&2
 

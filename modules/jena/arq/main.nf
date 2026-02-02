@@ -27,22 +27,42 @@ process JENA_ARQ {
 label "process_single"
 tag "${meta.id}"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
 input:
 	tuple val(meta1),path(arq_exe)
-    tuple val(meta2),path(data)
+    tuple val(meta2),path(data_list)//one or more RDF data source
     tuple val(meta ),path(query)
 output:
-    tuple val(meta ),path("*.result.*"),emit:output
+    tuple val(meta ),path("*.arq.*"),emit:output
 	path("versions.yml"),emit:versions
 script:
-    def version = task.ext.version?:"5.6.0"
+    def args1 = task.ext.args1?:""
     def jvm =  task.ext.jvm?:"-Djdk.xml.entityExpansionLimit=0 -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -XX:-UsePerfData"
     def prefix = task.ext.prefix?:"${meta.id}"
     def suffix = task.ext.suffix?:"txt"
     def cmd1 = task.ext.cmd1?:"cat"
+    def cmd2 = task.ext.cmd2?:"cat"
+    def data_array = (data_list instanceof List?data_list:[data_list])
 """
 mkdir -p TMP
-${arq_exe} ${jvm} --data=${data} --query=${query} | ${cmd1} > "${prefix}.result.${suffix}"
+
+#give a chance to alter the query, with seq or whatever
+cat "${query}" | ${cmd1} > TMP/query.sparql
+
+export JVM_ARGS="${jvm}"
+
+${arq_exe.toRealPath()} \\
+    ${args1} \\
+    ${data_array.collect{"--data=${it}"}.join(" ")} \\
+    --query=TMP/query.sparql | ${cmd2} > "TMP/jeter.tmp"
+
+if ${suffix.endsWith(".gz")}
+then
+    gzip "TMP/jeter.tmp"
+    mv "TMP/jeter.tmp.gz" "${prefix}.arq.${suffix}"
+else
+    mv "TMP/jeter.tmp" "${prefix}.arq.${suffix}"
+fi 
 
 cat << EOF > versions.yml
 "${task.process}"
@@ -54,6 +74,6 @@ stub:
     def prefix = task.ext.prefix?:"${meta.id}"
     def suffix = task.ext.suffix?:"txt"
 """
-touch versions.yml "${prefix}.result.${suffix}"
+touch versions.yml "${prefix}.arq.${suffix}"
 """
 }

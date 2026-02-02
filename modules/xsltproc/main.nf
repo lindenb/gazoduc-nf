@@ -24,25 +24,29 @@ SOFTWARE.
 */
 process XSLTPROC {
 	label "process_single"
-	tag "${meta.id?:""} ${stylesheet.name}"
+	tag "${meta.id?:""} ${stylesheets instanceof List?stylesheets[0].name:stylesheets.name}"
         conda "${moduleDir}/../../conda/xsltproc.yml"
 	afterScript "rm -rf TMP"
 	input:
-        tuple val(meta1),path(stylesheet)
+        tuple val(meta1),path(stylesheets) /* stylesheet and it's optional modules ? */
         tuple val(meta ),path(xml)
 	output:
 		tuple val(meta), path("*.xslt.*"),emit:xml
 		path("versions.yml"),emit:versions
 	script:
-	def args1 = task.ext.args1?:""
+        def args1 = task.ext.args1?:""
         def args2 = task.ext.args2?:""
+        /* stylesheet and it's modules ?*/
+        def stylesheet = (stylesheets instanceof List?stylesheets[0]:stylesheets)
         def prefix = task.ext.prefix?:"${meta.id?:xml.baseName}.${meta1.id?:stylesheet.baseName}"
         def suffix = task.ext.suffix?:"xml"
+        /** stylesheet+module ? assume everything is here, otherwise, use realpath */
+        def xsl =  (stylesheets instanceof List?stylesheet.name:stylesheet.toRealPath())
  """
 	hostname 1>&2
     mkdir -p TMP
 	
-    xsltproc ${args1} ${args2} -o TMP/jeter.out "${stylesheet.toRealPath()}" "${xml}"
+    xsltproc ${args1} ${args2} -o TMP/jeter.out "${xsl}" "${xml}"
 
     if ${suffix.endsWith(".gz")}
     then
@@ -53,7 +57,6 @@ process XSLTPROC {
 
 cat << EOF > versions.yml
 ${task.process}:
-	jvarkit: "\$(jvarkit --version)"
     xsltproc: \$(xsltproc --version 2>&1 |awk '(NR==1) {print \$NF;}')
 EOF
 	"""

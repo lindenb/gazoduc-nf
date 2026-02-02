@@ -47,8 +47,9 @@ process MANTA_SINGLE {
         def prefix = task.ext.prefix?:meta.id
 	"""
 	hostname 1>&2
-	mkdir -p TMP
-    set -x
+        mkdir -p TMP
+        set -x
+ 	echo "\${PATH}" 1>&2
 
 	if ${has_bed}
     then
@@ -57,6 +58,7 @@ process MANTA_SINGLE {
 	    bgzip manta.bed
 	    tabix -fp bed manta.bed.gz
 	fi
+
 
 	configManta.py \\
 		--bam ${bam} \\

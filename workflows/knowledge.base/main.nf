@@ -24,9 +24,11 @@ SOFTWARE.
 */
 include { PREPARE_ONE_REFERENCE                   } from '../../subworkflows/samtools/prepare.one.ref'
 include { JENA_DOWNLOAD                           } from '../../modules/jena/download'
+include { JENA_ARQ as JENA_ARQ_SO                 } from '../../modules/jena/arq'
 include { GTF_TO_XML                              } from '../../modules/jvarkit/gtf2xml'
-include { XSLTPROC                                } from '../../modules/xsltproc'
-include {DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GTF     } from '../../modules/gtf/download/main.nf'
+include { XSLTPROC as SPARQLSO2XSL                } from '../../modules/xsltproc'
+include { XSLTPROC as GENE2RDF_XSL                } from '../../modules/xsltproc'
+include { DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GTF    } from '../../modules/gtf/download/main.nf'
 
 def XSD_NS = "http://www.w3.org/2001/XMLSchema"
 def U1087_NS = "https://umr1087.univ-nantes.fr/rdf/"
@@ -68,17 +70,53 @@ workflow {
 		.map{meta1,meta2,gtf,tbi->[meta2.plus(meta1),gtf,tbi]}
 
 	
+	DOWNLOAD_ONTOLOGY(
+		Channel.of(
+		[ [id:"hp"],"https://github.com/obophenotype/human-phenotype-ontology/raw/refs/heads/master/hp-base.owl"],
+		[ [id:"doid"],"https://raw.githubusercontent.com/DiseaseOntology/HumanDiseaseOntology/main/src/ontology/doid.owl"],
+		[ [id:"go"],"https://current.geneontology.org/ontology/go.owl"],
+		[ [id:"mondo"] , "https://github.com/monarch-initiative/mondo/releases/download/v2026-01-06/mondo.owl"],
+		[ [id:"bto"], "http://purl.obolibrary.org/obo/bto.owl" ],
+		[ [id:"uberon"], "http://purl.obolibrary.org/obo/uberon.owl"],
+		[ [id:"so"], "https://github.com/The-Sequence-Ontology/SO-Ontologies/raw/refs/heads/master/Ontology_Files/so-simple.owl"]
+		))
+	versions = versions.mix(DOWNLOAD_ONTOLOGY.out.versions)
+
+
+	JENA_ARQ_SO(
+		JENA_DOWNLOAD.out.arq,
+		DOWNLOAD_ONTOLOGY.out.rdf.filter{meta,_rdf->meta.id=="so"},
+		[[id:"q"],file("${moduleDir}/query.01.sparql")]
+		)
+	versions = versions.mix(JENA_ARQ_SO.out.versions)
+	
 	GTF_TO_XML(
 		PREPARE_ONE_REFERENCE.out.dict ,
-		ch1
+		ch1.take(2)
 		)
 	versions = versions.mix(GTF_TO_XML.out.versions)
+
+
+	SPARQLSO2XSL(
+		[[id:"rec.biotype"],file("${moduleDir}/sparql.so2xsl.xsl")],
+		JENA_ARQ_SO.out.output
+		)
+	versions = versions.mix(SPARQLSO2XSL.out.versions)
+
+	GENE2RDF_XSL(
+		SPARQLSO2XSL.out.xml.map{meta,xsl->[meta,[file("${moduleDir}/gtf2rdf.xsl"),xsl]]}.first(),
+		GTF_TO_XML.out.xml
+		)
+	versions = versions.mix(GENE2RDF_XSL.out.versions)
+
+	/*
 	
 	XSLTPROC(
 		[[id:"xslt"],file("${moduleDir}/../../src/xsl/gtf2rdf.xsl")],
 		GTF_TO_XML.out.xml
 		)
 	versions = versions.mix(XSLTPROC.out.versions)
+	*/
 }
 
 /*
@@ -398,15 +436,31 @@ gzip --best goa.rdf
 }
 
 process DOWNLOAD_ONTOLOGY {
-tag "${u}"
+label "process_single"
+tag "${meta.id}"
 input:
 	tuple val(meta),val(u)
 output:
 	tuple val(meta),path("*.gz"),emit:rdf
+	path("versions.yml"),emit:versions
 script:
+	def prefix = task.ext.prefix?:"${meta.id}"
 """
-wget -O ${meta.id}.rdf "${u}"
-gzip "${meta.id}.rdf"
+mkdir -p TMP
+curl -L -o TMP/jeter.rdf "${u}"
+gzip TMP/jeter.rdf
+mv TMP/jeter.rdf.gz "${prefix}.rdf.gz"
+rmdir TMP
+
+cat << EOF > versions.yml
+"${task.process}":
+	url: ${u}
+EOF
+"""
+stub:
+	def prefix = task.ext.prefix?:"${meta.id}"
+"""
+touch versions.yml "${prefix}.rdf.gz"
 """
 }
 
