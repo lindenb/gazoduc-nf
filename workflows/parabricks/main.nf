@@ -34,7 +34,6 @@ include { samplesheetToList                       } from 'plugin/nf-schema'
 include {runOnComplete                            } from '../../modules/utils/functions.nf'
 include {parseBoolean                             } from '../../modules/utils/functions.nf'
 include { isBlank                                 } from '../../modules/utils/functions.nf'
-include {FASTP                                    } from '../../subworkflows/fastp'
 include {MULTIQC                                  } from '../../modules/multiqc'
 include {COMPILE_VERSIONS                         } from '../../modules/versions'
 include {BWA_INDEX                                } from '../../modules/bwa/index'
@@ -76,6 +75,9 @@ include { GTF_INPUT                               } from '../../subworkflows/nf/
 include { ENCODE_BLACKLIST                        } from '../../modules/encode/blacklist' 
 include { BEDTOOLS_SUBTRACT                       } from '../../modules/bedtools/subtract' 
 include {UNMAPPED                                 } from '../../subworkflows/unmapped'
+include {FASTQC as FASTQC_RAW                     } from '../../modules/fastqc'
+include {FASTQC as FASTQC_FILTERED                } from '../../modules/fastqc'
+include {FASTP                                    } from '../../modules/fastp'
 
 
 
@@ -146,32 +148,57 @@ if( params.help ) {
 
 
   single_end = SAMPLESHEET_TO_FASTQ.out.single_end
-    .map{[it[0],[it[1]]]}
+    .map{meta,fastq->[meta,[fastq]]}
     
     
   paired_end = SAMPLESHEET_TO_FASTQ.out.paired_end
-    .map{[it[0],[it[1],it[2]]]}
+    .map{meta,R1,R2->[meta,[R1,R2]]}
 
+  /** 
+   * GENERATE RAW FASTQC
+   */
+  if(parseBoolean(params.with_fastqc)) {
+    FASTQC_RAW(
+        single_end
+        .mix(paired_end.map{meta,R1R2->[meta.plus(id:meta.id+"_R1"),[R1R2[0]]]})
+        .mix(paired_end.map{meta,R1R2->[meta.plus(id:meta.id+"_R2"),[R1R2[1]]]})
+      )
+    versions = versions.mix(FASTQC_RAW.out.versions)
+    multiqc = multiqc.mix(FASTQC_RAW.out.zip)
+    multiqc = multiqc.mix(FASTQC_RAW.out.html)
+    }
+
+  /** 
+   * TRIM READS WITH FASTP 
+   */
   if(parseBoolean(params.with_fastp)) {
     FASTP(
-      metadata.plus([
-        fastqc_before : params.with_fastqc,
-        fastqc_after : params.with_fastqc,
-        fastp_disabled : !(params.with_fastp)
-        ]),
       single_end.mix(paired_end) 
       )
 
 
-    multiqc = multiqc.mix(FASTP.out.multiqc)
     versions = versions.mix(FASTP.out.versions)
     paired_end = FASTP.out.paired_end
     single_end = FASTP.out.single_end
+
+    /** 
+    * GENERATE RAW FASTQC
+    */
+    if(parseBoolean(params.with_fastqc)) {
+      FASTQC_FILTERED(
+          single_end
+          .mix(paired_end.map{meta,R1,R2->[meta.plus(id:meta.id+"_R1"),[R1]]})
+          .mix(paired_end.map{meta,R1,R2->[meta.plus(id:meta.id+"_R2"),[R2]]})
+        )
+      versions = versions.mix(FASTQC_FILTERED.out.versions)
+      multiqc = multiqc.mix(FASTQC_FILTERED.out.zip)
+      multiqc = multiqc.mix(FASTQC_FILTERED.out.html)
+      }
     }
    else
-	{
-	paired_end = paired_end.map{meta,fqs->[meta,fqs[0],fqs[1]]}
-	}
+    {
+    paired_end = paired_end.map{meta,fqs->[meta,fqs[0],fqs[1]]}
+    }
 
   /***************************************************
    *

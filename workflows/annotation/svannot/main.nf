@@ -31,6 +31,7 @@ include { paramsHelp                                  } from 'plugin/nf-schema'
 include { paramsSummaryLog                            } from 'plugin/nf-schema'
 include { samplesheetToList                           } from 'plugin/nf-schema'
 include { runOnComplete;dumpParams                    } from '../../../modules/utils/functions.nf'
+include { parseBoolean                                } from '../../../modules/utils/functions.nf'
 include { PREPARE_ONE_REFERENCE                       } from '../../../subworkflows/samtools/prepare.one.ref'
 include { VCF_INPUT                                   } from '../../../subworkflows/nf/vcf_input'
 include { DOWNLOAD_GTF_OR_GFF3  as  DOWNLOAD_GTF      } from '../../../modules/gtf/download'
@@ -188,6 +189,7 @@ workflow {
 		)
 	versions = versions.mix(GTF_ANNOTATION.out.versions)
 
+	if(parseBoolean(params.with_annotsv)) {
 
 	ANNOTSV(
 		metadata,
@@ -197,6 +199,7 @@ workflow {
 		GTF_ANNOTATION.out.vcf
 		)
 	versions = versions.mix(ANNOTSV.out.versions)
+	}
 
 	BCFTOOLS_VIEW_INDEL(
 		[[id:"nobed"],[]],
@@ -208,6 +211,14 @@ workflow {
 	/** convert indels to BED */
 	BCFTOOLS_QUERY_INDEL(BCFTOOLS_VIEW_INDEL.out.vcf)
 	versions = versions.mix(BCFTOOLS_QUERY_INDEL.out.versions)
+
+	/** syntheses INDEL */
+	SYNTHESE_SV(
+		PREPARE_ONE_REFERENCE.out.fai,
+		DOWNLOAD_GTF.out.gtf.map{meta,gtf,tbi->[meta,gtf]},
+		JVARKIT_VCFGNOMADSV.out.vcf
+		)
+	versions = versions.mix(SYNTHESE_SV.out.versions)
 	
 	PLOT_COVERAGE_01(
 		metadata,
@@ -281,5 +292,64 @@ cat << EOF > samplesheet.tsv
 sample\tbam\tcolor
 ${L.join("\n")}
 EOF
+"""
+}
+
+process SYNTHESE_SV {
+label "process_single"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
+input:
+	tuple val(meta1),path(fai)
+	tuple val(meta2),path(gtf)
+	tuple val(meta),path(vcf)
+output:
+	tuple val(meta),path("*.bed"),emit:bed
+	path("versions.yml"),emit:versions
+script:
+	def prefix = task.ext.prefix?:"${meta.id}"
+	def slop = task.ext.slop?:1000
+"""
+mkdir -p TMP
+
+cut -f1,2 "${fai}" | sort -T TMP -t '\t' -k1,1 -k2,2n  > TMP/genome.txt
+
+bcftools query -f '[%CHROM\t%POS0\t%END\t%SVTYPE\t%SVLEN\t%FILTER\t%SAMPLE\t%GT\\n]' '${vcf}' |\\
+	awk -F '\t' '(\$8 ~ /[1-9]/)' |\\
+	cut -f1-7 |\\
+	sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter1.bed
+
+gunzip -c "${gtf}" |\\
+awk -F '\t' '(\$3=="gene")'  | \\
+jvarkit gtf2bed -c 'gene_name,gene_id' |\\
+sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/genes.bed
+
+bedtools slop -g TMP/genome.txt -i TMP/genes.bed -b ${slop} |\\
+awk -F '\t' '{OFS="\t";if(\$4!=".") \$4=sprintf("%s_extend${slop}",\$4); if(\$5!=".") \$5=sprintf("%s_extend${slop}",\$5); print;}' |\\
+sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/genes_x.bed
+
+bedtools intersect -a TMP/jeter1.bed -b TMP/genes.bed -loj > jeter.bed
+
+awk -F '\t' '(\$8!=".")' jeter.bed > jeter2.bed
+awk -F '\t' '(\$8==".")' jeter.bed |\\
+	sort -T TMP -t '\t' -k1,1 -k2,2n |\\
+	bedtools intersect -a - -b TMP/genes_x.bed -loj > jeter3.bed
+
+
+cat jeter2.bed jeter3.bed |\\
+	sort -T TMP -t '\t' -k1,1 -k2,2 -k3,3 -k4,4 -k5,5 -k6,6 |\\
+	datamash -g 1,2,3,4,5,6 unique 7 count 7 unique 11 unique 12|\\
+	sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter.bed
+
+mv TMP/jeter.bed "${prefix}.bed"
+
+#	datamash -g 1,2,3,4,5,6 unique 7 count 7 |\\
+#	sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter1.bed
+touch versions.yml
+"""
+stub:
+	def prefix = task.ext.prefix?:"${meta.id}"
+"""
+touch versions.yml "${prefix}.bed"
 """
 }
