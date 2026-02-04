@@ -28,7 +28,8 @@ include { JENA_ARQ as JENA_ARQ_SO                 } from '../../modules/jena/arq
 include { GTF_TO_XML                              } from '../../modules/jvarkit/gtf2xml'
 include { XSLTPROC as SPARQLSO2XSL                } from '../../modules/xsltproc'
 include { XSLTPROC as GENE2RDF_XSL                } from '../../modules/xsltproc'
-include { DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GTF    } from '../../modules/gtf/download/main.nf'
+include { DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GTF    } from '../../modules/gtf/download'
+include { LINUX_SPLIT as LINUX_SPLIT_GTF          } from '../../modules/utils/linuxsplit'
 
 def XSD_NS = "http://www.w3.org/2001/XMLSchema"
 def U1087_NS = "https://umr1087.univ-nantes.fr/rdf/"
@@ -48,7 +49,9 @@ workflow {
 		}
 	
 	PREPARE_ONE_REFERENCE(
-			metadata,
+			metadata.plus(
+				skip_scatter : true
+				),
 			Channel.fromPath(params.fasta).map{f->[[id:f.baseName],f]}
 			)
   	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
@@ -59,15 +62,16 @@ workflow {
 	DOWNLOAD_GTF(PREPARE_ONE_REFERENCE.out.dict)
 	versions = versions.mix(DOWNLOAD_GTF.out.versions)
 
+	LINUX_SPLIT_GTF(DOWNLOAD_GTF.out.gtf.map{meta,gtf,_tbi->[meta,gtf]})
+	versions = versions.mix(LINUX_SPLIT_GTF.out.versions)
 
-	ch1 = PREPARE_ONE_REFERENCE.out.scatter_bed
-		.map{meta,f->f}
-		.splitCsv(header:false,sep:'\t')
-		.filter{row->row[0].matches("(chr)?[0-9XY]+")}
-		.map{row->[id:"${row[0]}_${(row[1] as int)+1}_${row[2]}",interval:"${row[0]}:${(row[1] as int)+1}-${row[2]}"]}
-		.take(10)
-		.combine(DOWNLOAD_GTF.out.gtf)
-		.map{meta1,meta2,gtf,tbi->[meta2.plus(meta1),gtf,tbi]}
+	/*
+	 * use scatter_bed to find places to cut gtf file
+	 */
+	ch1 = LINUX_SPLIT_GTF.out.output
+		.map{meta,f->f instanceof List?f:[f]}
+		.flatMap()
+		.map{gtf->[[id:gtf.name.md5()],gtf]}
 
 	
 	DOWNLOAD_ONTOLOGY(
@@ -92,7 +96,7 @@ workflow {
 	
 	GTF_TO_XML(
 		PREPARE_ONE_REFERENCE.out.dict ,
-		ch1.take(2)
+		ch1.take(2).map{meta,gtf->[meta,gtf,[]]}
 		)
 	versions = versions.mix(GTF_TO_XML.out.versions)
 
@@ -109,6 +113,12 @@ workflow {
 		)
 	versions = versions.mix(GENE2RDF_XSL.out.versions)
 
+	DOWNLOAD_GOA([id:"goa"])
+	versions = versions.mix(DOWNLOAD_GOA.out.versions)
+
+
+	DOWNLOAD_NCBI_INFO([id:"ncbi"])
+	versions = versions.mix(DOWNLOAD_NCBI_INFO.out.versions)
 	/*
 	
 	XSLTPROC(
@@ -131,7 +141,7 @@ workflow {
 		[ [id:"uberon"], "http://purl.obolibrary.org/obo/uberon.owl"],
 		[ [id:"so"], "https://github.com/The-Sequence-Ontology/SO-Ontologies/raw/refs/heads/master/Ontology_Files/so-simple.owl"]
 		))
-	DOWNLOAD_GOA([id:"goa"])
+	
 	DOWNLOAD_STRING([id:"stringdb"])
 	DOWNLOAD_NCBI_INFO([id:"ncbi"])
 	PROTEIN_ATLAS([id:"proteinatlas"])
@@ -150,12 +160,40 @@ workflow {
 */
 
 process DOWNLOAD_NCBI_INFO {
+label "process_single"
 input:
         val(meta)
 output:
         tuple val(meta),path("*.gz"),emit:rdf
+		path("versions.yml"),emit:versions
 script:
+	def url = task.ext.url?:"https://ftp.ncbi.nlm.nih.gov/gene/DATA/GENE_INFO/Mammalia/Homo_sapiens.gene_info.gz"
 """
+
+cat << 'EOF' > jeter.awk
+(NR>1) {
+	N=split(\$6,a,/[|]/);
+	for(i=1;i<=N;i++) {
+		if(a[i] ~ /^Ensembl\\:/) {
+			printf("<u:Gene rdf:about=\\"http://rdf.ebi.ac.uk/resource/ensembl/%s\\"/>", substr(a[i],9) );
+				printf("  <u:ncbi_gene_id>%s</u:ncbi_gene_id>",\$2);
+				printf("  <u:description><![CDATA[%s]]></u:description>",\$12);
+
+			for(j=1;j<=N;j++) {
+				if(i==j) continue;
+				if(a[j] ~ /^MIM\\:/) {
+					printf("<u:omim>%s</u:omim>",substr(a[j],6));
+					}
+				else if(a[j] ~ /^HGNC\\:/) {
+					printf("<u:hgnc>%s</u:hgnc>",substr(a[j],6));
+					}
+				}
+			printf("</u:Gene>\\n");
+			break;
+			}
+		}
+	}
+EOF
 
 cat << EOF > string.rdf
 <?xml version="1.0" encoding="UTF-8" ?>
@@ -167,20 +205,23 @@ cat << EOF > string.rdf
   >
 EOF
 
-curl  "https://ftp.ncbi.nlm.nih.gov/gene/DATA/GENE_INFO/Mammalia/Homo_sapiens.gene_info.gz" |\\
+curl -L "${url}" |\\
 	gunzip -c |\\
-	awk -F '\t' '(NR>1) {
-		N=split(\$6,a,/[|]/);
-		printf("<u:Gene rdf:about=\\"http://rdf.ebi.ac.uk/resource/ensembl/%s\\"/>", substr(a[i],9) );
-		printf("  <u:ncbi_gene_id>%s</u:ncbi_gene_id>",\$2);
-		for(i=1;i<=N;i++) {
-		  if(a[i] ~ /Ensembl\\:/) {
-			printf("  <u:description><![CDATA[%s]]></u:description>",\$12);	
-			}
-		  }
-		printf("</u:Gene>\\n");
-		}' >> ncbi.rdf
+	awk -F '\t' -f jeter.awk >> ncbi.rdf
+
 echo '</rdf:RDF>' >> ncbi.rdf
+gzip ncbi.rdf
+rm jeter.awk
+
+echo << EOF > versions.yml
+${task.process}:
+	ncbi_gene_info: ${url}
+EOF
+"""
+
+stub:
+"""
+touch ncbi.rdf versions.yml
 gzip ncbi.rdf
 """
 }
@@ -356,12 +397,14 @@ gzip string.rdf
 }
 
 process DOWNLOAD_GOA {
-
+label "process_single"
 input:
 	val(meta)
 output:
         tuple val(meta),path("*.gz"),emit:rdf
+		path("versions.yml"),emit:versions
 script:
+	def url=task.ext.url?:"https://current.geneontology.org/annotations/goa_human.gaf.gz"
 """
 
 cat << EOF > goa.rdf
@@ -370,11 +413,27 @@ cat << EOF > goa.rdf
         xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
         xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
         xmlns:dc="http://purl.org/dc/elements/1.1/"
+		xmlns:owl ="http://www.w3.org/2002/07/owl#"
         xmlns:u="${U1087_NS}"
   >
+
+ <owl:Class rdf:about="${U1087_NS}GOAEvidence">
+		<rdfs:label>goa_evidence</rdfs:label>
+		<rdfs:comment>Evidence in GOA (like 'Inferred by Curator')</rdfs:comment>
+ </owl:Class>
+ 
+ <owl:Class rdf:about="${U1087_NS}GOAQualifier">
+		<rdfs:label>goa_qualifier</rdfs:label>
+ </owl:Class> 
+
+ <owl:Class rdf:about="${U1087_NS}GOAEntry">
+		<rdfs:label>goa_entry</rdfs:label>
+		<rdfs:comment>entry in goa (${url})</rdfs:comment>
+ </owl:Class> 
+ 
 EOF
 
-cat << EOF | awk -F '|' '{printf("<u:evidence rdf:about=\\"${U1087_NS}/evidence/%s\\"><dc:title>%s</dc:title></u:evidence>\\n",\$1,\$2);}'  >> goa.rdf
+cat << EOF | awk -F '|' '{printf("<u:GOAEvidence rdf:about=\\"${U1087_NS}/goa/evidence/%s\\"><dc:title>%s</dc:title><u:weight rdf:datatype=\\"${XSD_NS}#int\\">%s</<u:weight></u:GOAEvidence>\\n",\$1,\$2,(NR<3?.0:\$3));}'  >> goa.rdf
 IC|Inferred by Curator 
 IBA|Inferred from Biological aspect of Ancestor 
 IBD|Inferred from Biological aspect of Descendant 
@@ -406,7 +465,7 @@ EOF
 
 echo 'acts_upstream_of,acts_upstream_of_negative_effect,acts_upstream_of_or_within,acts_upstream_of_or_within_negative_effect,acts_upstream_of_or_within_positive_effect,acts_upstream_of_positive_effect,colocalizes_with,contributes_to,enables,involved_in,is_active_in,located_in,part_of' |\
 	 tr "," "\\n" |\\
-	 awk  '{printf("<u:goa_qualifier rdf=\\"${U1087_NS}/goa/%s\\"><dc:title>%s</dc:title></u:goa_qualifier>\\n",\$1,\$1);}'  >> goa.rdf
+	 awk  '{W=0; printf("<u:GOAQualifier rdf=\\"${U1087_NS}/goa/qualifier/%s\\"><dc:title>%s</dc:title><u:weight rdf:datatype=\\"${XSD_NS}#int\\">%s</<u:weight></u:GOAQualifier>\\n",\$1,\$1,W);}'  >> goa.rdf
 
 cat << 'EOF' > jeter.awk
 /^!/ {next;}
@@ -416,22 +475,38 @@ cat << 'EOF' > jeter.awk
 	{
 	G=\$5;
 	gsub(/:/,"_",G);
-	printf("<u:goa>");
+	printf("<u:GOAEntry>");
 	  printf("<u:gene_name>%s</u:gene_name>",\$3);
 	  printf("<u:has_go rdf:resource=\\"http://purl.obolibrary.org/obo/%s\\"/>",G);
-	  printf("<u:has_qualifier rdf:resource=\\"${U1087_NS}/goa/%s\\"/>",\$4);
-	  printf("<u:has_evidence rdf:resource=\\"${U1087_NS}/evidence/%s\\"/>",\$7);
-	printf("</u:goa>\\n");
-	}
+	  printf("<u:has_qualifier rdf:resource=\\"${U1087_NS}/goa/qualifier/%s\\"/>",\$4);
+	  printf("<u:has_evidence rdf:resource=\\"${U1087_NS}/goa/evidence/%s\\"/>",\$7);
 
+	N=split(\$6,a,/[|]/);
+	for(i=1;i<=N;i++) {
+		if(a[i] ~ /^PMID\\:/) {
+			printf("<u:has_reference rdf:resource=\\"https://pubmed.ncbi.nlm.nih.gov/\\"/>",substr(a[i],6));
+			}
+		}  
+	printf("</u:GOAEntry>\\n");
+	}
 
 EOF
 
-wget -O - "https://current.geneontology.org/annotations/goa_human.gaf.gz" | gunzip -c |awk -F '\t' -f jeter.awk >> goa.rdf
+curl -L "${url}" | gunzip -c |awk -F '\t' -f jeter.awk >> goa.rdf
 
 
 echo '</rdf:RDF>' >> goa.rdf
 gzip --best goa.rdf
+
+cat << EOF > versions.yml
+${task.process}:
+	goa: ${url}
+EOF
+"""
+stub:
+"""
+touch goa.rdf versions.yml
+gzip goa.rdf
 """
 }
 

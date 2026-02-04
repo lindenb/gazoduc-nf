@@ -41,13 +41,19 @@ script:
        	def suffix = task.ext.suffix?:".${filein.extension}"
        	def method = task.ext.method?:""
 		def filter = task.ext.filter?:""
+		def args1 = task.ext.args1?:""
 		if(method.trim().isEmpty()) throw new IllegalArgumentException("in ${task.process} method missing");
 """
 
 mkdir -p TMP
 ${filein.name.endsWith(".gz")?"gunzip -c":"cat"} "${filein}" |\\
 	${filter.isEmpty()?"":"${filter}  |"} \\
-	split -a 9 --additional-suffix=${suffix} ${method} - "TMP/${prefix}"
+	split \\
+		-a 9 ${args1} \\
+		--additional-suffix=${suffix} \\
+		${method} \\
+		- "TMP/${prefix}"
+
 mv TMP OUT
 
 cat << END_VERSIONS > versions.yml

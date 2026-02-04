@@ -305,8 +305,9 @@ plot(1,
         ylim=c(0,max(T1\$dpy))
         )
 
-
-text(x = ambigous\$dpx, y = ambigous\$dpy, labels = ambigous\$sample , pos = 4 , cex = 0.5 , col= "green") 
+if ( nrow( ambigous ) > 0 ) {
+    text(x = ambigous\$dpx, y = ambigous\$dpy, labels = ambigous\$sample , pos = 4 , cex = 0.5 , col= "green") 
+    }
 
 mc <- rgb(0,0,1.0,alpha=0.5)
 points(x=male\$dpx,y=male\$dpy,type='p',col=mc,pch=16,

@@ -328,23 +328,22 @@ bedtools slop -g TMP/genome.txt -i TMP/genes.bed -b ${slop} |\\
 awk -F '\t' '{OFS="\t";if(\$4!=".") \$4=sprintf("%s_extend${slop}",\$4); if(\$5!=".") \$5=sprintf("%s_extend${slop}",\$5); print;}' |\\
 sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/genes_x.bed
 
-bedtools intersect -a TMP/jeter1.bed -b TMP/genes.bed -loj > jeter.bed
+bedtools intersect -a TMP/jeter1.bed -b TMP/genes.bed -loj > TMP/jeter.bed
 
-awk -F '\t' '(\$8!=".")' jeter.bed > jeter2.bed
-awk -F '\t' '(\$8==".")' jeter.bed |\\
+awk -F '\t' '(\$8!=".")' TMP/jeter.bed > TMP/jeter2.bed
+awk -F '\t' '(\$8==".")' TMP/jeter.bed |\\
 	sort -T TMP -t '\t' -k1,1 -k2,2n |\\
-	bedtools intersect -a - -b TMP/genes_x.bed -loj > jeter3.bed
+	bedtools intersect -a - -b TMP/genes_x.bed -loj > TMP/jeter3.bed
 
 
-cat jeter2.bed jeter3.bed |\\
+cat TMP/jeter2.bed TMP/jeter3.bed |\\
 	sort -T TMP -t '\t' -k1,1 -k2,2 -k3,3 -k4,4 -k5,5 -k6,6 |\\
-	datamash -g 1,2,3,4,5,6 unique 7 count 7 unique 11 unique 12|\\
+	datamash -g 1,2,3,4,5,6 unique 7 countunique 7 unique 11 unique 12|\\
 	sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter.bed
 
 mv TMP/jeter.bed "${prefix}.bed"
 
-#	datamash -g 1,2,3,4,5,6 unique 7 count 7 |\\
-#	sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter1.bed
+
 touch versions.yml
 """
 stub:

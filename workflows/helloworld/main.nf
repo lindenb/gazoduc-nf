@@ -23,36 +23,43 @@ SOFTWARE.
 
 */
 
-process JENA_DOWNLOAD {
+/**
+
+ workflow just to test if nodes are OK
+
+*/
+
+workflow {
+    SLEEP(Channel.of(1..120).flatMap())
+    COWSAY(Channel.of("Hello", "Hi", "Hay", "Namaste", "Hayy", "Hey", "Heyy", "Heya", "Hilo", "Hiya", "Hallo", "Alola","A","N","C"))
+}
+
+process SLEEP {
 label "process_single"
+tag "${seconds}"
+cpus 4
 input:
-	val(meta)
+    val(seconds)
 output:
-	tuple val(meta),path("apache-jena/bin/arq"),emit:arq
-    tuple val(meta),path("apache-jena/bin/riot"),emit:riot
-    tuple val(meta),path("apache-jena/bin/tdbquery"),emit:tdbquery
-    tuple val(meta),path("apache-jena/bin/tdbloader"),emit:tdbloader
-	path("versions.yml"),emit:versions
+    path("*.txt"),emit:time
 script:
-    def version = task.ext.version?:"6.0.0"
-	def url = "https://dlcdn.apache.org/jena/binaries/apache-jena-${version}.tar.gz"
+    def prefix=task.ext.prefix?:"sleep"
 """
-curl -L -o apache-jena-${version}.tar.gz "${url}"
-tar xvfz apache-jena-${version}.tar.gz
-rm apache-jena-${version}.tar.gz
-mv -v apache-jena-${version} apache-jena
-find apache-jena 1>&2
+hostname 1>&2
+pwd 1>&2
+sleep ${seconds}
+echo "${seconds}" > "${prefix}.${seconds}.txt"
+"""
+}
 
-cat << EOF > versions.yml
-"${task.process}"
-	jena: "${url}"
-EOF
+process COWSAY {
+tag "${msg}"
+label "process_single"
+conda "conda-forge::cowpy"
+input:
+	val(msg)
+script:
 """
-
-stub:
-"""
-touch versions.yml
-mkdir -p apache-jena/bin
-(cd apache-jena/bin && touch arq riot tdbquery tdbloader)
+cowpy "${msg}" > msg.txt
 """
 }
