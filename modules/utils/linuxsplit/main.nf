@@ -49,7 +49,8 @@ mkdir -p TMP
 ${filein.name.endsWith(".gz")?"gunzip -c":"cat"} "${filein}" |\\
 	${filter.isEmpty()?"":"${filter}  |"} \\
 	split \\
-		-a 9 ${args1} \\
+		-a 9 \\
+		${args1} \\
 		--additional-suffix=${suffix} \\
 		${method} \\
 		- "TMP/${prefix}"

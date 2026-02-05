@@ -9,6 +9,7 @@
 	xmlns:obo="&obo;"
 	xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
 	xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+	xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
 	xmlns:foaf="http://xmlns.com/foaf/0.1/"
 	xmlns:owl ="http://www.w3.org/2002/07/owl#"
 	xmlns:dc="http://purl.org/dc/elements/1.1/"
@@ -104,36 +105,36 @@
 
 <xsl:template match="gene|cds|transcript|exon" >
 
-<xs:variable name="root_name">
+<xsl:variable name="root_name">
 	<xsl:choose>
-		<xsl:when test="name() = 'gene' ">u:Gene</xsl:when>
-		<xsl:when test="name() = 'cds' ">u:CDS</xsl:when>
-		<xsl:when test="name() = 'transcript' ">u:Transcript</xsl:when>
-		<xsl:when test="name() = 'exon' ">u:Exon</xsl:when>
+		<xsl:when test="name(.) = 'gene' ">u:Gene</xsl:when>
+		<xsl:when test="name(.) = 'cds' ">u:CDS</xsl:when>
+		<xsl:when test="name(.) = 'transcript' ">u:Transcript</xsl:when>
+		<xsl:when test="name(.) = 'exon' ">u:Exon</xsl:when>
 		<xsl:otherwise>
 			<xsl:message terminate="yes">
 				<xsl:text>unknown GTF type</xsl:text>
-				<xl:value-of select="name(.)"/>
+				<xsl:value-of select="name(.)"/>
 			</xsl:message>
 		</xsl:otherwise>
 	</xsl:choose>
-</xs:variable>
+</xsl:variable>
 
 
 <xsl:element name="{$root_name}">
 
 	<!-- add rdf:about for gene and transcript -->
 	<xsl:choose>
-		<xsl:when test="name() = 'gene' and attributes/attribute[@key='gene_id'] ">
+		<xsl:when test="name(.) = 'gene' and attributes/attribute[@key='gene_id'] ">
 			<xsl:attribute name="rdf:about">
 				<xsl:text>http://rdf.ebi.ac.uk/resource/ensembl/</xsl:text>
-				<xsl:value-of select="substring-before(attributes/attribute[@key='gene_id']/text(),'.')"/>
+				<xsl:value-of select="attributes/attribute[@key='gene_id']/text()"/>
 			</xsl:attribute>
 		</xsl:when>
-		<xsl:when test="name() = 'transcript' and attributes/attribute[@key='transcript_id'] ">
+		<xsl:when test="name(.) = 'transcript' and attributes/attribute[@key='transcript_id'] ">
 			<xsl:attribute name="rdf:about">
 				<xsl:text>http://rdf.ebi.ac.uk/resource/ensembl/</xsl:text>
-				<xsl:value-of select="substring-before(attributes/attribute[@key='transcript_id']/text(),'.')"/>
+				<xsl:value-of select="attributes/attribute[@key='transcript_id']/text()"/>
 			</xsl:attribute>
 		</xsl:when>
 		<xsl:otherwise><!-- anonymous no rdf:about --></xsl:otherwise>
@@ -145,6 +146,24 @@
 	<xsl:apply-templates select="." mode="coord"/>
 
 </xsl:element>
+
+<!-- transcript_id and protein id found in CDS, let's put this in protein instead -->
+<xsl:if test="attributes/attribute[@key='transcript_id'] and attributes/attribute[@key='protein_id']">
+<u:Transcript>
+	<xsl:attribute name="rdf:resource">
+			<xsl:text>http://rdf.ebi.ac.uk/resource/ensembl/</xsl:text>
+			<xsl:value-of select="attributes/attribute[@key='transcript_id']/text()"/>
+	</xsl:attribute>
+	<u:has_protein>
+		<xsl:attribute name="rdf:about">
+			<xsl:text>http://rdf.ebi.ac.uk/resource/ensembl/</xsl:text>
+			<xsl:value-of select="attributes/attribute[@key='protein_id']/text()"/>
+		</xsl:attribute>
+	</u:has_protein>
+</u:Transcript>
+
+</xsl:if>
+
 
 </xsl:template>
 
@@ -162,38 +181,55 @@
 
 <xsl:template match="attribute" >
 	<xsl:choose>
-		<xsl:when test="(@key='gene_biotype' or @key='gene_type') and ../../name() = 'gene'">
-			<xsl:apply-templates select="." mode="biotype"/>
+		<xsl:when test="@key='gene_name'">
+			<xsl:if test="name(../..) = 'gene'">
+				<xsl:element name="u:{@key}">
+					<xsl:value-of select="./text()"/>
+				</xsl:element>
+			</xsl:if>
 		</xsl:when>
-		<xsl:when test="@key='transcript_biotype' and ../../name() = 'transcript'">
-			<xsl:apply-templates select="." mode="biotype"/>
+		<xsl:when test="(@key='gene_biotype' or @key='gene_type')">
+			<xsl:if test="name(../..) = 'gene'">
+				<xsl:apply-templates select="." mode="biotype"/>
+			</xsl:if>
+		</xsl:when>
+		<xsl:when test="@key='transcript_biotype'">
+			<xsl:if test="name(../..) = 'transcript'">
+				<xsl:apply-templates select="." mode="biotype"/>
+			</xsl:if>
 		</xsl:when>
 		<xsl:when test="@key='gene_id'">
-			<xsl:if test="../../name() != 'gene'">
+			<xsl:if test="name(../..) != 'gene' and name(../..) != 'exon' and name(../..) != 'cds'">
 				<u:has_gene>
-					<xsl:attribute name="u:has_gene">
+					<xsl:attribute name="rdf:resource">
 						<xsl:text>http://rdf.ebi.ac.uk/resource/ensembl/</xsl:text>
-						<xsl:value-of select="substring-before(./text(),'.')"/>
+						<xsl:value-of select="./text()"/>
 					</xsl:attribute>
 				</u:has_gene>
 			</xsl:if>
 		</xsl:when>
 		<xsl:when test="@key='transcript_id'">
-			<xsl:if test="../../name() != 'transcript'">
-					<u:has_gene>
-						<xsl:attribute name="u:has_transcript">
+			<xsl:if test="name(../..) != 'transcript'">
+					<u:has_transcript>
+						<xsl:attribute name="rdf:resource">
 							<xsl:text>http://rdf.ebi.ac.uk/resource/ensembl/</xsl:text>
-							<xsl:value-of select="substring-before(./text(),'.')"/>
+							<xsl:value-of select="./text()"/>
 						</xsl:attribute>
-					</u:has_gene>
+					</u:has_transcript>
 				</xsl:if>
 		</xsl:when>
+		<xsl:when test="@key='protein_id'"></xsl:when>
 		<xsl:when test="@key='exon_id'"></xsl:when>
 		<xsl:when test="@key='exon_version'"></xsl:when>
 		<xsl:when test="@key='gene_version'"></xsl:when>
 		<xsl:when test="@key='gene_source'"></xsl:when>
 		<xsl:when test="@key='transcript_source'"></xsl:when>
+		<xsl:when test="@key='transcript_name'"></xsl:when>
+		<xsl:when test="@key='transcript_version'"></xsl:when>
+		<xsl:when test="@key='protein_version'"></xsl:when>
+		<xsl:when test="@key='exon_number'"></xsl:when>
 		<xsl:when test="@key='tag'"></xsl:when>
+		<xsl:when test="@key='ccds_id'"></xsl:when>
 		<xsl:when test="@key='transcript_support_level'"></xsl:when>
 		<xsl:otherwise>
 			<xsl:element name="u:{@key}">
@@ -214,7 +250,7 @@
 </xsl:call-template>
 </xsl:variable>
 
-<xsl:if test="$typename !="" ">
+<xsl:if test='$typename !="" '>
 <rdf:type>
 	<xsl:attribute name="rdf:resource">
 		<xsl:text>&obo;</xsl:text>

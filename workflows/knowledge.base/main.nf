@@ -130,7 +130,7 @@ workflow {
 }
 
 /*
-	GWAS_CATALOG([id:"meta"])
+	GWAS_CATALOG([id:"gwas"])
 	DOWNLOAD_ONTOLOGY(
 		Channel.of(
 		[ [id:"hp"],"https://github.com/obophenotype/human-phenotype-ontology/raw/refs/heads/master/hp-base.owl"],
@@ -484,7 +484,7 @@ cat << 'EOF' > jeter.awk
 	N=split(\$6,a,/[|]/);
 	for(i=1;i<=N;i++) {
 		if(a[i] ~ /^PMID\\:/) {
-			printf("<u:has_reference rdf:resource=\\"https://pubmed.ncbi.nlm.nih.gov/\\"/>",substr(a[i],6));
+			printf("<u:has_reference rdf:resource=\\"https://pubmed.ncbi.nlm.nih.gov/%s\\"/>",substr(a[i],6));
 			}
 		}  
 	printf("</u:GOAEntry>\\n");
@@ -544,7 +544,10 @@ input:
 	val(meta)
 output:
 	 tuple val(meta),path("*.gz"),emit:rdf
+	 path("versions.yml"),emit:versions
 script:
+	def url=task.ext.url?"https://www.ebi.ac.uk/gwas/api/search/downloads/associations/v1.0.2?split=false"
+	def prefix = task.ext.prefix?:"${meta.id}"
 """
 
 cat << 'EOF' > jeter.awk
@@ -555,7 +558,7 @@ cat << 'EOF' > jeter.awk
 	gsub(/[^A-Za-z, 0-9\\-;]+/,"_",\$17);
 	gsub(/[^A-Za-z, 0-9\\-;]+/,"_",\$18);
 	gsub(/\\.[0-9]+\$/,"",\$4);
-	printf("<u:gwasPeak>");
+	printf("<u:GWASCatalogEntry>");
 	if(\$16!="" && \$17!="") {
 		gsub(/[ ]/,"",\$16);
 		N=split(\$16,a,/[,]/);
@@ -575,14 +578,14 @@ cat << 'EOF' > jeter.awk
 		}
 	printf("<u:p-value  rdf:datatype=\\"${XSD_NS}#double\\">%s</u:p-value>",\$28);
 	printf("<u:study>");
-		printf("<u:gwasStudy  rdf:about=\\"https://www.ebi.ac.uk/gwas/studies/%s\\">",\$4);
+		printf("<u:GWASCatalogStudy  rdf:about=\\"https://www.ebi.ac.uk/gwas/studies/%s\\">",\$4);
 		printf("<dc:title>%s</dc:title>",\$7);
 		gsub(/[ ]/,"",\$36);
 		N=split(\$36,a,/[,]/);
 		for(i=1;i<=N;i++) printf("<u:mappedTrait rdf:resource=\\"%s\\"/>",a[i]);
-		printf("</u:gwasStudy>");
+		printf("</u:GWASCatalogStudy>");
 	printf("</u:study>");
-	printf("</u:gwasPeak>\\n");
+	printf("</u:GWASCatalogEntry>\\n");
 	}
 
 EOF
@@ -595,9 +598,20 @@ cat << EOF > gwas.rdf
         xmlns:dc="http://purl.org/dc/elements/1.1/"
         xmlns:u="${U1087_NS}"
   >
+
+ <owl:Class rdf:about="${U1087_NS}GWASCatalogEntry">
+		<rdfs:label>gwas_catalog_entry</rdfs:label>
+		<rdfs:comment>Entry in gwas catalog (${url})</rdfs:comment>
+ </owl:Class> 
+
+ <owl:Class rdf:about="${U1087_NS}GWASCatalogStudy">
+		<rdfs:label>gwas_catalog_study</rdfs:label>
+		<rdfs:comment>study in gwas catalog (${url})</rdfs:comment>
+ </owl:Class> 
+
 EOF
 
-wget -O jeter.zip "https://www.ebi.ac.uk/gwas/api/search/downloads/associations/v1.0.2?split=false"
+wget -O jeter.zip "${url}"
 
 unzip -p jeter.zip gwas-catalog-download-associations-alt-full.tsv |\\
 	tail -n +2 |\
@@ -607,6 +621,16 @@ unzip -p jeter.zip gwas-catalog-download-associations-alt-full.tsv |\\
 echo "</rdf:RDF>" >> gwas.rdf
 gzip gwas.rdf
 rm jeter.zip
+
+cat << EOF > versions.yml
+"${task.process}":
+	url: ${u}
+EOF
+"""
+stub:
+	def prefix = task.ext.prefix?:"${meta.id}"
+"""
+touch versions.yml "${prefix}.rdf.gz"
 """
 }
 
