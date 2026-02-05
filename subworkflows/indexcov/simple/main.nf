@@ -123,7 +123,7 @@ workflow INDEXCOV {
 				def i;
 				for(i=3;i< header.size();i++) {
 					L.add([
-						[id:header[i],column:i],
+						[id:header[i],column0:i],
 						bed
 						])
 					}
@@ -186,7 +186,8 @@ output:
 script:
 	def prefix = task.ext.prefix?:"${meta.id}"
 	def treshold = (task.ext.treshold?:0.1)
-	def column = meta.column?:-1
+	def column0 = (meta.column0?:-1) as int
+	def column1 = column0 +1
 	def count_other = meta.count_other?:0
 	def args1 = task.ext.args1?:" -d 17000"
 """
@@ -202,7 +203,7 @@ cat << '__EOF__' > TMP/jeter.awk
 	for(i=4;i<=NF;i++) {
 		v = (\$i * 1.0);
 		is_sv =  ( v <= (0.5+${treshold}) || v >= (1.5-${treshold}) ?1:0);
-		if(i==${column}) {
+		if(i==${column1}) {
 			if(is_sv==0) next;
 			N1=1;
 			}

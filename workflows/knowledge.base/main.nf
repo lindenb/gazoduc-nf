@@ -25,6 +25,7 @@ SOFTWARE.
 include { PREPARE_ONE_REFERENCE                   } from '../../subworkflows/samtools/prepare.one.ref'
 include { JENA_DOWNLOAD                           } from '../../modules/jena/download'
 include { JENA_ARQ as JENA_ARQ_SO                 } from '../../modules/jena/arq'
+include { TDB_LOADER                              } from '../../modules/jena/tdbloader'
 include { GTF_TO_XML                              } from '../../modules/jvarkit/gtf2xml'
 include { XSLTPROC as SPARQLSO2XSL                } from '../../modules/xsltproc'
 include { XSLTPROC as GENE2RDF_XSL                } from '../../modules/xsltproc'
@@ -37,16 +38,13 @@ workflow {
 	metadata = [id:"knowledge"]
 	versions = Channel.empty()
 	multiqc =  Channel.empty()
-	
+	rdfdocs = Channel.empty()
+
 	if(params.fasta==null) {
 		log.warn("--fasta missing")
 		exit -1
 		}
 
-	if(params.gtf==null) {
-		log.warn("--gtf missing")
-		exit -1
-		}
 	
 	PREPARE_ONE_REFERENCE(
 			metadata.plus(
@@ -85,7 +83,7 @@ workflow {
 		[ [id:"so"], "https://github.com/The-Sequence-Ontology/SO-Ontologies/raw/refs/heads/master/Ontology_Files/so-simple.owl"]
 		))
 	versions = versions.mix(DOWNLOAD_ONTOLOGY.out.versions)
-
+	rdfdocs = rdfdocs.mix(DOWNLOAD_ONTOLOGY.out.rdf)
 
 	JENA_ARQ_SO(
 		JENA_DOWNLOAD.out.arq,
@@ -112,13 +110,22 @@ workflow {
 		GTF_TO_XML.out.xml
 		)
 	versions = versions.mix(GENE2RDF_XSL.out.versions)
+	rdfdocs = rdfdocs.mix(GENE2RDF_XSL.out.xml)
 
 	DOWNLOAD_GOA([id:"goa"])
 	versions = versions.mix(DOWNLOAD_GOA.out.versions)
-
+	rdfdocs = rdfdocs.mix(DOWNLOAD_GOA.out.rdf)
 
 	DOWNLOAD_NCBI_INFO([id:"ncbi"])
 	versions = versions.mix(DOWNLOAD_NCBI_INFO.out.versions)
+	rdfdocs = rdfdocs.mix(DOWNLOAD_NCBI_INFO.out.rdf)
+
+	
+	TDB_LOADER(
+		JENA_DOWNLOAD.out.tdbloader, 
+		rdfdocs.map{_meta,f->f}.collect().map{f->[[id:"rdfs"],f.sort()]} 
+		)
+	versions = versions.mix(TDB_LOADER.out.versions)
 	/*
 	
 	XSLTPROC(
@@ -130,32 +137,13 @@ workflow {
 }
 
 /*
-	GWAS_CATALOG([id:"gwas"])
-	DOWNLOAD_ONTOLOGY(
-		Channel.of(
-		[ [id:"hp"],"https://github.com/obophenotype/human-phenotype-ontology/raw/refs/heads/master/hp-base.owl"],
-		[ [id:"doid"],"https://raw.githubusercontent.com/DiseaseOntology/HumanDiseaseOntology/main/src/ontology/doid.owl"],
-		[ [id:"go"],"https://current.geneontology.org/ontology/go.owl"],
-		[ [id:"mondo"] , "https://github.com/monarch-initiative/mondo/releases/download/v2026-01-06/mondo.owl"],
-		[ [id:"bto"], "http://purl.obolibrary.org/obo/bto.owl" ],
-		[ [id:"uberon"], "http://purl.obolibrary.org/obo/uberon.owl"],
-		[ [id:"so"], "https://github.com/The-Sequence-Ontology/SO-Ontologies/raw/refs/heads/master/Ontology_Files/so-simple.owl"]
-		))
+	
 	
 	DOWNLOAD_STRING([id:"stringdb"])
 	DOWNLOAD_NCBI_INFO([id:"ncbi"])
 	PROTEIN_ATLAS([id:"proteinatlas"])
 
-	TDB_LOAD(JENA_DOWNLOAD.out.tdbloader, 
-		GTF2XML.out.rdf
-			.mix(DOWNLOAD_NCBI_INFO.out.rdf)
-			.mix(GWAS_CATALOG.out.rdf)
-			.mix(PROTEIN_ATLAS.out.rdf)
-			.mix(DOWNLOAD_GOA.out.rdf)
-			.mix(DOWNLOAD_ONTOLOGY.out.rdf)
-			.mix(DOWNLOAD_STRING.out.rdf)
-			.map{meta,f->f}.collect().map{f->[[id:"x"],f.sort()]} 
-		)
+	
 	}
 */
 
@@ -169,20 +157,21 @@ output:
 script:
 	def url = task.ext.url?:"https://ftp.ncbi.nlm.nih.gov/gene/DATA/GENE_INFO/Mammalia/Homo_sapiens.gene_info.gz"
 """
+mkdir -p TMP
 
-cat << 'EOF' > jeter.awk
+cat << 'EOF' > TMP/jeter.awk
 (NR>1) {
 	N=split(\$6,a,/[|]/);
 	for(i=1;i<=N;i++) {
 		if(a[i] ~ /^Ensembl\\:/) {
-			printf("<u:Gene rdf:about=\\"http://rdf.ebi.ac.uk/resource/ensembl/%s\\"/>", substr(a[i],9) );
-				printf("  <u:ncbi_gene_id>%s</u:ncbi_gene_id>",\$2);
-				printf("  <u:description><![CDATA[%s]]></u:description>",\$12);
+			printf("<u:Gene rdf:about=\\"http://rdf.ebi.ac.uk/resource/ensembl/%s\\">", substr(a[i],9) );
+				printf("<u:ncbi_gene_id>%s</u:ncbi_gene_id>",\$2);
+				printf("<u:description><![CDATA[%s]]></u:description>",\$12);
 
 			for(j=1;j<=N;j++) {
 				if(i==j) continue;
 				if(a[j] ~ /^MIM\\:/) {
-					printf("<u:omim>%s</u:omim>",substr(a[j],6));
+					printf("<u:omim>%s</u:omim>",substr(a[j],5));
 					}
 				else if(a[j] ~ /^HGNC\\:/) {
 					printf("<u:hgnc>%s</u:hgnc>",substr(a[j],6));
@@ -195,7 +184,7 @@ cat << 'EOF' > jeter.awk
 	}
 EOF
 
-cat << EOF > string.rdf
+cat << EOF > TMP/ncbi.rdf
 <?xml version="1.0" encoding="UTF-8" ?>
 <rdf:RDF
         xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
@@ -207,11 +196,13 @@ EOF
 
 curl -L "${url}" |\\
 	gunzip -c |\\
-	awk -F '\t' -f jeter.awk >> ncbi.rdf
+	awk -F '\t' -f TMP/jeter.awk >> TMP/ncbi.rdf
 
-echo '</rdf:RDF>' >> ncbi.rdf
-gzip ncbi.rdf
-rm jeter.awk
+echo '</rdf:RDF>' >> TMP/ncbi.rdf
+gzip TMP/ncbi.rdf
+
+
+mv TMP/ncbi.rdf.gz ./
 
 echo << EOF > versions.yml
 ${task.process}:
@@ -359,10 +350,13 @@ mv  TMP/atlas.rdf.gz ./
 
 
 process DOWNLOAD_STRING {
+label "process_single"
+tag "${meta.id}"
 input:
 	val(meta)
 output:
         tuple val(meta),path("*.gz"),emit:rdf
+		path("versions.yml"),emit:versions
 script:
 	def url = "https://stringdb-downloads.org/download/protein.links.v12.0/9606.protein.links.v12.0.txt.gz"
 	def treshold  = task.ext.treshold?:900
@@ -393,6 +387,7 @@ curl "${url}" |\\
 echo '</rdf:RDF>' >> string.rdf
 
 gzip string.rdf
+touch versions.yml
 """
 }
 
@@ -406,8 +401,9 @@ output:
 script:
 	def url=task.ext.url?:"https://current.geneontology.org/annotations/goa_human.gaf.gz"
 """
+mkdir -p TMP
 
-cat << EOF > goa.rdf
+cat << EOF > TMP/goa.rdf
 <?xml version="1.0" encoding="UTF-8" ?>
 <rdf:RDF
         xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
@@ -433,7 +429,7 @@ cat << EOF > goa.rdf
  
 EOF
 
-cat << EOF | awk -F '|' '{printf("<u:GOAEvidence rdf:about=\\"${U1087_NS}/goa/evidence/%s\\"><dc:title>%s</dc:title><u:weight rdf:datatype=\\"${XSD_NS}#int\\">%s</<u:weight></u:GOAEvidence>\\n",\$1,\$2,(NR<3?.0:\$3));}'  >> goa.rdf
+cat << EOF | awk -F '|' '{printf("<u:GOAEvidence rdf:about=\\"${U1087_NS}/goa/evidence/%s\\"><dc:title>%s</dc:title><u:weight rdf:datatype=\\"${XSD_NS}#int\\">%d</u:weight></u:GOAEvidence>\\n",\$1,\$2,(NR<3 || \$3==""?0:int(\$3)));}'  >> TMP/goa.rdf
 IC|Inferred by Curator 
 IBA|Inferred from Biological aspect of Ancestor 
 IBD|Inferred from Biological aspect of Descendant 
@@ -465,9 +461,9 @@ EOF
 
 echo 'acts_upstream_of,acts_upstream_of_negative_effect,acts_upstream_of_or_within,acts_upstream_of_or_within_negative_effect,acts_upstream_of_or_within_positive_effect,acts_upstream_of_positive_effect,colocalizes_with,contributes_to,enables,involved_in,is_active_in,located_in,part_of' |\
 	 tr "," "\\n" |\\
-	 awk  '{W=0; printf("<u:GOAQualifier rdf=\\"${U1087_NS}/goa/qualifier/%s\\"><dc:title>%s</dc:title><u:weight rdf:datatype=\\"${XSD_NS}#int\\">%s</<u:weight></u:GOAQualifier>\\n",\$1,\$1,W);}'  >> goa.rdf
+	 awk  '{W=0; printf("<u:GOAQualifier rdf:about=\\"${U1087_NS}/goa/qualifier/%s\\"><dc:title>%s</dc:title><u:weight rdf:datatype=\\"${XSD_NS}#int\\">%s</u:weight></u:GOAQualifier>\\n",\$1,\$1,int(W));}'  >> TMP/goa.rdf
 
-cat << 'EOF' > jeter.awk
+cat << 'EOF' > TMP/jeter.awk
 /^!/ {next;}
 (\$4 ~ /^NOT/) {next;}
 (\$13!="taxon:9606") {next;}
@@ -492,11 +488,13 @@ cat << 'EOF' > jeter.awk
 
 EOF
 
-curl -L "${url}" | gunzip -c |awk -F '\t' -f jeter.awk >> goa.rdf
+curl -L "${url}" | gunzip -c |awk -F '\t' -f TMP/jeter.awk >> TMP/goa.rdf
 
 
-echo '</rdf:RDF>' >> goa.rdf
-gzip --best goa.rdf
+echo '</rdf:RDF>' >> TMP/goa.rdf
+gzip --best TMP/goa.rdf
+
+mv TMP/goa.rdf.gz ./
 
 cat << EOF > versions.yml
 ${task.process}:
@@ -540,13 +538,15 @@ touch versions.yml "${prefix}.rdf.gz"
 }
 
 process GWAS_CATALOG {
+label "process_single"
+tag "${meta.id}"
 input:
 	val(meta)
 output:
 	 tuple val(meta),path("*.gz"),emit:rdf
 	 path("versions.yml"),emit:versions
 script:
-	def url=task.ext.url?"https://www.ebi.ac.uk/gwas/api/search/downloads/associations/v1.0.2?split=false"
+	def url=task.ext.url?:"https://www.ebi.ac.uk/gwas/api/search/downloads/associations/v1.0.2?split=false"
 	def prefix = task.ext.prefix?:"${meta.id}"
 """
 
@@ -635,13 +635,20 @@ touch versions.yml "${prefix}.rdf.gz"
 }
 
 process GTF2XML {
+label "process_single"
+tag "${meta.id}"
 input:
 	tuple val(meta),path(gtf)
 output:
 	tuple val(meta),path("*.gz"),emit:rdf
 script:
+    def jvm =  task.ext.jvm?:"-Djdk.xml.entityExpansionLimit=0 -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -XX:-UsePerfData"
+	def prefix = task.ext.prefix?:"${meta.id}"
 """
-cat << EOF > gtf.rdf
+
+mkdir -p TMP
+
+cat << EOF > TMP/gtf.rdf
 <?xml version="1.0" encoding="UTF-8" ?>
 <rdf:RDF
 	xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
@@ -659,7 +666,7 @@ EOF
 
 gunzip -c "${gtf}" |\
 	awk -F '\t' '(\$3=="gene")' |\
-	java -jar \${HOME}/jvarkit.jar gtf2bed -c 'gene_id,gene_name,gene_type'	|\
+	java ${jvm} -jar \${HOME}/jvarkit.jar gtf2bed -c 'gene_id,gene_name,gene_type'	|\
 	awk -F '\t' '{
 		if(\$4==".") next;
 		gsub(/\\.[0-9]+\$/,"",\$4);
@@ -676,7 +683,7 @@ gunzip -c "${gtf}" |\
 			printf("</u:Location>");
 		printf("</u:location>");
 		printf("</u:Gene>");
-	}' >> gtf.rdf
+	}' >> TMP/gtf.rdf
 
 
 gunzip -c "${gtf}" |\
@@ -703,25 +710,23 @@ gunzip -c "${gtf}" |\
 				}
 			}
 
-	}' >> gtf.rdf
+	}' >> TMP/gtf.rdf
 
 
 
-cat << EOF >> gtf.rdf
+cat << EOF >> TMP/gtf.rdf
 </rdf:RDF>
 EOF
 
-gzip gtf.rdf
-"""
-}
+gzip TMP/gtf.rdf
 
-process TDB_LOAD {
-input:
-	tuple val(meta1),path(tdbloader)
-	tuple val(meta2),path(files)
-
+mv TMP/gtf.rdf.gz "${prefix}.gtf.rdf.gz"
 """
-mkdir -p OUT
-${tdbloader.toRealPath()} --loc=OUT  ${files}
+
+stub:
+def prefix = task.ext.prefix?:"${meta.id}"
+"""
+touch versions.yml "${prefix}.gtf"
+gzip "${prefix}.gtf"
 """
 }

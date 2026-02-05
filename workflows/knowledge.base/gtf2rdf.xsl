@@ -155,10 +155,12 @@
 			<xsl:value-of select="attributes/attribute[@key='transcript_id']/text()"/>
 	</xsl:attribute>
 	<u:has_protein>
+		<u:Protein>
 		<xsl:attribute name="rdf:about">
 			<xsl:text>http://rdf.ebi.ac.uk/resource/ensembl/</xsl:text>
 			<xsl:value-of select="attributes/attribute[@key='protein_id']/text()"/>
 		</xsl:attribute>
+		</u:Protein>
 	</u:has_protein>
 </u:Transcript>
 
