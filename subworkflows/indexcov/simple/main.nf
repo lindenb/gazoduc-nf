@@ -108,7 +108,7 @@ workflow INDEXCOV {
 		)
 	versions = versions.mix(MERGE_BEDS.out.versions)
 
-	if(params.with_singletons==null || parseBoolean(params.with_singletons)==true) {
+	if(metadata.with_singletons==null || parseBoolean(metadata.with_singletons)==true) {
 	/* plot singletons */
 	EXTRACT_SINGLETONS(
 		MERGE_BEDS.out.bed

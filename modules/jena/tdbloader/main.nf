@@ -31,7 +31,7 @@ input:
 	tuple val(meta1),path(tdbloader_exe)
     tuple val(meta ),path(data_list)//one or more RDF data source
 output:
-    tuple val(meta ),path("TDB.*"),emit:database
+    tuple val(meta ),path("TDB.*"),emit:datadir
 	path("versions.yml"),emit:versions
 script:
     def args1 = task.ext.args1?:""

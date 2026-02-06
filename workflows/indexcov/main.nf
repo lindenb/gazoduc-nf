@@ -31,6 +31,7 @@ include { samplesheetToList          } from 'plugin/nf-schema'
 include { INDEXCOV                   } from '../../subworkflows/indexcov/simple'
 include { JVARKIT_BAM_RENAME_CONTIGS } from '../../modules/jvarkit/bamrenamechr'
 include { runOnComplete              } from '../../modules/utils/functions.nf'
+include { parseBoolean               } from '../../modules/utils/functions.nf'
 include { COMPILE_VERSIONS           } from '../../modules/versions'
 include { READ_SAMPLESHEET           } from '../../subworkflows/nf/read_samplesheet'
 include { META_TO_BAMS               } from '../../subworkflows/samtools/meta2bams2'
@@ -129,7 +130,8 @@ workflow {
 	INDEXCOV(
 		metadata.plus([
 			batch_size:  (params.batch_size as int),
-			radius: (params.radius as int)
+			radius: (params.radius as int),
+			with_singletons: parseBoolean(params.with_singletons)
 			]),
 		PREPARE_ONE_REFERENCE.out.fasta,
 		PREPARE_ONE_REFERENCE.out.fai,

@@ -26,6 +26,7 @@ include { PREPARE_ONE_REFERENCE                   } from '../../subworkflows/sam
 include { JENA_DOWNLOAD                           } from '../../modules/jena/download'
 include { JENA_ARQ as JENA_ARQ_SO                 } from '../../modules/jena/arq'
 include { TDB_LOADER                              } from '../../modules/jena/tdbloader'
+include { TDB_QUERY as TDB_QUERY1                 } from '../../modules/jena/tdbquery'
 include { GTF_TO_XML                              } from '../../modules/jvarkit/gtf2xml'
 include { XSLTPROC as SPARQLSO2XSL                } from '../../modules/xsltproc'
 include { XSLTPROC as GENE2RDF_XSL                } from '../../modules/xsltproc'
@@ -80,6 +81,8 @@ workflow {
 		[ [id:"mondo"] , "https://github.com/monarch-initiative/mondo/releases/download/v2026-01-06/mondo.owl"],
 		[ [id:"bto"], "http://purl.obolibrary.org/obo/bto.owl" ],
 		[ [id:"uberon"], "http://purl.obolibrary.org/obo/uberon.owl"],
+		[ [id:"efo"], "http://www.ebi.ac.uk/efo/efo.owl"],
+		[ [id:"oba"] , "http://purl.obolibrary.org/obo/oba.owl"],
 		[ [id:"so"], "https://github.com/The-Sequence-Ontology/SO-Ontologies/raw/refs/heads/master/Ontology_Files/so-simple.owl"]
 		))
 	versions = versions.mix(DOWNLOAD_ONTOLOGY.out.versions)
@@ -94,7 +97,7 @@ workflow {
 	
 	GTF_TO_XML(
 		PREPARE_ONE_REFERENCE.out.dict ,
-		ch1.take(2).map{meta,gtf->[meta,gtf,[]]}
+		ch1.map{meta,gtf->[meta,gtf,[]]}
 		)
 	versions = versions.mix(GTF_TO_XML.out.versions)
 
@@ -120,12 +123,29 @@ workflow {
 	versions = versions.mix(DOWNLOAD_NCBI_INFO.out.versions)
 	rdfdocs = rdfdocs.mix(DOWNLOAD_NCBI_INFO.out.rdf)
 
+
+	DOWNLOAD_STRING([id:"stringdb"])
+	versions = versions.mix(DOWNLOAD_STRING.out.versions)
+	rdfdocs = rdfdocs.mix(DOWNLOAD_STRING.out.rdf)
+
+	GWAS_CATALOG([id:"gwascatalog"])
+	versions = versions.mix(GWAS_CATALOG.out.versions)
+	rdfdocs = rdfdocs.mix(GWAS_CATALOG.out.rdf)
 	
 	TDB_LOADER(
 		JENA_DOWNLOAD.out.tdbloader, 
 		rdfdocs.map{_meta,f->f}.collect().map{f->[[id:"rdfs"],f.sort()]} 
 		)
 	versions = versions.mix(TDB_LOADER.out.versions)
+
+	
+
+	/*
+	TDB_QUERY1(
+		JENA_DOWNLOAD.out.tdbquery, 
+		TDB_LOADER.out.datadir,
+		[[id:"query"],file("${moduleDir}/query.02.sparql")]
+	)*/
 	/*
 	
 	XSLTPROC(
@@ -139,8 +159,7 @@ workflow {
 /*
 	
 	
-	DOWNLOAD_STRING([id:"stringdb"])
-	DOWNLOAD_NCBI_INFO([id:"ncbi"])
+	
 	PROTEIN_ATLAS([id:"proteinatlas"])
 
 	
@@ -352,6 +371,7 @@ mv  TMP/atlas.rdf.gz ./
 process DOWNLOAD_STRING {
 label "process_single"
 tag "${meta.id}"
+afterScript "rm -rf TMP"
 input:
 	val(meta)
 output:
@@ -361,15 +381,22 @@ script:
 	def url = "https://stringdb-downloads.org/download/protein.links.v12.0/9606.protein.links.v12.0.txt.gz"
 	def treshold  = task.ext.treshold?:900
 """
+mkdir -p TMP
 
-cat << EOF > string.rdf
+cat << EOF > TMP/string.rdf
 <?xml version="1.0" encoding="UTF-8" ?>
 <rdf:RDF
         xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
         xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
         xmlns:dc="http://purl.org/dc/elements/1.1/"
+		xmlns:owl ="http://www.w3.org/2002/07/owl#"
         xmlns:u="${U1087_NS}"
   >
+
+ <owl:Class rdf:about="${U1087_NS}StringInteraction">
+		<rdfs:label>string_interaction</rdfs:label>
+		<rdfs:comment>Interaction in String Database ${url}</rdfs:comment>
+ </owl:Class>
 EOF
 
 curl "${url}" |\\
@@ -382,12 +409,22 @@ curl "${url}" |\\
 			printf("<u:protein_2 rdf:resource=\\"http://rdf.ebi.ac.uk/resource/ensembl/%s\\"/>",\$2);
 			printf("<u:treshold  rdf:datatype=\\"${XSD_NS}#double\\">%s</u:treshold>",\$3);
 		printf("</u:StringInteraction>\\n");
-	}' >> string.rdf
+	}' >> TMP/string.rdf
 
-echo '</rdf:RDF>' >> string.rdf
+echo '</rdf:RDF>' >> TMP/string.rdf
 
+gzip --best TMP/string.rdf
+mv TMP/string.rdf.gz ./
+
+cat << EOF > versions.yml
+${task.process}:
+	string: ${url}
+EOF
+"""
+stub:
+"""
+touch string.rdf versions.yml
 gzip string.rdf
-touch versions.yml
 """
 }
 
@@ -540,6 +577,7 @@ touch versions.yml "${prefix}.rdf.gz"
 process GWAS_CATALOG {
 label "process_single"
 tag "${meta.id}"
+afterScript "rm -rf TMP"
 input:
 	val(meta)
 output:
@@ -549,9 +587,9 @@ script:
 	def url=task.ext.url?:"https://www.ebi.ac.uk/gwas/api/search/downloads/associations/v1.0.2?split=false"
 	def prefix = task.ext.prefix?:"${meta.id}"
 """
-
-cat << 'EOF' > jeter.awk
-
+mkdir -p TMP
+set -x
+cat << 'EOF' > TMP/jeter.awk
 	{
 	if(\$37=="") next;
 	gsub(/[^A-Za-z, 0-9\\-;]+/,"_",\$16);
@@ -590,7 +628,7 @@ cat << 'EOF' > jeter.awk
 
 EOF
 
-cat << EOF > gwas.rdf
+cat << EOF > TMP/${prefix}.rdf
 <?xml version="1.0" encoding="UTF-8" ?>
 <rdf:RDF
         xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
@@ -611,20 +649,19 @@ cat << EOF > gwas.rdf
 
 EOF
 
-wget -O jeter.zip "${url}"
+curl -L -o TMP/jeter.zip "${url}"
 
-unzip -p jeter.zip gwas-catalog-download-associations-alt-full.tsv |\\
+unzip -p TMP/jeter.zip gwas-catalog-download-associations-alt-full.tsv |\\
 	tail -n +2 |\
-	head -n 100 |\
-	awk -F '\t' -f jeter.awk  >> gwas.rdf
+	awk -F '\t' -f TMP/jeter.awk  >> TMP/${prefix}.rdf
 
-echo "</rdf:RDF>" >> gwas.rdf
-gzip gwas.rdf
-rm jeter.zip
+echo "</rdf:RDF>" >> TMP/${prefix}.rdf
+gzip TMP/${prefix}.rdf
+mv TMP/${prefix}.rdf.gz ./
 
 cat << EOF > versions.yml
 "${task.process}":
-	url: ${u}
+	url: ${url}
 EOF
 """
 stub:

@@ -104,10 +104,10 @@ workflow {
 	if( params.help ) {
 		log.info(paramsHelp())
 		exit 0
-	}  else {
-	// Print summary of supplied parameters
-	log.info paramsSummaryLog(workflow)
-	}
+		}  else {
+		// Print summary of supplied parameters
+		log.info paramsSummaryLog(workflow)
+		}
 
 
 
@@ -223,7 +223,7 @@ workflow {
 		)
 	versions = versions.mix(BED_CLUSTER.out.versions)
 	bed = BED_CLUSTER.out.bed
-		.map{meta,bed->bed}
+		.map{_meta,bed->bed}
 		.map{it instanceof List?it:[it]}
 		.flatMap()
 		.map{bed->[[id:bed.baseName],bed]}
