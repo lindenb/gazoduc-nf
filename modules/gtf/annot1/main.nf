@@ -54,6 +54,9 @@ mkdir -p TMP
 
 set -x
 
+cut -f1,2 "${fai}" |\\
+	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP > TMP/genome.size
+
 ${gtf.name.endsWith(".gz")?"gunzip -c":"cat"} "${gtf}" |\\
 	awk -F '\t' '(\$3=="exon") {printf("%s\t%d\t%s\\n",\$1,int(\$4)-1,int(\$5))}' |\\
 	sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
@@ -118,6 +121,23 @@ ${gtf.name.endsWith(".gz")?"gunzip -c":"cat"} "${gtf}" |\\
 echo '##INFO=<ID=in_downstream,Number=0,Type=Flag,Description="Downstream ${xstream}bp of genes in ${gtf.name}">' > TMP/downstream.hdr
 
 
+## genes
+
+${gtf.name.endsWith(".gz")?"gunzip -c":"cat"} "${gtf}" |\\
+		awk -F '\t' '(\$3=="gene")' |\\
+		java ${jvm} -jar \${HOME}/jvarkit.jar gtf2bed -c 'gene_name,gene_id' |\\
+		awk -F '\t' '{OFS="\t";if(\$4==".") \$4=\$5;print;}' |\\
+		bedtools slop  -g TMP/genome.size -b "${xstream}" |\\
+		sort -S ${task.memory.kilo} -t '\t' -k1,1 -k2,2n -T TMP |\\
+		uniq > TMP/all_genes.bed
+bgzip -f TMP/all_genes.bed
+tabix -p bed -f TMP/all_genes.bed.gz
+
+echo '##INFO=<ID=gene_name,Number=.,Type=String,Description="All genes names extended to ${xstream}bp in ${gtf.name}">' > TMP/all_genes.hdr
+echo '##INFO=<ID=gene_id,Number=.,Type=String,Description="All genes id extended to ${xstream}bp in ${gtf.name}">' >> TMP/all_genes.hdr
+
+
+## genes of interest
 if ${genes_of_interest?true:false}
 then
 
@@ -183,6 +203,20 @@ do
         mv -v TMP/jeter2.bcf TMP/jeter.bcf
     fi
 done
+
+ bcftools annotate \\
+	${args1} \\
+	--threads "${task.cpus}" \\
+	--header-lines TMP/all_genes.hdr \\
+	--columns "CHROM,POS,END,gene_name,gene_id" \\
+	--annotations TMP/all_genes.bed.gz \\
+	--merge-logic 'gene_name:unique,gene_id:unique' \\
+	-O u \\
+	-o TMP/jeter2.bcf \\
+	TMP/jeter.bcf
+
+mv -v TMP/jeter2.bcf TMP/jeter.bcf
+
 
 bcftools view ${args2}  -O z -o TMP/${prefix}.vcf.gz TMP/jeter.bcf
 mv -v TMP/${prefix}.vcf.gz ./
