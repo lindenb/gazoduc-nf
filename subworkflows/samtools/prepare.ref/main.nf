@@ -61,6 +61,7 @@ main:
 		.join(build_ch)
 		.map{id,meta1,fai,meta2->[meta1.plus(meta2),fai]}
 
+	
 	SAMTOOLS_DICT(fasta)
 	versions = versions.mix(SAMTOOLS_DICT.out.versions)
 	

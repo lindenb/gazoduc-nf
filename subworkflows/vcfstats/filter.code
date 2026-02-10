@@ -1,6 +1,6 @@
 
 final java.util.concurrent.atomic.AtomicLong num_variants = new java.util.concurrent.atomic.AtomicLong();
-final Counter<String> count=new Counter<>();
+final com.github.lindenb.jvarkit.util.Counter<String> count=new com.github.lindenb.jvarkit.util.Counter<>();
 final List<String> PASS_LIST = java.util.Collections.singletonList("PASS");
 
 stream()
@@ -11,5 +11,5 @@ stream()
 	;
 
 for(String key: count.keySetDecreasing()) {
-    println(key+"\t"+count.count(key));
+    java.lang.System.out.println(key+"\t"+count.count(key));
     }

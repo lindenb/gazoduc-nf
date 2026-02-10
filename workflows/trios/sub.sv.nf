@@ -1,8 +1,35 @@
+/*
 
+Copyright (c) 2026 Pierre Lindenbaum
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+The MIT License (MIT)
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WH
+ETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+
+*/
 include {TRUVARI                                  } from '../../subworkflows/truvari/main.nf'
 include {ANNOTATE_SV                              } from '../../subworkflows/annotation/sv/main.nf'
 include {SAMTOOLS_DEPTH_PLOT_COVERAGE             } from  '../../modules/samtools/plotcoverage/main.nf'
 include {DELLY                                    } from '../../subworkflows/delly2/main.nf'
+include { parseBoolean                            } from '../../modules/utils/functions.nf'
 
 workflow WORKFLOW_SV {
 take:
@@ -29,18 +56,24 @@ main:
             [ [id:it[2],status:"control"], it[10], it[11]]
         ]}
     
-    DELLY(meta,fasta,fai,dict,ch1)
-    vcf = DELLY.out.vcf
-
+    if(meta.with_delly==null || parseBoolean(meta.with_delly)) {
+        DELLY(meta,fasta,fai,dict,ch1)
+        vcf = DELLY.out.vcf
+        }
+    else
+        {
+        vcf= Channel.empty();
+        }
+    
     ANNOTATE_SV(
             meta,
             fasta,
             fai,
             dict,
             gtf,
-            DELLY.out.vcf
-        )
-
+            vcf
+            )
+    
     FILTER_SV(fasta,fai,dict,
         pedigree,
         ANNOTATE_SV.out.vcf

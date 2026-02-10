@@ -7,6 +7,7 @@ workflow VEP {
         dict
         vcf
     main:
+        versions = Channel.empty()
         APPLY_VEP(
             fasta,
             fai,
@@ -14,6 +15,7 @@ workflow VEP {
             )
     emit:
         vcf=APPLY_VEP.out.vcf
+        versions
 }
 
 process APPLY_VEP {

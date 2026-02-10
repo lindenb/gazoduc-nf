@@ -235,11 +235,14 @@ EOF
 
 set -o pipefail
 
+#
+# bug bcftools concat alon generates non plain VCF ??
+#
 bcftools concat \\
     ${optional_bed?"--regions-file \"${optional_bed}\"":""} \\
     --file-list TMP/jeter.list \\
-    --drop-genotypes \\
-    -Ov |\\
+    -O v |\\
+    bcftools view -O v -G |\\
     jvarkit -Djava.io.tmpdir=TMP bioalcidaejdk -F VCF -f TMP/jeter.code > TMP/jeter.tsv
 
 
@@ -471,11 +474,10 @@ cat "${moduleDir}/filter.code" |\\
     m4 -P  > TMP/jeter.code
 
 
-bcftools concat \\
-    --drop-genotypes \\
+bcftools concat -O u \\
     ${optional_bed?"--regions-file \"${optional_bed}\"":""} \\
-    --file-list TMP/jeter.list \\
-    -Ov |\\
+    --file-list TMP/jeter.list |\\
+    bcftools view -O v -G |\\
     jvarkit -Djava.io.tmpdir=TMP bioalcidaejdk -F VCF -f TMP/jeter.code > TMP/jeter.tsv
 
 

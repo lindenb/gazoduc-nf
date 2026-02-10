@@ -1,4 +1,4 @@
-include {BCFTOOLS_CONCAT                          } from '../../modules/bcftools/concat/main.nf'
+include {BCFTOOLS_CONCAT                          } from '../../modules/bcftools/concat3/main.nf'
 include {DOWNLOAD_CYTOBAND                        } from '../../modules/ucsc/download.cytobands/main.nf'
 include {DOWNLOAD_REFGENE                         } from '../../modules/ucsc/download.refgene/main.nf'
 include {VCF_STATS                                } from '../../subworkflows/vcfstats'
@@ -18,21 +18,30 @@ take:
 main:
     versions = Channel.empty()
     multiqc = Channel.empty()
+
+
+   
     KEEP_DE_NOVO(pedigree,vcf)
     versions =  versions.mix(KEEP_DE_NOVO.out.versions)
-
+    
     BCFTOOLS_CONCAT(
         KEEP_DE_NOVO.out.vcf
-            .map{[it[1],it[2]]}
+            .map{_meta,vcf,idx->[vcf,idx]}
+            .flatMap()
             .collect()
-            .map{[meta,it.flatten()]},
-        [[id:"nobed"],[]
-        ])
+            .map{files->[[id:"denovo"],files.sort()]}
+        )
     versions =  versions.mix(KEEP_DE_NOVO.out.versions)
     vcf = BCFTOOLS_CONCAT.out.vcf
 
+    
+
     VCF_STATS(
-        meta,
+        meta.plus([
+            with_bcftools_stats:true,
+            gatk_denovo:true,
+            ad_ratio:true
+            ]),
         fasta,
         fai,
         dict,
@@ -43,43 +52,45 @@ main:
         [[id:"nobed"],[]],
         vcf
         )
-   versions =  versions.mix(VCF_STATS.out.versions)
+    versions =  versions.mix(VCF_STATS.out.versions)
     multiqc = multiqc.mix(VCF_STATS.out.multiqc)
 
     REPORT(pedigree,vcf)
     versions =  versions.mix(REPORT.out.versions)
 
-    ch1 = REPORT.out.bed
-        .map{it[1]}
+    ch1 = REPORT.out.bed.view()
+        .map{_meta,bed->bed}
         .splitCsv(sep:'\t',header:false)
-        .combine(triosbams_ch)
+        .combine(triosbams_ch.view())
+        .view()
         .filter{it[3].equals(it[5])}
         .map{it.remove(5);return it;}//remove returns deleted item
         .map{it.add(0,[id:it[0]+"_"+it[1]+"_"+it[2]+"_"+it[3]]);return it;}
         //.view()
     
-
-    DOWNLOAD_REFGENE(fasta,fai,dict)
+if(1==2) {
+    DOWNLOAD_REFGENE(dict)
     versions =  versions.mix(DOWNLOAD_REFGENE.out.versions)
-    DOWNLOAD_CYTOBAND(fasta,fai,dict)
+    DOWNLOAD_CYTOBAND(dict)
     versions =  versions.mix(DOWNLOAD_CYTOBAND.out.versions)
 
     IGV_REPORTS(
-        DOWNLOAD_CYTOBAND.out.output,
-        DOWNLOAD_REFGENE.out.output,
+        DOWNLOAD_CYTOBAND.out.tabix,
+        DOWNLOAD_REFGENE.out.tabix,
         REPORT.out.vcf,
         pedigree,
         ch1
-    )
+        )
     versions =  versions.mix(IGV_REPORTS.out.versions)
 
     GATHER_IGV_REPORTS(
         IGV_REPORTS.out.html.map{it[1]}.collect().map{[[id:"igvregport"],it]},
         IGV_REPORTS.out.index.map{it[1]}.collect().map{[[id:"igvregport"],it]}
         )
+    }
 
 emit:
-    vcf = REPORT.out.vcf
+    //vcf = REPORT.out.vcf
     versions
     multiqc
 }

@@ -38,20 +38,16 @@ process BED_STATS {
         def jvarkit = task.ext.jvarkit?:"java ${jvm} -jar \${HOME}/jvarkit.jar"// TODO update when conda released
 		def prefix = task.ext.prefix?:"${meta.id}"
  """
-	hostname 1>&2
+    hostname 1>&2
     mkdir -p TMP
 	find BED \\( -name "*.bed" -o -name "*.bed.gz" \\) > TMP/jeter.list
+
     ${jvarkit} bedstats  \\
             ${args1} \\
-           TMP/jeter.list > TMP/jeter.txt
+           -o TMP/STATS \\
+           TMP/jeter.list 
 
-    #loop over_prefixes
-    cut -f 1 TMP/jeter.txt | uniq | sort | uniq | while read F
-	do
-		awk -vF="\${F}" '(\$1==F)' TMP/jeter.txt |\\
-			cut -f2- |\\
-			sed 's|__ID__|${prefix}|g' > ${F}_mqc.json
-	done
+mv -v TMP/STATS/*.json ./
 
 cat << EOF > versions.yml
 ${task.process}:
@@ -62,6 +58,6 @@ EOF
 stub: 
     def prefix = task.ext.prefix?:"${meta.id}.dict2bed"
 """
-touch versions.yml   ${prefix}.bed
+touch versions.yml 
 """
 }

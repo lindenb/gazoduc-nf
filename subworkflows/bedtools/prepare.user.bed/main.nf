@@ -25,6 +25,9 @@ SOFTWARE.
 include {BEDTOOLS_INTERSECT                  } from '../../../modules/bedtools/intersect'
 include {BEDTOOLS_SUMMARY                    } from '../../../modules/bedtools/summary'
 include {IF_EMPTY                            } from '../../../subworkflows/nf/if_empty'
+include {parseBoolean                        } from '../../../modules/utils/functions.nf'
+include {BED_STATS                           } from '../../../modules/jvarkit/bedstats'
+
 /**
  * Check user file, if defined, is an ASCII bed, have the correct contigs
  */
@@ -49,11 +52,8 @@ main:
         versions = versions.mix(CHECK_BED.out.versions)
         bed = CHECK_BED.out.bed
 
-        if(meta.with_intersect!=null && meta.with_intersect!=false) {
-            BEDTOOLS_INTERSECT(
-                    PREPARE_REFERENCE.out.fai,
-                    PREPARE_REFERENCE.out.scatter_bed.combine(bed)
-                    )
+        if(meta.with_intersect!=null && parseBoolean(meta.with_intersect)) {
+            BEDTOOLS_INTERSECT( fai,  scatter_bed.combine(bed)  )
             versions = versions.mix(BEDTOOLS_INTERSECT.out.versions)
             bed  = BEDTOOLS_INTERSECT.out.bed.first()
             }
@@ -65,6 +65,11 @@ main:
     BEDTOOLS_SUMMARY(fai,bed)
     versions = versions.mix(BEDTOOLS_SUMMARY.out.versions)
     multiqc = multiqc.mix( BEDTOOLS_SUMMARY.out.summary )
+
+    BED_STATS(bed)
+    versions = versions.mix(BED_STATS.out.versions)
+    multiqc = multiqc.mix( BED_STATS.out.multiqc )
+
 emit:
     versions
     bed

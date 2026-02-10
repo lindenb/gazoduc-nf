@@ -50,11 +50,14 @@ String countVariants(def f) {
         }
 
 boolean hasFeature(def hash,def key) {
-    if(hash[key]==null) {
-        log.warn("undefined ${key} in ANNOT_SNV");
+    def value = hash[key];
+    if(value==null) value = hash["with_${key}"]
+
+    if(value==null) {
+        log.warn("undefined with_${key} in ANNOT_SNV");
         return false;
         }
-    return parseBoolean(hash[key]);
+    return parseBoolean(value);
     }
 
 workflow ANNOT_SNV {
@@ -163,7 +166,7 @@ main:
 
 
     if(hasFeature(metadata,"snpeff")) {
-        SNPEFF_DOWNLOAD(fai)
+        SNPEFF_DOWNLOAD([[id:"snpeffdb"],file("${params.snpeff_database_directory?:"NO_DIR"}")])
         versions = versions.mix(SNPEFF_DOWNLOAD.out.versions)
         snpeff_db_ch = SNPEFF_DOWNLOAD.out.database
         snpeff_db_ch = snpeff_db_ch.ifEmpty([[id:"no_snpeff"],[],[]]) /* meta, dir, name */
@@ -288,6 +291,8 @@ main:
         gnomad_sv_ch = [[id:"no_gnomadsv"],[],[],[]]
     }
 
+
+   
     ANNOTATE(
         fasta,
         fai,
@@ -374,9 +379,9 @@ input:
     /** utr_annotator_file */
     tuple val(meta22 ),path(vep_utr_annotator) 
     /** remap */
-    tuple val(meta23 ),path(remap),path(remap_idx),path(remap_hdr)  
+    tuple val(meta23 ),val(remap),val(remap_idx),val(remap_hdr)  
     /** gencc */
-    tuple val(meta24 ),path(gencc),path(gencc_idx),path(gencc_hdr)
+    tuple val(meta24 ),path(gencc),path(gencc_idx),val(gencc_hdr)
      /** ensemblreg */
     tuple val(meta25 ),path(ensemblreg),path(ensemblreg_idx),path(ensemblreg_hdr)  
     /** HMC */

@@ -25,9 +25,10 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 
-include {dumpParams;runOnComplete} from '../../modules/utils/functions.nf'
-include {DOWNLOAD_CYTOBAND} from '../../modules/ucsc/download.cytobands'
-include {DOWNLOAD_REFGENE} from '../../modules/ucsc/download.refgene'
+include { dumpParams;runOnComplete         } from '../../modules/utils/functions.nf'
+include { DOWNLOAD_CYTOBAND                } from '../../modules/ucsc/download.cytobands'
+include { DOWNLOAD_REFGENE                 } from '../../modules/ucsc/download.refgene'
+include { PREPARE_ONE_REFERENCE            } from '../../subworkflows/samtools/prepare.one.ref'
 
 if( params.help ) {
     dumpParams(params);
@@ -45,56 +46,72 @@ def toLoc(def row) {
 	}
 
 workflow {
-	 def genome_hash = [
+	 def metadata = [
 		id : file(params.fasta).simpleName,
 		name: file(params.fasta).simpleName
 	 	]
-	 def fasta = [genome_hash, file(params.fasta) ]
-	 def fai = [genome_hash, file(params.fai) ]
-	 def dict = [genome_hash, file(params.dict) ]
+	PREPARE_ONE_REFERENCE(
+			metadata.plus(
+				skip_scatter : true
+				),
+			Channel.fromPath(params.fasta).map{f->[[id:f.baseName],f]}
+			)
+  	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
+
 	 
-	 bams_ch = Channel.fromPath(params.bams).
-		splitText().
-		map{it.trim()}.
-		collate(50)		
+	bams_ch = Channel.fromPath(params.samplesheet).
+		splitCsv(sep:',',header:true).
+	
+	input_ch = Channel.fromPath(params.input).
+		splitCsv(sep:',',header:true).
+	
+	ch1 = bams_ch.combine(input_ch)
+		.filter{meta1,meta2->meta1.sample==meta2.sample}
+		.map{meta1,meta2->meta1.plus(meta2)}
+		.map{meta->{
+			def contig = meta.contig;
+			def start = meta.start;
+			def end = meta.end;
+			return [
+				[id:"${contig}_${start}_${end}",contig:"${contig}",start:(start as int),end:(end as int)],
+				[file(meta.bam),file(meta,bai)]
+				]
+			}
+		.groupTuple()
+		.map{meta,files->[meta,files.flatten().sort()]}
 
-	Channel.fromPath(params.positions).
-		splitCsv(sep:'\t',header:false).
-		map{T->{
-			switch(T.size()) {
-				case 2: T[1] = [T[0],(T[1] as int)];
-				case 1: 
-					int colon =T[0].lastIndexOf(":");
-					if(colon==-1) throw new IllegalArgumentException("cannot find ':' in "+T[0]);
-					int pos = (T[0].substring(colon+1) as int)
-					return [T[0].substring(0,colon), pos];
-				default: throw new IllegalArgumentException("splitCsv from position");
-				}
-			}}.combine(bams_ch).
-			map{[it[0],it[1],it[2 ..< it.size()].sort()]}.
-			set{contig_pos_bams_ch}
+	/*
+      FIND_COVERAGE_AT_LOC(
+			PREPARE_ONE_REFERENCE.out.fasta,
+			PREPARE_ONE_REFERENCE.out.fai,
+			PREPARE_ONE_REFERENCE.out.dict,
+			bams_ch.map{meta->[file(meta.bam),file(meta.bai)]}
+				.flatMap()
+				.collect()
+				.map{files->[[id:"bams"],files.sort()]},
+			ch1.map{meta,f->meta}.unique()
+			)
+		ch2 = MERGE_COVERAGE_AT_LOC(file(params.sample2collection), FIND_COVERAGE_AT_LOC.out.tsv)
+		*/
 
-
-        covpos_ch = FIND_COVERAGE_AT_LOC(fasta,fai,dict,contig_pos_bams_ch)
-		ch1 = covpos_ch.output.map{[ [it[0],it[1]], it[2]]}.groupTuple()
-		ch2 = MERGE_COVERAGE_AT_LOC(file(params.sample2collection), ch1)
 		
-		ch4 = ch2.output.
-			map{[it[1],it[0]]}.
-			splitCsv(sep:'\t',header:false).
-			map{[ [it[1][0] /* contig */ ,it[1][1] /* pos */,it[0][1] /* page */,it[0][2] /*pages*/], it[0][0] /* bam */] }.
-			groupTuple().
-			map{[it[0][0],it[0][1],it[0][2],it[0][3],it[1]]}
+		DOWNLOAD_CYTOBAND(
+			PREPARE_ONE_REFERENCE.out.fasta,
+			PREPARE_ONE_REFERENCE.out.fai,
+			PREPARE_ONE_REFERENCE.out.dict
+			)
+		DOWNLOAD_REFGENE(
+			PREPARE_ONE_REFERENCE.out.fasta,
+			PREPARE_ONE_REFERENCE.out.fai,
+			PREPARE_ONE_REFERENCE.out.dict
+			)
 
-		ch4.view()
-		cyto_ch = DOWNLOAD_CYTOBAND(fasta,fai,dict)
-
-		refgene_ch = DOWNLOAD_REFGENE(fasta,fai,dict)
-
-		report_ch = APPLY_IGVREPORT(
-			fasta,fai,dict,
-			cyto_ch.output,
-			refgene_ch.output,
+		APPLY_IGVREPORT(
+			PREPARE_ONE_REFERENCE.out.fasta,
+			PREPARE_ONE_REFERENCE.out.fai,
+			PREPARE_ONE_REFERENCE.out.dict,
+			DOWNLOAD_CYTOBAND.out.bed,
+			DOWNLOAD_REFGENE.out.bed,
 			ch4
 			)
 		
@@ -114,28 +131,26 @@ runOnComplete(workflow)
 
 process FIND_COVERAGE_AT_LOC {
 label "process_single"
-tag "${contig}:${pos} N=${bams.size()}"
+tag "${meta.id}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
 	tuple val(meta1),path(fasta)
 	tuple val(meta2),path(fai)
 	tuple val(meta3),path(dict)
-	tuple val(contig),val(pos),val(bams)
+	tuple val(meta4),path("BAMS/*")
+	val(meta)
 output:
-	tuple val(contig),val(pos),path("*.tsv"),emit:output
+	tuple val(meta),path("*.tsv"),emit:tsv
 script:
+	def prefix = task.ext.prefix?:meta.id;
 """
-set -o pipefail
 mkdir -p TMP
-cat << '__EOF__' > TMP/jeter.list
-${bams.join("\n")}
-__EOF__
+find BAMS -name "*.bam" -o -name "*.cram" | sort -V > TMP/jeter.list
 
-MD5=`cat TMP/jeter.list | md5sum | cut -d ' ' -f1`
 
-jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP findallcoverageatposition -p "${contig}:${pos}" -R ${fasta}  < TMP/jeter.list > TMP/jeter.tsv
-mv TMP/jeter.tsv "coverage.\${MD5}.tsv"
+jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP findallcoverageatposition -p "${meta.contig}:${meta.start}" -R ${fasta}  < TMP/jeter.list > TMP/jeter.tsv
+mv TMP/jeter.tsv "${prefix}.tsv"
 """
 }
 

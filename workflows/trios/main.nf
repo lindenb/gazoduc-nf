@@ -25,7 +25,6 @@ SOFTWARE.
 import java.io.InputStreamReader;
 import java.util.zip.GZIPInputStream;
 
-include {VEP                                      } from '../../subworkflows/annotation/vep/main.nf'
 include {DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GFF3    } from '../../modules/gtf/download/main.nf'
 include {DOWNLOAD_GTF_OR_GFF3 as DOWNLOAD_GTF     } from '../../modules/gtf/download/main.nf'
 include {SCATTER_TO_BED                           } from '../../subworkflows/gatk/scatterintervals2bed'
@@ -38,7 +37,11 @@ include {SOMALIER_BAMS                            } from '../../subworkflows/som
 include {MULTIQC                                  } from '../../modules/multiqc'
 include {COMPILE_VERSIONS                         } from '../../modules/versions/main.nf'
 include {runOnComplete; dumpParams                } from '../../modules/utils/functions.nf'
-
+include { parseBoolean                            } from '../../modules/utils/functions.nf'
+include { PREPARE_ONE_REFERENCE                   } from '../../subworkflows/samtools/prepare.one.ref'
+include { VCF_INPUT                               } from '../../subworkflows/nf/vcf_input'
+include { META_TO_BAMS                            } from '../../subworkflows/samtools/meta2bams2'
+include { READ_SAMPLESHEET                        } from '../../subworkflows/nf/read_samplesheet'
 
 
 if( params.help ) {
@@ -93,73 +96,103 @@ boolean isStructuralVariantVCF(vcf) {
 }
 
 workflow {
-        def ref_hash = [
-            id: file(params.fasta).simpleName,
-            ucsc_name: (params.ucsc_name?:"undefined")
-            ]
-        def fasta  = [ref_hash, file(params.fasta) ]
-        def fai    = [ref_hash, file(params.fai) ]
-        def dict   = [ref_hash, file(params.dict) ]
+        versions = Channel.empty()
+        multiqc = Channel.empty()
+
+        if(params.fasta==null) {
+            log.error("--fasta missing")
+            exit -1;
+            }
+
+         if(params.samplesheet==null) {
+            log.error("--samplesheet missing")
+            exit -1;
+            }
+        if(params.pedigree==null) {
+            log.error("--pedigree missing")
+            exit -1;
+            }
+
+        def metadata = [
+            id: "trios",
+            with_delly : params.with_delly,
+            with_cardiopanel : params.with_cardiopanel , 
+            with_alphamissense : params.with_alphamissense,
+            with_no_avada : params.with_no_avada,
+            with_clinvar : params.with_clinvar,
+            with_snpeff : params.with_snpeff,
+            with_vista : params.with_vista,
+            with_vep : params.with_vep,
+            with_utr_annotator : params.with_utr_annotator,
+            with_vista : params.with_vista
+            ];
+        
+        
         def pedigree = [[id:"pedigree"],file(params.pedigree)]
 
-        def versions = Channel.empty()
-        to_multiqc = Channel.empty()
+        /***************************************************
+        *
+        *  PREPARE FASTA REFERENCE
+        *
+        */
+        PREPARE_ONE_REFERENCE(
+            metadata,
+            Channel.fromPath(params.fasta).map{[[id:it.baseName],it]}
+            )
+        versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
 
+        /***************************************************
+        *
+        *  samplesheet contains VCFs
+        *
+        */
+        VCF_INPUT(
+            metadata.plus(
+                path: params.samplesheet,
+                require_index: true,
+                arg_name : "samplesheet",
+                required: true,
+                unique : false
+                )
+            )
+        versions = versions.mix(VCF_INPUT.out.versions)
+        vcfs = VCF_INPUT.out.vcf
 
-        vcfs = Channel.fromPath(params.samplesheet)
-            .splitCsv(header:true,sep:',')
-            .map{assertKeyMatchRegex(it,"vcf","^\\S+\\.(vcf\\.gz|bcf)\$")}
-            .map{
-                if(it.containsKey("idx")) return it;
-                if(it.vcf.endsWith(".bcf")) return it.plus(idx : it.vcf+".csi");
-                return it.plus(idx:it.vcf+".tbi");
-            }
-            .map{
-                 if(it.containsKey("id")) return it;
-                return it.plus(id:file(it.vcf).name.replaceAll("\\.(vcf\\.gz|bcf)\$",""));
-                }
-            .map{assertKeyMatchRegex(it,"idx","^\\S+\\.(tbi|csi)\$")}
-            .map{[[id:it.id],file(it.vcf),file(it.idx)]}
 
         bams = Channel.empty()
         triosbams_ch = Channel.empty()
         
-        if(params.bams) {
-            bams = Channel.fromPath(params.bams)
-                .splitCsv(header:true,sep:',')
-                .map{assertKeyMatchRegex(it,"sample","^[A-Za-z_0-9\\.\\-]+\$")}
-                .map{assertKeyMatchRegex(it,"bam","^\\S+\\.(bam|cram)\$")}
-                .map{
-                    if(it.containsKey("bai")) return it;
-                    if(it.bam.endsWith(".cram")) return it.plus(bai : it.bam+".crai");
-                    return it.plus(bai:it.bam+".bai");
-                }
-                .map{
-                    if(it.containsKey("fasta")) return it;
-                    return it.plus(fasta:params.fasta);
-                }
-                .map{
-                    if(it.containsKey("fai")) return it;
-                    return it.plus(fai:it.fasta+".fai");
-                }
-                .map{
-                    if(it.containsKey("dict")) return it;
-                    return it.plus(dict: it.fasta.replaceAll("\\.(fasta|fa|fna)\$",".dict"));
-                }
-                .map{assertKeyMatchRegex(it,"bai","^\\S+\\.(bai|crai)\$")}
-                .map{[[id:it.sample],file(it.bam),file(it.bai),file(it.fasta),file(it.fai),file(it.dict)]}
-            
-
-            SOMALIER_BAMS(
-                [id:"somalier"],
-                fasta,
-                fai,
-                dict,
-		        triosbams_ch, // sample,bam,bai
-		        pedigree, // pedigree for somalier
-		        Channel.of([[id:"no_sites"],[]])
+        if(params.bams!=null) {
+            READ_SAMPLESHEET(
+                [arg_name:"bams"],
+                params.bams
                 )
-            versions = versions.mix(SOMALIER_BAMS.out.versions)
+             versions = versions.mix(READ_SAMPLESHEET.out.versions)
+
+            META_TO_BAMS(
+                metadata.plus([:]),
+                PREPARE_ONE_REFERENCE.out.fasta,
+                PREPARE_ONE_REFERENCE.out.fai,
+                PREPARE_ONE_REFERENCE.out.dict,
+                READ_SAMPLESHEET.out.samplesheet
+                )
+            versions = versions.mix(META_TO_BAMS.out.versions)
+
+
+            bams = META_TO_BAMS.out.bams
+            
+            if(parseBoolean(params.with_somalier)) {
+                SOMALIER_BAMS(
+                    [id:"somalier"],
+                    fasta,
+                    fai,
+                    dict,
+                    META_TO_BAMS.out.map{meta,bam,bai,_fa,_fai,_dict->[meta,bam,bai]}, // sample,bam,bai
+                    pedigree, // pedigree for somalier
+                    Channel.of([[id:"no_sites"],[]])
+                    )
+                versions = versions.mix(SOMALIER_BAMS.out.versions)
+                }
 
             triosbams_ch = Channel.fromPath(params.pedigree)
                 .splitCsv(header:false,sep:'\t')
@@ -191,59 +224,61 @@ workflow {
             snv: true
          }
 
-        DOWNLOAD_GFF3(dict)
+        DOWNLOAD_GFF3(PREPARE_ONE_REFERENCE.out.dict)
         versions = versions.mix(DOWNLOAD_GFF3.out.versions)
 
-        DOWNLOAD_GTF(dict)
+        DOWNLOAD_GTF(PREPARE_ONE_REFERENCE.out.dict)
         versions = versions.mix(DOWNLOAD_GTF.out.versions)
 
         if(params.bed==null) {
-            SCATTER_TO_BED(ref_hash,fasta,fai,dict)
-            versions = versions.mix(SCATTER_TO_BED.out.versions)
-            bed = SCATTER_TO_BED.out.bed
+            bed = PREPARE_ONE_REFERENCE.out.scatter_bed
          } else {
-             bed = [ref_hash, file(params.bed)]
+             bed = [metadata, file(params.bed)]
          }
 
 
+
         WORKFLOW_SNV(
-            [id:"snv"],
-            fasta,
-            fai,
-            dict,
+            metadata.plus([id:"triosnv"]),
+            PREPARE_ONE_REFERENCE.out.fasta,
+            PREPARE_ONE_REFERENCE.out.fai,
+            PREPARE_ONE_REFERENCE.out.dict,
             bed,
             pedigree,
-            [ref_hash,file(params.gnomad),file(params.gnomad+".tbi")],
-            DOWNLOAD_GFF3.out.output,
-            DOWNLOAD_GTF.out.output,
+            [metadata,file(params.gnomad),file(params.gnomad+".tbi")],
+            DOWNLOAD_GFF3.out.gtf,
+            DOWNLOAD_GTF.out.gtf,
             triosbams_ch,
             vcfs.snv
             )
         
         
         versions = versions.mix(WORKFLOW_SNV.out.versions)
-        to_multiqc =  to_multiqc.mix(WORKFLOW_SNV.out.multiqc)
-
+        multiqc =  multiqc.mix(WORKFLOW_SNV.out.multiqc)
+        
+        /*
         WORKFLOW_SV(
-            [id:"snv"],
-            fasta,
-            fai,
-            dict,
+            metadata,
+            PREPARE_ONE_REFERENCE.out.fasta,
+            PREPARE_ONE_REFERENCE.out.fai,
+            PREPARE_ONE_REFERENCE.out.dict,
             bed,
             pedigree,
-            DOWNLOAD_GFF3.out.output,
-            DOWNLOAD_GTF.out.output,
+            DOWNLOAD_GFF3.out.gtf,
+            DOWNLOAD_GTF.out.gtf,
             triosbams_ch,
             vcfs.sv
             )
             
         versions = versions.mix(WORKFLOW_SV.out.versions)
-
+        */
+        
+/*
         COMPILE_VERSIONS(versions.collect())
-        to_multiqc = to_multiqc.mix(COMPILE_VERSIONS.out.multiqc)
+        multiqc = multiqc.mix(COMPILE_VERSIONS.out.multiqc)
 
-        MULTIQC(to_multiqc.collect().map{[[id:"trios"],it]})
-       
+        MULTIQC(multiqc.collect().map{[[id:"trios"],it]})
+  */     
 }
 
 runOnComplete(workflow)
