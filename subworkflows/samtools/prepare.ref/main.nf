@@ -40,10 +40,23 @@ main:
 	versions = Channel.empty()
 	multiqc = Channel.empty()
 
-	SAMTOOLS_FAIDX(fasta)
+	fai0_ch = fasta
+		.map{meta,fasta->[meta,fasta,file("${fasta}.fai")]}
+		.branch{meta,fasta,fai->
+			exists : fai.exists()
+			must_build: true
+			}
+
+
+	/* branch fai doesn't exists */
+	SAMTOOLS_FAIDX(fai0_ch.must_build.map{meta,fa,_fai->[meta,fa]})
 	versions = versions.mix(SAMTOOLS_FAIDX.out.versions)
+
+	fai_ch = SAMTOOLS_FAIDX.out.fai
+		.mix(fai0_ch.exists.map{meta,_fa,fai->[meta,fai]})
+
 	
-	FAI_TO_BUILD(SAMTOOLS_FAIDX.out.fai)
+	FAI_TO_BUILD(fai_ch)
 	versions = versions.mix(FAI_TO_BUILD.out.versions)
 
 	build_ch  = FAI_TO_BUILD.out.csv
@@ -56,14 +69,25 @@ main:
 		.map{id,meta1,fasta,meta2->[meta1.plus(meta2),fasta]}
 		
 	
-	fai = SAMTOOLS_FAIDX.out.fai
+	fai =fai_ch
 		.map{meta1,fai->[meta1.id,meta1,fai]}
 		.join(build_ch)
 		.map{id,meta1,fai,meta2->[meta1.plus(meta2),fai]}
 
 	
-	SAMTOOLS_DICT(fasta)
+	dict0_ch = fasta
+		.map{meta,fasta->[meta,fasta,file("${fasta.toString().replaceAll("\\.(fasta|fa|fna)\$",".dict")}")]}
+		.branch{meta,fasta,dict->
+			exists : dict.exists()
+			must_build: true
+			}
+
+	SAMTOOLS_DICT(dict0_ch.must_build.map{meta,fa,_dict->[meta,fa]})
 	versions = versions.mix(SAMTOOLS_DICT.out.versions)
+
+	dict_ch = SAMTOOLS_DICT.out.dict
+		.mix(dict0_ch.exists.map{meta,_fa,dict->[meta,dict]})
+
 	
 	FAI2BED(fai)
 	versions = versions.mix(FAI2BED.out.versions)
@@ -74,8 +98,8 @@ main:
 		SCATTER_TO_BED(
 			workflow_meta,
 			fasta,
-			SAMTOOLS_FAIDX.out.fai,
-			SAMTOOLS_DICT.out.dict
+			fai_ch,
+			dict_ch
 			)
 		versions = versions.mix(SCATTER_TO_BED.out.versions)
 		scatter_bed = SCATTER_TO_BED.out.bed
@@ -105,7 +129,7 @@ emit:
 	fasta
 	fai
 	multiqc
-	dict = SAMTOOLS_DICT.out.dict
+	dict = dict_ch
 	bed = FAI2BED.out.bed
 	scatter_bed
 	complement_bed

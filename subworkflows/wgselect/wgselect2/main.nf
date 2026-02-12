@@ -23,10 +23,8 @@ SOFTWARE.
 
 */
 
-include {moduleLoad} from '../../modules/utils/functions.nf'
-include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
 include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
-include {WGSELECT_01} from './wgselect.01.nf'
+include {WGSELECT_01                   } from '../wgselect1'
 include {LINUX_SPLIT} from '../../modules/utils/split.nf'
 include {JVARKIT_GATK_HARD_FILTERING_01} from '../jvarkit/jvarkit.gatk_hard_filtering.01.nf'
 include {JVARKIT_VCF_TO_INTERVALS_01} from '../vcf2intervals'
@@ -34,13 +32,19 @@ include {VCF_TO_BED} from '../../subworkflows/vcf2bed'
 
 workflow WGSELECT_02 {
 	take:
-		reference
+		metadata
+		fasta
+		fai
+		dict
 		vcf
-		pedigree
+		cases
+		controls
 		bed /* limit to that bed */
 	main:
+		versions = Channel.empty()
+		multiqc = Channel.empty()
 		
-		if( (params.gatk_hardfiltering_percentile as double) > 0 ) {
+		if( (metadata.gatk_hardfiltering_percentile as double) > 0 ) {
 			vcf2bed_ch = VCF_TO_BED(vcf)
 		
 			in_ch = vcf2bed_ch.bed.splitCsv(header:false,sep:'\t').
@@ -60,11 +64,15 @@ workflow WGSELECT_02 {
 
 		
 		wch1_ch = WGSELECT_01(
-			reference,
+			metadata
+			fasta
+			fai
+			dict
 			tobed_ch.bed.splitCsv(header:false,sep:'\t').
 				map{[it[0]+":"+((it[1] as int)+1)+":"+it[2],it[3],it[4]]},
 			hard_filters,
-			pedigree
+			cases,
+			controls
 			)
 		
 
@@ -73,7 +81,8 @@ workflow WGSELECT_02 {
                //contig_vcfs = wch1_ch.contig_vcfs /** path to all vcf concatenated per contigs */
                //vcfs = wch1_ch.vcfs /** path to all chunks of vcf */
 		vcfs = Channel.empty()
-
+		versions
+		multiqc
 	}
 
 

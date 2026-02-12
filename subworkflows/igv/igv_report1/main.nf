@@ -68,6 +68,7 @@ emit:
     versions
     multiqc
 }
+
 process DIGEST {
     tag "${meta.id}"
     label "process_single"

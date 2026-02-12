@@ -46,7 +46,7 @@ take:
     bams // meta,bam,bai
 main:
     versions = Channel.empty()
-
+	multiqc = Channel.empty()
 
 	/* checl all beds have an unique ID */
 	beds.map{meta,bed->[meta.id,bed]}
@@ -64,12 +64,22 @@ main:
         )
     versions  = versions.mix(HAPCALLER.out.versions)
 
-	/** group data by meta.bed_id  [meta_bed_id,vcf_and_tbi,bed ] */
+	/** just trace the provenance of each gvcf to debug things */
+	HAPCALLER_SUMMARY(
+		HAPCALLER.out.gvcf
+			.map{meta,vcf,_tbi,bed->"${meta.id},${meta.bed_id},${bed},${vcf}"}
+			.collect()
+			.map{lines->[[id:"gvcfs.summary"],lines.sort()]}
+		)
+	versions  = versions.mix(HAPCALLER_SUMMARY.out.versions)
+
+	/** group data by meta.bed_id  [meta_bed_id,vcf_and_tbi,bed ]
  	group_by_bed_ch = HAPCALLER.out.gvcf
             .map{meta,vcf,tbi,bed->[meta.bed_id,[vcf,tbi]]}
 			.groupTuple()
-			 .map{bed_id,vcf_files->[ [id:bed_id], vcf_files.flatten().sort()]}
-
+			.map{bed_id,vcf_files->[ [id:bed_id], vcf_files.flatten().sort()]}
+	no used ------------- 
+ 	*/
 
 	BEDTOOLS_MAKEWINDOWS(beds)
 	versions  = versions.mix(BEDTOOLS_MAKEWINDOWS.out.versions)
@@ -85,7 +95,7 @@ main:
 			HAPCALLER.out.gvcf.map{meta,vcf,tbi,bed->[[id:meta.bed_id],vcf,tbi]}
 			)
 		.filter{meta1,_block_bed, meta2, _vcf,_tbi->meta1.id == meta2.id}
-		.map{meta1,block_bed, meta2, vcf,tbi->[[id:block_bed.baseName],vcf,tbi,block_bed]}
+		.map{_meta1,block_bed, _meta2, vcf,tbi->[[id:block_bed.baseName],vcf,tbi,block_bed]}
 		
 	vcf_out = Channel.empty()
 
@@ -103,6 +113,7 @@ main:
 			gvcfs_ch
 			)
 		versions  = versions.mix(COMBINE_GENOTYPE_GVCFS.out.versions)
+		multiqc  = versions.mix(COMBINE_GENOTYPE_GVCFS.out.multiqc)
 		vcf_out = COMBINE_GENOTYPE_GVCFS.out.vcf
 		}
 	else if(metadata.gvcf_merge_method.equalsIgnoreCase("glnexus")) {
@@ -145,7 +156,40 @@ main:
 	vcf_out = BCFTOOLS_CONCAT.out.vcf
 emit:
     versions
+	multiqc
     vcf = vcf_out
+}
+
+/**
+ * make a summary of what has been done
+ * for debugging purpose only
+ */ 
+process HAPCALLER_SUMMARY {
+label "process_single"
+tag "N=${L.size()}"
+input:
+	tuple val(meta),val(L)
+output:
+	tuple val(meta),path("*.csv"),emit:csv
+	path("versions.yml"),emit:versions
+script:
+	def prefix=task.ext.prefix?:"${meta.id}"
+"""
+echo 'id,bed_id,bed,gvcf' > jeter.csv
+
+cat << EOF >> jeter.csv
+${L.join("\n")}
+EOF
+
+mv  jeter.csv "${prefix}.csv"
+
+touch versions.yml
+"""
+stub:
+	def prefix=task.ext.prefix?:"${meta.id}"
+"""
+touch "${prefix}.csv" versions.yml
+"""
 }
 
 /*

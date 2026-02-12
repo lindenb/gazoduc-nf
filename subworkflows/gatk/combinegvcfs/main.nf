@@ -78,7 +78,6 @@ main:
 		ch1
 		)
 	versions = versions.mix(HC_COMBINE1.out.versions)
-
 	
 	ch2 = HC_COMBINE1.out.gvcf
 		.map{meta,gvcf,tbi,bed->[
@@ -129,5 +128,4 @@ emit:
     versions
 	multiqc
 	gvcf
-
 }

@@ -1,0 +1,37 @@
+nextflow_workflow {
+
+    name "Test Workflow BCFTOOLS_CONCAT_CONTIGS"
+    script "subworkflows/bcftools/concat.contigs/main.nf"
+    workflow "BCFTOOLS_CONCAT_CONTIGS"
+    tag "gitlab_ci"
+    tag "subworkflows"
+    tag "subworkflows/bcftools"
+    tag "subworkflows/bcftools/concat.contigs"
+
+    test("BASIC") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [id:"hg38"]
+                input[1] = Channel.of( [
+                    [id:"hg38"], 
+                    file("${projectDir}/tests/data/rotavirus_rf.vcf.gz"),
+                    file("${projectDir}/tests/data/rotavirus_rf.vcf.gz.tbi")
+                    ] )
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

@@ -511,7 +511,14 @@ void _makeKey(digest,o) {
         _makeKey(digest,o.toString());
     } else if(o instanceof java.nio.file.Path) {
 		   _makeKey(digest,o.getClass().toString());
-           _makeKey(digest,o.toRealPath().toString());
+           if(workflow.stubRun && !o.exists())
+		{
+		 _makeKey(digest,o.toString());
+		}
+	    else
+		{
+	           _makeKey(digest,o.toRealPath().toString());
+		}
     } else {
        throw new IllegalArgumentException("cannot invoke _makeKey with class=${o.getClass()}");
     }

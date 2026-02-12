@@ -58,8 +58,9 @@ include { META_TO_PED                              } from '../../subworkflows/pe
 include { VCF_INPUT as GNOMAD_INPUT                } from '../../subworkflows/nf/vcf_input'
 include { ENCODE_BLACKLIST                         } from '../../modules/encode/blacklist' 
 include { BEDTOOLS_SUBTRACT                        } from '../../modules/bedtools/subtract' 
+include { BEDTOOLS_INTERSECT                       } from '../../modules/bedtools/intersect' 
 include { BCFTOOLS_QUERY                           } from '../../modules/bcftools/query'
-include { BCFTOOLS_SORT as BCFTOOLS_SORT2           } from '../../modules/bcftools/sort' 
+include { BCFTOOLS_SORT as BCFTOOLS_SORT2          } from '../../modules/bcftools/sort' 
 include { BCFTOOLS_INDEX as BCFTOOLS_INDEX2        } from '../../modules/bcftools/index' 
 include { DOWNLOAD_CYTOBAND                        } from '../../modules/ucsc/download.cytobands'
 include { DOWNLOAD_REFGENE                         } from '../../modules/ucsc/download.refgene'
@@ -196,9 +197,17 @@ workflow {
 		}
 	else
 		{
-		bed = Channel.of(params.fasta)
-			.map{file(it)}
-			.map{[[id:it.baseName],it]}
+		
+		BEDTOOLS_INTERSECT(
+			PREPARE_ONE_REFERENCE.out.fai,
+			 Channel.of(params.bed)
+			 	.map{bed->file(bed)}
+				.map{bed->[[id:bed.baseName],bed]}
+				.combine(PREPARE_ONE_REFERENCE.out.scatter_bed)
+				.map{meta1,bed1,meta2,bed2->[meta1,bed1,bed2]}
+			)
+		versions = versions.mix(BEDTOOLS_INTERSECT.out.versions)
+		bed = BEDTOOLS_INTERSECT.out.bed
 		}
 
 	/***************************************************

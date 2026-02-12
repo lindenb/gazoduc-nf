@@ -459,6 +459,7 @@ if ${!bcftools_norm_args.trim().isEmpty()}
 then
 	bcftools norm \\
         ${bcftools_norm_args} \\
+	 --old-rec-tag MULTIALLELIC \\
         --fasta-ref '${fasta}'  \\
         -O u  \\
         TMP/jeter1.bcf |\\
