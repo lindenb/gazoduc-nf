@@ -17,51 +17,40 @@ The MIT License (MIT)
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WH
-ETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-
-
 */
-include { BCFTOOLS_CONCAT                          } from '../../modules/bcftools/concat3'
-include { HET_COMPOSITE                            } from '../../modules/jvarkit/hetcomposite'
+process PLINK2_VCF2PGEN {
+label "process_single_high"
+afterScript "rm -rf TMP"
+tag "${meta.id}"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+input:
+	tuple val(meta1),path(fasta) /* or any ... */) //for PAR region
+	tuple val(meta2),path(plink_ped)
+	tuple val(meta ),path(vcf)
+output:
+	tuple val(meta),path("*"),emit:output
+    path("versions.yml")
+script:
+	def k1 = k1_signature()
+	def args = contig.matches("(chr)?[XY]")?" --update-sex ${plink_ped} --split-par ${meta1.ucsc_name?:"undefined"}":""
+    def prefix = task.ext.prefix?:"${meta.id}"
+"""
+mkdir -p TMP
 
-workflow WORKFLOW_COMPOSITE_SNV {
-take:
-    metadata
-    fasta
-    fai
-    dict
-    gff3
-    gtf
-    triosbams_ch
-    pedigree
-    vcf
-main:
-    versions = Channel.empty()
-    multiqc = Channel.empty()
+plink2 ${vcf.name.endsWith(".bcf")?"--bcf":"--vcf"} "${vcf}"  \\
+	${args} \\
+	--make-pgen erase-phase \\
+	--threads ${task.cpus} \\
+	--out "${prefix}"
 
-     BCFTOOLS_CONCAT(
-        vcf.map{_meta,vcf,idx->[vcf,idx]}
-            .flatMap()
-            .collect()
-            .map{files->[[id:"hetcomposite"],files.sort()]}
-        )
-    versions =  versions.mix(BCFTOOLS_CONCAT.out.versions)
-    vcf = BCFTOOLS_CONCAT.out.vcf
-    
-    HET_COMPOSITE(
-        fasta,
-        fai,
-        dict,
-        pedigree,
-        vcf
-        )
-    versions =  versions.mix(HET_COMPOSITE.out.versions)
-    
-emit:
-    versions
-    multiqc
+touch versions.yml
+"""
+stub:
+"""
+touch versions.yml
+"""
 }

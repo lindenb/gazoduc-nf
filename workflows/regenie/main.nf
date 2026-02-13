@@ -28,12 +28,39 @@ include {SNPEFF_DOWNLOAD} from '../../modules/snpeff/download'
 include {JVARKIT_VCF_TO_INTERVALS_01} from '../../subworkflows/vcf2intervals'
 include {BCFTOOLS_CONCAT_CONTIGS} from '../../subworkflows/bcftools/concat.contigs'
 include {DOWNLOAD_GENCODE} from '../../modules/ucsc/download.gencode'
-include {k1_signature} from '../../modules/utils/k1.nf'
 include {runOnComplete} from '../../modules/utils/functions.nf'
+include { PLINK_BFILE2VCF                         } from '../../modules/plink/bfile2vcf'
+include { REGENIE_STEP1                           } from '../../modules/regenie/step1'
+include { REGENIE_STEP2                           } from '../../modules/regenie/step2'
+
 
 workflow {
 	if(!file(params.vcf).name.contains(".")) throw new IllegalArgumentException("--vcf missing");
 	if(!file(params.samplesheet).name.contains(".")) throw new IllegalArgumentException("--samplesheet missing");
+
+	metadata = [id:"regenie"]
+
+	if(params.vcf==null) {
+		log.warn("--vcf missing")
+		exit -1
+		}
+	if(params.fasta==null) {
+		log.warn("--fasta missing")
+		exit -1
+		}
+
+  /***************************************************
+   *
+   *  PREPARE FASTA REFERENCE
+   *
+   */
+	PREPARE_ONE_REFERENCE(
+			metadata,
+			Channel.of(params.fasta).map{file(it)}.map{[[id:it.baseName],it]}
+			)
+	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
+
+
 	reference = Channel.of(file(params.fasta), file(params.fai), file(params.dict)).collect()
 	user_bed = file(params.bed)
 
@@ -413,47 +440,7 @@ bcftools index --threads ${task.cpus} "wgselect.${contig}_${start1}_${end}.bcf"
 }
 
 
-
-process PLINK2_VCF2PGEN {
-label "process_single_high"
-afterScript "rm -rf TMP"
-tag "chr${contig}"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-input:
-	path(genome) //for PAR region
-	path(pedigree_files)
-	tuple val(contig),path(vcf_files)
-output:
-	path("${contig}.*"),emit:output
-script:
-	def k1 = k1_signature()
-	def fai = genome.find{it.name.endsWith(".fai")}
-	def vcf = vcf_files.find{it.name.endsWith(".vcf.gz") || it.name.endsWith(".bcf")}
-	def ped = pedigree_files.find{it.name.endsWith(".plink.ped")}
-	def args = contig.matches("(chr)?[XY]")?" --update-sex ${ped} --split-par \${HG}":""
-"""
-set -o pipefail
-mkdir -p TMP
-
-cat << EOF | sort -t '\t' -k1,1 > TMP/jeter.a
-1:${k1.hg19}\thg19
-1:${k1.hg38}\thg38
-chr1:${k1.hg19}\thg19
-chr1:${k1.hg38}\thg38
-EOF
-
-awk -F '\t' '{printf("%s:%s\\n",\$1,\$2);}' '${fai}' | sort -t '\t' -k1,1 > TMP/jeter.b
-
-HG=`join -t '\t' -1 1 -2 1 -o 1.2 TMP/jeter.a TMP/jeter.b | head -n1`
-
-plink2 ${vcf.name.endsWith(".bcf")?"--bcf":"--vcf"} "${vcf}"  \\
-	${args} \\
-	--make-pgen erase-phase \\
-	--threads ${task.cpus} \\
-	--out "${contig}"
-"""
-}
-
+PLINK2_VCF2PGEN en module ...
 
 
 process PLINK2_MERGE_PGEN {
@@ -899,67 +886,6 @@ bcftools view -O v '${vcf}' |\\
 		--gzip \\
 		-N 5000
 	
-"""
-}
-
-
-process STEP2 {
-label "process_single_high"
-array 100
-tag "chr${contig} ${title} ${annot.name}"
-conda "${moduleDir}/../../conda/regenie.yml"
-afterScript "rm -rf TMP"
-input:
-        path(bgen_files)
-        path(covariates)
-        path(pheno_files)
-	path(pred_list)
-	tuple val(title),val(contig),path(annot),path(setfile),path(mask),path(aff)
-output:
-        tuple val(title),path("*.regenie.gz"),emit:output
-	tuple val(title),path("*masks.snplist.gz"),emit:masks_snplist
-script:
-	def pgen = bgen_files.find{it.name.endsWith(".pgen")}
-	def ped = pheno_files.find{it.name.endsWith(".plink.ped")}
-"""
-
-mkdir -p TMP/OUT
-set -x
-
-gunzip -c "${annot}" > TMP/annot.txt
-gunzip -c "${setfile}" > TMP/setfile.txt
-gunzip -c "${mask}" > TMP/mask.txt
-gunzip -c "${aff}" > TMP/aaf.txt
-
-regenie \\
-  --step 2 \\
-  --pgen \$(basename ${pgen} .pgen) \\
-  --phenoFile ${ped} \\
-  --covarFile "${covariates}" \\
-  --pred ${pred_list} \\
-  --mask-def TMP/mask.txt \\
-  --set-list TMP/setfile.txt \\
-  --anno-file TMP/annot.txt \\
-  ${params.use_aaf_file?"--aaf-file TMP/aaf.txt":""} \\
-  --phenoCol ${params.status} \\
-  --bt \\
-  --bsize 1000 \\
-  --lowmem \\
-  --lowmem-prefix TMP/regenie_tmp_preds \\
-  --threads ${task.cpus} \\
-  --out "step2.${contig}" \\
-  --aaf-bins ${params.freq} \\
-  --vc-maxAAF ${params.vc_maxAAF} \\
-  --bsize 200 \\
-  --vc-tests "${params.vc_tests}" \\
-  --check-burden-files \\
-  --weights-col ${params.weight_column?:4} \\
-  --write-mask-snplist \\
-  --firth --approx \\
-  --pThresh 0.01
-
-gzip --best *masks.snplist
-gzip --best *.regenie
 """
 }
 

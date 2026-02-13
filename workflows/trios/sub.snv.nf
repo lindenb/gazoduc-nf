@@ -94,7 +94,7 @@ main:
         )
     versions = versions.mix(WORKFLOW_DENOVO_SNV.out.versions)
     multiqc = multiqc.mix(WORKFLOW_DENOVO_SNV.out.multiqc)
-/*
+
     WORKFLOW_COMPOSITE_SNV(
         meta,
         fasta,
@@ -104,10 +104,10 @@ main:
         gtf,
         triosbams_ch,
         pedigree,
-         ANNOT_SNV.out.vcf
+        ANNOT_SNV.out.vcf
         )
      versions = versions.mix(WORKFLOW_COMPOSITE_SNV.out.versions)
-     */
+     multiqc = multiqc.mix(WORKFLOW_COMPOSITE_SNV.out.multiqc)
 emit:
     versions
     multiqc

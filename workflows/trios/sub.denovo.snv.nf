@@ -68,11 +68,11 @@ main:
         .map{it.add(0,[id:it[0]+"_"+it[1]+"_"+it[2]+"_"+it[3]]);return it;}
         //.view()
     
-if(1==2) {
     DOWNLOAD_REFGENE(dict)
     versions =  versions.mix(DOWNLOAD_REFGENE.out.versions)
     DOWNLOAD_CYTOBAND(dict)
     versions =  versions.mix(DOWNLOAD_CYTOBAND.out.versions)
+
 
     IGV_REPORTS(
         DOWNLOAD_CYTOBAND.out.tabix,
@@ -87,7 +87,6 @@ if(1==2) {
         IGV_REPORTS.out.html.map{it[1]}.collect().map{[[id:"igvregport"],it]},
         IGV_REPORTS.out.index.map{it[1]}.collect().map{[[id:"igvregport"],it]}
         )
-    }
 
 emit:
     //vcf = REPORT.out.vcf

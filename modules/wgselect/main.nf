@@ -22,87 +22,41 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {WGSELECT_EXCLUDE_BED_01     } from './wgselect.exclude.bed.01.nf'
-include {BCFTOOLS_CONCAT_CONTIGS     } from '../bcftools/concat.contigs/main'
-include {SNPEFF_DOWNLOAD             } from '../../modules/snpeff/download'
 
-String extractContig(String rgn) {
-	int i=rgn.indexOf(":");
-	return rgn.substring(0,i);
-	}
-
-workflow WGSELECT_01 {
-	take:
-		metadata
-		fasta
-		fai
-		dict
-		rows
-		hard_filters
-		cases
-		controls
-	main:
-		versions = Channel.empty()
-		multiqc = Channel.empty()
-		
-		exclude_ch = WGSELECT_EXCLUDE_BED_01(reference)
-
-		snpeff_sb = SNPEFF_DOWNLOAD(params.snpeff_db)
-
-		
-
-		annotate_ch = ANNOTATE(reference, rows , snpeff_sb.output, pedigree, hard_filters, exclude_ch.bed)
-
-		
-
-		concat_ch = BCFTOOLS_CONCAT_CONTIGS( annotate_ch.output.map{[extractContig(it[0]),it[1],it[2]]}, file("NO_FILE"))
-
-
-
-		digest_ch = DIGEST_VARIANT_LIST(annotate_ch.variants_list.collect())
-
-
-	emit:
-		//variants_list = digest_ch.output /** file containing count of variants at each step */
-		//contig_vcfs = concat_ch.vcfs /** path to all vcf concatenated per contigs */
-		//bed = concat_ch.bed /** path to all VCFs as bed */
-		// vcfs = cat_files_ch.output /** path to all chunks of vcf */
-		vcfs = Channel.empty()
-		versions
-		multiqc
-	}
-
-
-
-process ANNOTATE {
+process WGSELECT {
 label "process_single"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 tag "${meta.id}"
 afterScript "rm -rf TMP"
 input:
-	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai)
-	tuple val(meta3),path(dict)
-	tuple val(meta),path(vcf),path(vcfidx),path(bed)
-	path(snpEffDir)
+	tuple val(meta1 ), path(fasta)
+	tuple val(meta2 ), path(fai)
+	tuple val(meta3 ), path(dict)
+	tuple val(meta4 ), path(gnomadgenome),path(gnomadgenome_tbi)
+	tuple val(meta5 ), path(snpEffDir)
+	tuple val(meta6 ), path(blacklisted) 
+	tuple val(meta7 ), path(apply_hard_filters_arguments)
+	tuple val(meta8 ), path(cases)
+	tuple val(meta9 ), path(controls)
+	tuple val(meta  ), path(vcf),path(vcfidx),path(bed)
 	path(pedigree)
-	path(apply_hard_filters_arguments)
-	path(blacklisted)
+	
 output:
 	tuple val(meta),path("*contig.bcf"),path("*contig.bcf.csi"), emit: output
 	tuple val(meta),path("*variant_list.txt.gz"), emit:variants_list
 	path("versions.yml"),emit:versions
 script:
-	def gnomadgenome = params.gnomad
 	def mapability= params.mapability_bigwig?:""
-	def max_alleles_count = (params.wgselect.max_alleles_count as int)
+	def max_alleles_count = (task.ext.max_alleles_count?:3) as int
 	def polyx = (params.wgselect.polyx as int)
 	def gnomadPop = (params.wgselect.gnomadPop)
 	def gnomadAF = (params.wgselect.gnomadAF as double)
 	def soacn = params.wgselect.soacn
 	def exclude_soacn = params.wgselect.exclude_soacn?:""
 	def inverse_so = (params.wgselect.inverse_so.toBoolean())
-	def f_missing = (params.wgselect.f_missing as double)
+	def f_missing = (task.ext.f_missing?:0.01) as double
+	def with_setid = (task.ext.with_setid?:true) as boolean
+	def with_homvar = (task.ext.with_homvar?:true) as boolean
 	def maxmaf = (params.wgselect.maxmaf as double)
 	def fisherh = (params.wgselect.fisherh as double)
 	def minDP= (params.wgselect.minDP as int)
@@ -113,7 +67,8 @@ script:
 	def minRatioSingleton  = (params.wgselect.minRatioSingleton as double)
 	def cadd_phred = (params.wgselect.cadd_phred as double)
 	def cadd_tabix = params.cadd
-
+	def args1 = task.ext.args1?:""
+	def with_count = (task.ext.with_count?:false).toBoolean()
 	def jvm = task.ext.jvm?:" -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
 """
 hostname 1>&2
@@ -135,11 +90,10 @@ test ! -z "\${JVARKIT_JAR}"
 
 
 
-	echo '${interval}' | awk -F '[:-]' '{printf("%s\t%s\t%s\\n",\$1,int(\$2)-1,\$3);}' > TMP/contig.bed
 
 
 	function countIt {
-		if ${params.wgselect.with_count.toBoolean()} ; then
+		if ${with_count} ; then
 			echo -n "\$1\t" >> TMP/variant_list.txt
 			bcftools query -f '%CHROM:%POS:%REF:%ALT\\n' "\$2" | sed 's/^chr//' | LC_ALL=C sort -T . | uniq  > TMP/tmp.A.txt
 			bcftools query -f '%CHROM:%POS:%REF:%ALT\\n' "\$3" | sed 's/^chr//' | LC_ALL=C sort -T . | uniq  > TMP/tmp.B.txt
@@ -152,47 +106,42 @@ test ! -z "\${JVARKIT_JAR}"
 		fi
 	}
 
+
 	## Extract case/controls from pedigree
-	if ${!pedigree.name.contains(".")} ; then
-		touch TMP/cases.txt TMP/controls.txt TMP/pedigree.ped
-	else
-		# extract list of samples cases and controls
-		awk -F '\t' '(\$2=="case" ||  \$2=="affected") {print \$1;}' "${pedigree}" | sort | uniq > TMP/cases.txt
-		awk -F '\t' '(\$2=="control" ||  \$2=="unaffected") {print \$1;}' "${pedigree}" | sort | uniq > TMP/controls.txt
+	if ${(cases?true:false) && (controls?true:false)}
+	then
+		sort "${cases}" |uniq > TMP/cases.txt
+		sort "${controls}" |uniq > TMP/controls.txt
 		awk -F '\t' '{printf("%s\t%s\t0\t0\t0\tcase\\n",\$1,\$1);}' TMP/cases.txt >  TMP/pedigree.ped
 		awk -F '\t' '{printf("%s\t%s\t0\t0\t0\tcontrol\\n",\$1,\$1);}' TMP/controls.txt >> TMP/pedigree.ped
 	fi
 
 	# blacklisted region overlapping #####################################################################"
-	bedtools intersect -a "${bed}" -b "${blacklisted}" -nonamecheck > TMP/jeter.blacklisted.bed
-	# prevent empty file
+	if ${blacklisted?true:false}
+	then
+		bedtools intersect -a "${bed}" -b "${blacklisted}" -nonamecheck > TMP/jeter.blacklisted.bed
+	fi
+
+	# prevent empty blacklisted file
 	if [ ! -s TMP/jeter.blacklisted.bed ] ; then
 		tail -1 "${fai}" | awk '{printf("%s\t0\t1\\n",\$1);}' > TMP/jeter.blacklisted.bed
 	fi
 	
 	
-
 	# extract variants  ######################################################################################
-	if ${vcf.endsWith(".list")} ; then
+	bcftools view ${args1} --regions-file "${bed}" -O u -o TMP/jeter1.bcf "${vcf}"
 
-		bcftools concat --file-list "${vcf}" --regions-file "${bed}" -O u  --allow-overlaps --remove-duplicates -o TMP/jeter1.bcf
-		bcftools view ${params.wgselect.bcftools_options} -O u -o TMP/jeter2.bcf  TMP/jeter1.bcf
-		mv -v TMP/jeter2.bcf TMP/jeter1.bcf
-	else
+	
 
-		bcftools view ${params.wgselect.bcftools_options} --regions-file "${bed}" -O u -o TMP/jeter1.bcf "${vcf}"
-
-	fi	
-
-	if ${params.wgselect.with_count.toBoolean()} ; then
+	if ${with_count} ; then
 		bcftools query -f '.\\n' TMP/jeter1.bcf | awk 'END{printf("initial\t%s\t0\t0\t\\n",NR);}' >> TMP/variant_list.txt
 	fi
 
 
 
 	# gatk hard filtering #############################################################
-	if ${apply_hard_filters_arguments.name.contains(".")} ; then
-		## conflic betwwen java for jvarkit and gatk "Duplicate cpuset controllers detected" on stdout
+	if ${apply_hard_filters_arguments?true:false} ; then
+		## conflic betwen java for jvarkit and gatk "Duplicate cpuset controllers detected" on stdout
 		bcftools view -O z -o TMP/jeter1.vcf.gz TMP/jeter1.bcf
 		bcftools index -f -t TMP/jeter1.vcf.gz
 
@@ -219,14 +168,16 @@ test ! -z "\${JVARKIT_JAR}"
 
 
 	# remove in blaclisted regions ############################################################################
-	bcftools view  --targets-overlap 2 --targets-file ^TMP/jeter.blacklisted.bed -O u -o TMP/jeter2.bcf TMP/jeter1.bcf
+	bcftools view  --targets-overlap 2 \\
+		--targets-file ^TMP/jeter.blacklisted.bed \\
+		-O u -o TMP/jeter2.bcf TMP/jeter1.bcf
 	countIt "blackListedRegions" TMP/jeter1.bcf TMP/jeter2.bcf
 	mv TMP/jeter2.bcf TMP/jeter1.bcf
 	
 
 	# remove all annotations ################################################################################
 	bcftools annotate --force \\
-		-x '^INFO/AC,INFO/AN,INFO/ReadPosRankSum,INFO/MQRankSum,INFO/MQ,INFO/FS,INFO/QD,INFO/SOR,FILTER' \\
+		-x '^INFO/AC,INFO/AN,FILTER' \\
 		-O u -o TMP/jeter2.bcf TMP/jeter1.bcf
 	countIt "annotateX" TMP/jeter1.bcf TMP/jeter2.bcf
 	mv TMP/jeter2.bcf TMP/jeter1.bcf
@@ -235,7 +186,10 @@ test ! -z "\${JVARKIT_JAR}"
 	# could happen that some variant are discarded here: saw some gatk4 variants where *NO* genotype was called. #############################
 	if test -s TMP/cases.txt || test -s TMP/controls.txt ; then
 		cat TMP/cases.txt TMP/controls.txt | sort -T TMP | uniq > TMP/jeter.samples
-		bcftools view --trim-alt-alleles --samples-file 'TMP/jeter.samples' -O u -o TMP/jeter2.bcf TMP/jeter1.bcf
+		bcftools view \\
+			--trim-alt-alleles \\
+			--samples-file 'TMP/jeter.samples' \\
+			-O u -o TMP/jeter2.bcf TMP/jeter1.bcf
 		rm TMP/jeter.samples
 		countIt "samples" TMP/jeter1.bcf TMP/jeter2.bcf
 		mv TMP/jeter2.bcf TMP/jeter1.bcf
@@ -253,7 +207,7 @@ test ! -z "\${JVARKIT_JAR}"
 	mv TMP/jeter2.bcf TMP/jeter1.bcf
 
 	## update VCF ID. Useful for plink stuff #########################################################
-	if ${params.wgselect.with_setid == true } ; then
+	if ${with_setid} ; then
 		bcftools annotate --set-id +'%VKX'  -O b -o TMP/jeter2.bcf TMP/jeter1.bcf
 		mv TMP/jeter2.bcf TMP/jeter1.bcf
 	fi
@@ -476,6 +430,15 @@ test ! -z "\${JVARKIT_JAR}"
 
 
 	fi	
+
+	if ${rename_contigs}
+	then
+		# rename chromosomes  ####################################################################################
+		awk -F '\t' '{printf("%s\t%s\\n",\$1,\$1);}' '${fai}' | sed 's/\tchr/\t/' > TMP/rename.tsv
+		bcftools annotate --rename-chrs TMP/rename.tsv --threads ${task.cpus} -O v -o TMP/jeter2.vcf TMP/jeter1.vcf
+		mv TMP/jeter2.vcf TMP/jeter1.vcf
+	fi
+
 
 
 MD5=`cat TMP/jeter1.vcf | sha1sum | cut -d ' ' -f1`

@@ -419,12 +419,15 @@ script:
     def cadd = task.ext.cadd?:""
     def with_cadd = (task.ext.with_cadd?true:false) && !cadd.isEmpty()
     def vcfpolyx_size = (task.ext.vcfpolyx_size?:10) 
+    
+    def jvm = task.ext.jvm?:" -XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
 """
+hostname 1>&2
 mkdir -p TMP
 set -x
 
 
-bcftools query -l ${vcf} | sort | uniq > TMP/samples.txt
+bcftools query -l ${vcf} | sort -T TMP | uniq > TMP/samples.txt
 
 
 ################################################################################
@@ -756,7 +759,9 @@ then
     ${countVariants("TMP/jeter1.vcf.gz")}
 
 
-    jvarkit -XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcftrio \\
+    # use local because bug when child is no call
+    java ${jvm} -jar ${HOME}/jvarkit.jar vcftrio \\
+	--skip-child-no-call \\
         --pedigree "${valid_trios}" \\
         -o TMP/jeter2.vcf.gz \\
         TMP/jeter1.vcf.gz
@@ -774,7 +779,7 @@ then
     bcftools view --threads ${task.cpus} -e 'COUNT(GT="R")==0 && COUNT(GT="A")==0' -O b -o  TMP/jeter1.haploid.bcf TMP/jeter1.vcf.gz
     bcftools index --threads ${task.cpus} -f  TMP/jeter1.haploid.bcf
 
-    gatk --java-options "-XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" VariantAnnotator \\
+    gatk --java-options "${jvm}" VariantAnnotator \\
         -R "${fasta}" \\
         --annotation PossibleDeNovo \\
         --pedigree  TMP/jeter.trio.ped \\
@@ -937,7 +942,7 @@ fi
 ################################################################################
 
     bcftools view  TMP/jeter1.bcf |\\
-        jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfpolyx \\
+        jvarkit ${jvm} vcfpolyx \\
                 -n '${vcfpolyx_size}' \\
                 --reference '${fasta}' \\
                 --tag "POLYX"   |\\
@@ -977,7 +982,7 @@ if ${(snpeffdir?true:false) && (snpeff_dbname?true:false)}
 then
 
     bcftools view TMP/jeter1.bcf -O v |\\
-        snpEff -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP eff \\
+        snpEff ${jvm} eff \\
         -dataDir "\${PWD}/${snpeffdir.name}" \\
         -nodownload \\
         ${snpeff_args} \\
@@ -1030,7 +1035,7 @@ if ${!vcffilerso_accessions.trim().isEmpty()}
 then
 
     bcftools view TMP/jeter1.bcf -O v |\\
-    java -Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP -jar \${HOME}/jvarkit.jar \\
+    java ${jvm} -jar \${HOME}/jvarkit.jar \\
         vcffilterso \\
         ${vcffilerso_args} \\
         --acn "${vcffilerso_accessions}"   >  TMP/jeter1.vcf
@@ -1045,7 +1050,7 @@ if ${!gnomadvcf.isEmpty() && !vcf_gnomad_args.isEmpty()}
 then
 
         bcftools view   TMP/jeter1.bcf |\\
-        jvarkit -XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfgnomad \\
+        jvarkit ${jvm} vcfgnomad \\
                ${vcf_gnomad_args} \\
                --gnomad "${gnomadvcf}"  >  TMP/jeter2.vcf
         ${countVariants("TMP/jeter2.vcf")}
@@ -1054,7 +1059,7 @@ then
     then
         mv  TMP/jeter2.vcf  TMP/jeter1.vcf
 
-        jvarkit -XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcffilterjdk \\
+        jvarkit ${jvm} vcffilterjdk \\
                 ${gnomad_filterjdk} < TMP/jeter1.vcf > TMP/jeter2.vcf 
         ${countVariants("TMP/jeter2.vcf")}
     fi
@@ -1072,7 +1077,7 @@ if ${with_cadd}
 then
 
     bcftools view   TMP/jeter1.bcf |\\
-        jvarkit -XX:-UsePerfData  -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfcadd \\
+        jvarkit ${jvm} vcfcadd \\
             --tabix '${cadd}' > TMP/jeter1.vcf
     
     bcftools view --write-index --threads ${task.cpus} -O b -o TMP/jeter1.bcf TMP/jeter1.vcf
@@ -1108,7 +1113,7 @@ fi
 
     bcftools view TMP/jeter1.bcf |\\
         awk -f "${moduleDir}/extraannot.awk" |\\
-         jvarkit -XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcffilterjdk \\
+         jvarkit ${jvm} vcffilterjdk \\
             --body -f "${moduleDir}/extraannot.code" |\\
         bcftools view -O b -o TMP/jeter2.bcf
     

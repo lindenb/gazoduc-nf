@@ -27,37 +27,38 @@ process JVARKIT_VCF_TO_INTERVALS {
 	label "process_single"
 	conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 	afterScript "rm -rf TMP"
-	tag "${interval} ${vcf.name}"
+	tag "${meta.id}"
 	input:
 		tuple val(meta),path(vcf),path(idx),path(optional_bed)
 	output:
-		tuple val(meta),path("*.bed"),optional:true,emit:bed /* chrom/start/end/vcf/idx */
+		tuple val(meta),path("*.bed"),emit:bed /* chrom/start/end/vcf/idx */
 		path("versions.yml"),emit:versions
 	script:
-		if(task.ext.distance==null) throw new IllegalStateException("task.ext.distance missing for ${task.process}");
-		if(task.ext.min_distance==null) throw new IllegalStateException("task.ext.min_distance missing for ${task.process}");
-		def distance = task.ext.distance?:"10mb"
-		def min_distance = task.ext.min_distance?:"1kb"
-		def cpu2 = java.lang.Math.max(1,task.cpus-2)
+		def cpu2 = java.lang.Math.max(1,task.cpus-3)
+		def prefix = task.ext.prefix?:"${meta.id}"
+		def awk_expr = task.ext.awk_expr?:"(1==1)"
+		def jvm = task.ext.jvm?:"-Djava.io.tmpdir=TMP -Xmx${task.memory.giga}G"
+		def args1 = task.ext.args1?:""
+		def args2 = task.ext.args2?:""
+		
 	"""
 	hostname 1>&2
-	set -o pipefail
-
 	mkdir -p TMP
 
-	bcftools view --threads ${cpu2}  ${optional_bed?"--regions-file \"${optional_bed.name}\""} "${vcf}" |\\
-	jvarkit  -Djava.io.tmpdir=TMP -Xmx${task.memory.giga}G vcf2intervals  \\
-		--bed \\
-		--distance "${distance}" \\
-		--min-distance "${min_distance}" |\\
-		awk  '{printf("%s\t%s\t%s\t${vcf.toRealPath()}\t${idx.toRealPath()}\\n",\$1,\$2,\$3);}' > TMP/intervals.bed
+	bcftools view -G --threads ${cpu2} ${args1} ${optional_bed?"--regions-file \"${optional_bed.name}\"":""} "${vcf}" |\\
+	java ${jvm}  -jar ${HOME}/jvarkit.jar  vcf2intervals  --bed  ${args2} |\\
+		awk  -F '\t' '${awk_expr} {printf("%s\t%s\t%s\t%s\t%s\\n",\$1,\$2,\$3,"${vcf.toRealPath()}","${idx?idx.toRealPath().toString():""}");}' > TMP/intervals.bed
 
-	MD5=`echo '${interval} ${bed} ${vcf} ${idx}' | sha1sum | cut -d ' ' -f1`	
-	mv TMP/intervals.bed "\${MD5}.vcf2interval.bed"
+	mv TMP/intervals.bed "${prefix}.bed"
 
 cat << EOF > versions.yml
 ${task.process}:
 	jvarkit: TODO
 EOF
 	"""
-	}
+stub:
+	def prefix = task.ext.prefix?:"${meta.id}"
+"""
+touch versions.yml "${prefix}.bed"
+"""
+}

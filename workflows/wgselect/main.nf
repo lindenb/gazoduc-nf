@@ -27,19 +27,19 @@ SOFTWARE.
 include { validateParameters                       } from 'plugin/nf-schema'
 include { paramsHelp                               } from 'plugin/nf-schema'
 include { paramsSummaryLog                         } from 'plugin/nf-schema'
+include { parseBoolean                             } from '../../modules/utils/functions.nf'
+include { flatMapByIndex                           } from '../../modules/utils/functions.nf'
 //include { WGSELECT_02                              } from '../../subworkflows/wgselect/wgselect2'
 include { PREPARE_ONE_REFERENCE                    } from '../../subworkflows/samtools/prepare.one.ref'
 include { BEDTOOLS_INTERSECT                       } from '../../modules/bedtools/intersect' 
 include { PREPARE_USER_BED                         } from '../../subworkflows/bedtools/prepare.user.bed'
 include { ENCODE_BLACKLIST                         } from '../../modules/encode/blacklist' 
 include { BEDTOOLS_SUBTRACT                        } from '../../modules/bedtools/subtract' 
-include { BEDTOOLS_MAKEWINDOWS                     } from '../../modules/bedtools/makewindows'
 include { SPLIT_N_VARIANTS                         } from '../../modules/jvarkit/splitnvariants'
 include { VCF_INPUT                                } from '../../subworkflows/nf/vcf_input'
-include {VCF_TO_BED                                } from '../../modules/bcftools/vcf2bed'
+include { VCF_TO_BED                               } from '../../modules/bcftools/vcf2bed'
 include { VCF_STATS as VCF_STATS_BEFORE            } from '../../subworkflows/vcfstats'
 include { VCF_STATS as VCF_STATS_AFTER             } from '../../subworkflows/vcfstats'
-
 
 
 workflow {
@@ -119,31 +119,18 @@ workflow {
 		bed = BEDTOOLS_INTERSECT.out.bed
 		}
 	
-	/***************************************************
-	*
-	* Download encode black list
-	*
-	*/
-	ENCODE_BLACKLIST(PREPARE_ONE_REFERENCE.out.dict)
-	versions = versions.mix(ENCODE_BLACKLIST.out.versions)
-	BEDTOOLS_SUBTRACT(bed.combine(ENCODE_BLACKLIST.out.bed).map{meta1,bed1,_meta2,bed2->[meta1,bed1,bed2]})
-    versions = versions.mix(BEDTOOLS_SUBTRACT.out.versions)
-    bed = BEDTOOLS_SUBTRACT.out.bed.first()
-
-	
-	/** split input BED per chromosome */
-	SPLIT_BED_PER_CHROMOSOME(bed)
-	versions = versions.mix(SPLIT_BED_PER_CHROMOSOME.out.versions)
-
-	contig_beds = SPLIT_BED_PER_CHROMOSOME.out.beds
-		.map{meta,bed->[meta,(bed instanceof List?bed:[bed])]}
-		.flatMap{_meta,beds->beds}
-		.map{bed->[bed,bed]}//duplicate bed data
-		.splitCsv(header:false,sep:'\t',limit:1) /* limit to one row per bed */
-		.map{bed_row,bed->[bed_row[0]/* contig */,bed]}
-		.unique()
-		.map{contig,bed->[[id:bed.baseName,chrom:contig],bed]}
-
+	if(parseBoolean(params.with_encode_blacklist)) {
+		/***************************************************
+		*
+		* Download encode black list
+		*
+		*/
+		ENCODE_BLACKLIST(PREPARE_ONE_REFERENCE.out.dict)
+		versions = versions.mix(ENCODE_BLACKLIST.out.versions)
+		BEDTOOLS_SUBTRACT(bed.combine(ENCODE_BLACKLIST.out.bed).map{meta1,bed1,_meta2,bed2->[meta1,bed1,bed2]})
+		versions = versions.mix(BEDTOOLS_SUBTRACT.out.versions)
+		bed = BEDTOOLS_SUBTRACT.out.bed.first()
+		}
 
 	
 	/***************************************************
@@ -160,29 +147,20 @@ workflow {
 		]))
 	versions = versions.mix(VCF_INPUT.out.versions)
 	
-	VCF_TO_BED(VCF_INPUT.out.vcf)
-	versions = versions.mix(VCF_TO_BED.out.versions)
-	
-
-	VCF_STATS_BEFORE(
-		metadata,
-		PREPARE_ONE_REFERENCE.out.fasta,
-		PREPARE_ONE_REFERENCE.out.fai,
-		PREPARE_ONE_REFERENCE.out.dict,
-		)
-
 	SPLIT_N_VARIANTS(
-			bed,
-			VCF_TO_BED.out.vcf
-			)
-	versions = versions.mix(SPLIT_N_VARIANTS.out.versions)
+		bed,
+		VCF_INPUT.out.vcf
+		)
+	versions = versions.mix(VCF_INPUT.out.versions)
+
+	vcfs = SPLIT_N_VARIANTS.out.vcf.flatMap(row->flatMapByIndex(row,1))
+            .combine(SPLIT_N_VARIANTS.out.tbi.flatMap(row->flatMapByIndex(row,1)))
+            .filter{meta1,vcf,meta2,tbi->meta1.id==meta2.id && "${vcf.name}.tbi" == tbi.name}
+            .map{meta1,vcf,meta2,tbi->[meta1.plus(id:vcf.name.md5()),vcf,tbi]}
+
+
+
 	
-	
-	SPLIT_N_VARIANTS.out.vcf
-		.combine(SPLIT_N_VARIANTS.out.tbi)
-		.filter{_meta1,vcf,_meta2,tbi-> tbi.name=="${vcf.name}.tbi"}
-		.map{meta,vcf,_meta2,tbi->[meta.plus(id:vcf.baseName.md5()), vcf,tbi]}
-		
 
 	//VCF_TO_BED.out.bed.
 	
