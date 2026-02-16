@@ -36,7 +36,7 @@ input:
 	tuple val(meta5),path(optional_samples)
 	tuple val(meta ),path("VCFS/*")
 output:
-    tuple val(meta),path("*.txt"),emit:stats
+        tuple val(meta),path("*.txt"),emit:stats
 	path("versions.yml"),emit:versions
 script:
 	def with_gtf = optional_gtf?true:false

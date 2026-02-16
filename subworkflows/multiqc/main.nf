@@ -44,7 +44,10 @@ main:
 	multiqc_ch.map{it[1]}.collect().map{[meta,it]}
 	)
 	
-    JVARKIT_MULTIQCPOSTPROC(sample2collection.filter{meta,sample2pop->(sample2pop?true:false)}, MQC1.out.datadir)
+    JVARKIT_MULTIQCPOSTPROC(sample2collection.filter{meta,sample2pop->(sample2pop?true:false)}, 
+	[[id:"nocustom"],[]],	
+	MQC1.out.datadir
+	)
     
     MQC2(
 	[[id:"nomultiqc_config"],[]],

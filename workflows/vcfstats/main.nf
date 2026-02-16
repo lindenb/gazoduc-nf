@@ -23,31 +23,16 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {MULTIQC                                  } from '../../modules/multiqc'
-include {COMPILE_VERSIONS                         } from '../../modules/versions/main.nf'
-include {VCF_STATS                                } from '../../subworkflows/vcfstats'
-include {PIHAT                                    } from '../../subworkflows/pihat'
-include {runOnComplete; dumpParams                } from '../../modules/utils/functions.nf'
-
-
-Map assertKeyExists(final Map hash,final String key) {
-    if(!hash.containsKey(key)) throw new IllegalArgumentException("no key ${key}'in ${hash}");
-    return hash;
-}
-
-Map assertKeyExistsAndNotEmpty(final Map hash,final String key) {
-    assertKeyExists(hash,key);
-    def value = hash.get(key);
-    if(value.isEmpty()) throw new IllegalArgumentException("empty ${key}'in ${hash}");
-    return hash;
-}
-
-Map assertKeyMatchRegex(final Map hash,final String key,final String regex) {
-    assertKeyExists(hash,key);
-    def value = hash.get(key);
-    if(!value.matches(regex)) throw new IllegalArgumentException(" ${key}'in ${hash} doesn't match regex '${regex}'.");
-    return hash;
-}
+include { COMPILE_VERSIONS                         } from '../../modules/versions/main.nf'
+include { VCF_STATS                                } from '../../subworkflows/vcfstats'
+include { PIHAT                                    } from '../../subworkflows/pihat'
+include { runOnComplete; dumpParams                } from '../../modules/utils/functions.nf'
+include { VCF_INPUT                                } from '../../subworkflows/nf/vcf_input'
+include { VCF_INPUT  as VCF_INPUT_1KG              } from '../../subworkflows/nf/vcf_input'
+include { PREPARE_ONE_REFERENCE                    } from '../../subworkflows/samtools/prepare.one.ref'
+include { MULTIQC as MQC1                          } from '../../modules/multiqc'
+include { MULTIQC as MQC2                          } from '../../modules/multiqc'
+include { JVARKIT_MULTIQCPOSTPROC                  } from '../../modules/jvarkit/multiqcpostproc'
 
 
 if( params.help ) {
@@ -61,122 +46,134 @@ workflow {
 		versions = Channel.empty()
 		multiqc = Channel.empty()
 
-		def ref_hash = [
-            id: file(params.fasta).simpleName,
-            ucsc_name: (params.ucsc_name?:"undefined")
-            ]
-    def fasta  = [ref_hash, file(params.fasta) ]
-    def fai    = [ref_hash, file(params.fai) ]
-    def dict   = [ref_hash, file(params.dict) ]
-		def gtf    = [ref_hash, file(params.gtf), file(params.gtf+".tbi") ]
-		def gff3    = [ref_hash, file(params.gff3), file(params.gff3+".tbi") ]
-    def bed =  [ref_hash, []]
-    def pedigree = [ref_hash, []]
+		def metadata = [id:"vcfstats"]
+          
+    if(params.vcf==null) {
+		log.warn("undefined --vcf")
+		exit -1
+		}
+	if(params.fasta==null) {
+		log.warn("undefined --fasta")
+		exit -1
+		}
+  /***************************************************
+   *
+   *  PREPARE FASTA REFERENCE
+   *
+   */
+	PREPARE_ONE_REFERENCE(
+			metadata,
+			Channel.of(params.fasta).map{file(it)}.map{[[id:it.baseName],it]}
+			)
+	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
+
+
+
+
+		def gtf    = [metadata, file(params.gtf), file(params.gtf+".tbi") ]
+		def gff3    = [metadata, file(params.gff3), file(params.gff3+".tbi") ]
+    def pedigree = [metadata, []]
+    def sample2pop = [metadata, []]
+
     if(params.bed!=null) {
-        bed =  [ref_hash, file(params.bed)];
-    }
+        bed =  [metadata, file(params.bed)];
+      }
+    else
+      {
+      bed = PREPARE_ONE_REFERENCE.out.scatter_bed
+      }
+
     if(params.pedigree!=null) {
-        pedigree =  [ref_hash, file(params.pedigree)];
+        pedigree =  [metadata, file(params.pedigree)];
+      }
+
+    if(params.sample2pop!=null) {
+        sample2pop  =  [metadata, file(params.sample2pop)];
     }
 
-    ch1 = Channel.empty()
-    if(params.samplesheet.endsWith(".list")) {
-      ch1 = Channel.fromPath(params.samplesheet)
-          .splitText()
-          .map{it.trim()}
-          .map{[vcf:it]}
-          }
-    else if(params.samplesheet.endsWith(".vcf.gz") || params.samplesheet.endsWith(".bcf")) {
-        ch1 = Channel.of(params.samplesheet).map{[vcf:it]}
-      }
-    else {
-        ch1 = Channel.fromPath(params.samplesheet).splitCsv(header:true,sep:',')
-        }
-
-    vcfs = ch1
-			.map{assertKeyMatchRegex(it,"vcf","^\\S+\\.(bcf|vcf\\.gz)\$")}
-		.map{
-				if(it.containsKey("index")) return it;
-				if(it.vcf.endsWith(".vcf.gz")) return it.plus(index : it.vcf+".tbi");
-				return it.plus(index:it.vcf+".csi");
-			}
-      .map{
-				if(it.containsKey("id")) return it;
-				return it.plus(id:it.vcf.toString().md5());
-			}
-			.map{[
-        [id:it.id],
-        file(it.vcf),
-        file(it.index)
-      ]}
-
-    if(params.onekgenome==null) {
-      ch1 = Channel.empty()
-      }
-   else if(params.onekgenome.endsWith(".list")) {
-      ch1 = Channel.fromPath(params.onekgenome)
-          .splitText()
-          .map{it.trim()}
-          .filter{it.length()>0}
-          .map{[vcf:it]}
-      }
-    else {
-        ch1 = Channel.fromPath(params.onekgenome).splitCsv(header:true,sep:',')
-        }
-
-    onekgenome = ch1
-        .map{assertKeyMatchRegex(it,"vcf","^\\S+\\.(bcf|vcf\\.gz)\$")}
-        .map{
-          if(it.containsKey("index")) return it;
-          if(it.vcf.endsWith(".vcf.gz")) return it.plus(index : it.vcf+".tbi");
-          return it.plus(index:it.vcf+".csi");
-        }
-        .map{
-          if(it.containsKey("id")) return it;
-          return it.plus(id:it.vcf.toString().md5());
-        }
-        .map{[
-          [id:it.id],
-          file(it.vcf),
-          file(it.index)
-        ]}
+	/***************************************************
+	*
+	* VCF input
+	*
+	*/
+	VCF_INPUT(metadata.plus([
+		path: params.vcf,
+		arg_name: "vcf",
+		require_index : true,
+		required: true,
+		unique : false
+		]))
+	versions = versions.mix(VCF_INPUT.out.versions)
+	
+	vcfs = VCF_INPUT.out.vcf
+	    .map{meta,vcf,tbi->[metadata,vcf,tbi]}
 
 
-    PIHAT(
-       	ref_hash,
-        fasta,
-        fai,
-        dict,
-         [[id:"nosample2pop"],[]],
-        [[id:"noexcludesamples"],[]],
-        [[id:"noexcludebed"],[]],
-        onekgenome,
-        vcfs
-    )
-	versions = versions.mix(PIHAT.out.versions)
-
+  if(params.with_pihat==true) {
+      
+      VCF_INPUT_1KG(metadata.plus([
+        path: params.onekgenome,
+        arg_name: "onekgenome",
+        require_index : true,
+        required: true,
+        unique : false
+        ]))
+      versions = versions.mix(VCF_INPUT_1KG.out.versions)
+      
+      PIHAT(
+          metadata,
+          fasta,
+          fai,
+          dict,
+          [[id:"nosample2pop"],[]],
+          [[id:"noexcludesamples"],[]],
+          [[id:"noexcludebed"],[]],
+          VCF_INPUT_1KG.out.vcf,
+          vcfs
+      )
+    versions = versions.mix(PIHAT.out.versions)
+    }
 
 	 VCF_STATS(
-			ref_hash,
-			fasta,
-			fai,
-			dict,
+			metadata.plus(
+        with_bcftools_stats:true,
+        ad_ratio : true,
+        gatk_denovo : true
+        ),
+			PREPARE_ONE_REFERENCE.out.fasta,
+			PREPARE_ONE_REFERENCE.out.fai,
+			PREPARE_ONE_REFERENCE.out.dict,
 			Channel.of(gtf),
 			Channel.of(gff3),
 			pedigree,
-			[[id:"nogroup2sample"],[]],
+			sample2pop,
 			bed,
 			vcfs
 			)
 	versions = versions.mix(VCF_STATS.out.versions)
-	multiqc = versions.mix(VCF_STATS.out.multiqc)
+	multiqc = multiqc.mix(VCF_STATS.out.multiqc)
 
 	COMPILE_VERSIONS(versions.collect())
-	multiqc = multiqc.mix(COMPILE_VERSIONS.out.multiqc)
+	multiqc = multiqc.map{meta,f->f}.mix(COMPILE_VERSIONS.out.multiqc)
 
-  MULTIQC(
+
+  MQC1(
     [[id:"no_mqc_config"],[]],
-    multiqc.collect().map{[[id:"vcfstats"],it]})
+    multiqc.collect().map{[[id:"vcfstats"],it.sort()]}
+    )
+
+	JVARKIT_MULTIQCPOSTPROC(
+		sample2pop,
+		[[id:"nocustom"],[]],
+		MQC1.out.datadir
+		)
+	
+
+	MQC2(
+		[[id:"no_mqc_config"],[]],
+		JVARKIT_MULTIQCPOSTPROC.out.json.map{_meta,f->f}.collect().map{files->[metadata.plus(id:"perpop"),files.sort()]}
+		)
+
 	}
 runOnComplete(workflow)
 

@@ -74,8 +74,9 @@ main:
      else if(metadata.path.endsWith(".list") || metadata.path.endsWith(".txt")) {
             ch1 = Channel.fromPath(metadata.path)
                 .splitText()
-                .map{it.trim()}
-                .filter{!isBlank(it)}
+                .map{line->line.trim()}
+                .filter{line->!isBlank(line) || line.startsWith("#")}
+		.map{line->[vcf:line]}
             }
     else if(metadata.path.endsWith(".json")) {
             ch1 = Channel.fromPath(metadata.path)
@@ -127,6 +128,7 @@ main:
                 }
         }
 
+
     if(metadata.unique==null || parseBoolean(metadata.unique?:false)) {
         ch1.count()
             .filter{it>1}
@@ -154,7 +156,7 @@ main:
         otherwise_ch = Channel.of([[id:"no_vcf"],[]])
         }
 
-    if(metadata.unique!=null || parseBoolean(metadata.unique?:false)) {
+    if(metadata.unique!=null &&  parseBoolean(metadata.unique?:false)) {
         ch1  = ch1.first()
         }
 

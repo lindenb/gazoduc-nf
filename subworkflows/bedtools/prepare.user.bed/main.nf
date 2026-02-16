@@ -77,7 +77,7 @@ emit:
 }
 
 process CHECK_BED {
-label "process_short"
+label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 tag "${meta.id?:bam.name}"

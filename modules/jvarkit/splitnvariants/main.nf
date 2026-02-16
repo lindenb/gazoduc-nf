@@ -33,8 +33,8 @@ input:
 	tuple val(meta1),path(optional_bed)
 	tuple val(meta ),path(vcf),path(idx)
 output:
-	tuple val(meta),path("OUT/*.vcf.gz",arity:"0..*"),emit:vcf
-	tuple val(meta),path("OUT/*.tbi",arity:"0..*"),emit:tbi
+	tuple val(meta),path("*.vcf.gz",arity:"0..*"),emit:vcf
+	tuple val(meta),path("*.tbi",arity:"0..*"),emit:tbi
 	tuple val(meta),path("*.MF"),optional:true,emit:manifest
 	path("versions.yml"),emit:versions
 script:
@@ -44,14 +44,15 @@ script:
 	def args1 = task.ext.args1?:""
 	def prefix = task.ext.prefix?:"${meta.id}.split${optional_bed?".${meta1.id}":""}"
 	def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData  -Djava.io.tmpdir=TMP"
+	def awk_expr = task.ext.awk_expr?:"(1==1)"
 """
 hostname 1>&2
-mkdir -p OUT TMP
+mkdir -p TMP/OUT
 set -x
 if ${has_bed}
 then
 	bcftools index -s "${vcf}" |\\
-		awk -F '\t' '{printf("%s\t0\t%s\\n",\$1,\$2);}' |\\
+		awk -F '\t' '${awk_expr} {printf("%s\t0\t%s\\n",\$1,\$2);}' |\\
 		LC_ALL=C sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter1.bed
 
 		
@@ -77,13 +78,16 @@ bcftools view ${args1} \\
 	jvarkit ${jvm} vcfsplitnvariants \\
 	--manifest ${prefix}.MF \\
 	${method} \\
-	-o OUT/${prefix}
+	-o TMP/OUT/${prefix}
 
-find OUT/
-find OUT/ -type f -name "*.vcf.gz" | while read F
+find TMP/OUT/ -type f 1>&2
+find TMP/OUT/ -type f -name "*.vcf.gz" | while read F
 do
 	bcftools index --threads ${task.cpus} -t --force "\${F}"
 done
+
+mv TMP/OUT/*.vcf.gz ./ || true
+mv TMP/OUT/*.vcf.gz.tbi ./ || true
 
 cat << EOF > versions.yml
 ${task.process}:
@@ -93,12 +97,14 @@ EOF
 
 stub:
 """
-mkdir OUT
+mkdir  -p TMP/OUT
 for X in 1 2 3 4 5 6 7 8 9 10
 do
-	touch OUT/\${X}.vcf.gz
-	touch OUT/\${X}.vcf.gz.tbi
+	touch TMP/OUT/\${X}.vcf.gz
+	touch TMP/OUT/\${X}.vcf.gz.tbi
 done
+mv TMP/OUT/*.vcf.gz ./ || true
+mv TMP/OUT/*.vcf.gz.tbi ./ || true
 touch versions.yml 
 """
 }

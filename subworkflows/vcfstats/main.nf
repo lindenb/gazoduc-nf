@@ -66,7 +66,7 @@ main:
             vcf2
             )
         versions= versions.mix(BCFTOOLS_STATS.out.versions)
-        multiqc = multiqc.mix(BCFTOOLS_STATS.out.stats.map{it[1]})
+        multiqc = multiqc.mix(BCFTOOLS_STATS.out.stats)
         }
 
     conditions_ch = Channel.of(
@@ -114,12 +114,12 @@ main:
     if(metadata.ad_ratio==true) {
         AD_RATIO(vcf2,bed)
         versions= versions.mix(AD_RATIO.out.versions)
-        multiqc = multiqc.mix(AD_RATIO.out.multiqc.map{it instanceof List?it:[it]}.flatMap())
+        multiqc = multiqc.mix(AD_RATIO.out.multiqc.map{_meta,x->x instanceof List?x:[x]}.flatMap().map{f->[[id:"ad"],f]} )
         }
 
     GENOTYPE_QUALITY(vcf2.combine(conditions_ch) ,bed)
     versions= versions.mix(GENOTYPE_QUALITY.out.versions)
-    multiqc = multiqc.mix(GENOTYPE_QUALITY.out.multiqc.map{it instanceof List?it:[it]}.flatMap())
+    multiqc = multiqc.mix(GENOTYPE_QUALITY.out.multiqc.map{_meta,x->x instanceof List?x:[x]}.flatMap().map{f->[[id:"ad"],f]})
     
     FILTERS(vcf2,bed)
     versions= versions.mix(FILTERS.out.versions)
@@ -167,7 +167,7 @@ input:
     tuple val(meta ),path("VCFS/*")
     tuple val(meta2),path(optional_bed)
 output:
-    path("*_mqc.yml"),optional:true, emit:multiqc
+    tuple val(meta), path("*_mqc.yml"),optional:true, emit:multiqc
     path("versions.yml"),emit:versions
 script:
     def section_id = task.ext.section_id?:"gatk_de_novo_id";
@@ -239,7 +239,7 @@ set -o pipefail
 # bug bcftools concat alon generates non plain VCF ??
 #
 bcftools concat \\
-    ${optional_bed?"--regions-file \"${optional_bed}\"":""} \\
+    ${optional_bed?"-a --regions-file \"${optional_bed}\"":""} \\
     --file-list TMP/jeter.list \\
     -O v |\\
     bcftools view -O v -G |\\
@@ -290,7 +290,7 @@ input:
     tuple val(meta ),path("VCFS/*")
     tuple val(meta2),path(optional_bed)
 output:
-    path("*_mqc.yml"),optional:true, emit:multiqc
+    tuple val(meta), path("*_mqc.yml"),optional:true, emit:multiqc
     path("versions.yml"),emit:versions
 script:
     def section_id = task.ext.section_id?:"ad_ratio_id";
@@ -317,7 +317,7 @@ cat "${moduleDir}/adratio.code" > TMP/jeter.code
 
 
 bcftools concat \\
-    ${optional_bed?"--regions-file \"${optional_bed}\"":""} \\
+    ${optional_bed?"-a --regions-file \"${optional_bed}\"":""} \\
     --file-list TMP/jeter.list \\
     -Ov |\\
     jvarkit -Djava.io.tmpdir=TMP bioalcidaejdk -F VCF -f TMP/jeter.code > TMP/jeter.tsv
@@ -367,7 +367,7 @@ input:
     tuple val(meta ),path("VCFS/*"),val(condition)
     tuple val(meta2),path(optional_bed)
 output:
-    path("*_mqc.yml"),optional:true, emit:multiqc
+    tuple val(meta), path("*_mqc.yml"),optional:true, emit:multiqc
     path("versions.yml"),emit:versions
 script:
     def section_id = task.ext.section_id?:"gq_id"+condition.id;
@@ -397,7 +397,7 @@ cat "${moduleDir}/gq.code" |\\
 
 
 bcftools concat \\
-    ${optional_bed?"--regions-file \"${optional_bed}\"":""} \\
+    ${optional_bed?"-a --regions-file \"${optional_bed}\"":""} \\
     --file-list TMP/jeter.list \\
     -Ov |\\
     jvarkit -Djava.io.tmpdir=TMP bioalcidaejdk -F VCF -f TMP/jeter.code > TMP/jeter.tsv
@@ -448,7 +448,7 @@ input:
     tuple val(meta ),path("VCFS/*")
     tuple val(meta2),path(optional_bed)
 output:
-    path("*_mqc.yml"),optional:true, emit:multiqc
+    tuple val(meta), path("*_mqc.yml"),optional:true, emit:multiqc
     path("versions.yml"),emit:versions
 script:
     def section_id = task.ext.section_id?:"filters";
@@ -475,7 +475,7 @@ cat "${moduleDir}/filter.code" |\\
 
 
 bcftools concat -O u \\
-    ${optional_bed?"--regions-file \"${optional_bed}\"":""} \\
+    ${optional_bed?"-a --regions-file \"${optional_bed}\"":""} \\
     --file-list TMP/jeter.list |\\
     bcftools view -O v -G |\\
     jvarkit -Djava.io.tmpdir=TMP bioalcidaejdk -F VCF -f TMP/jeter.code > TMP/jeter.tsv
@@ -526,7 +526,7 @@ input:
     tuple val(meta ),path("VCFS/*"),val(condition)
     tuple val(meta2),path(optional_bed)
 output:
-    path("*_mqc.yml"),optional:true, emit:multiqc
+    tuple val(meta), path("*_mqc.yml"),optional:true, emit:multiqc
     path("versions.yml"),emit:versions
 script:
     def section_id = task.ext.section_id?:"dp_id"+condition.id;
@@ -556,7 +556,7 @@ cat "${moduleDir}/dp.code" |\\
 
 
 bcftools concat \\
-    ${optional_bed?"--regions-file \"${optional_bed}\"":""} \\
+    ${optional_bed?"-a --regions-file \"${optional_bed}\"":""} \\
     --file-list TMP/jeter.list \\
     -Ov |\\
     jvarkit -Djava.io.tmpdir=TMP bioalcidaejdk -F VCF -f TMP/jeter.code |\\
@@ -609,7 +609,7 @@ input:
     tuple val(meta ),path("VCFS/*"),val(condition)
     tuple val(meta2),path(optional_bed)
 output:
-    path("*_mqc.yml"),optional:true, emit:multiqc
+    tuple val(meta), path("*_mqc.yml"),optional:true, emit:multiqc
     path("versions.yml"),emit:versions
 script:
     def section_id = task.ext.section_id?:"dist${condition.tag}";
@@ -640,7 +640,7 @@ cat "${moduleDir}/filter.code" |\\
 
 bcftools concat \\
     --drop-genotypes \\
-    ${optional_bed?"--regions-file \"${optional_bed}\"":""} \\
+    ${optional_bed?"-a --regions-file \"${optional_bed}\"":""} \\
     --file-list TMP/jeter.list \\
     -Ov |\\
     jvarkit -Djava.io.tmpdir=TMP bioalcidaejdk -F VCF -f TMP/jeter.code |\\
@@ -689,7 +689,7 @@ input:
     tuple val(meta ),path("VCFS/*")
     tuple val(meta2),path(optional_bed)
 output:
-    path("*_mqc.yml"),optional:true, emit:multiqc
+    tuple val(meta), path("*_mqc.yml"),optional:true, emit:multiqc
     path("versions.yml"),emit:versions
 script:
     def prefix  = task.ext.prefix?:"gtfilter"
@@ -715,7 +715,7 @@ cat "${moduleDir}/filter.gt.code" |\\
 
 
 bcftools concat \\
-    ${optional_bed?"--regions-file \"${optional_bed}\"":""} \\
+    ${optional_bed?"-a --regions-file \"${optional_bed}\"":""} \\
     --file-list TMP/jeter.list \\
     -Ov |\\
     jvarkit -Djava.io.tmpdir=TMP bioalcidaejdk -F VCF -f TMP/jeter.code |\\
@@ -751,7 +751,7 @@ input:
     tuple val(meta ),path("VCFS/*")
     tuple val(meta2),path(optional_bed)
 output:
-    path("*_mqc.yml"),optional:true, emit:multiqc
+    tuple val(meta), path("*_mqc.yml"),optional:true, emit:multiqc
     path("versions.yml"),emit:versions
 script:
     def prefix  = task.ext.prefix?:"gtfilter"
@@ -777,7 +777,7 @@ cat "${moduleDir}/sinletons.code" |\\
 
 
 bcftools concat \\
-    ${optional_bed?"--regions-file \"${optional_bed}\"":""} \\
+    ${optional_bed?"-a --regions-file \"${optional_bed}\"":""} \\
     --file-list TMP/jeter.list \\
     -Ov |\\
     jvarkit -Djava.io.tmpdir=TMP bioalcidaejdk -F VCF -f TMP/jeter.code |\\

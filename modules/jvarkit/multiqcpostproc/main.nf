@@ -30,16 +30,19 @@ process JVARKIT_MULTIQCPOSTPROC {
 	tag "${meta.id?:vcf.name}"
 	input:
 		tuple val(meta1),path(sample2pop)
+		tuple val(meta2),path(custom)
 		tuple val(meta ),path(multiqc_data_dir)
 	output:
 		tuple val(meta ),path("*.json",arity:"0..*"),emit:json
 		path("versions.yml"),emit:versions
 	script:
 		def jvm= task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
+		def jvarkit = task.ext.jvarkit?:"java ${jvm} -jar \${HOME}/jvarkit.jar"
 """
 mkdir -p TMP/OUT
-jvarkit ${jvm} \\
+${jvarkit} \\
 	multiqcpostproc \\
+	${custom?"--custom ${custom}":""} \\
 	--sample2collection "${sample2pop}" \\
 	-o TMP/OUT \\
 	${multiqc_data_dir}/
@@ -51,14 +54,12 @@ fi
 
 cat << EOF > versions.yml
 ${task.process}:
-	jvarkit: "\$(jvarkit --version)"
+	jvarkit: "\$(${jvarkit} --version)"
 EOF
 """
 	
 stub:
 """
 touch versions.yml
-touch ${meta.id}.polyx.bcf
-touch ${meta.id}.polyx.bcf.csi
 """		
 }
