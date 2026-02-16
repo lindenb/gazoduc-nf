@@ -27,7 +27,6 @@ SOFTWARE.
 
 process GLNEXUS_GENOTYPE {
 label "process_single"
-label "array100"
 tag "${optional_bed?optional_bed.name:""} ${meta.id?:""}"
 conda "${moduleDir}/../../../conda/glnexus.yml"
 afterScript  "rm -rf TMP GLnexus.DB"
@@ -43,16 +42,17 @@ script:
 	def args2 = task.ext.args2?:""
 	def config = task.ext.config?:""
 	def prefix = task.ext.prefix?:(meta.id?:"glnexus")+(optional_bed?"."+optional_bed.baseName:"")+".glnexus"
-	if(!(optional_config?true:false) && config.trim().isEmpty()) throw new IllegalArgumentException("${task.process} task.ext.config '${config}' missing. eg.DeepVariantWGS")
+	if(!(optional_config?true:false) && config.trim().isEmpty()) throw new IllegalArgumentException("${task.process} task.ext.config '${config}' missing. eg.DeepVariantWGS see https://github.com/dnanexus-rnd/GLnexus/blob/master/src/cli_utils.cc")
 """
 	hostname 1>&2
 	mkdir TMP
+	export TMPDIR=\${PWD}/TMP
 
 	# glnexus doesn't like overlapping BED records
 	if ${optional_bed?true:false}
 	then
 		cut -f1,2,3 "${optional_bed}" |\\
-			sort -T TMP -t '\t' -k1,1 -k2,2n |\\
+			sort -T TMP -S "${task.memory.kilo}" -t '\t' -k1,1 -k2,2n |\\
 			bedtools merge > TMP/jeter.bed
 	fi
 
@@ -102,4 +102,3 @@ def prefix = task.ext.prefix?:(meta.id?:"glnexus")+(optional_bed?"."+optional_be
 touch versions.yml ${prefix}.bcf ${prefix}.bcf.csi
 """
 }
-

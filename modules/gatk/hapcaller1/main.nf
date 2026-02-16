@@ -132,15 +132,29 @@ samtools samples -f "${fasta}" -F TMP/references.txt "${bam}" | cut -f1,3 | head
                 "TMP/jeter.g.vcf.gz" |\\
                 bcftools annotate \\
                     -O u \\
-                    --rename-chrs TMP/rename.contigs.1.tsv |\\
-                    bcftools reheader \\
-                        -h TMP/new.header.vcf \\
-                        --temp-prefix TMP/zorg |\\
-                         bcftools sort  \\
-                            -T TMP/sort \\
-                            --max-mem "${task.memory.giga}G" \\
-                            -O z \\
-                            -o "TMP/jeter2.g.vcf.gz"
+                    -o TMP/jeter2.bcf \\
+                    --rename-chrs TMP/rename.contigs.1.tsv
+
+                #
+                # there is a problem with bcftools reheader https://github.com/samtools/bcftools/issues/1425
+                # it doesn't keep the order or the lines
+                # so it can be a problem for tools like glnexus
+                # so we need to manually extract the contig= lines
+                #
+		set +o pipefail
+                bcftools view --header-only  TMP/jeter2.bcf | grep -v '^##contig=' | grep -v '^#CHROM' | gzip > TMP/jeter3.g.vcf.gz
+                grep '^##contig=' TMP/new.header.vcf | gzip >> TMP/jeter3.g.vcf.gz
+                bcftools view --header-only TMP/jeter2.bcf | grep '^#CHROM' | gzip >> TMP/jeter3.g.vcf.gz
+                bcftools view --no-header TMP/jeter2.bcf |gzip >> TMP/jeter3.g.vcf.gz
+		set -o pipefail
+                rm TMP/jeter2.bcf
+                
+                bcftools sort  \\
+                    -T TMP/sort \\
+                    --max-mem "${task.memory.giga}G" \\
+                    -O z \\
+                    -o "TMP/jeter2.g.vcf.gz" \\
+                    TMP/jeter3.g.vcf.gz
             
             mv -v "TMP/jeter2.g.vcf.gz" "TMP/jeter.g.vcf.gz" 
             rm -vf TMP/jeter.g.vcf.gz.tbi
@@ -156,7 +170,7 @@ mv "TMP/jeter.g.vcf.gz.tbi" ${prefix}.g.vcf.gz.tbi
 
 cat << EOF > versions.yml
 ${task.process}:
-    gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
+    gatk: "\$( (gatk --java-options "${jvm}"  --version 2> /dev/null  | paste -s -d ' ' )  || true )"
 EOF
 """
 

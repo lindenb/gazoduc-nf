@@ -79,6 +79,11 @@
          "type": "boolean",
          "exists": true,
          "description": "produce a vcf2table report"
+       },
+       "with_split_bed": {
+         "type": "boolean",
+         "exists": true,
+         "description": "split input BED, otherwise do use input BED as-is"
        }
       }
     }

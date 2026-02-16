@@ -39,6 +39,7 @@ output:
 script:
    def prefix= task.ext.prefix?:"\${MD5}"
    def args1 = task.ext.args1?:"-G StandardAnnotation -G AS_StandardAnnotation"
+   def args2 = task.ext.args2?:""
    def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -XX:-UsePerfData"
 """
 hostname 1>&2
@@ -57,7 +58,7 @@ gatk --java-options "${jvm}" \\
     ${optional_bed?"-L \"${optional_bed}\"":""} \\
     -V TMP/jeter.list \\
     -O "TMP/combine.g.vcf.gz" \\
-    ${args1}
+    ${args1} ${args2}
 
 mv TMP/combine.g.vcf.gz "${prefix}.g.vcf.gz"
 mv TMP/combine.g.vcf.gz.tbi "${prefix}.g.vcf.gz.tbi"
@@ -72,7 +73,7 @@ fi
 
 cat << EOF > versions.yml
 ${task.process}:
-    gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
+    gatk: "\$( (gatk --java-options "${jvm}" --version 2> /dev/null  | paste -s -d ' ' ) || true)"
 EOF
 """
 

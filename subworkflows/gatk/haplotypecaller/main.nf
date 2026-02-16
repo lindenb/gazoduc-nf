@@ -26,6 +26,7 @@ SOFTWARE.
 include { HAPLOTYPECALLER as HAPCALLER         }  from '../../../modules/gatk/hapcaller1'
 include { BCFTOOLS_CONCAT                      }  from '../../../modules/bcftools/concat3'
 include { COMBINE_GENOTYPE_GVCFS               }  from '../combinegenotypegvcfs'
+include { parseBoolean                         }  from '../../../modules/utils/functions.nf'
 include { makeKey                              }  from '../../../modules/utils/functions.nf'
 include { flatMapByIndex                       }  from '../../../modules/utils/functions.nf'
 //include { FIND_GVCF_BLOCKS                     }  from '../../../modules/jvarkit/findgvcfblocks'
@@ -47,6 +48,11 @@ take:
 main:
     versions = Channel.empty()
 	multiqc = Channel.empty()
+
+
+	if(metadata.with_split_bed==null) {
+		log.warn("HAPLOTYPECALLER metadata.with_split_bed==null");
+		}
 
 	/* checl all beds have an unique ID */
 	beds.map{meta,bed->[meta.id,bed]}
@@ -81,21 +87,27 @@ main:
 	no used ------------- 
  	*/
 
-	BEDTOOLS_MAKEWINDOWS(beds)
-	versions  = versions.mix(BEDTOOLS_MAKEWINDOWS.out.versions)
+	if(metadata.with_split_bed==null || parseBoolean(metadata.with_split_bed)) {
+		BEDTOOLS_MAKEWINDOWS(beds)
+		versions  = versions.mix(BEDTOOLS_MAKEWINDOWS.out.versions)
 
-	BED_CLUSTER(dict,BEDTOOLS_MAKEWINDOWS.out.bed)
-	versions  = versions.mix(BED_CLUSTER.out.versions)
+		BED_CLUSTER(dict,BEDTOOLS_MAKEWINDOWS.out.bed)
+		versions  = versions.mix(BED_CLUSTER.out.versions)
 
 
-	gvcfs_ch = BED_CLUSTER.out.bed
-		.map{meta,bed->[meta,bed instanceof List?bed:[bed]]}
-		.flatMap{row->flatMapByIndex(row,1)}
-		.combine( //join doesn't support duplicate keys, so use combine
-			HAPCALLER.out.gvcf.map{meta,vcf,tbi,bed->[[id:meta.bed_id],vcf,tbi]}
-			)
-		.filter{meta1,_block_bed, meta2, _vcf,_tbi->meta1.id == meta2.id}
-		.map{_meta1,block_bed, _meta2, vcf,tbi->[[id:block_bed.baseName],vcf,tbi,block_bed]}
+		gvcfs_ch = BED_CLUSTER.out.bed
+			.map{meta,bed->[meta,bed instanceof List?bed:[bed]]}
+			.flatMap{row->flatMapByIndex(row,1)}
+			.combine( //join doesn't support duplicate keys, so use combine
+				HAPCALLER.out.gvcf.map{meta,vcf,tbi,bed->[[id:meta.bed_id],vcf,tbi]}
+				)
+			.filter{meta1,_block_bed, meta2, _vcf,_tbi->meta1.id == meta2.id}
+			.map{_meta1,block_bed, _meta2, vcf,tbi->[[id:block_bed.baseName],vcf,tbi,block_bed]}
+		}
+	else
+		{
+		gvcfs_ch = HAPCALLER.out.gvcf.map{meta,vcf,tbi,bed->[[id:meta.bed_id],vcf,tbi, bed]}
+		}
 		
 	vcf_out = Channel.empty()
 
@@ -118,7 +130,7 @@ main:
 		}
 	else if(metadata.gvcf_merge_method.equalsIgnoreCase("glnexus")) {
 		ch2 = gvcfs_ch
-			.map{meta,gvcf,tbi,bed->
+			.map{_meta,gvcf,tbi,bed->
 				[
 				bed.toRealPath(),
 				[gvcf,tbi]

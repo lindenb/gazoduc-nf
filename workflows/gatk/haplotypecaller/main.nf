@@ -210,28 +210,38 @@ workflow {
         bed = PREPARE_USER_BED.out.bed.first()
         }
 
-   /* cut the bed/genome into parts for SV calling per region */
-   BEDTOOLS_MAKEWINDOWS(bed)
-   versions = versions.mix(BEDTOOLS_MAKEWINDOWS.out.versions)
+    /* split input bed  */
+   if ( parseBoolean(params.with_split_bed)) {
+        /* cut the bed/genome into parts for SV calling per region */
+        BEDTOOLS_MAKEWINDOWS(bed)
+        versions = versions.mix(BEDTOOLS_MAKEWINDOWS.out.versions)
 
-   /* if it's an exome , group the small genome together in BED */
-   BED_CLUSTER(
-        PREPARE_ONE_REFERENCE.out.dict,
-        BEDTOOLS_MAKEWINDOWS.out.bed
-        )
-   versions = versions.mix(BED_CLUSTER.out.versions)
-   beds_ch = BED_CLUSTER.out.bed
-        .map{_meta,beds->beds}
-        .map{beds->beds instanceof List?beds:[beds]}
-        .flatMap()
-        .map{bed->[[id:bed.baseName],bed]}
-
+        /* if it's an exome , group the small genome together in BED */
+        BED_CLUSTER(
+                PREPARE_ONE_REFERENCE.out.dict,
+                BEDTOOLS_MAKEWINDOWS.out.bed
+                )
+        versions = versions.mix(BED_CLUSTER.out.versions)
+        beds_ch = BED_CLUSTER.out.bed
+                .map{_meta,beds->beds}
+                .map{beds->beds instanceof List?beds:[beds]}
+                .flatMap()
+                .map{bed->[[id:bed.baseName],bed]}
+        }
+    else {
+        /* use input bed as is */
+        beds_ch = bed
+        }
 
     vcf_ch = Channel.empty()
 
     if(params.method.equalsIgnoreCase("gvcf")) {
         HAPLOTYPECALLER(
-            [id:"hapcaller",gvcf_merge_method:params.gvcf_merge_method],
+            workflow_metadata.plus([
+                id:"hapcaller",
+                gvcf_merge_method:params.gvcf_merge_method,
+                with_split_bed : parseBoolean(params.with_split_bed)
+                ]),
             PREPARE_ONE_REFERENCE.out.fasta,
             PREPARE_ONE_REFERENCE.out.fai,
             PREPARE_ONE_REFERENCE.out.dict,
