@@ -568,7 +568,7 @@ __EOF__
 
 R --no-save < TMP/jeter.R
 
-mv TMP/jeter.${format} "${prefix}.mds.${C1}.${C2}.${format}"
+mv TMP/jeter.${format} "${prefix}.${C1}.${C2}.${format}"
 
 cat << EOF > versions.yml
 ${task.process}:
@@ -751,7 +751,7 @@ groups <- unique(T1\$G)
 group_colors <- setNames(rainbow(length(groups)), groups)
 T1\$color <- group_colors[T1\$G]
 
-png("TMP/jeter.png")
+png("TMP/jeter.png", width=800, height=800, units="px")
 boxplot(T1\$X ,
     ylim=c(0,max(T1\$X)),
     main="AVG(PIHAT)/SAMPLE",
