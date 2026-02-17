@@ -37,11 +37,15 @@ conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
 	tuple val(meta ),path("VCFS/*")
 output:
-        tuple val(meta),path("*.bcf"),path("*.bcf.csi"),emit:vcf
+        tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:vcf
 	path("versions.yml"),emit:versions
 script:
         def args1  = task.ext.args1?:""
+        def args2  = task.ext.args2?:""
+        def args3  = task.ext.args3?:""
         def prefix = task.ext.prefix?:"${meta.id}"
+	def cmd = task.ext.cmd?:"view"
+	def tags = task.ext.tags?:"AN,AC,AF,AC_Hom,AC_Het,AC_Hemi,NS"
 """
 mkdir -p TMP
 find VCFS/ \\( -name "*.vcf.gz" -o -name "*.bcf" \\)  > TMP/jeter.list
@@ -79,16 +83,19 @@ bcftools merge \\
 	--file-list TMP/jeter3.list
 fi
 
+# give a chance to filter-out things, or bcftools annotate
+bcftools ${cmd} ${args2} -O u TMP/jeter2.bcf |\\
 bcftools  +fill-tags \\
+	${args3} \\
 	--threads ${task.cpus} \\
-	-O b  \\
-	-o TMP/jeter.bcf \\
-	TMP/jeter2.bcf -- -t AN,AC,AF,AC_Hom,AC_Het,AC_Hemi,NS
+	-O z9  \\
+	-o TMP/jeter.vcf.gz \\
+	-- -t ${tags}
 
-bcftools index  -f --threads ${task.cpus}  TMP/jeter.bcf
+bcftools index  -f -t --threads ${task.cpus}  TMP/jeter.vcf.gz
 
-mv TMP/jeter.bcf     ${prefix}.bcf
-mv TMP/jeter.bcf.csi ${prefix}.bcf.csi
+mv TMP/jeter.vcf.gz  ${prefix}.vcf.gz
+mv TMP/jeter.vcf.gz.tbi  ${prefix}.vcf.gz.tbi
 
 cat << END_VERSIONS > versions.yml
 ${task.process}:
@@ -101,6 +108,6 @@ stub:
  // "f"+(meta.id?"."+meta.id.md5():"") + (optional_bed?"."+optional_bed.baseName:"")
 """
 find VCFS/ \\( -name "*.vcf.gz" -o -name "*.bcf"  \\) 
-touch versions.yml ${prefix}.bcf ${prefix}.bcf.csi
+touch versions.yml ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi
 """
 }

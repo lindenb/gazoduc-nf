@@ -27,19 +27,19 @@ stream()
         });
 	
 
-if(all.getMaxCount().orElse(0L)>0L)) {
+if(all.getMaxCount().orElse(0L)>0L) {
     println("    ALL:");
     for(final RangeOfDoubles.Range n: ri.getRanges()) {
         out.println("        \""+ String.valueOf(n) +"\": " + all.count(n));
         }
 }
-if(pass.getMaxCount().orElse(0L)>0L)) {
+if(pass.getMaxCount().orElse(0L)>0L) {
     println("    PASS:");
     for(final RangeOfDoubles.Range n: ri.getRanges()) {
         out.println("        \""+ String.valueOf(n) +"\": " + pass.count(n));
         }
 }
-if(filtered.getMaxCount().orElse(0L)>0L)) {
+if(filtered.getMaxCount().orElse(0L)>0L) {
     println("    FILTERed:");
     for(final RangeOfDoubles.Range n: ri.getRanges()) {
         out.println("        \""+ String.valueOf(n) +"\": " + filtered.count(n));

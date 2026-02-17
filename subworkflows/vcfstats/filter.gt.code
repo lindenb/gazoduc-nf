@@ -46,7 +46,7 @@ if(sn2info.values().stream().anyMatch(INFO->INFO.counter.getMaxCount().orElse(0L
     for(SampleInfo si: sn2info.values()) {
         w.println("    "+si.sn+":");
         for(final String key: keys) {
-            w.println("        "+key+": "+si.count(key));
+            w.println("        "+key+": "+si.counter.count(key));
             }
         }
     

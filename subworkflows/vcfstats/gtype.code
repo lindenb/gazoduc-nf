@@ -1,0 +1,47 @@
+class SampleInfo {
+    final String sn;
+    final Counter<GenotypeType> counter = new Counter<>();
+
+    SampleInfo(final String sn) {
+        this.sn=sn;
+        }
+   
+    }
+
+final Map<String,SampleInfo> sn2info = new HashMap<>(header.getNGenotypeSamples());
+
+for(String sn:header.getSampleNamesInOrder() ) {
+	sn2info.put(sn,new SampleInfo(sn));
+	}
+
+stream().
+    forEach(V->{
+        for(Genotype gt: V.getGenotypes()) {
+            sn2info.get(gt.getSampleName(),gt.getType());
+            }
+        num_variants.incrementAndGet();
+        });
+	
+
+if(num_variants.get() > 0L) {
+    java.io.PrintStream w = System.out;
+    w.println("id: \"genotypestypes\"");
+    w.println("section_name: \"Genotype Types\"");  
+    w.println("description: \"Genotype Types\"");
+    w.println("plot_type: \"bargraph\"");
+    w.println("pconfig:");
+    w.println("    id: \"__ID__.plot\"");
+    w.println("    title: \"Genotype Type\"");
+    w.println("    xlab: \"Sample\"");
+    w.println("    ylab: \"Genotype Type\"");
+    w.println("data:");
+    
+    for(String sn : sn2info.keySet() ) {
+        w.println("    "+ sn + ":");
+        for( GenotypeType type: GenotypeType.values()) {
+            w.println("        "+type.name()+": "+ sn2info.get(sn).count(type));  
+            } 
+        }
+    
+    w.flush();
+}

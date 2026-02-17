@@ -22,7 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {BCFTOOLS_STATS} from '../../modules/bcftools/stats'
+include {BCFTOOLS_STATS   } from '../../modules/bcftools/stats'
+include {parseBoolean     } from '../../modules/utils/functions'
 
 workflow VCF_STATS {
 take:
@@ -129,6 +130,10 @@ main:
     DEPTH(vcf2.combine(conditions_filter_ch) ,bed)
     versions= versions.mix(DEPTH.out.versions)
     multiqc = multiqc.mix(DEPTH.out.multiqc)
+
+    GTYPE(vcf2,bed)
+    versions= versions.mix(GTYPE.out.versions)
+    multiqc = multiqc.mix(GTYPE.out.multiqc)
 
 
     gatk_field_ch = Channel.of(
@@ -598,6 +603,61 @@ END_VERSIONS
 }
 
 
+process GTYPE {
+tag "${meta.id?:""}"
+label "process_single"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
+input:
+    tuple val(meta ),path("VCFS/*")
+    tuple val(meta2),path(optional_bed)
+output:
+    tuple val(meta), path("*_mqc.yml"),optional:true, emit:multiqc
+    path("versions.yml"),emit:versions
+script:
+    def prefix  = task.ext.prefix?:"${meta.id}.gtype"
+"""
+mkdir -p TMP
+set -x
+set +o pipefail
+
+find VCFS/ \\( -name "*.bcf" -o -name "*.vcf.gz" \\) | sort > TMP/jeter.list
+
+bcftools concat -O u --file-list TMP/jeter.list |\\
+    bcftools view --header-only > TMP/header.vcf
+
+bcftools query -l TMP/header.vcf > TMP/jeter.samples
+
+if grep -F '##FORMAT=<ID=GT,' TMP/header.vcf && test -s TMP/jeter.samples
+then
+
+cat "${moduleDir}/gtype.code" |\\
+    m4 -P   > TMP/jeter.code
+
+bcftools concat \\
+    ${optional_bed?"-a --regions-file \"${optional_bed}\"":""} \\
+    --file-list TMP/jeter.list \\
+    -Ov |\\
+    jvarkit -Djava.io.tmpdir=TMP bioalcidaejdk -F VCF -f TMP/jeter.code > TMP/jeter.tsv
+
+if test -s TMP/jeter.tsv
+then
+
+mv TMP/jeter.tsv ${prefix}_mqc.yml
+
+fi
+
+fi
+
+
+cat << END_VERSIONS > versions.yml
+${task.process}:
+    bcftools: \$(bcftools version | awk '(NR==1)  {print \$NF}')
+    jvarkit : todo
+END_VERSIONS
+"""
+}
+
 
 
 process TAG_DISTRIBUTION {
@@ -627,16 +687,14 @@ bcftools concat --drop-genotypes -O u --file-list TMP/jeter.list |\\
     bcftools view --header-only > TMP/header.vcf
 
 
-
 if grep -m1 -F '##INFO=<ID=${condition.tag},' TMP/header.vcf
 then
 
-cat "${moduleDir}/filter.code" |\\
+cat "${moduleDir}/distribution.code" |\\
     m4 -P \\
         -D__RANGE__="${condition.range}" \\
         -D__TAG__=${condition.tag} \\
         > TMP/jeter.code
-
 
 bcftools concat \\
     --drop-genotypes \\
@@ -754,7 +812,7 @@ output:
     tuple val(meta), path("*_mqc.yml"),optional:true, emit:multiqc
     path("versions.yml"),emit:versions
 script:
-    def prefix  = task.ext.prefix?:"gtfilter"
+    def prefix  = task.ext.prefix?:"singletons"
 """
 mkdir -p TMP
 set -x
