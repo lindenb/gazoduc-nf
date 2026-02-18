@@ -1,29 +1,20 @@
-class SampleInfo {
-    final String sn;
-    final Counter<GenotypeType> counter = new Counter<>();
 
-    SampleInfo(final String sn) {
-        this.sn=sn;
-        }
-   
-    }
 
-final Map<String,SampleInfo> sn2info = new HashMap<>(header.getNGenotypeSamples());
+final Map<String,Counter<GenotypeType>> sn2info = new HashMap<>(header.getNGenotypeSamples());
 
 for(String sn:header.getSampleNamesInOrder() ) {
-	sn2info.put(sn,new SampleInfo(sn));
+	sn2info.put(sn,new Counter<GenotypeType>());
 	}
 
 stream().
     forEach(V->{
         for(Genotype gt: V.getGenotypes()) {
-            sn2info.get(gt.getSampleName(),gt.getType());
+            sn2info.get(gt.getSampleName()).incr(gt.getType());
             }
-        num_variants.incrementAndGet();
         });
 	
 
-if(num_variants.get() > 0L) {
+if(!sn2info.isEmpty()) {
     java.io.PrintStream w = System.out;
     w.println("id: \"genotypestypes\"");
     w.println("section_name: \"Genotype Types\"");  

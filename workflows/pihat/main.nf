@@ -24,11 +24,14 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-
-include {dumpParams;runOnComplete            } from '../../modules/utils/functions.nf'
+include { validateParameters                       } from 'plugin/nf-schema'
+include { paramsHelp                               } from 'plugin/nf-schema'
+include { paramsSummaryLog                         } from 'plugin/nf-schema'
+include { samplesheetToList                        } from 'plugin/nf-schema'
+include { runOnComplete                            } from '../../modules/utils/functions'
 include { BCFTOOLS_MERGE                           } from '../../modules/bcftools/merge3'
-include {PIHAT as PIHAT01                          } from '../../subworkflows/pihat'
-include {PREPARE_ONE_REFERENCE                     } from '../../subworkflows/samtools/prepare.one.ref'
+include { PIHAT                                    } from '../../subworkflows/pihat'
+include { PREPARE_ONE_REFERENCE                    } from '../../subworkflows/samtools/prepare.one.ref'
 include { MULTIQC                                  } from '../../subworkflows/multiqc'
 include { VCF_INPUT                                } from '../../subworkflows/nf/vcf_input'
 include { VCF_INPUT as VCF_INPUT_1KG               } from '../../subworkflows/nf/vcf_input'
@@ -37,14 +40,24 @@ include { META_TO_BAMS                             } from '../../subworkflows/sa
 include { READ_SAMPLESHEET                         } from '../../subworkflows/nf/read_samplesheet'
 include { COMPILE_VERSIONS                         } from '../../modules/versions/main.nf'
 
-if( params.help ) {
-    dumpParams(params);
-    exit 0
-}  else {
-    dumpParams(params);
-}
+
 
 workflow {
+
+	if(!workflow.stubRun) {
+		validateParameters()
+		}
+
+	if( params.help ) {
+		log.info(paramsHelp())
+		exit 0
+		}  else {
+		// Print summary of supplied parameters
+		log.info paramsSummaryLog(workflow)
+		}
+
+
+
 	versions = Channel.empty()
 	multiqc = Channel.empty()
 	def metadata = [
@@ -151,7 +164,7 @@ workflow {
 			PREPARE_ONE_REFERENCE.out.dict,
 			PREPARE_ONE_REFERENCE.out.fai.splitCsv(sep:'\t',header:false)
 				.map{meta,row->[meta,row[0]/* contig*/]}
-				.filter{_meta,contig->contig.matches("(chr)?[0-9XY]+")}
+				.filter{_meta,contig->contig.matches("${params.contigs_regex}")}
 				.combine(gnomad_ch)
 				.map{_meta1,ctg,meta2,vcf,tbi->[meta2.plus(contig:ctg),vcf,tbi]}
 			)
@@ -203,8 +216,11 @@ workflow {
 		exclude_bed_ch = Channel.of([[id:"exclude_bed"],file(params.exclude_bed)])
 		}
 
-	 PIHAT01(
-		metadata.plus(level:1),
+	 PIHAT(
+		metadata.plus([
+			level:1,
+			contigs_regex:"${params.contigs_regex}"
+			]),
 		PREPARE_ONE_REFERENCE.out.fasta,
 		PREPARE_ONE_REFERENCE.out.fai,
 		PREPARE_ONE_REFERENCE.out.dict,
@@ -215,7 +231,8 @@ workflow {
 		gnomad_ch,
 		uservcf_ch
 		)
-	multiqc = multiqc.mix(PIHAT01.out.multiqc)
+	multiqc = multiqc.mix(PIHAT.out.multiqc)
+	versions = multiqc.mix(PIHAT.out.versions)
 	
 	
 	MULTIQC(
@@ -230,6 +247,11 @@ workflow {
 runOnComplete(workflow);
 
 
+/**
+ *
+ * FIND Sites in gnomad that will be genotyped 
+ *
+ */
 process FIND_SITES_IN_GNOMAD {
 tag "${meta.id} ${meta.contig}"
 afterScript "rm -rf TMP"
@@ -257,8 +279,10 @@ bcftools index --stats "${gnomad}" |\\
 
 test -s TMP/jeter.bed
 
-bcftools view -m 2 -M 2 -G --regions-file TMP/jeter.bed --types snps --apply-filters 'PASS,.' -i 'INFO/${tag} >= ${min_af} &&  INFO/${tag}<=${max_af}' -O u "${gnomad}"  |\\
-	bcftools annotate -x 'ID,FILTER,INFO,QUAL' -O v |\\
+bcftools view -m 2 -M 2 -G --regions-file TMP/jeter.bed --types snps --apply-filters 'PASS,.' -i 'INFO/${tag} >= ${min_af} &&  INFO/${tag}<=${max_af} && INFO/NEGATIVE_TRAIN_SITE==0' -O u "${gnomad}"  |\\
+	bcftools annotate -x 'ID,FILTER,INFO,QUAL' -O u |\\
+	bcftools norm --multiallelics +any -O u |\\
+	bcftools view -m 2 -M 2 -O v |\\
 	awk -F '\t' '/^#/{print;PREV=-1;C="";next;} {if(length(\$4)!=1 || length(\$5)!=1) next; if(\$1!=C || int(\$2)-PREV>${distance} ) {print;PREV=int(\$2);C=\$1;} }' |\\
 	java ${jvm} -jar \${HOME}/jvarkit.jar vcfsetdict -R ${dict}  -n SKIP  |\\
 	bcftools sort --max-mem '${task.memory.giga}G' -T TMP/tmp -O z -o TMP/jeter.vcf.gz

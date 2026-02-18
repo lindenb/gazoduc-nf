@@ -22,13 +22,18 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {VCF_TO_BED as VCF2BED1    } from '../../modules/bcftools/vcf2bed'
-include {VCF_TO_BED as VCF2BED2    } from '../../modules/bcftools/vcf2bed'
-include {VCF_TO_BED as VCF2BED3    } from '../../modules/bcftools/vcf2bed'
-include {IF_EMPTY as IF_EMPTY1     } from '../../subworkflows/nf/if_empty'
-include {IF_EMPTY as IF_EMPTY2     } from '../../subworkflows/nf/if_empty'
+include { VCF_TO_BED                    } from '../../modules/bcftools/vcf2bed'
+include { DOWNLOAD_1KG_SAMPLE2POP       } from '../../modules/pihat/download.1kg.pop'
+include { PER_CONTIG                    } from '../../modules/pihat/per_contig'
+include { PLOT_ASSOC                    } from '../../modules/pihat/plot.assoc'
+include { PLOT_MDS                      } from '../../modules/pihat/plot.mds'
+include { PLOT_PIHAT                    } from '../../modules/pihat/plot.pihat'
+include { AVERAGE_PIHAT                 } from '../../modules/pihat/average.pihat'
+include { PLINK_ASSOC                   } from '../../modules/pihat/plink.assoc'
+include { PLINK_GENOME                  } from '../../modules/pihat/plink.genome'
 
 String normContig(String s) {
+    if(s==null) return "";
     if(!s.matches("(chr)?[0-9]+")) return "";
     if(s.startsWith("chr")) s=s.substring(3);
     return s;
@@ -52,71 +57,77 @@ workflow PIHAT {
         versions = Channel.empty()
         multiqc = Channel.empty()
         
-        VCF2BED1(vcfs)
-        versions = versions.mix(VCF2BED1.out.versions)
-        VCF2BED2(vcf1kg)
-        versions = versions.mix(VCF2BED2.out.versions)
-        VCF2BED3(gnomad)
-        versions = versions.mix(VCF2BED3.out.versions)
-
-        ch1 = VCF2BED1.out.output
+        VCF_TO_BED(
+            vcfs.map{meta,vcf,tbi->[meta.plus(source:"user"),vcf,tbi]}
+            .mix(gnomad.map{meta,vcf,tbi->[meta.plus(source:"gnomad"),vcf,tbi]})
+            .mix(vcf1kg.map{meta,vcf,tbi->[meta.plus(source:"1kg"),vcf,tbi]})
+            )
+        versions = versions.mix(VCF_TO_BED.out.versions)
+        
+        /** read vcfs, extract chromosomes */
+        ch1 = VCF_TO_BED.out.output
             .splitCsv(sep:'\t',header:false,elem:1)
-            .map{_meta,bedrecord,vcf,idx->[bedrecord[0],vcf,idx]} /* contig, vcf, vcfidx */
-            .map{contig,vcf,idx->[normContig(contig),contig,vcf,idx]} /* norm_contig, contig, vcf, vcfidx */
-            .filter{!it[0].isEmpty()}
-
-	ch1.count().filter{it==0}.map{System.err.println("Warning. No chromosome looks like /(chr)?[0-9]+/");}
-
-
-        ch2 = VCF2BED2.out.output
-            .splitCsv(sep:'\t',header:false,elem:1)
-            .map{_meta,bedrecord,vcf,idx->[bedrecord[0],vcf,idx]} /* contig, vcf, vcfidx */
-            .map{contig,vcf,idx->[normContig(contig),contig,vcf,idx]} /* norm_contig, contig, vcf, vcfidx */
-            .filter{!it[0].isEmpty()}
-
-        ch3 = VCF2BED3.out.output
-            .splitCsv(sep:'\t',header:false,elem:1)
-            .map{_meta,bedrecord,vcf,idx->[bedrecord[0],vcf,idx]} /* contig, vcf, vcfidx */
-            .map{contig,vcf,idx->[normContig(contig),contig,vcf,idx]} /* norm_contig, contig, vcf, vcfidx */
-            .filter{!it[0].isEmpty()}
+            .map{meta,bedrecord,vcf,idx->[
+                normContig(bedrecord[0]),
+                meta.plus([
+                    id : meta.id+ "."+bedrecord[0],
+                    contig: bedrecord[0],
+                    norm_contig: normContig(bedrecord[0]),
+                    ]),
+                vcf,
+                idx
+                ]} /* contig, vcf, vcfidx */
+            .filter{ctg,_meta,_vcf,_tbi->!ctg.isEmpty()}
 
 
-        no_join1= ch1.map{[
-            it[0]/* pivot */,
-            it[1]/*ctg*/,
-            it[2]/*vcf*/,
-            it[3]/*idx*/,
-            it[1]/* ctg (same)*/,
-            []/* no 1kg vcf */,
-            [] /* no 1kg vcf idx */
-            ]}
 
-        join_ch = IF_EMPTY1(ch1.join(ch2), no_join1) /* norm_contig, contig, vcf, vcfidx , ikg_contig, 1kgvcf, 1kgidx */
+        user_ch = ch1.filter{_ctg,meta,_vcf,_tbi->meta.source=="user"}
+        gnomad_ch = ch1.filter{_ctg,meta,_vcf,_tbi->meta.source=="gnomad"}
+        k1g_ch = ch1.filter{_ctg,meta,_vcf,_tbi->meta.source=="1kg"}
 
-        no_join2= join_ch.map{[
-            it[0]/* pivot */,
-            it[1]/*ctg*/,
-            it[2]/*vcf*/,
-            it[3]/*idx*/,
-            it[4]/* ctg (same)*/,
-            it[5]/* no 1kg vcf */,
-            it[6] /* no 1kg vcf idx */,
-            it[1]/* ctg (same)*/,
-            []/* no gnomad vcf */,
-            [] /* no gnomad vcf idx */
-            ]}
 
-        join_ch = IF_EMPTY2(join_ch.join(ch3), no_join2) /* norm_contig, contig, vcf, vcfidx , ikg_contig, 1kgvcf, 1kgidx, ctg_gnomad, gnomadvcf, gnomadvcfidx */
+        user_ch.count()
+            .filter{it==0L}
+            .map{log.warn("Warning. No chromosome looks like /(chr)?[0-9]+/");}
+
+        dispatch_ch = user_ch.join(k1g_ch,remainder:true)
+            .filter{row->row[1]!=null}/* chromosome in 1Kg but not in user vcf */
+            .map{row->[
+                row[0],/* contig */
+                row[1],/* user meta */
+                row[2],/* user vcf */
+                row[3],/* user tbi */
+                (row[4]==null?([:]):row[4]),/* 1kg meta */
+                (row[4]==null?([]):row[5]),/* 1kg vcf */
+                (row[4]==null?([]):row[6]) /* 1kg tbi */
+                ]}.join(gnomad_ch,remainder:true)
+                    .filter{row->row[1]!=null}/* chromosome in gnomad but not in user vcf */
+                    .map{row->[
+                        row[0],/* contig */
+                        row[1],/* user meta */
+                        row[2],/* user vcf */
+                        row[3],/* user tbi */
+                        row[4],/* 1kg meta */
+                        row[5],/* 1kg vcf */
+                        row[6],/* 1kg tbi */
+                        (row[7]==null?([:]):row[7]),/* gnomad meta */
+                        (row[7]==null?([]):row[8]),/* gnomad vcf */
+                        (row[7]==null?([]):row[9]) /* gnomad tbi */
+                        ]}.multiMap{_ctg,metau,vcfu,tbiu, metak, vcfk, tbik, metag, vcfg, tbig->
+                            user : [metau,vcfu,tbiu]
+                            k1g : [metak,vcfk,tbik]
+                            gnomad : [metag,vcfg,tbig]
+                        }
 
 
 	/* download sample of 1000genome only if vcf1kg defined */
         DOWNLOAD_1KG_SAMPLE2POP(
-		vcf1kg.count()
-			.combine(Channel.of(workflow_metadata))
-			.filter{count,_meta-> count>0}
-			.map{_count,meta->meta}
-			.first()
-		)
+            vcf1kg.count()
+                .combine(Channel.of(workflow_metadata))
+                .filter{count,_meta-> count>0}
+                .map{_count,meta->meta}
+                .first()
+            )
         versions = versions.mix(DOWNLOAD_1KG_SAMPLE2POP.out.versions)
             
         PER_CONTIG(
@@ -125,13 +136,14 @@ workflow PIHAT {
             dict,
             exclude_samples.first(),
             exclude_bed.first(),
-            join_ch
+            dispatch_ch.k1g,
+            dispatch_ch.gnomad,
+            dispatch_ch.user
             )
         versions = versions.mix(PER_CONTIG.out.versions)
 
-    
         
-        MERGE(
+        PLINK_GENOME(
             fasta,
             fai,
             dict,
@@ -139,18 +151,18 @@ workflow PIHAT {
                 .collect()
                 .map{[[id:"pihat"],it]}
             )
-        versions = versions.mix(MERGE.out.versions)
+        versions = versions.mix(PLINK_GENOME.out.versions)
 
 
         MERGE_SAMPLE2POP(
             DOWNLOAD_1KG_SAMPLE2POP.out.tsv,
             sample2pop,
-            MERGE.out.merged_plink
+            PLINK_GENOME.out.merged_plink
             )
         versions = versions.mix(MERGE_SAMPLE2POP.out.versions)
 
 
-        PLINK_ASSOC(fasta, fai, dict, MERGE.out.merged_plink , MERGE.out.mds )
+        PLINK_ASSOC(fasta, fai, dict, PLINK_GENOME.out.merged_plink , PLINK_GENOME.out.mds )
         versions = versions.mix(PLINK_ASSOC.out.versions)
 
 
@@ -165,441 +177,28 @@ workflow PIHAT {
             )
         versions = versions.mix(PLOT_ASSOC.out.versions)
 
-        PLOT_PIHAT(MERGE.out.genome)
+        PLOT_PIHAT(PLINK_GENOME.out.genome)
         versions = versions.mix(PLOT_PIHAT.out.versions)
 	multiqc = multiqc.mix(PLOT_PIHAT.out.pict.filter{_meta,img->img.name.endsWith(".png")})
 
         components = Channel.of(["C1","C2"],["C1","C3"],["C2","C3"])
         formats = Channel.of("pdf","png")
        
-        PLOT_MDS(MERGE.out.mds.combine(components).combine(formats))
+        PLOT_MDS(PLINK_GENOME.out.mds.combine(components).combine(formats))
         versions = versions.mix(PLOT_MDS.out.versions)
        
 	multiqc = multiqc.mix(PLOT_MDS.out.plot.filter{_meta,img->img.name.endsWith(".png")})
 
-        AVERAGE_PIHAT(MERGE.out.genome, MERGE_SAMPLE2POP.out.sample2pop)
+        AVERAGE_PIHAT(PLINK_GENOME.out.genome, MERGE_SAMPLE2POP.out.sample2pop)
 	multiqc = multiqc.mix(AVERAGE_PIHAT.out.png)
         versions = versions.mix(AVERAGE_PIHAT.out.versions)
     emit:
         versions
-        genome = MERGE.out.genome
-        mds = MERGE.out.mds
+        genome = PLINK_GENOME.out.genome
+        mds = PLINK_GENOME.out.mds
 	multiqc
 }
 
-
-process PER_CONTIG {
-tag "chr${norm_contig}"
-afterScript "rm -rf TMP"
-label "process_single"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-input:
-    tuple val(meta1),path(fasta)
-    tuple val(meta2),path(fai)
-    tuple val(meta3),path(dict)
-    tuple val(meta4),path(optional_exclude_samples)
-    tuple val(meta5),path(optional_exclude_bed)
-    tuple val(norm_contig),
-            val(contig_user),path(vcf_user),path(idx_user),
-            val(optional_contig_1k),path(optional_vcf_1k),path(optional_idx_1k),
-	    val(optional_contig_gnomad),path(gnomad),path(gnomad_idx)
-output:
-    path("indep_*"),emit:bfile
-    path("versions.yml"),emit:versions
-script:
-    def arg1 = ""
-    def cpus3 = task.cpus>3?"--thread ${(task.cpus/3) as int}":""
-    def plink_args  = "--const-fid 1 --allow-extra-chr --allow-no-sex --threads ${task.cpus}"
-"""
-mkdir -p TMP
-set -x
-
-# 512Mb = max TBI
-echo '##INFO=<ID=IN_FILE1,Number=0,Type=Flag,Description="In File 1">' > TMP/file1.header
-echo '${contig_user}\t0\t512000000\t1' |bgzip >  TMP/select.bed.gz
-tabix -f -p bed TMP/select.bed.gz
-
-##
-## ECRACT DATA FROM USER VCF
-##
-bcftools view  ${cpus3} \\
-        --types snps  \\
-        --exclude-uncalled \\
-        --apply-filters 'PASS,.' \\
-        --regions "${contig_user}" \\
-        -m2 -M2 \\
-        -O u \\
-        "${vcf_user}" |\\
-    bcftools annotate \\
-        ${cpus3}  \\
-        -x "INFO,FILTER,QUAL,^FORMAT/GT" \\
-        -O u |\\
-     bcftools annotate \\
-        ${cpus3}  \\
-        -a  TMP/select.bed.gz \\
-        -h TMP/file1.header \\
-        -c "CHROM,FROM,TO,IN_FILE1" \\
-        -O b \\
-        -o TMP/jeter1.bcf
-
-bcftools index --threads ${task.cpus} -f   TMP/jeter1.bcf
-
-
-# view data
-bcftools index -s  TMP/jeter1.bcf 1>&2
-
-bcftools view -G --no-header TMP/jeter1.bcf |head 1>&2 || true
-bcftools query -l TMP/jeter1.bcf | cat -n | tail 1>&2 || true
-
-
-# 
-# 1000 GENOMES DATA
-#
-if ${optional_vcf_1k?true:false}
-then
-
-    ## ADD FLAG to set in source of file 2
-    echo '##INFO=<ID=IN_FILE2,Number=0,Type=Flag,Description="In File 2">' > TMP/file2.header
-
-
-    ##
-    ## ECRACT DATA FROM 1000 GENOMES
-    ##
-    echo '${optional_contig_1k}\t${contig_user}' > TMP/chroms.txt 
-
-    bcftools view ${cpus3} --types snps --apply-filters 'PASS,.' --regions "${optional_contig_1k}" -m2 -M2 -O u "${optional_vcf_1k}" |\\
-        bcftools annotate \\
-            ${cpus3}  \\
-            -x "INFO,FILTER,QUAL,^FORMAT/GT" \\
-            --rename-chrs TMP/chroms.txt \\
-                -O u |\\
-        bcftools annotate \\
-            ${cpus3}  \\
-            -a  TMP/select.bed.gz \\
-            -h TMP/file2.header \\
-            -c "CHROM,FROM,TO,IN_FILE2" \\
-            -O b \\
-            -o TMP/jeter2.bcf
-    
-    bcftools index --threads ${task.cpus} -f  TMP/jeter2.bcf
-
-    # view data
-    bcftools index -s  TMP/jeter2.bcf 1>&2
-    set +o pipefail
-    bcftools view -G --no-header TMP/jeter2.bcf |head 1>&2
-    bcftools query -l TMP/jeter2.bcf | cat -n | tail 1>&2
-    set -o pipefail
-
-    ##
-    ## MERGE, CHECK VARIANT HAVE BOTH IN_FILE1 and IN_FILE2
-    ##
-    bcftools merge  -m all -O u \\
-        --threads ${task.cpus} \\
-        -Ou \\
-        TMP/jeter1.bcf TMP/jeter2.bcf |\
-        bcftools view \\
-            -i 'IN_FILE1=1 && IN_FILE2=1' \\
-            -O b -o TMP/jeter3.bcf
-
-    mv TMP/jeter3.bcf TMP/jeter1.bcf
-fi
-
-#
-# REMOVE VARIANTS OF LOW QUALITY IN GNOMAD
-#
-if ${gnomad?true:false}
-then
-
-        # extract bed for this vcf, extends to avoid too many regions
-        bcftools query  \\
-            -f '%CHROM\t%POS0\t%END\\n' \\
-            TMP/jeter1.bcf |\\
-			jvarkit -Djava.io.tmpdir=TMP bedrenamechr -f "${gnomad}" --column 1 --convert SKIP |\\
-			sort -T TMP -t '\t' -k1,1 -k2,2n |\\
-			bedtools merge -i - -d 1000 > TMP/gnomad.bed
-	
-		if [ ! -s gnomad.bed ] ; then
-        		echo "${optional_contig_gnomad}\t0\t1" > TMP/gnomad.bed
-		fi
-
-
-    	# get filtered variants in gnomad
-		bcftools query -e 'FILTER=="." || FILTER=="PASS"' \\
-            --regions-file TMP/gnomad.bed \\
-            -f '%CHROM\t%POS0\t%END\\n' \\
-            "${gnomad}" |\\
-			jvarkit  -Djava.io.tmpdir=TMP bedrenamechr -f "${fasta}" --column 1 --convert SKIP |\\
-			sort -T	TMP -t '\t' -k1,1	-k2,2n > TMP/x.gnomad.bed
-		
-		if [ ! -s x.gnomad.bed ] ; then
-        		echo "${contig_user}\t0\t1" > TMP/x.gnomad.bed
-		fi
-		
-		bcftools view \\
-             --threads ${task.cpus} \\
-            --targets-file "^TMP/x.gnomad.bed" \\
-            --targets-overlap 2 \\
-            -O b \\
-            -o TMP/jeter2.bcf \\
-            TMP/jeter1.bcf
-        	
-	mv TMP/jeter2.bcf TMP/jeter1.bcf
-
-	bcftools query -f '.\\n' TMP/jeter1.bcf | wc -l 1>&2
-fi
-
-
-if ${optional_exclude_samples?true:false}
-then
-    bcftools query -l TMP/jeter1.bcf | sort | uniq > TMP/jeter.a
-    sort -T TMP "${optional_exclude_samples}" | uniq > TMP/jeter.b
-    # remaining samples
-    comm -23 TMP/jeter.a TMP/jeter.b > TMP/jeter.c
-    test -s TMP/jeter.c
-
-    # something to remove ?
-    if ! cmp TMP/jeter.a TMP/jeter.c
-    then
-         bcftools view \\
-            --threads ${task.cpus} \\
-           --samples-file TMP/jeter.c \\
-           -O b \\
-            -o TMP/jeter2.bcf \\
-            TMP/jeter1.bcf
-        
-        mv TMP/jeter2.bcf TMP/jeter1.bcf
-    fi
-fi
-
-
-if ${optional_exclude_bed?true:false}
-then
-    bcftools view \\
-         --threads ${task.cpus} \\
-        --targets-file ^${optional_exclude_bed} \\
-        --targets-overlap 2 \\
-        -O b \\
-        -o TMP/jeter2.bcf \\
-        TMP/jeter1.bcf
-    
-    mv TMP/jeter2.bcf TMP/jeter1.bcf
-fi
-
-bcftools index --threads ${task.cpus} -f   TMP/jeter1.bcf
- 
-
-# rename chromosomes to no chr prefix
-paste <(echo '${contig_user}') <(echo '${contig_user}' | sed 's/^chr//') > TMP/chroms.txt 
-
-bcftools query -f '.\\n' TMP/jeter1.bcf | wc -l 1>&2
-
-# select variant after join
-bcftools annotate \\
-        --threads ${task.cpus} \\
-        -i 'F_MISSING < 0.01 && N_ALT=1 && AC>0' \\
-        --set-id '%CHROM:%POS:%REF:%ALT' \\
-        -x 'INFO' \\
-        --rename-chrs TMP/chroms.txt \\
-        -O z \\
-        -o TMP/jeter1.vcf.gz \\
-        TMP/jeter1.bcf
-
-bcftools query -f '.\\n' TMP/jeter1.vcf.gz | wc -l 1>&2
-bcftools index --threads ${task.cpus} -f -t TMP/jeter1.vcf.gz
-
-
-# check
-bcftools index -s  TMP/jeter1.vcf.gz 1>&2
-set +o pipefail
-bcftools view -G --no-header TMP/jeter1.vcf.gz |head 1>&2
-bcftools query -l TMP/jeter1.vcf.gz | cat -n | tail 1>&2
-set -o pipefail
-
-rm -rvf TMP/ISEC
-
-# Thank you Floriane S for that wonderful code
-
-plink ${plink_args} \\
-    --vcf TMP/jeter1.vcf.gz \\
-    --make-bed \\
-    --out TMP/data_sansXYMT
-
-## Selection of independents SNP
-plink ${plink_args} \\
-    --bfile TMP/data_sansXYMT \\
-    --indep-pairwise 50 10 0.2 \\
-    --out TMP/plink
-
-plink ${plink_args} \\
-    --bfile TMP/data_sansXYMT \\
-    --extract TMP/plink.prune.in \\
-    --make-bed \\
-    --out TMP/data_prune
-
-plink ${plink_args} \\
-    --bfile TMP/data_prune \\
-    --ld-window 50 \\
-    --ld-window-kb 5000 \\
-    --ld-window-r2 0.2 --r2 \\
-    --out TMP/ld
-
-awk '{print \$3}' TMP/ld.ld > TMP/SNP_out.txt
-
-plink ${plink_args} \\
-    --bfile TMP/data_prune \\
-    --exclude TMP/SNP_out.txt \\
-    --make-bed \\
-    --out TMP/indep_${norm_contig}
-
-mv TMP/indep_${norm_contig}* ./
-
-cat << EOF > versions.yml
-${task.process}:
-    plink: "\$(plink --version | awk '{print \$2}')"
-    bcftools: "\$(bcftools --version | awk '(NR==1){print \$NF}')"
-EOF
-"""
-stub:
-def prefix = "indep_${norm_contig}"
-"""
-touch versions.yml ${prefix}.bim ${prefix}.bed ${prefix}.fam 
-"""
-}
-
-process MERGE {
-tag "${meta.id?:""}"
-afterScript "rm -rf TMP"
-label "process_short" //single is not enough memory
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-input:
-    tuple val(meta1),path(fasta)
-    tuple val(meta2),path(fai)
-    tuple val(meta3),path(dict)
-    tuple val(meta),path("PLINK/*")
-output:
-    tuple val(meta),path("*.genome"),emit:genome
-    tuple val(meta),path("*.mds"),emit:mds
-    tuple val(meta),path("merged.*"),emit:merged_plink
-    path("versions.yml"),emit:versions
-script:
-    def num_mds_components = task.ext.mds_components?:10
-    def plink_args  = "--const-fid 1 --allow-extra-chr --allow-no-sex --threads ${task.cpus}"
-    def prefix = task.ext.prefix?:meta.id?:"pihat"
-"""
-mkdir -p TMP
-set -x
-find PLINK/  -name "*.bim" | sed 's/\\.bim\$//' | sort > TMP/jeter.list
-test -s TMP/jeter.list
-
-plink \\
-    ${plink_args} \\
-    --merge-list TMP/jeter.list \\
-    --make-bed \\
-    --out TMP/merged
-
-## IBS matrix
-plink --bfile TMP/merged --genome --out TMP/matIBS_data
-wc -l TMP/matIBS_data.genome 1>&2
-cp TMP/matIBS_data.genome "${prefix}.genome"
-
-
-
-## Remove related individuals
-awk '(NR==1 || \$10>0.1) {printf("%s%s\t%s\\n",(NR==1?"#":""),\$3 ,\$4);}' TMP/matIBS_data.genome |\\
-    LC_ALL=C sort |\\
-    uniq  |\\
-    sed 's/^#//' > TMP/indiv_pihat_sup0.1.txt
-wc -l TMP/indiv_pihat_sup0.1.txt 1>&2
-
-cp TMP/indiv_pihat_sup0.1.txt ./
-
-plink \\
-    ${plink_args} \\
-    --bfile TMP/merged \\
-    --remove TMP/indiv_pihat_sup0.1.txt \\
-    --make-bed \\
-    --out TMP/data_sansApp
-
-## MDS
-plink \\
-    ${plink_args} \\
-    --bfile TMP/data_sansApp \\
-    --read-genome TMP/matIBS_data.genome \\
-    --mds-plot ${num_mds_components} \\
-    --cluster \\
-    --out TMP/strat_data
-
-mv TMP/strat_data.mds ${prefix}.mds
-
-
-mv TMP/merged.* ./
-
-cat << EOF > versions.yml
-${task.process}:
-    plink: "\$(plink --version | awk '{print \$2}')"
-EOF
-"""
-}
-
-
-process PLOT_MDS {
-tag "${mds.name} ${C1} ${C2} ${format}"
-afterScript "rm -rf TMP"
-label "process_single"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-input:
-    tuple val(meta),path(mds),val(C1),val(C2),val(format)
-output:
-    tuple val(meta),path("*.{pdf,png}"),emit:plot
-    path("versions.yml"),emit:versions
-script:
-    def prefix= task.ext.prefix?:meta.id+".mds"
-    def R_main = task.ext.R_main?:"PCA"
-    def R_sub = "${C1} / ${C2}"
-"""
-mkdir -p TMP
-cat << '__EOF__' > TMP/jeter.R
-strat <- read.table(file="${mds}",header=TRUE)
-
-${format}("TMP/jeter.${format}")
-plot(strat\$${C1},strat\$${C2},main ="${R_main}",sub="${R_sub}")
-dev.off()
-__EOF__
-
-R --no-save < TMP/jeter.R
-
-mv TMP/jeter.${format} "${prefix}.${C1}.${C2}.${format}"
-
-cat << EOF > versions.yml
-${task.process}:
-    R: todo
-EOF
-"""
-}
-
-process DOWNLOAD_1KG_SAMPLE2POP {
-tag "${meta.id?:""}"
-afterScript "rm -rf TMP"
-label "process_single"
-input:
-    val(meta)
-output:
-    tuple val(meta),path("*.tsv"),emit:tsv
-    path("versions.yml"),emit:versions
-script:
-    def prefix = task.ext.prefix?:"integrated_call_samples_1kg"
-    def url = task.ext.url?:"https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/integrated_call_samples_v3.20250704.ALL.ped"
-"""
-curl -L "${url}" |\\
-    cut -f 2,7 |\\
-    tail -n+2 >  ${prefix}.tsv
-
-cat << EOF > versions.yml
-${task.process}:
-    curl: todo
-EOF
-"""
-}
 
 process MERGE_SAMPLE2POP {
 tag "${meta1.id?:""}"
@@ -653,229 +252,8 @@ EOF
 }
 
 
-process PLOT_PIHAT {
-tag "${genome.name}"
-afterScript "rm -rf TMP"
-label "process_single"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-input:
-    tuple val(meta), path(genome)
-output:
-    tuple val(meta),path("*.{png,pdf}"),emit:pict
-    path("versions.yml"),emit:versions
-script:
-    def format = task.ext.format?:(meta.format?:"png")
-    def prefix=task.ext.prefix?:"pihat"
-    def max_pihat = task.ext.max_pihat?:0.1
-
-"""
-mkdir -p TMP
-
-cat << '__EOF__' > TMP/jeter.R
-genome <- read.table(file="${genome}",header=TRUE)
-
-head(genome)
-
-${format}("TMP/jeter.${format}")
-plot(genome\$PI_HAT,
-    ylim=c(0,1.0),
-    xlab="Individuals Pair",
-    ylab="PI-HAT",
-    main="PI-HAT"
-)
-abline(h=${max_pihat},col="blue");
-dev.off()
-__EOF__
-
-R --no-save < TMP/jeter.R
-
-mv "TMP/jeter.${format}" "${prefix}.samples.${format}"
-
-cat << EOF > versions.yml
-${task.process}:
-    sort: todo
-EOF
-"""
-}
-
-
-process AVERAGE_PIHAT {
-tag "${genome.name}"
-afterScript "rm -rf TMP"
-label "process_single"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-input:
-    tuple val(meta ), path(genome)
-    tuple val(meta2), path(sample2group)
-output:
-    tuple val(meta),path("*.tsv"),optional:true,emit:tsv
-    tuple val(meta),path("*.png"),optional:true,emit:png
-    path("versions.yml"),emit:versions
-script:
-    def prefix = task.ext.prefix?:"sample2avg.pihat"
-    def sub_title = task.ext.sub?:""
-    def max_pihat = task.ext.max_pihat?:0.1
-"""
-mkdir -p TMP
-
-cat << '__EOF__' > TMP/jeter.awk
-(NR>1) {
-    P[\$2]+=1.0*(\$10);
-    P[\$4]+=1.0*(\$10);
-    C[\$2]++;
-    C[\$4]++;
-    }
-END {
-    for(S in P) {
-        printf("%s\t%f\\n",S,P[S]/C[S]);
-        }
-    }
-__EOF__
-
-# create table sample/avg(pihat)/status
-awk -f TMP/jeter.awk '${genome}' |\\
-	LC_ALL=C sort -T . -t '\t' -k2,2gr > "TMP/jeter.tsv"
-
-
-cat << '__EOF__' > TMP/jeter.R
-T1<-read.table("TMP/jeter.tsv",sep="\\t",header=FALSE,col.names=c("S","X"),colClasses=c("character","numeric"))
-
-# Read the sample-to-group mapping
-sample2group <- read.table("${sample2group}", sep="\t", header=FALSE,col.names=c("S","G"), colClasses=c("character", "character"))
-
-# Merge to get group information for each sample
-T1 <- merge(T1, sample2group, by="S", all.x=TRUE)
-
-# Assign a color to each group
-groups <- unique(T1\$G)
-group_colors <- setNames(rainbow(length(groups)), groups)
-T1\$color <- group_colors[T1\$G]
-
-png("TMP/jeter.png", width=800, height=800, units="px")
-boxplot(T1\$X ,
-    ylim=c(0,max(T1\$X)),
-    main="AVG(PIHAT)/SAMPLE",
-    sub="${sub_title}",
-    xlab="Sample",
-    ylab="pihat",
-    col=T1\$color
-    )
-abline(h=${max_pihat},col="blue")
-
-
-# Add legend
-legend("topright", legend=groups, fill=group_colors, title="POP")
-
-
-dev.off()
-
-__EOF__
-
-R --no-save < TMP/jeter.R
-
-mv TMP/jeter.tsv ${prefix}.tsv
-mv TMP/jeter.png ${prefix}.png || true
-
-cat << EOF > versions.yml
-${task.process}:
-    R: todo
-EOF
-"""
-}
 
 
 
-process PLINK_ASSOC {
-afterScript "rm -rf TMP"
-label "process_single"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-input:
-    tuple val(meta1),path(fasta)
-    tuple val(meta2),path(fai)
-    tuple val(meta3),path(dict)
-    tuple val(meta4),path("PLINK/*")
-	tuple val(meta ),path(mds)
-output:
-    tuple val(meta ),path("*.qassoc"),emit:assoc
-    path("versions.yml"),emit:versions
-script:
-    def treshold = task.ext.treshold?:5E-8
-    def plink_args  = "--const-fid 1 --allow-extra-chr --allow-no-sex --threads ${task.cpus}"
 
 
-	"""
-	hostname 2>&1
-	mkdir -p TMP
-
-	# create pheno file https://www.cog-genomics.org/plink/1.9/input#pheno
-	awk '(NR==1) {split(\$0,header);} {X=0;for(i=1;i<=NF;i++) {if(header[i] !="SOL") {printf("%s%s",(X==0?"":"\t"),\$i);X=1;}} printf("\\n");}' '${mds}' > TMP/pheno.tsv
-
-	plink \\
-        ${plink_args} \\
-        --bfile `find PLINK/ -name "*.fam" | sed 's/\\.fam\$//'` \\
-		--pheno TMP/pheno.tsv \\
-		--all-pheno \\
-		--assoc \\
-		--out PHENO
-	
-
-cat << EOF > versions.yml
-${task.process}:
-    plink: \$(plink --version | awk '{print \$2}')
-    R: todo
-EOF
-	"""
-	}
-
-
-process PLOT_ASSOC {
-tag "${assoc.name}"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-input:
-    tuple val(meta1),path(fasta)
-    tuple val(meta2),path(fai)
-    tuple val(meta3),path(dict)
-	tuple val(meta ),path(assoc)
-output:
-    tuple val(meta ),path("*.png"),emit:png
-    path("versions.yml"),emit:versions
-script:
-
-"""
-hostname 1>&2
-mkdir -p TMP
-set -x
-
-JD1=`which jvarkit`
-echo "JD1=\${JD1}" 1>&2
-# directory of jvarkit
-JD2=`dirname "\${JD1}"`
-# find the jar itself
-JVARKIT_JAR=`find "\${JD2}/../.." -type f -name "jvarkit.jar" -print -quit`
-JVARKIT_DIST=`dirname "\${JVARKIT_JAR}"`
-
-
-cat "${moduleDir}/Minikit.java" |\\
-    sed -e 's/__INPUT__/${assoc}/'  -e 's/__MIN_P_VALUE__/1e-8/' -e 's/__FASTA__/${fasta}/'  > TMP/Minikit.java
-
-javac -d TMP -cp \${JVARKIT_DIST}/jvarkit.jar TMP/Minikit.java
-java -Djava.awt.headless=true -cp \${JVARKIT_DIST}/jvarkit.jar:TMP Minikit
-
-#
-# Floriane suggested to also add the number of variants per chromosome
-#
-awk '(\$2!="SNP") {print \$2}' '${assoc}' |\\
-	cut -d ':' -f 1 | sort -T TMP | uniq -c |\\
-	awk '{printf("%s\t%s\\n",\$2,\$1);}' |\\
-	sort -T TMP -t '\t' -k1,1 |\\
-	join -t '\t' -1 1 -2 1 - <(sort -t '\t' -k1,1 '${fai}' ) |\\
-	awk 'BEGIN{printf("<table class=\\"table\\"><thead><caption>Number of variants per contig</caption><tr><th>CHROM</th><th>Length</th><th>VARIANTS</th><th>Variants per base</th></tr></thead><tbody>\\n");} {printf("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\\n",\$1,\$3,\$2,\$2/\$3);} END {printf("</tbody></table>\\n");}' >> TMP/jeter.html
-
-mv TMP/jeter.png "${assoc.baseName}.png"
-
-cat << EOF > versions.yml
-${task.process}:
-    R: todo
-EOF
-"""
-}
