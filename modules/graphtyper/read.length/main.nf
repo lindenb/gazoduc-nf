@@ -22,43 +22,33 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-
-process GET_PILEUP_SUMMARIES {
-tag "${meta.id?:""}"
+process READ_LENGTH {
+tag "${meta.id}"
 label "process_single"
-afterScript 'rm -rf TMP'
-conda "${moduleDir}/../../../conda/bioinfo.02.yml"
+afterScript "rm -rf TMP"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-    tuple val(meta1),path(fasta)
+	tuple val(meta1),path(fasta)
     tuple val(meta2),path(fai)
-    tuple val(meta3),path(dict)
-    tuple val(meta4 ),path(vcf),path(vcfidx)
-    tuple val(meta5 ),path(opt_file),path(opt_file_idx)//whatever kind of file used for option '-L'
-	tuple val(meta ),path(bam),path(bai)
+	tuple val(meta),path(bam)
 output:
-    tuple val(meta),path(".table"),emit:table
+	tuple val(meta),path("${sample}.len.txt"),emit:length
     path("versions.yml"),emit:versions
 script:
-    def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP"
+	def n_reads = task.ext.n_reads?:1000
+    def prefix = task.ext.prefix?:"${meta.id}"
 """
-hostname 1>&2
-mkdir -p TMP
+samtools view -F 3844 -T "${fasta}" "${bam}" |\\
+	cut -f 10 |\\
+	head -n "${n_reads}" |\\
+	awk -F '\t' 'BEGIN{T=0.0;N=0;} {N++;T+=length(\$1)} END{print (N==0?150:(T/N));}' > ${prefix}.len.txt
 
-gatk --java-options "${jvm}" GetPileupSummaries \\
-    -I ${bam} \\
-    -V ${vcf} \\
-    -L ${opt_file?opt_file:vcf} \\
-    -O TMP/jeter.pileups.table
-
-mv TMP/jeter.pileups.table "${meta.id}.pileups.table"
-
-cat << EOF > version.yml
-${task.process}:
-    gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
-EOF
+touch versions.yml
 """
 stub:
+     def prefix = task.ext.prefix?:"${meta.id}"
 """
-touch versions.yml "${meta.id}.pileups.table"
+echo 150 >  ${prefix}.len.txt
+touch versions.yml
 """
 }

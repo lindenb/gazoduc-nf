@@ -24,114 +24,168 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-//include {GRAPHTYPER_GENOTYPE_BAMS_01} from '../../../subworkflows/graphtyper/graphtyper.genotype.bams.01.nf'
-include {dumpParams;runOnComplete} from '../../../modules/utils/functions.nf'
+include { validateParameters                       } from 'plugin/nf-schema'
+include { paramsHelp                               } from 'plugin/nf-schema'
+include { paramsSummaryLog                         } from 'plugin/nf-schema'
+include { samplesheetToList                        } from 'plugin/nf-schema'
 include {DIVIDE_AND_CONQUER as DIVIDE_AND_CONQUER1} from "./sub.nf"
 include {DIVIDE_AND_CONQUER as DIVIDE_AND_CONQUER2} from "./sub.nf"
 include {DIVIDE_AND_CONQUER as DIVIDE_AND_CONQUER3} from "./sub.nf"
 include {DIVIDE_AND_CONQUER as DIVIDE_AND_CONQUER4} from "./sub.nf"
 include {DIVIDE_AND_CONQUER as DIVIDE_AND_CONQUER5} from "./sub.nf"
 include {DIVIDE_AND_CONQUER as DIVIDE_AND_CONQUER6} from "./sub.nf"
-include {JVARKIT_BAM_RENAME_CONTIGS               } from '../../../modules/jvarkit/bamrenamechr'
-
-
-if(params.help) {
-    dumpParams(params);
-    exit 0
-}  else {
-    dumpParams(params);
-}
-
-
-Map assertKeyExists(final Map hash,final String key) {
-    if(!hash.containsKey(key)) throw new IllegalArgumentException("no key ${key}'in ${hash}");
-    return hash;
-}
-
-Map assertKeyExistsAndNotEmpty(final Map hash,final String key) {
-    assertKeyExists(hash,key);
-    def value = hash.get(key);
-    if(value.isEmpty()) throw new IllegalArgumentException("empty ${key}'in ${hash}");
-    return hash;
-}
-
-Map assertKeyMatchRegex(final Map hash,final String key,final String regex) {
-    assertKeyExists(hash,key);
-    def value = hash.get(key);
-    if(!value.matches(regex)) throw new IllegalArgumentException(" ${key}'in ${hash} doesn't match regex '${regex}'.");
-    return hash;
-}
+include { JVARKIT_BAM_RENAME_CONTIGS               } from '../../../modules/jvarkit/bamrenamechr'
+include { PREPARE_ONE_REFERENCE                    } from '../../../subworkflows/samtools/prepare.one.ref'
+include { META_TO_BAMS                             } from '../../../subworkflows/samtools/meta2bams2'
+include { READ_SAMPLESHEET                         } from '../../../subworkflows/nf/read_samplesheet'
+include { BEDTOOLS_MAKEWINDOWS                     } from '../../../modules/bedtools/makewindows'
+include { PREPARE_USER_BED                         } from '../../../subworkflows/bedtools/prepare.user.bed'
+include { MOSDEPTH                                 } from '../../../modules/mosdepth'
+include { runOnComplete                            } from '../../../modules/utils/functions.nf'
+include { BED_CLUSTER                              } from '../../../modules/jvarkit/bedcluster'
+include { BEDTOOLS_SLOP                            } from '../../../modules/bedtools/slop'
+include { READ_LENGTH                              } from '../../../modules/graphtyper/read.length'
+include { isSameFai                                } from '../../../modules/utils/functions.nf'
 
 workflow {
-
 	versions = Channel.empty()
-	def genome = Channel.of( file(params.fasta), file(params.fai), file(params.dict) ).collect()	
+	multiqc = Channel.empty()
+	def metadata = [
+		id: "graphtyper"
+		]
 
-  	bams = Channel.fromPath(params.samplesheet)
-			.splitCsv(header:true,sep:',')
-			.map{assertKeyMatchRegex(it,"sample","^[A-Za-z_0-9\\.\\-]+\$")}
-			.map{assertKeyMatchRegex(it,"bam","^\\S+\\.(bam|cram)\$")}
-			.map{
-				if(it.containsKey("bai")) return it;
-				if(it.bam.endsWith(".cram")) return it.plus(bai : it.bam+".crai");
-				return it.plus(bai:it.bam+".bai");
-			}
-			.map{
-				if(it.containsKey("fasta")) return it;
-				return it.plus(fasta:params.fasta);
-			}
-			.map{
-				if(it.containsKey("fai")) return it;
-				return it.plus(fai:it.fasta+".fai");
-			}
-			.map{
-				if(it.containsKey("dict")) return it;
-				return it.plus(dict: it.fasta.replaceAll("\\.(fasta|fa|fna)\$",".dict"));
-			}
-			.map{
-				if(it.containsKey("depth")) return it;
-				return it.plus(depth:"-1");
-			}
-			.branch {
-				ok_ref: it.fasta.equals(params.fasta)
-				bad_ref: true
+
+	if(!workflow.stubRun) {
+		validateParameters()
+		}
+
+	if( params.help ) {
+		log.info(paramsHelp())
+		exit 0
+		}  else {
+		// Print summary of supplied parameters
+		log.info paramsSummaryLog(workflow)
+		}
+
+	PREPARE_ONE_REFERENCE(
+		metadata,
+		Channel.fromPath(params.fasta).map{[[id:it.baseName],it]}
+		)
+    versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
+
+	/* Read samplesheet */
+	READ_SAMPLESHEET(
+		metadata.plus([arg_name:"samplesheet"]),
+		params.samplesheet
+		)
+	versions = versions.mix(READ_SAMPLESHEET.out.versions)
+
+	/** extract BAM/bai/fasta/fai/dict from samplesheet */
+	META_TO_BAMS(
+		metadata,
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		PREPARE_ONE_REFERENCE.out.dict,
+		READ_SAMPLESHEET.out.samplesheet
+		)
+	versions = versions.mix(META_TO_BAMS.out.versions)
+
+
+  	bams = META_TO_BAMS.out.bams
+			.combine(PREPARE_ONE_REFERENCE.out.fai)
+			.map {meta1,bam,bai,fasta,fai1,dict,meta2,fai2->
+					[
+					meta1.plus(ok_ref:isSameFai(fai1,fai2)),
+					bam,
+					bai,
+					fasta,
+					fai1
+					]
 				}
+	
+	if(params.bed!=null) {
+		PREPARE_USER_BED(
+            metadata,
+            PREPARE_ONE_REFERENCE.out.fasta,
+            PREPARE_ONE_REFERENCE.out.fai,
+            PREPARE_ONE_REFERENCE.out.dict,
+            PREPARE_ONE_REFERENCE.out.scatter_bed,
+            Channel.of([[id:file(params.bed).baseName],file(params.bed)])
+            )
+        versions = versions.mix(PREPARE_USER_BED.out.versions)
+        multiqc = multiqc.mix(PREPARE_USER_BED.out.multiqc)
+        bed = PREPARE_USER_BED.out.bed.first()
+		}
+	else
+		{
+		bed = PREPARE_ONE_REFERENCE.out.scatter_bed
+		}
 
-	def bed_in= [];
-	if(params.bed!=null) bed_in=file(params.bed)
+	
+	
+	BEDTOOLS_MAKEWINDOWS(bed)
+	versions = versions.mix(BEDTOOLS_MAKEWINDOWS.out.versions)
 
-	intervals_ch = MAKE_INTERVALS(genome,  bed_in)
+	BED_CLUSTER(
+			PREPARE_ONE_REFERENCE.out.dict,
+			BEDTOOLS_MAKEWINDOWS.out.bed
+			)
+	versions = versions.mix(BED_CLUSTER.out.versions)
+	beds_ch = BED_CLUSTER.out.bed
+			.map{_meta,beds->beds}
+			.map{beds->beds instanceof List?beds:[beds]}
+			.flatMap()
+			.map{bed->[[id:bed.baseName],bed]}
 
+
+	BEDTOOLS_SLOP(
+		PREPARE_ONE_REFERENCE.out.fai,
+		bed
+		)
+	versions = versions.mix(BEDTOOLS_SLOP.out.versions)
 
 	JVARKIT_BAM_RENAME_CONTIGS(
-		[[id:"ref"],file(params.dict)],
-		MAKE_INTERVALS.out.bed.map{[[id:"bed"],it]},
-		bams.bad_ref.map{[[id:it.sample],file(it.bam),file(it.bai),file(it.fasta),file(it.fai),file(it.dict)]}
+		PREPARE_ONE_REFERENCE.out.dict,
+		BEDTOOLS_SLOP.out.bed,
+		bams
+			.filter{meta,bam,bai,fasta,fai,dict->meta.ok_ref==false}
+			.map{meta,bam,bai->[meta.plus(depth:-1),bam,bai]}
 		)
 	versions =versions.mix(JVARKIT_BAM_RENAME_CONTIGS.out.versions)
 
-	bams_renamed = JVARKIT_BAM_RENAME_CONTIGS.out.bam
-		.map{[it[0].id,it[1],it[2]]}
-	
+	bams = bams.filter{meta,bam,bai,fasta,fai,dict->meta.ok_ref==true}
+			.mix(JVARKIT_BAM_RENAME_CONTIGS.out.bam)
+x	
 
-
-
-	bams2 = bams.ok_ref.branch{v->
-			has_depth : v.containsKey("depth") && !v.depth.isEmpty() && !v.depth.equals(".") && (v.depth as int)>0
+	bams2 = bams.ok_ref.branch{meta,bam,bai->
+			has_depth : meta.depth!=null && !meta.depth.isEmpty() && meta.depth!="." && (meta.depth as int)>0
 			no_depth : true
-		}
+			}
+	
+	
+	MOSDEPTH(
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		bams2.no_depth
+			.combine(BEDTOOLS_SLOP.out.bed)
+			.map{meta1,bam,bai,meta2,bed->[meta1,bam,bai,bed]}
+		)
+	versions = versions.mix(MOSDEPTH.out.versions)
 
+	/*
 
-	mosdepth_ch = MOSDEPTH(genome, intervals_ch.bed, bams2.no_depth.map{[it.sample,it.bam,it.bai]}.mix(bams_renamed) )
-
-	ch1 = mosdepth_ch.output.splitText().
+	ch1 = MOSDEPTH.out.summary_txt.splitText().
                 map{[it[1],it[2],it[3],it[0].trim()]}.
 		mix(bams2.has_depth.map{[it.sample,it.bam,it.bai,it.depth]})
+		/*
+	readlen_ch = READ_LENGTH(
+		PREPARE_ONE_REFERENCE.out.fasta,
+		PREPARE_ONE_REFERENCE.out.fai,
+		ch1
+		)
+	versions = versions.mix(READ_LENGTH.out.versions)
 
-	readlen_ch = READ_LENGTH( genome, ch1.map{[it[0],it[1]]} )
-
-
-	ch2 = readlen_ch.splitText().map{[it[1],it[0].trim()]}.join(ch1)
+	READ_LENGTH.out..splitText().map{[it[1],it[0].trim()]}.join(ch1)
 
 	samplesheet_ch = DIGEST_DEPTH(ch2.map{it.join("\t")}.collect())
 
@@ -173,68 +227,14 @@ workflow {
 			}}.groupTuple())
 
         level6.failed.view{"${it} cannot be called"}
-	
+	*/
 	}
 
 
 runOnComplete(workflow);
 
 
-process MAKE_INTERVALS {
-label "process_single"
-afterScript "rm -rf TMP"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-input:
-	path(genome)
-	path(bed)
-output:
-	path("windows.bed"),emit:output
-	path("all.bed"),emit:bed
-script:
-	def fasta = genome.find{it.name.endsWith("a")}
-	def regex= '^(chr)?[0-9XY]+\$'
-	def args1 = task.ext.args1 ?:" -w 50000 -s 49990"
-"""
-mkdir -p TMP
-export LC_ALL=C
-
-gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" ScatterIntervalsByNs \\
-	    --REFERENCE "${fasta}" \\
-	    --MAX_TO_MERGE "1000" \\
-	    --OUTPUT "TMP/jeter.interval_list" \\
-	    --OUTPUT_TYPE "ACGT"
-
-gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" IntervalListToBed \\
-	    --INPUT "TMP/jeter.interval_list" \\
-	    --OUTPUT "TMP/jeter.bed" \\
-	    --SORT true
-
-cut -f1,2,3 TMP/jeter.bed |\\
-	sort -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter2.bed
-mv TMP/jeter2.bed TMP/jeter.bed
-
-
-if ${bed?true:false}
-then
-	cut -f1,2,3 "${bed}" | sort -T TMP -t '\t' -k1,1 -k2,2n | bedtools merge > TMP/jeter2.bed
-	bedtools intersect -a TMP/jeter.bed -b TMP/jeter2.bed > TMP/jeter3.bed
-	mv TMP/jeter3.bed TMP/jeter.bed
-fi
-
-awk -F '\t' '(\$1 ~ /${regex}/ )' TMP/jeter.bed |\\
-	cut -f1,2,3 |\\
-	sort -T TMP -t '\t' -k1,1 -k2,2n > all.bed
-	
-cut -f1,2,3 all.bed |\\
-	sort -T TMP -t '\t' -k1,1 -k2,2n  |\\
-	bedtools makewindows ${args1} -b - > TMP/windows.bed
-test -s TMP/windows.bed
-mv TMP/windows.bed ./
-"""
-}
-
-
-process MOSDEPTH {
+process __MOSDEPTH {
 tag "${sample}"
 label "process_single"
 afterScript "rm -rf TMP"
@@ -271,29 +271,6 @@ test "${sample}.cov.txt"
 
 
 
-process READ_LENGTH {
-tag "${sample}"
-label "process_single"
-afterScript "rm -rf TMP"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-input:
-	path(genome)
-	tuple val(sample),path(bam)
-output:
-	tuple path("${sample}.len.txt"),val(sample)
-script:
-	def fasta = genome.find{it.name.endsWith("a")}
-	def n_reads = 1000
-"""
-mkdir -p TMP
-set +o pipefail
-
-samtools view -F 3844 -T "${fasta}" "${bam}" |\\
-	cut -f 10 |\\
-	head -n "${n_reads}" |\\
-	awk -F '\t' 'BEGIN{T=0.0;N=0;} {N++;T+=length(\$1)} END{print (N==0?100:(T/N));}' > ${sample}.len.txt
-"""
-}
 
 process DIGEST_DEPTH {
 label "process_single"

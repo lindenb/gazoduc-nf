@@ -1,0 +1,40 @@
+nextflow_pipeline {
+
+    name "Test Workflow VCF Genotyping"
+    script "workflows/vcf.genotyping/main.nf"
+    tag "workflows/vcf.genotyping"
+    tag "gitlab_ci"
+    tag "workflows"
+
+
+    test("BASIC") {
+        when {
+            params {
+                fasta       = "${projectDir}/tests/data/rotavirus_rf.fa"
+                samplesheet = "${projectDir}/tests/data/samplesheet.bams.01.csv"
+                vcf = "${projectDir}/tests/data/rotavirus_rf.vcf.gz"
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+
+    }
+
+    test("STUB") {
+        options "-stub"
+        when {
+            params {
+                fasta       = "${projectDir}/tests/data/rotavirus_rf.fa"
+                samplesheet = "${projectDir}/tests/data/samplesheet.bams.01.csv"
+                vcf = "${projectDir}/tests/data/rotavirus_rf.vcf.gz"
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+
+    }
+}

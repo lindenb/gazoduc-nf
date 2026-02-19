@@ -30,6 +30,7 @@ include { paramsSummaryLog                         } from 'plugin/nf-schema'
 include { samplesheetToList                        } from 'plugin/nf-schema'
 include { runOnComplete                            } from '../../modules/utils/functions'
 include { BCFTOOLS_MERGE                           } from '../../modules/bcftools/merge3'
+include { BCFTOOLS_GENOTYPE                        } from '../../modules/bcftools/genotype'
 include { PIHAT                                    } from '../../subworkflows/pihat'
 include { PREPARE_ONE_REFERENCE                    } from '../../subworkflows/samtools/prepare.one.ref'
 include { MULTIQC                                  } from '../../subworkflows/multiqc'
@@ -170,24 +171,31 @@ workflow {
 			)
 		versions = versions.mix(FIND_SITES_IN_GNOMAD.out.versions)
 
-		/** genotype each BAM for each contig */
-		GENOTYPE_GATK(
-			PREPARE_ONE_REFERENCE.out.dict,
-			META_TO_BAMS.out.bams.combine(FIND_SITES_IN_GNOMAD.out.vcf)
-				.map{meta1,bam,bai,fasta,fai,dict,meta2,vcf,tbi->[meta1.plus(contig:meta2.contig),bam,bai,fasta,fai,dict,vcf,tbi]}
-			)
-		versions = versions.mix(GENOTYPE_GATK.out.versions)
+		if(params.genotype_method=="gatk")
+			/** genotype each BAM for each contig */
+			GENOTYPE_GATK(
+				PREPARE_ONE_REFERENCE.out.dict,
+				META_TO_BAMS.out.bams.combine(FIND_SITES_IN_GNOMAD.out.vcf)
+					.map{meta1,bam,bai,fasta,fai,dict,meta2,vcf,tbi->[meta1.plus(contig:meta2.contig),bam,bai,fasta,fai,dict,vcf,tbi]}
+				)
+			versions = versions.mix(GENOTYPE_GATK.out.versions)
+				/** merge per contig */
+			BCFTOOLS_MERGE(
+				to_merge_vcf
+					.map{meta,vcf,tbi->[meta.contig,[vcf,tbi]]}
+					.groupTuple()
+					.map{contig,files->[ [id:contig],files.flatten().sort()]}
+				)
+			versions = versions.mix(BCFTOOLS_MERGE.out.versions)
 
-		/** merge per contig */
-		BCFTOOLS_MERGE(
-			GENOTYPE_GATK.out.vcf
-				.map{meta,vcf,tbi->[meta.contig,[vcf,tbi]]}
-				.groupTuple()
-				.map{contig,files->[ [id:contig],files.flatten().sort()]}
-			)
-		versions = versions.mix(BCFTOOLS_MERGE.out.versions)
-
-		uservcf_ch = BCFTOOLS_MERGE.out.vcf
+			uservcf_ch = BCFTOOLS_MERGE.out.vcf
+			}
+		else
+			{
+			log.error("undefined/unknown ${params.genotype_method}.")
+			exit -1
+			}
+		
 		}
 	
 
@@ -232,7 +240,7 @@ workflow {
 		uservcf_ch
 		)
 	multiqc = multiqc.mix(PIHAT.out.multiqc)
-	versions = multiqc.mix(PIHAT.out.versions)
+	versions = versions.mix(PIHAT.out.versions)
 	
 	
 	MULTIQC(
@@ -268,9 +276,9 @@ script:
 	def distance = task.ext.distance?:100
 	def contig = "${meta.contig}"
 	def prefix = task.ext.prefix?:"${meta.id}.${contig}"
-	def delta = (task.ext.delta?:0.4) as double // floriane fait à AF=10% 
-	def min_af = task.ext.min_af?:(0.5 - delta)
-	def max_af = task.ext.max_af?:(0.5 + delta)
+	def delta_AF = (task.ext.delta_AF?:0.4) as double // floriane fait à AF=0.01
+	def min_af = task.ext.min_af?:(0.5 - delta_AF)
+	def max_af = task.ext.max_af?:(0.5 + delta_AF)
 	def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
 """
 mkdir -p TMP
@@ -294,6 +302,12 @@ mv TMP/jeter.vcf.gz ${prefix}.vcf.gz
 mv TMP/jeter.vcf.gz.tbi ${prefix}.vcf.gz.tbi
 
 touch versions.yml
+"""
+stub:
+	def contig = "${meta.contig}"
+	def prefix = task.ext.prefix?:"${meta.id}.${contig}"
+"""
+touch versions.yml  ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi
 """
 }
 

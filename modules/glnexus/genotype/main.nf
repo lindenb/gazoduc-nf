@@ -22,9 +22,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-
-
-
 process GLNEXUS_GENOTYPE {
 label "process_single"
 tag "${optional_bed?optional_bed.name:""} ${meta.id?:""}"

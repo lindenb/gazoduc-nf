@@ -646,6 +646,23 @@ def median(data) {
    }
 
 
+List _extractDict(Path fai) {
+	def L = [];
+	fai.withReader {
+		String line
+		while( line = it.readLine() ) {
+			def tokens = line.split("[\t]");
+			L.add(tokens[0]+"\t"+tokens[1]);
+			}
+		}
+	return L;
+	}
+
+boolean isSameFai(Path fai1, Path fai2) {
+	return _extractDict(fai1).equals(_extractDict(fai2));
+	}
+
+
 void runOnComplete(def wf) {
 wf.onComplete {
     println ( workflow.success ? """

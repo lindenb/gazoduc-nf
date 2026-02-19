@@ -1,0 +1,24 @@
+nextflow_pipeline {
+
+    name "Test Workflow main.nf"
+    script "workflows/pihat/main.nf"
+    tag "workflows/pihat"
+    tag "gitlab_ci"
+    tag "workflows"
+
+    test("STUB") {
+        options "-stub"
+        when {
+            params {
+                fasta       = "${projectDir}/tests/data/hs38me_all_chr.fasta"
+                samplesheet = "${projectDir}/tests/data/samplesheet.bams.01.csv"
+                gnomad = "${projectDir}/tests/data/fake.gnomad.vcf.gz"
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+
+    }
+}

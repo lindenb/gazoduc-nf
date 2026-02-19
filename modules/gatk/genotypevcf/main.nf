@@ -23,42 +23,53 @@ SOFTWARE.
 
 */
 
-process GET_PILEUP_SUMMARIES {
-tag "${meta.id?:""}"
+process GATK_GENOTYPE_VCF {
 label "process_single"
-afterScript 'rm -rf TMP'
+tag "bams:${meta.id} vcf:${metaV.id}"
 conda "${moduleDir}/../../../conda/bioinfo.02.yml"
+afterScript "rm -rf TMP"
 input:
-    tuple val(meta1),path(fasta)
-    tuple val(meta2),path(fai)
-    tuple val(meta3),path(dict)
-    tuple val(meta4 ),path(vcf),path(vcfidx)
-    tuple val(meta5 ),path(opt_file),path(opt_file_idx)//whatever kind of file used for option '-L'
-	tuple val(meta ),path(bam),path(bai)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta3),path(dict)
+    tuple val(meta4),path(dbsnp),path(dbsnp_tbi) //optional
+    tuple val(metaV),path(vcf),path(vcf_id)
+	tuple val(meta ),path("BAMS/*")
 output:
-    tuple val(meta),path(".table"),emit:table
+	tuple val(meta),path("*.vcf.gz"),path("*.tbi"),emit:vcf
     path("versions.yml"),emit:versions
 script:
-    def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP"
+	def prefix = task.ext.meta?:"${meta.id}.${metaV.id}"
+    def args1 = task.ext.args1?:""
+    def jvm = task.ext.jvm?:"-XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
 """
-hostname 1>&2
 mkdir -p TMP
+find BAMS/ -name "*.bam" -o -name "*.cram" > TMP/jeter.list
+test -s TMP/jeter.list
 
-gatk --java-options "${jvm}" GetPileupSummaries \\
-    -I ${bam} \\
-    -V ${vcf} \\
-    -L ${opt_file?opt_file:vcf} \\
-    -O TMP/jeter.pileups.table
+gatk --java-options "${jvm}" HaplotypeCaller \\
+    ${args1} \\
+	-I TMP/jeter.list \\
+	-L ${vcf} \\
+    ${dbsnp?"--dbsnp \"${dbsnp}\"":""} \\
+	-R "${fasta}" \
+	--alleles ${vcf}\\
+	--output-mode EMIT_ALL_CONFIDENT_SITES \\
+	-O "TMP/jeter3.vcf.gz"
 
-mv TMP/jeter.pileups.table "${meta.id}.pileups.table"
+bcftools index -ft TMP/jeter3.vcf.gz
 
-cat << EOF > version.yml
+mv TMP/jeter3.vcf.gz ./${prefix}.vcf.gz
+mv TMP/jeter3.vcf.gz.tbi  ./${prefix}.vcf.gz.tbi
+
+cat << EOF > versions.yml
 ${task.process}:
-    gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
+    gatk: "\$( (gatk --java-options "${jvm}" --version 2> /dev/null  | paste -s -d ' ' ) || true ) "
 EOF
 """
 stub:
+	def prefix = task.ext.meta?:"${meta.id}.${metaV.id}"
 """
-touch versions.yml "${meta.id}.pileups.table"
+touch versions.yml "${prefix}.vcf.gz" "${prefix}.vcf.gz.tbi"
 """
 }

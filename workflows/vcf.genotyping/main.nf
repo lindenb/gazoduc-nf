@@ -22,250 +22,228 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {BCFTOOLS_MERGE             }  from '../../modules/bcftools/merge3'
+include { validateParameters                       } from 'plugin/nf-schema'
+include { paramsHelp                               } from 'plugin/nf-schema'
+include { paramsSummaryLog                         } from 'plugin/nf-schema'
+include { samplesheetToList                        } from 'plugin/nf-schema'
+include { BCFTOOLS_MERGE                           } from '../../modules/bcftools/merge3'
+include { BCFTOOLS_CONCAT                          } from '../../modules/bcftools/concat3'
+include { BCFTOOLS_GENOTYPE                        } from '../../modules/bcftools/genotype'
+include { META_TO_BAMS                             } from '../../subworkflows/samtools/meta2bams1'
+include { READ_SAMPLESHEET                         } from '../../subworkflows/nf/read_samplesheet'
+include { GATK_GENOTYPE_VCF                        } from '../../modules/gatk/genotypevcf'
+include { makeKey                                  } from '../../modules/utils/functions.nf'
+include { SPLIT_N_VARIANTS                         } from '../../modules/jvarkit/splitnvariants'
+include { flatMapByIndex                           } from '../../modules/utils/functions.nf'
+include { PREPARE_ONE_REFERENCE                    } from '../../subworkflows/samtools/prepare.one.ref'
+include { BCFTOOLS_STATS                           } from '../../modules/bcftools/stats'
+include  {MULTIQC                                  } from '../../modules/multiqc'
 
+List makeArray(array0,int n) {
+	def L = [];
+	def i=0;
+	while(i< array0.size()) {
+		def L2=[];
+		while(i< array0.size() && L2.size()<n) {
+			L2.add(array0[i]);
+			i++;
+			}
+		L.add(L2);
+		}
+	return L;
+	}
 
 workflow {
+		versions =Channel.empty()
+		multiqc = Channel.empty()
+
+		if(!workflow.stubRun) {
+			validateParameters()
+			}
+
+		if( params.help ) {
+			log.info(paramsHelp())
+			exit 0
+			} 
+		else {
+			// Print summary of supplied parameters
+			log.info paramsSummaryLog(workflow)
+			}
+
 		if(params.fasta==null) {
-				throw new IllegalArgumentException("undefined --fasta");
-				}
+			log.error("undefined --fasta")
+			exit -1
+			}
+
 		if(params.samplesheet==null) {
-				throw new IllegalArgumentException("undefined --samplesheet");
-				}
+			log.error("undefined --samplesheet")
+			exit -1
+			}
+
+		if(params.vcf==null) {
+			log.error("undefined --vcf")
+			exit -1
+			}
+
+		def metadata = [id:"genotyping"]
+
+		PREPARE_ONE_REFERENCE(
+			metadata,
+			Channel.fromPath(params.fasta).map{[[id:it.baseName],it]}
+			)
+		versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
+
+	/* Read samplesheet */
+		READ_SAMPLESHEET(
+			metadata.plus([arg_name:"samplesheet"]),
+			params.samplesheet
+			)
+		versions = versions.mix(READ_SAMPLESHEET.out.versions)
+
+		/** extract BAM/bai/fasta/fai/dict from samplesheet */
+		META_TO_BAMS(
+			metadata,
+			PREPARE_ONE_REFERENCE.out.fasta,
+			PREPARE_ONE_REFERENCE.out.fai,
+			READ_SAMPLESHEET.out.samplesheet
+			)
+		versions = versions.mix(META_TO_BAMS.out.versions)
+
+		SPLIT_N_VARIANTS(
+			[[id:"nobed"],[]],
+			[[id:"vcf"],file(params.vcf),file(params.vcf+".tbi")]
+			)
+		versions = versions.mix(SPLIT_N_VARIANTS.out.versions)
 
 
-		vcf= [[id:"vcf"],file(params.vcf),file(params.vcf+".tbi")]
+	    vcfs = SPLIT_N_VARIANTS.out.vcf.flatMap(row->flatMapByIndex(row,1))
+            .combine(SPLIT_N_VARIANTS.out.tbi.flatMap(row->flatMapByIndex(row,1)))
+            .filter{meta1,vcf,meta2,tbi->meta1.id==meta2.id && "${vcf.name}.tbi" == tbi.name}
+            .map{meta1,vcf,meta2,tbi->[meta1.plus(id:vcf.name.md5()),vcf,tbi]}
 
-		bams = Channel.fromPath(params.samplesheet)
-			.splitCsv(header:true,sep:',')
-			.map{row->[[id:row.sample],file(row.bam),file(row.bai)]}
 
-		fasta = [[id:"reference"],file(params.fasta)]
-		fai = [[id:"reference"],file(params.fasta+".fai")]
-		dict = [[id:"reference"],file(params.fasta.replaceAll(".fasta",".dict"))]
 
-		Channel.of(params.fasta).view()
-		Channel.of(dict).view()
+		/** group BAMS by n_bams bams */
+		grouped_ch = META_TO_BAMS.out.bams
+			.map{meta,bam,bai->[bam,bai]}
+			.toSortedList{a,b->a[0]<=>b[0]}
+			.flatMap(array->makeArray(array, (params.n_bams as int)))
+			.map{array->[[id:makeKey(array)],array.flatten().sort()]}
+			.view()
+
+
+		if(params.dbsnp==null) {
+			dbsnp = 	[[id:"nodbsnp"],[],[]]
+			}
+		else
+			{
+			dbsnp = 	[[id:"dbsnp"],file(params.dbsnp),file(params.dbsnp+".tbi")]
+			}
 
 		if(params.method.equals("gatk")) {
-			GATK_GENOTYPING(
-				[id:"genotyping"],
-				fasta,
-				fai,
-				dict,
-				bams,
-				vcf
+			bamvcf_ch = grouped_ch.combine(vcfs)
+				.multiMap{meta1,bams,meta2,vcf,tbi->
+					vcf : [meta2,vcf,tbi]
+					bam : [meta1.plus(vcf_id:meta2.id),bams]
+				}
+
+
+			GATK_GENOTYPE_VCF(
+				PREPARE_ONE_REFERENCE.out.fasta,
+				PREPARE_ONE_REFERENCE.out.fai,
+				PREPARE_ONE_REFERENCE.out.dict,
+				dbsnp,//no dbsnp
+				bamvcf_ch.vcf,
+				bamvcf_ch.bam
 				)
+			versions = versions.mix(GATK_GENOTYPE_VCF.out.versions)
+			vcf = GATK_GENOTYPE_VCF.out.vcf
 			}
 		else if(params.method.equals("bcftools")) {
-			//BCFTOOLS_GENOTYPING(genomeId,bams,vcf)
+			VCF2TABIX(vcfs.map{meta,vcf,tbi->[meta,vcf]})
+			versions = versions.mix(VCF2TABIX.out.versions)
+
+			bamtabix_ch = grouped_ch.combine(VCF2TABIX.out.tabix)
+				.multiMap{meta1,bams,meta2,tabix,tbi->
+					tabix : [meta2,tabix,tbi]
+					bam : [meta1.plus(vcf_id:meta2.id),bams]
+				}
+
+			BCFTOOLS_GENOTYPE(
+				PREPARE_ONE_REFERENCE.out.fasta,
+				PREPARE_ONE_REFERENCE.out.fai,
+				PREPARE_ONE_REFERENCE.out.dict,
+				bamtabix_ch.tabix,
+				bamtabix_ch.bam
+				)
+			versions = versions.mix(BCFTOOLS_GENOTYPE.out.versions)
+			vcf = BCFTOOLS_GENOTYPE.out.vcf
 			}
 		else
 			{
 			exit(-1,"unknown method ${params.method}");
 			}
-	}
-
-
-workflow GATK_GENOTYPING {
-	take:
-		meta
-		fasta
-		fai
-		dict
-		bams
-		vcf
-	main:
-		GENOTYPE_GATK(
-			fasta,
-			fai,
-			dict,
-			bams,
-			vcf
+		BCFTOOLS_MERGE(
+			vcf.map{meta,vcf,tbi->[[id:meta.vcf_id],[vcf,tbi]]}
+				.groupTuple()
+				.map{meta,files->[meta,files.flatten().sort()]}
 			)
-		BCFTOOLS_MERGE(GENOTYPE_GATK.out.vcf
-			.map{meta,vcf,tbi->[vcf,tbi]}
-			.flatMap()
-			.collect()
-			.map{files->[[id:"genotyping"],files.sort()]}
+		versions = versions.mix(BCFTOOLS_MERGE.out.versions)
+
+		BCFTOOLS_CONCAT(
+			BCFTOOLS_MERGE.out.vcf.map{meta,vcf,tbi->[vcf,tbi]}
+				.flatMap()
+				.collect()
+				.map{files->[[id:"genotyping"],files.sort()]}
+			)
+		versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
+
+		BCFTOOLS_STATS(
+			PREPARE_ONE_REFERENCE.out.fasta,
+			PREPARE_ONE_REFERENCE.out.fai,
+			[[id:"nobed"],[]],
+        	[[id:"gtf"],[]],
+			[[id:"samples"],[]],
+			BCFTOOLS_CONCAT.out.vcf.map{meta,vcf,tbi->[meta,[vcf,tbi]]}
+			)
+		versions = versions.mix(BCFTOOLS_STATS.out.versions)
+		multiqc = multiqc.mix(BCFTOOLS_STATS.out.stats)
+
+		MULTIQC(
+			[[id:"no_mqc_config"],[]],
+			multiqc.map{it[1]}.collect().map{[[id:"genotyping"],it]}
 			)
 	}
 
-workflow BCFTOOLS_GENOTYPING {
-	take:
-		genomeId
-		bams
-		vcf
-	main:
-		v2b_ch = VCF_TO_BED([:],vcf)
-		each_contig = v2b_ch.chromosomes.splitText().map{it.trim()}
-
-		sn_bam_ch = SAMTOOLS_SAMPLES([:],bams)
-		rows = sn_bam_ch.rows.
-			filter{it.genomeId.equals(genomeId)}.
-			map{it.plus("vcf":vcf)}.
-			combine(each_contig).
-			map{T->T[0].plus(contig:T[1])}
-			
-		ch1 = GENOTYPE_BCFTOOLS(genomeId,rows)
-		ch2 = BCFTOOLS_MERGEx(ch1.output.map{T->[T[0],T[1]+"\t"+T[2]]}.groupTuple())
-	}
 
 
-
-process GENOTYPE_GATK {
+process VCF2TABIX {
 label "process_single"
 tag "${meta.id}"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-afterScript "rm -rf TMP"
-array 100
-input:
-	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai)
-	tuple val(meta3),path(dict)
-	tuple val(meta ),path(bam),path(bai)
-	tuple val(meta4 ),path(vcf),path(tbi)
-
-output:
-	tuple val(meta),path("*.vcf.gz"),path("*.tbi"),emit:vcf
-script:
-	def prefix = task.ext.meta?:"${meta.id}"
-
-"""
-mkdir -p TMP
-
-
-gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" HaplotypeCaller \\
-	-I "${bam}" \\
-	-L ${vcf} \\
-	-R "${fasta}" \
-	--alleles ${vcf}\\
-	--output-mode EMIT_ALL_CONFIDENT_SITES \\
-	-O "TMP/jeter2.vcf.gz"
-
-
-bcftools annotate -x 'QUAL,^INFO/DP,INFO/AC,INFO/AN,INFO/AF' -O z -o "TMP/jeter3.vcf.gz" TMP/jeter2.vcf.gz
-bcftools index -ft TMP/jeter3.vcf.gz
-
-
-
-mv TMP/jeter3.vcf.gz ./${prefix}.vcf.gz
-mv TMP/jeter3.vcf.gz.tbi  ./${prefix}.vcf.gz.tbi
-"""
-}
-
-
-process GENOTYPE_BCFTOOLS {
-tag "${row.sample} ${row.contig}"
+conda "${moduleDir}/../../../conda/bioinfo.02.yml"
 afterScript "rm -rf TMP"
 input:
-	val(genomeId)
-	val(row)
+	tuple val(meta),path(vcf)
 output:
-	tuple val("${row.contig}"),val("${row.sample}"),path("${row.sample}.${row.contig}.bcf"),emit:output
+	tuple val(meta),path("*.tsv.gz"),path("*.tsv.gz.tbi"),emit:tabix
+	path("versions.yml"),emit:versions
 script:
-	def mapq = params.mapq?:30
-	def bam = row.bam?:""
-	def sample = row.sample?:""
-	def genome = params.genomes[genomeId]
-	def reference = genome.fasta
-	def ploidy = genome.ensembl_name
+	def prefix = task.meta.prefix?:"${meta.id}"
 """
-hostname 1>&2
 mkdir -p TMP
-${moduleLoad("bcftools htslib")}
+bcftools query -f '%CHROM\t%POS\t%REF,%ALT\\n' '${vcf}' |\\
+	sort -t '\t' -k1,1 -k2,2n -S ${task.memory.kilo} -T TMP |\\
+	bgzip > TMP/jeter.tsv.gz
 
-	bcftools query --regions "${row.contig}" -f'%CHROM\t%POS\t%REF,%ALT\\n' "${row.vcf}" |\\
-		bgzip -c > TMP/jeter.tsv.gz
+tabix -f -s 1 -b 2 -e 2 TMP/jeter.tsv.gz
 
-	tabix --force -s1 -b2 -e2 TMP/jeter.tsv.gz
-
-
-	bcftools mpileup --redo-BAQ -a 'FORMAT/AD' -a 'FORMAT/DP' -a 'FORMAT/SP' -a 'FORMAT/SCR' -a 'FORMAT/QS' -e 'FORMAT/NMBZ' \\
-		--threads ${task.cpus} \\
-		--fasta-ref "${reference}" \\
-		--regions-file "TMP/jeter.tsv.gz" -q ${mapq} -O u  -O u -o TMP/jeter2.bcf '${bam}'
-
-	bcftools call  --keep-alts \\
-		-a 'INFO/PV4' -a 'FORMAT/GQ' -a 'FORMAT/GP' \\
-		--ploidy ${ploidy} \\
-		--threads ${task.cpus}	\\
-		--targets-file "TMP/jeter.tsv.gz" \\
-		--constrain alleles \\
-		--multiallelic-caller --output-type b -o "TMP/jeter3.bcf" TMP/jeter2.bcf
-
-
-     mv -v TMP/jeter3.bcf "${sample}.${row.contig}.bcf"
-     bcftools index --threads ${task.cpus} -f "${sample}.${row.contig}.bcf"
-
+mv TMP/jeter.tsv "${prefix}.tsv.gz"
+mv TMP/jeter.tsv.tbi "${prefix}.tsv.gz.tbi"
+touch versions.yml
 """
-}
-
-
-
-process MERGE_VCF {
-tag "${contig} N=${L.size()}"
-memory "10g"
-input:
-	tuple val(L)
-output:
-	path("${params.prefix?:""}${contig}.merged.bcf"),emit:vcf
-	path("${params.prefix?:""}${contig}.merged.bcf.csi"),emit:index
-script:
+stub:
+	def prefix = task.meta.prefix?:"${meta.id}"
 """
-hostname 1>&2
-mkdir -p TMP
-cat << EOF > TMP/jeter.list
-${L.join("\n")}
-EOF
-
-gatk --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" MergeVcfs \\
-     I=TMP/jeter.list \\
-     O=TMP/jeter.vcf.gz
-
-bcftools view -O b -o "${params.prefix?:""}${contig}.merged.bcf" TMP/jeter.vcf.gz
-bcftools index "${params.prefix?:""}${contig}.merged.bcf"
-
-"""
-}
-
-
-process BCFTOOLS_MERGEx {
-afterScript "rm -rf TMP"
-tag "${contig} N=${L.size()}"
-memory "10g"
-cpus 10
-input:
-	tuple 	val(contig),val(L)
-output:
-	path("${params.prefix?:""}${contig}.merged.bcf"),emit:vcf
-	path("${params.prefix?:""}${contig}.merged.bcf.csi"),emit:index
-script:
-	def min_file_split = 75;
-"""
-hostname 1>&2
-${moduleLoad("bcftools")}
-
-mkdir -p TMP
-
-cat << EOF | sort -T TMP -t '\t' -k1,1 | cut -f 2 > TMP/jeter.list
-${L.join("\n")}
-EOF
-
-SQRT=`awk 'END{X=NR;if(${min_file_split} > 0 && X <= ${min_file_split}){print(X);} else {z=sqrt(X); print (z==int(z)?z:int(z)+1);}}' TMP/jeter.list`
-split -a 9 --additional-suffix=.list --lines=\${SQRT} TMP/jeter.list TMP/chunck.
-
-find TMP -type f -name "chunck.*.list" | sort | while read F
-do
-	echo "\${F}" 1>&2
-	bcftools merge --threads ${task.cpus} --file-list "\${F}" --missing-to-ref  -O b -o "\${F}.bcf"
-	bcftools index --threads ${task.cpus} "\${F}.bcf"
-	echo "\${F}.bcf" >> TMP/jeter2.list
-done
-
-bcftools merge --threads ${task.cpus} --file-list TMP/jeter2.list --missing-to-ref  -O u |\
-	bcftools +fill-tags -O b  -o "${params.prefix?:""}${contig}.merged.bcf"  -- -t  AN,AC,AF,AC_Hom,AC_Het,AC_Hemi,NS
-bcftools index --threads ${task.cpus} "${params.prefix?:""}${contig}.merged.bcf"
-
+touch "${prefix}.tsv.gz" "${prefix}.tsv.gz.tbi" versions.yml
 """
 }
