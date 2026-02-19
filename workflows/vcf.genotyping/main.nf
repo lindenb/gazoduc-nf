@@ -29,7 +29,7 @@ include { samplesheetToList                        } from 'plugin/nf-schema'
 include { BCFTOOLS_MERGE                           } from '../../modules/bcftools/merge3'
 include { BCFTOOLS_CONCAT                          } from '../../modules/bcftools/concat3'
 include { BCFTOOLS_GENOTYPE                        } from '../../modules/bcftools/genotype'
-include { META_TO_BAMS                             } from '../../subworkflows/samtools/meta2bams1'
+include { META_TO_BAMS                             } from '../../subworkflows/samtools/meta2bams2'
 include { READ_SAMPLESHEET                         } from '../../subworkflows/nf/read_samplesheet'
 include { GATK_GENOTYPE_VCF                        } from '../../modules/gatk/genotypevcf'
 include { makeKey                                  } from '../../modules/utils/functions.nf'
@@ -37,9 +37,12 @@ include { SPLIT_N_VARIANTS                         } from '../../modules/jvarkit
 include { flatMapByIndex                           } from '../../modules/utils/functions.nf'
 include { PREPARE_ONE_REFERENCE                    } from '../../subworkflows/samtools/prepare.one.ref'
 include { BCFTOOLS_STATS                           } from '../../modules/bcftools/stats'
-include  {MULTIQC                                  } from '../../modules/multiqc'
+include { MULTIQC                                  } from '../../modules/multiqc'
+include { VCF_INPUT                                } from '../../subworkflows/nf/vcf_input'
+include { JVARKIT_VCF_SET_DICTIONARY as VCFSETDICT1} from '../../modules/jvarkit/vcfsetdict'
+include { JVARKIT_VCF_SET_DICTIONARY as VCFSETDICT2} from '../../modules/jvarkit/vcfsetdict'
 
-List makeArray(array0,int n) {
+List makeArray(meta, List array0,int n) {
 	def L = [];
 	def i=0;
 	while(i< array0.size()) {
@@ -48,7 +51,7 @@ List makeArray(array0,int n) {
 			L2.add(array0[i]);
 			i++;
 			}
-		L.add(L2);
+		L.add([meta,L2]);
 		}
 	return L;
 	}
@@ -74,6 +77,7 @@ workflow {
 			log.error("undefined --fasta")
 			exit -1
 			}
+		//def main_fasta_id = file(params.fasta).toRealPath().toString().md5()
 
 		if(params.samplesheet==null) {
 			log.error("undefined --samplesheet")
@@ -105,54 +109,96 @@ workflow {
 			metadata,
 			PREPARE_ONE_REFERENCE.out.fasta,
 			PREPARE_ONE_REFERENCE.out.fai,
+			PREPARE_ONE_REFERENCE.out.dict,
 			READ_SAMPLESHEET.out.samplesheet
 			)
 		versions = versions.mix(META_TO_BAMS.out.versions)
 
+		//add fasta-id
+		bams = META_TO_BAMS.out.bams.map{meta,bam,bai,fasta,fai,dict->[
+			meta.plus([fasta_id:fasta.toRealPath().toString().md5()]),
+			bam,
+			bai,
+			fasta,
+			fai,
+			dict
+			]}
+
+		all_references = bams.map{meta,bam,bai,fasta,fai,dict->[
+				[id:meta.fasta_id,fasta_id: meta.fasta_id],
+				fasta,
+				fai,
+				dict
+				]}
+			.groupTuple()
+			.map{meta,fastas,fais,dicts->[meta,fastas.sort()[0],fais.sort()[0],dicts.sort()[0]]}
+
+		bams= bams.map{meta,bam,bai,fasta,fai,dict->[meta,bam,bai]}
+
+		VCF_INPUT(metadata.plus([
+			path: params.vcf,
+			arg_name: "vcf",
+			require_index : true,
+			required: true,
+			unique : false
+			]))
+		versions = versions.mix(VCF_INPUT.out.versions)
+
+		
+		vcfs = VCF_INPUT.out.vcf
+			.map{meta,vcf,tbi->[meta.plus(id:vcf.toRealPath().toString().md5()),vcf,tbi]}
+		
 		SPLIT_N_VARIANTS(
 			[[id:"nobed"],[]],
-			[[id:"vcf"],file(params.vcf),file(params.vcf+".tbi")]
+			vcfs
 			)
 		versions = versions.mix(SPLIT_N_VARIANTS.out.versions)
-
-
-	    vcfs = SPLIT_N_VARIANTS.out.vcf.flatMap(row->flatMapByIndex(row,1))
+		
+		vcfs = SPLIT_N_VARIANTS.out.vcf.flatMap(row->flatMapByIndex(row,1))
             .combine(SPLIT_N_VARIANTS.out.tbi.flatMap(row->flatMapByIndex(row,1)))
             .filter{meta1,vcf,meta2,tbi->meta1.id==meta2.id && "${vcf.name}.tbi" == tbi.name}
             .map{meta1,vcf,meta2,tbi->[meta1.plus(id:vcf.name.md5()),vcf,tbi]}
+		
+		/** convert VCF input for each type of reference */
+		dispatch_ch = vcfs.combine(all_references)
+			.multiMap{meta1,vcf,tbi,meta2,fasta,fai,dict->
+				dict: [meta2, dict]
+				vcf: [meta1.plus(fasta_id:meta2.fasta_id),vcf,tbi]
+				}
+	
+		VCFSETDICT1(
+			dispatch_ch.dict,
+			dispatch_ch.vcf
+			)
+		versions = versions.mix(VCFSETDICT1.out.versions)
 
-
-
-		/** group BAMS by n_bams bams */
-		grouped_ch = META_TO_BAMS.out.bams
-			.map{meta,bam,bai->[bam,bai]}
-			.toSortedList{a,b->a[0]<=>b[0]}
-			.flatMap(array->makeArray(array, (params.n_bams as int)))
-			.map{array->[[id:makeKey(array)],array.flatten().sort()]}
-			.view()
-
-
-		if(params.dbsnp==null) {
-			dbsnp = 	[[id:"nodbsnp"],[],[]]
-			}
-		else
-			{
-			dbsnp = 	[[id:"dbsnp"],file(params.dbsnp),file(params.dbsnp+".tbi")]
-			}
-
+		/** group BAMS by n_bams bams and by meta.fasta_id*/
+		grouped_ch = bams
+			.map{meta,bam,bai->[[fasta_id:meta.fasta_id],[bam,bai]]}
+			.groupTuple()
+			.map{meta,arrays->[meta,arrays.sort{a,b->a[0]<=>b[0]}]}
+			.flatMap{meta,array->makeArray(meta, array, (params.n_bams as int))}
+			.map{meta,array->[meta.plus([id:makeKey(array)]),array.flatten().sort()]}
+			
 		if(params.method.equals("gatk")) {
-			bamvcf_ch = grouped_ch.combine(vcfs)
-				.multiMap{meta1,bams,meta2,vcf,tbi->
+			bamvcf_ch = grouped_ch
+				.combine(vcfs)
+				.filter{meta1,bam_array,meta2,vcf,tbi->meta1.fasta_id==meta2.fasta_id}
+				.combine(all_references)
+				.filter{meta1,bam_array,meta2,vcf,tbi,meta3,fasta,fai,dict->meta1.fasta_id==meta3.fasta_id}
+				.multiMap{meta1,bams,meta2,vcf,tbi,meta3,fasta,fai,dict->
+					fasta: [meta3,fasta]
+					fai: [meta3,fai]
+					dict: [meta3,dict]
 					vcf : [meta2,vcf,tbi]
 					bam : [meta1.plus(vcf_id:meta2.id),bams]
 				}
-
-
+			
 			GATK_GENOTYPE_VCF(
-				PREPARE_ONE_REFERENCE.out.fasta,
-				PREPARE_ONE_REFERENCE.out.fai,
-				PREPARE_ONE_REFERENCE.out.dict,
-				dbsnp,//no dbsnp
+				bamvcf_ch.fasta,
+				bamvcf_ch.fai,
+				bamvcf_ch.dict,
+				[[id:"nodbsnp"],[],[]],//no dbsnp because may use multiple fasta
 				bamvcf_ch.vcf,
 				bamvcf_ch.bam
 				)
@@ -164,15 +210,19 @@ workflow {
 			versions = versions.mix(VCF2TABIX.out.versions)
 
 			bamtabix_ch = grouped_ch.combine(VCF2TABIX.out.tabix)
-				.multiMap{meta1,bams,meta2,tabix,tbi->
+				.filter{meta1,bam_array,meta2,tabix,tbi->meta1.fasta_id==meta2.fasta_id}
+				.combine(all_references)
+				.filter{meta1,bam_array,meta2,tabix,tbi,meta3,fasta,fai,dict->meta1.fasta_id==meta3.fasta_id}
+				.multiMap{meta1,bams,meta2,tabix,tbi,meta3,fasta,fai,dict->
+					fasta: [meta3,fasta]
+					fai: [meta3,fai]
 					tabix : [meta2,tabix,tbi]
 					bam : [meta1.plus(vcf_id:meta2.id),bams]
 				}
 
 			BCFTOOLS_GENOTYPE(
-				PREPARE_ONE_REFERENCE.out.fasta,
-				PREPARE_ONE_REFERENCE.out.fai,
-				PREPARE_ONE_REFERENCE.out.dict,
+				bamvcf_ch.fasta,
+				bamvcf_ch.fai,
 				bamtabix_ch.tabix,
 				bamtabix_ch.bam
 				)
@@ -183,8 +233,17 @@ workflow {
 			{
 			exit(-1,"unknown method ${params.method}");
 			}
+
+		
+		VCFSETDICT2(
+			PREPARE_ONE_REFERENCE.out.dict,
+			vcf
+			)
+		versions = versions.mix(VCFSETDICT2.out.versions)
+
+
 		BCFTOOLS_MERGE(
-			vcf.map{meta,vcf,tbi->[[id:meta.vcf_id],[vcf,tbi]]}
+			VCFSETDICT2.out.vcf.map{meta,vcf,tbi->[[id:meta.vcf_id],[vcf,tbi]]}
 				.groupTuple()
 				.map{meta,files->[meta,files.flatten().sort()]}
 			)
@@ -198,21 +257,24 @@ workflow {
 			)
 		versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
 
-		BCFTOOLS_STATS(
-			PREPARE_ONE_REFERENCE.out.fasta,
-			PREPARE_ONE_REFERENCE.out.fai,
-			[[id:"nobed"],[]],
-        	[[id:"gtf"],[]],
-			[[id:"samples"],[]],
-			BCFTOOLS_CONCAT.out.vcf.map{meta,vcf,tbi->[meta,[vcf,tbi]]}
-			)
-		versions = versions.mix(BCFTOOLS_STATS.out.versions)
-		multiqc = multiqc.mix(BCFTOOLS_STATS.out.stats)
-
-		MULTIQC(
-			[[id:"no_mqc_config"],[]],
-			multiqc.map{it[1]}.collect().map{[[id:"genotyping"],it]}
-			)
+		if( params.with_stats==true) {
+			BCFTOOLS_STATS(
+				PREPARE_ONE_REFERENCE.out.fasta,
+				PREPARE_ONE_REFERENCE.out.fai,
+				[[id:"nobed"],[]],
+				[[id:"gtf"],[]],
+				[[id:"samples"],[]],
+				BCFTOOLS_CONCAT.out.vcf.map{meta,vcf,tbi->[meta,[vcf,tbi]]}
+				)
+			versions = versions.mix(BCFTOOLS_STATS.out.versions)
+			multiqc = multiqc.mix(BCFTOOLS_STATS.out.stats)
+			}
+		if( params.with_multiqc == true) {
+			MULTIQC(
+				[[id:"no_mqc_config"],[]],
+				multiqc.map{it[1]}.collect().map{[[id:"genotyping"],it]}
+				)
+			}
 	}
 
 

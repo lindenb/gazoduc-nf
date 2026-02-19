@@ -43,21 +43,22 @@ process JVARKIT_VCF_SET_DICTIONARY {
 		def sort = (task.ext.sort?:false).toBoolean()
 		def suffix = task.ext.extension?:".bcf"
 		def is_bcf = suffix.endsWith("bcf")
+		def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
+		def jvarkit = "jvarkit ${jvm} "
 	"""
 	hostname 1>&2
-	set -o pipefail
 
 	mkdir -p TMP
 
-	bcftools view  ${args1} "${vcf}" |\\
-	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP vcfsetdict \\
-			${args2} \\
-			--reference '${dict_source}' |\\
-	${sort?"bcftools sort -T TMP/sort -O u --max-mem \"${task.memory.giga}G\"  |":""} \\
-	bcftools view ${args3} \\
-		-O ${is_bcf?"b":"z"} \\
-		-o TMP/${prefix}.${is_bcf?"bcf":"vcf.gz"}
-	
+		
+		bcftools view  ${args1} "${vcf}" |\\
+		${jvarkit}  vcfsetdict \\
+				${args2} \\
+				--reference '${dict_source}' |\\
+				${sort?"bcftools sort -T TMP/sort -O u --max-mem \"${task.memory.giga}G\"  |":""} \\
+				bcftools view ${args3} \\
+					-O ${is_bcf?"b":"z"} \\
+					-o TMP/${prefix}.${is_bcf?"bcf":"vcf.gz"}
 
 	bcftools index \\
 		-f \\
