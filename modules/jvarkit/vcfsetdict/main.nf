@@ -32,7 +32,7 @@ process JVARKIT_VCF_SET_DICTIONARY {
 		tuple val(meta1),path(dict_source)
 		tuple val(meta ),path(vcf),path(idx)
 	output:
-		tuple val(meta ),path("*.{bcf,vcf.gz}"),path("*.{bcf.csi,vcf.gz.tbi}"),emit:vcf
+		tuple val(meta ),path("*.vcf.gz"),path("*.tbi"),emit:vcf
 		path("versions.yml"),emit:versions
 	script:
 		def size  = task.ext.size?:10
@@ -41,8 +41,6 @@ process JVARKIT_VCF_SET_DICTIONARY {
 		def args3 = task.ext.args3?:""
 		def prefix  = task.ext.prefix?:vcf.baseName+".setdict"
 		def sort = (task.ext.sort?:false).toBoolean()
-		def suffix = task.ext.extension?:".bcf"
-		def is_bcf = suffix.endsWith("bcf")
 		def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
 		def jvarkit = "jvarkit ${jvm} "
 	"""
@@ -57,18 +55,17 @@ process JVARKIT_VCF_SET_DICTIONARY {
 				--reference '${dict_source}' |\\
 				${sort?"bcftools sort -T TMP/sort -O u --max-mem \"${task.memory.giga}G\"  |":""} \\
 				bcftools view ${args3} \\
-					-O ${is_bcf?"b":"z"} \\
-					-o TMP/${prefix}.${is_bcf?"bcf":"vcf.gz"}
+					-O z \\
+					-o TMP/${prefix}.vcf.gz
 
 	bcftools index \\
-		-f \\
-		${is_bcf?"":"-t"} \\
+		-f -t \\
 		--threads ${task.cpus} \\
-		TMP/${prefix}.${is_bcf?"bcf":"vcf.gz"}
+		TMP/${prefix}.vcf.gz
 	
 
-	mv TMP/${prefix}.${is_bcf?"bcf":"vcf.gz"} ./
-	mv TMP/${prefix}.${is_bcf?"bcf.csi":"vcf.gz.tbi"} ./
+	mv TMP/${prefix}.vcf.gz ./
+	mv TMP/${prefix}.vcf.gz.tbi ./
 
 cat << EOF > versions.yml
 ${task.process}:

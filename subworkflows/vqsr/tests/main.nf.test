@@ -1,0 +1,37 @@
+nextflow_workflow {
+
+    name "Test Workflow VQSR"
+    script "subworkflows/vqsr/main.nf"
+    workflow "VQSR"
+
+    tag "gitlab_ci"
+    tag "subworkflows"
+    tag "subworkflows/vqsr"
+
+    test("STUB") {
+        tag "stub"
+        options "-stub"
+        when {
+            params {
+            }
+            workflow {
+                """
+                input[0] = [id:"vqsr"]
+                input[1] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[2] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[3] = [[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[4] = [[id:"dbsnp"], [],[]]
+                input[5] = [[id:"params_snps"], []]
+                input[6] = [[id:"params_indels"], []]
+                input[7] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.vcf.gz"), file("${projectDir}/tests/data/rotavirus_rf.vcf.gz.tbi")])
+                """
+            }
+        }
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+    }
+
+
+}

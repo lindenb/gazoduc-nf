@@ -1,10 +1,10 @@
 
 include {VCF_TO_BED         } from '../../modules/bcftools/vcf2bed'
-include {BCFTOOLS_CONCAT    } from '../../modules/bcftools/concat'
+include {BCFTOOLS_CONCAT    } from '../../modules/bcftools/concat3'
 
 workflow VQSR {
     take:
-        meta
+        metadata
         fasta
         fai
         dict
@@ -16,14 +16,14 @@ workflow VQSR {
         versions = Channel.empty()
 
         BCF_TO_VCF(
-            vcfs
-                .map{[it[1],it[2]]}
+            vcfs.map{meta,vcf,tbi->[vcf,tbi]}
+				.flatMap()
                 .collect()
-                .map{[[id:"vqsr"],it]}
+                .map{files->[[id:"vqsr"],files.sort()]}
             )
         versions = versions.mix(BCF_TO_VCF.out.versions)
 
-        COMPILE_MINIKIT(meta)
+        COMPILE_MINIKIT(metadata)
 		versions = versions.mix(COMPILE_MINIKIT.out.versions)
 
         RECALIBRATE_SNP(
@@ -46,13 +46,11 @@ workflow VQSR {
 			)
 		versions = versions.mix(RECALIBRATE_INDEL.out.versions)
 
-
-
         
-        vcfs = vcfs.map{[
-            it[0].plus(id:it[1].toString().md5()),//give each vcf it's own id
-            it[1],
-            it[2]
+        vcfs = vcfs.map{meta,vcf,idx->[
+            meta.plus(id:vcf.toRealPath().toString().md5()),//give each vcf it's own id
+           	vcf,
+           	idx
             ]}
         
         
@@ -90,10 +88,10 @@ workflow VQSR {
 		
         BCFTOOLS_CONCAT(
             APPLY_RECALIBRATION_INDEL.out.vcf
-                .map{[[id:"vqsr"],[it[1],it[2]]]}
-                .groupTuple()
-                .map{[it[0],it[1].flatten()]},
-            [[id:"nobed"],[]]
+                .map{meta,vcf,tbi->[vcf,tbi]}
+                .flatMap()
+				.collect()
+                .map{files->[[id:"vqsr"],files.sort()]}
             )
         versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
     emit:
@@ -114,7 +112,7 @@ output:
 	tuple val(meta),path("chroms.txt"),emit:contigs
 	path("versions.yml"),emit:versions
 script:
-	def prefix = task.ext.prefix?:"reformat"+(meta.id?:"")
+	def prefix = task.ext.prefix?:"reformat${meta.id?:""}"
 """
 hostname 1>&2
 
@@ -133,6 +131,11 @@ cat << END_VERSIONS > versions.yml
 "${task.process}":
 	bcftools: todo
 END_VERSIONS
+"""
+stub:
+	def prefix = task.ext.prefix?:"reformat${meta.id?:""}"
+ """
+touch chroms.txt ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi versions.yml
 """
 }
 
@@ -166,6 +169,15 @@ cat << END_VERSIONS > versions.yml
 	jvarkit: todo
 END_VERSIONS
 """
+stub:
+	def prefix = interval.md5().substring(0,7)
+ """
+touch versions.yml
+cat << EOF > ${prefix}.bed
+chr1	1	100	${vcf}	${idx}
+chr1	100	200	${vcf}	${idx}
+EOF
+"""
 }
 
 
@@ -197,6 +209,10 @@ cat << END_VERSIONS > versions.yml
 "${task.process}":
 	java: todo
 END_VERSIONS
+"""
+stub:
+"""
+touch versions.yml  minikit.jar
 """
 }
 
@@ -251,6 +267,11 @@ cat << END_VERSIONS > versions.yml
 	jvarkit: todo
 END_VERSIONS
 """
+stub:
+def prefix = task.ext.prefix?:vcf.name.md5()+".snp.recal" 
+"""
+touch versions.yml  minikit.jar ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi ${prefix}.plot.R ${prefix}.tranches.txt
+"""
 }
 
 
@@ -297,7 +318,7 @@ gatk  --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" VariantReca
 	--arguments_file TMP/args.list \\
 	-mode INDEL \\
 	-O "${prefix}.recal.vcf.gz" \\
-	--tranches-file "inde${prefix}.tranches.txt" \\
+	--tranches-file "indel${prefix}.tranches.txt" \\
     --dont-run-rscript \\
 	--rscript-file ${prefix}.plot.R
 
@@ -306,6 +327,12 @@ cat << END_VERSIONS > versions.yml
 	java: todo
 	jvarkit: todo
 END_VERSIONS
+"""
+
+stub:
+def prefix = task.ext.prefix?:vcf.name.md5()+".indel.recal" 
+"""
+touch versions.yml  minikit.jar ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi ${prefix}.plot.R ${prefix}.tranches.txt
 """
 }
 
@@ -362,6 +389,11 @@ cat << END_VERSIONS > versions.yml
 	bcftools: todo
 END_VERSIONS
 """
+stub:
+    def prefix = task.ext.prefix?:(bed.name+vcf.name).md5().substring(0,7)+".snp"
+"""
+touch versions.yml  minikit.jar ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi
+"""
 }
 
 
@@ -405,5 +437,10 @@ cat << END_VERSIONS > versions.yml
 	java: todo
 	jvarkit: todo
 END_VERSIONS
+"""
+stub:
+    def prefix = task.ext.prefix?:(bed.name+vcf.name).md5().substring(0,7)+".indel"
+"""
+touch versions.yml  minikit.jar ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi
 """
 }

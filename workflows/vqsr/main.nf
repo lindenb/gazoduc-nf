@@ -34,11 +34,17 @@ if (params.help) {
 // Print summary of supplied parameters
 //log.info paramsSummaryLog(workflow)
 
-include {VQSR                                     } from '../../subworkflows/vqsr'
-include {MULTIQC                                  } from '../../modules/multiqc'
-include {COMPILE_VERSIONS                         } from '../../modules/versions/main.nf'
-include {VCF_STATS                                } from '../../subworkflows/vcfstats'
-include {runOnComplete; dumpParams                } from '../../modules/utils/functions.nf'
+include { validateParameters                       } from 'plugin/nf-schema'
+include { paramsHelp                               } from 'plugin/nf-schema'
+include { paramsSummaryLog                         } from 'plugin/nf-schema'
+include { samplesheetToList                        } from 'plugin/nf-schema'
+include { VQSR                                     } from '../../subworkflows/vqsr'
+include { MULTIQC                                  } from '../../modules/multiqc'
+include { COMPILE_VERSIONS                         } from '../../modules/versions/main.nf'
+include { VCF_STATS                                } from '../../subworkflows/vcfstats'
+include { runOnComplete; dumpParams                } from '../../modules/utils/functions.nf'
+include { PREPARE_ONE_REFERENCE                    } from '../../subworkflows/samtools/prepare.one.ref'
+include { VCF_INPUT                                } from '../../subworkflows/nf/vcf_input'
 
 
 
@@ -54,71 +60,89 @@ workflow {
 		versions = Channel.empty()
 		multiqc = Channel.empty()
 
-		def ref_hash = [
-            id: file(params.fasta).simpleName,
-            ucsc_name: (params.ucsc_name?:"undefined")
-            ]
-        def fasta  = [ref_hash, file(params.fasta) ]
-        def fai    = [ref_hash, file(params.fai) ]
-        def dict   = [ref_hash, file(params.dict) ]
-		def dbsnp  = [ref_hash, file(params.dbsnp) , file(params.dbsnp+".tbi") ] 
-		def gtf    = [ref_hash, file(params.gtf), file(params.gtf+".tbi") ]
-		def gff3    = [ref_hash, file(params.gff3), file(params.gff3+".tbi") ]
-
-		def recal_snps = [ref_hash, params.recal_snps_args]
-		def recal_indels = [ref_hash,params.recal_indels_args]
-
-		if(params.vcf.endsWith(".list")) {
-			in_vcf_ch = Channel.fromPath(params.vcf).
-				splitText().
-				map{it.trim()}.
-				map{file(it)}
+		def metadata = [  id: "vqsr"  ]
+		
+		if(params.fasta==null) {
+			log.error("--fasta undefined")
+			exit -1;
 			}
-		else
-			{
-			in_vcf_ch = Channel.fromPath(params.vcf)
+		if(params.vcf==null) {
+			log.error("--vcf undefined")
+			exit -1;
 			}
-		in_vcf_ch = in_vcf_ch
-			.map{[
-				[id:it.toString().md5()],
-				file(it), 
-				file(it.name.endsWith(".bcf")?""+it+".csi":""+it+".tbi")
-				]}
-	
+		if(params.recal_snps_args==null) {
+			log.error("--recal_snps_args undefined")
+			exit -1;
+			}
+		if(params.recal_indels_args==null) {
+			log.error("--recal_indels_args undefined")
+			exit -1;
+			}
+
+		PREPARE_ONE_REFERENCE(
+			metadata.plus(skip_scatter:true),
+			Channel.fromPath(params.fasta).map{[[id:it.baseName],it]}
+			)
+		versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
+
+		def dbsnp  = [[id:"npdbsnp"], [] , [] ] 
+		if(params.dbsnp!=null) {
+			dbsnp  = [[id:"dbsnp"], file(params.dbsnp) , file(params.dbsnp+".tbi") ] 
+			}
+		
+		def recal_snps = [[id:"snps"], params.recal_snps_args]
+		def recal_indels = [[id:"indels"],params.recal_indels_args]
+
+		VCF_INPUT(metadata.plus([
+			path: params.vcf,
+			arg_name: "vcf",
+			require_index : true,
+			required: true,
+			unique : false
+			]))
+		versions = versions.mix(VCF_INPUT.out.versions)
+
 		
 	
-	VQSR(
-		ref_hash,
-		fasta,
-		fai,
-		dict,
-		dbsnp,
-		recal_snps,
-		recal_indels,
-		in_vcf_ch
-		)
-	versions = versions.mix(VQSR.out.versions)
-
-	
-	 VCF_STATS(
-			ref_hash,
-			fasta,
-			fai,
-			dict,
-			Channel.of(gtf),
-			Channel.of(gff3),
-			[[id:"noped"],[]],
-			[[id:"nogroup2sample"],[]],
-			[[id:"nobed"],[]],
-			VQSR.out.vcf
+		VQSR(
+			metadata,
+			PREPARE_ONE_REFERENCE.out.fasta,
+			PREPARE_ONE_REFERENCE.out.fai,
+			PREPARE_ONE_REFERENCE.out.dict,
+			dbsnp,
+			recal_snps,
+			recal_indels,
+			in_vcf_ch
 			)
-	versions = versions.mix(VCF_STATS.out.versions)
-	multiqc = versions.mix(VCF_STATS.out.multiqc)
+		versions = versions.mix(VQSR.out.versions)
 
-	COMPILE_VERSIONS(versions.collect())
-	multiqc = multiqc.mix(COMPILE_VERSIONS.out.multiqc)
+	if(params.with_stats==true) {
 
-    MULTIQC(multiqc.collect().map{[[id:"vqsr"],it]})
+		def gtf    = [metadata, file(params.gtf), file(params.gtf+".tbi") ]
+		def gff3    = [metadata, file(params.gff3), file(params.gff3+".tbi") ]
 
+
+		VCF_STATS(
+				metadata,
+				PREPARE_ONE_REFERENCE.out.fasta,
+				PREPARE_ONE_REFERENCE.out.fai,
+				PREPARE_ONE_REFERENCE.out.dict,
+				Channel.of(gtf),
+				Channel.of(gff3),
+				[[id:"noped"],[]],
+				[[id:"nogroup2sample"],[]],
+				[[id:"nobed"],[]],
+				VQSR.out.vcf
+				)
+		versions = versions.mix(VCF_STATS.out.versions)
+		multiqc = versions.mix(VCF_STATS.out.multiqc)
+		}
+
+	if(params.with_multiqc==true) {
+		COMPILE_VERSIONS(versions.collect())
+		multiqc = multiqc.mix(COMPILE_VERSIONS.out.multiqc)
+
+		MULTIQC(multiqc.map{meta,f->f}.collect().map{[[id:"vqsr"],it]})
+		}
 	}
 runOnComplete(workflow)

@@ -92,7 +92,7 @@ workflow {
 		def metadata = [id:"genotyping"]
 
 		PREPARE_ONE_REFERENCE(
-			metadata,
+			metadata.plus(skip_scatter:true),
 			Channel.fromPath(params.fasta).map{[[id:it.baseName],it]}
 			)
 		versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
@@ -165,12 +165,13 @@ workflow {
 				dict: [meta2, dict]
 				vcf: [meta1.plus(fasta_id:meta2.fasta_id),vcf,tbi]
 				}
-	
+		
 		VCFSETDICT1(
 			dispatch_ch.dict,
 			dispatch_ch.vcf
 			)
 		versions = versions.mix(VCFSETDICT1.out.versions)
+		
 
 		/** group BAMS by n_bams bams and by meta.fasta_id*/
 		grouped_ch = bams
@@ -182,7 +183,7 @@ workflow {
 			
 		if(params.method.equals("gatk")) {
 			bamvcf_ch = grouped_ch
-				.combine(vcfs)
+				.combine(VCFSETDICT1.out.vcf)
 				.filter{meta1,bam_array,meta2,vcf,tbi->meta1.fasta_id==meta2.fasta_id}
 				.combine(all_references)
 				.filter{meta1,bam_array,meta2,vcf,tbi,meta3,fasta,fai,dict->meta1.fasta_id==meta3.fasta_id}
@@ -206,7 +207,8 @@ workflow {
 			vcf = GATK_GENOTYPE_VCF.out.vcf
 			}
 		else if(params.method.equals("bcftools")) {
-			VCF2TABIX(vcfs.map{meta,vcf,tbi->[meta,vcf]})
+			
+			VCF2TABIX(VCFSETDICT1.out.vcf.map{meta,vcf,tbi->[meta,vcf]})
 			versions = versions.mix(VCF2TABIX.out.versions)
 
 			bamtabix_ch = grouped_ch.combine(VCF2TABIX.out.tabix)
@@ -221,8 +223,8 @@ workflow {
 				}
 
 			BCFTOOLS_GENOTYPE(
-				bamvcf_ch.fasta,
-				bamvcf_ch.fai,
+				bamtabix_ch.fasta,
+				bamtabix_ch.fai,
 				bamtabix_ch.tabix,
 				bamtabix_ch.bam
 				)
@@ -282,7 +284,7 @@ workflow {
 process VCF2TABIX {
 label "process_single"
 tag "${meta.id}"
-conda "${moduleDir}/../../../conda/bioinfo.02.yml"
+conda "${moduleDir}/../../conda/bioinfo.02.yml"
 afterScript "rm -rf TMP"
 input:
 	tuple val(meta),path(vcf)
@@ -290,7 +292,7 @@ output:
 	tuple val(meta),path("*.tsv.gz"),path("*.tsv.gz.tbi"),emit:tabix
 	path("versions.yml"),emit:versions
 script:
-	def prefix = task.meta.prefix?:"${meta.id}"
+	def prefix = task.prefix?:"${meta.id}"
 """
 mkdir -p TMP
 bcftools query -f '%CHROM\t%POS\t%REF,%ALT\\n' '${vcf}' |\\
@@ -299,12 +301,13 @@ bcftools query -f '%CHROM\t%POS\t%REF,%ALT\\n' '${vcf}' |\\
 
 tabix -f -s 1 -b 2 -e 2 TMP/jeter.tsv.gz
 
-mv TMP/jeter.tsv "${prefix}.tsv.gz"
-mv TMP/jeter.tsv.tbi "${prefix}.tsv.gz.tbi"
+mv TMP/jeter.tsv.gz "${prefix}.tsv.gz"
+mv TMP/jeter.tsv.gz.tbi "${prefix}.tsv.gz.tbi"
 touch versions.yml
 """
+
 stub:
-	def prefix = task.meta.prefix?:"${meta.id}"
+	def prefix = task.prefix?:"${meta.id}"
 """
 touch "${prefix}.tsv.gz" "${prefix}.tsv.gz.tbi" versions.yml
 """
