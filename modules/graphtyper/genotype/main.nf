@@ -31,6 +31,7 @@ input:
     tuple val(meta1),path(fasta)
     tuple val(meta2),path(fai)
     tuple val(meta4),path(optional_covlen)
+    tuple val(meta5),path(vcf_to_genotype) // "Use this option if you want GraphTyper to only genotype variants from this VCF. https://github.com/DecodeGenetics/graphtyper/blob/master/src/main.cpp#L431
     tuple val(meta),path("BAMS/*"),path(bed)
 output:
     tuple val(meta),path("*.bcf",arity:'1'),path("*.csi",arity:'1'),emit:vcf
@@ -72,6 +73,7 @@ awk -F '\t' '{printf("%s:%d-%s\\n",\$1,int(\$2)+1,\$3);}' "${bed}"  > TMP/jeter.
 graphtyper genotype \\
         "${fasta}" \\
         ${optional_covlen?"--avg_cov_by_readlen=TMP/cov.length.tsv":""} \\
+	${vcf_to_genotype?"--vcf \"${vcf_to_genotype}\":""} \\
         --output=TMP2 \\
         --force_no_copy_reference \\
         --force_use_input_ref_for_cram_reading \\

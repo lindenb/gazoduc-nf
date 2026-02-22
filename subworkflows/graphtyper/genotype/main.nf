@@ -77,6 +77,7 @@ main:
         fasta,
         fai,
         merged,
+	[[id:"novcfgenotype"],[]],
         bam_bed_ch
         )
     versions = versions.mix(GTYPER.out.versions)

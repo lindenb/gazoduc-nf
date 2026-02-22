@@ -40,6 +40,7 @@ script:
     verify(task.ext.slop!=null,"${task.process} ext.slop cannot be blank e.g:  10")
     def slop = task.ext.slop?:0
     def prefix = task.ext.prefix?:"${meta.id}.slop${slop}"
+    def cmd1 = task.ext.cmd1?:"cat"
 """
 hostname 1>&2
 mkdir -p TMP
@@ -47,7 +48,9 @@ mkdir -p TMP
 cut -f1,2 "${fai}" |\\
     sort  -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter.genome
 
-bedtools slop -i "${bed}" -g TMP/jeter.genome  ${args} -b ${slop} > TMP/jeter.bed
+bedtools slop -i "${bed}" -g TMP/jeter.genome  ${args} -b ${slop} |\\
+     sort  -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
+     ${cmd1} > TMP/jeter.bed
 
 mv TMP/jeter.bed "${prefix}.bed"
 
@@ -60,7 +63,8 @@ EOF
 
 stub:
     verify(task.ext.slop!=null,"${task.process} ext.slop cannot be blank e.g:  10")
-    def prefix="slop"
+    def slop = task.ext.slop?:0
+    def prefix = task.ext.prefix?:"${meta.id}.slop${slop}"
 """
 touch "${prefix}.bed"  versions.yml
 """
