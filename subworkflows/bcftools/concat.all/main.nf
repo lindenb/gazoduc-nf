@@ -29,6 +29,7 @@ include { makeKey                                     } from '../../../modules/u
 List makeSQRT(def meta,def vcf_files) {
         int n = (int)Math.ceil(Math.sqrt(vcf_files.size()));
         if(n<25) n=25;
+	//log.info("makeSQRT n=${n} for size=${vcf_files.size()}");
         def returnList = [];
         def currList = [];
         int i=0;
@@ -41,6 +42,7 @@ List makeSQRT(def meta,def vcf_files) {
                         }
                 i++;
                 }
+	//log.info("return N=${returnList.size()} ${returnList}");
         return returnList;
         }
 
@@ -63,6 +65,7 @@ main:
 		.map{meta,files->[meta,files.sort{f1,f2->f1[0].name<=>f2[0].name}]}
 		.flatMap(row->makeSQRT(row))
 		.map{meta,array->[meta.plus(save_id:meta.id,id:makeKey(array)),array]} //save id, create new id to avoid name collision in LEVEL2
+
         
 	BCFTOOLS_CONCAT_LEVEL1(leve1_ch)
 	versions = versions.mix(BCFTOOLS_CONCAT_LEVEL1.out.versions)

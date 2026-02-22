@@ -70,7 +70,10 @@ main:
     
     bam_bed_ch = beds
         .combine(bams.map{_meta,bam,bai->[bam,bai]}.flatMap().collect().map{it.sort()}.toSortedList())
-        .map{meta,bed,bams->[meta,bams,bed]}//meta, BAMS, bed
+        .multiMap{meta,bed,bams->
+		bed: [meta,bed]
+		bams: [meta,bams]
+	}
         
 
     GTYPER(
@@ -78,7 +81,8 @@ main:
         fai,
         merged,
 	[[id:"novcfgenotype"],[]],
-        bam_bed_ch
+	bam_bed_ch.bed,
+        bam_bed_ch.bams
         )
     versions = versions.mix(GTYPER.out.versions)
 

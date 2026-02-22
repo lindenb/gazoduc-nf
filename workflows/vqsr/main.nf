@@ -43,8 +43,11 @@ include { MULTIQC                                  } from '../../modules/multiqc
 include { COMPILE_VERSIONS                         } from '../../modules/versions/main.nf'
 include { VCF_STATS                                } from '../../subworkflows/vcfstats'
 include { runOnComplete; dumpParams                } from '../../modules/utils/functions.nf'
+include { parseBoolean                             } from '../../modules/utils/functions.nf'
 include { PREPARE_ONE_REFERENCE                    } from '../../subworkflows/samtools/prepare.one.ref'
 include { VCF_INPUT                                } from '../../subworkflows/nf/vcf_input'
+include { MERGE_VCFS                               } from '../../modules/gatk/mergevcfs'
+include { BCFTOOLS_CONCAT_CONTIGS                  } from '../../subworkflows/bcftools/concat.contigs'
 
 
 
@@ -78,21 +81,26 @@ workflow {
 			log.error("--recal_indels_args undefined")
 			exit -1;
 			}
-
+		/**
+		 * prepare FASTA reference 
+		 */
 		PREPARE_ONE_REFERENCE(
 			metadata.plus(skip_scatter:true),
 			Channel.fromPath(params.fasta).map{[[id:it.baseName],it]}
 			)
 		versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
 
+		/**
+		 * prepare dbsnp
+		 */
 		def dbsnp  = [[id:"npdbsnp"], [] , [] ] 
 		if(params.dbsnp!=null) {
 			dbsnp  = [[id:"dbsnp"], file(params.dbsnp) , file(params.dbsnp+".tbi") ] 
 			}
-		
-		def recal_snps = [[id:"snps"], params.recal_snps_args]
-		def recal_indels = [[id:"indels"],params.recal_indels_args]
 
+		/**
+		 * prepare VCF inputs :VCF may be composed of multiple VCFs (one per contig)
+		 */
 		VCF_INPUT(metadata.plus([
 			path: params.vcf,
 			arg_name: "vcf",
@@ -110,15 +118,41 @@ workflow {
 			PREPARE_ONE_REFERENCE.out.fai,
 			PREPARE_ONE_REFERENCE.out.dict,
 			dbsnp,
-			recal_snps,
-			recal_indels,
-			in_vcf_ch
+			VCF_INPUT.out.vcf
 			)
 		versions = versions.mix(VQSR.out.versions)
+		multiqc = versions.mix(VQSR.out.multiqc)
 
+		//give all same id for concatenation
+		out_vcf = VQSR.out.vcf.map{meta,vcf,tbi->[[id:metadata.id]/* do not use plus()*/,vcf,tbi]}
+
+		if(parseBoolean(params.concat_by_contigs)) {
+			BCFTOOLS_CONCAT_CONTIGS(
+				metadata,
+				out_vcf
+				)
+			versions = versions.mix(BCFTOOLS_CONCAT_CONTIGS.out.versions)
+			multiqc = versions.mix(BCFTOOLS_CONCAT_CONTIGS.out.multiqc)
+			out_vcf = BCFTOOLS_CONCAT_CONTIGS.out.vcf
+			}
+		else
+			{
+			/* use gatk, not bcf to make aware of dictionary */
+			MERGE_VCFS(
+				out_vcf.map{meta,vcf,tbi->[vcf,tbi]}
+					.flatMap()
+					.collect()
+					.map{files->[metadata,files.sort()]}
+				)
+			versions = versions.mix(MERGE_VCFS.out.versions)
+			out_vcf = MERGE_VCFS.out.vcf
+			}
+
+		
 	if(params.with_stats==true) {
-
+		
 		def gtf    = [metadata, file(params.gtf), file(params.gtf+".tbi") ]
+		
 		def gff3    = [metadata, file(params.gff3), file(params.gff3+".tbi") ]
 
 
@@ -132,7 +166,7 @@ workflow {
 				[[id:"noped"],[]],
 				[[id:"nogroup2sample"],[]],
 				[[id:"nobed"],[]],
-				VQSR.out.vcf
+				out_vcf
 				)
 		versions = versions.mix(VCF_STATS.out.versions)
 		multiqc = versions.mix(VCF_STATS.out.multiqc)
@@ -144,5 +178,6 @@ workflow {
 
 		MULTIQC(multiqc.map{meta,f->f}.collect().map{[[id:"vqsr"],it]})
 		}
+	
 	}
 runOnComplete(workflow)

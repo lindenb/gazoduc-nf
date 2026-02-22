@@ -51,6 +51,8 @@ script:
         def args1 = task.ext.args1?:""
         def args2 = task.ext.args2?:""
         def args3 = task.ext.args3?:""
+	def annotations1 = task.ext.annotations1?:"-a 'FORMAT/AD' -a 'FORMAT/DP' -a 'FORMAT/SP' -a 'FORMAT/SCR' -a 'FORMAT/QS' -e 'FORMAT/NMBZ'"
+	def annotations2 = task.ext.annotations2?:"-a 'INFO/PV4' -a 'FORMAT/GQ' -a 'FORMAT/GP'"
 """
 hostname 1>&2
 mkdir -p TMP
@@ -64,7 +66,7 @@ test -s  TMP/jeter.list
 bcftools mpileup \\
     ${args2} \\
     --redo-BAQ \\
-    -a 'FORMAT/AD' -a 'FORMAT/DP' -a 'FORMAT/SP' -a 'FORMAT/SCR' -a 'FORMAT/QS' -e 'FORMAT/NMBZ' \\
+    ${annotations1} \\
     --threads ${task.cpus} \\
     --fasta-ref "${fasta}" \\
     --regions-file "${alleles}" \\
@@ -76,7 +78,7 @@ bcftools mpileup \\
 bcftools call  \\
     ${args3} \\
     --keep-alts \\
-    -a 'INFO/PV4' -a 'FORMAT/GQ' -a 'FORMAT/GP' \\
+    ${annotations2} \\
     ${ploidy.isEmpty()?"":"--ploidy ${ploidy}"} \\
     --threads ${task.cpus}  \\
     --targets-file "${alleles}" \\

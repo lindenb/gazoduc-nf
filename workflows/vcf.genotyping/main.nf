@@ -41,6 +41,7 @@ include { MULTIQC                                  } from '../../modules/multiqc
 include { VCF_INPUT                                } from '../../subworkflows/nf/vcf_input'
 include { JVARKIT_VCF_SET_DICTIONARY as VCFSETDICT1} from '../../modules/jvarkit/vcfsetdict'
 include { JVARKIT_VCF_SET_DICTIONARY as VCFSETDICT2} from '../../modules/jvarkit/vcfsetdict'
+include { GRAPHTYPER                               } from '../../modules/graphtyper/genotype'
 
 List makeArray(meta, List array0,int n) {
 	def L = [];
@@ -205,6 +206,30 @@ workflow {
 				)
 			versions = versions.mix(GATK_GENOTYPE_VCF.out.versions)
 			vcf = GATK_GENOTYPE_VCF.out.vcf
+			}
+		else if(params.method.equals("graphtyper")) {
+			bamvcf_ch = grouped_ch
+				.combine(VCFSETDICT1.out.vcf)
+				.filter{meta1,bam_array,meta2,vcf,tbi->meta1.fasta_id==meta2.fasta_id}
+				.combine(all_references)
+				.filter{meta1,bam_array,meta2,vcf,tbi,meta3,fasta,fai,dict->meta1.fasta_id==meta3.fasta_id}
+				.multiMap{meta1,bams,meta2,vcf,tbi,meta3,fasta,fai,dict->
+					fasta: [meta3,fasta]
+					fai: [meta3,fai]
+					vcf : [meta2,vcf,tbi]
+					bam : [meta1.plus(vcf_id:meta2.id),bams]
+				}
+
+
+			GRAPHTYPER(
+				bamvcf_ch.fasta,
+				bamvcf_ch.fai,
+				[[id:"nocovlen"],[]],
+				bamvcf_ch.vcf,
+				bamvcf_ch.bam
+				)
+			versions = versions.mix(GRAPHTYPER.out.versions)
+			vcf = GRAPHTYPER.out.vcf
 			}
 		else if(params.method.equals("bcftools")) {
 			

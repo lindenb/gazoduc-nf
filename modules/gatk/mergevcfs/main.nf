@@ -40,6 +40,7 @@ script:
    def limit = task.ext.limit?:100
    def jvm = task.ext.jvm?:"-XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
    def with_md5 = task.ext.with_md5?:true
+   def compression_level = task.ext.compression_level?:5
 """	
 	hostname 1>&2
 	mkdir -p TMP
@@ -53,6 +54,7 @@ script:
 			gatk --java-options "${jvm}" MergeVcfs \\
 				--INPUT TMP/jeter.list \\
 				--OUTPUT TMP/jeter.vcf.gz \\
+				--COMPRESSION_LEVEL ${compression_level} \\
 				--CREATE_INDEX true
 
 		else
@@ -77,7 +79,8 @@ script:
 
 			gatk --java-options "${jvm}" MergeVcfs \\
 				--INPUT TMP/jeter2.list \\
-				--OUTPUT  TMP/jeter.vcf.gz \
+				--OUTPUT  TMP/jeter.vcf.gz \\
+				--COMPRESSION_LEVEL ${compression_level} \\
 				--CREATE_INDEX  false
 
 
@@ -99,6 +102,7 @@ script:
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
+	gatk: "\$(gatk --version 2>&1  | paste -s -d ' ' | tr -c -d 'A-Za-z0-9._-' )"
 	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
 END_VERSIONS
 """

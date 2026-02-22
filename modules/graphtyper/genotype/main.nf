@@ -22,8 +22,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include {verify           } from '../../../modules/utils/functions.nf'
+
 process GRAPHTYPER {
-tag "${bed.name}"
+tag "${meta.id}"
 label "process_single"
 afterScript "rm -rf TMP TMP2"
 conda "${moduleDir}/../../../conda/graphtyper.yml"
@@ -31,14 +33,17 @@ input:
     tuple val(meta1),path(fasta)
     tuple val(meta2),path(fai)
     tuple val(meta4),path(optional_covlen)
-    tuple val(meta5),path(vcf_to_genotype) // "Use this option if you want GraphTyper to only genotype variants from this VCF. https://github.com/DecodeGenetics/graphtyper/blob/master/src/main.cpp#L431
-    tuple val(meta),path("BAMS/*"),path(bed)
+    tuple val(meta5),path(vcf_to_genotype),path(vcf_to_genotype_tbi) // "Use this option if you want GraphTyper to only genotype variants from this VCF. https://github.com/DecodeGenetics/graphtyper/blob/master/src/main.cpp#L431
+    tuple val(meta6),path(bed)
+    tuple val(meta),path("BAMS/*")
 output:
     tuple val(meta),path("*.bcf",arity:'1'),path("*.csi",arity:'1'),emit:vcf
     path("versions.yml"),emit:versions
 script:
     def args = task.ext.args?:""
-    def prefix = task.ext.prefix?:"\${MD5}"
+    def prefix = task.ext.prefix?:"${meta.id}"
+    verify((bed?true:false) || (vcf_to_genotype?true:false),"bed or vcf must be declared");
+    verify(!((bed?true:false) && (vcf_to_genotype?true:false)),"bed and vcf both declared");
 """
 
 mkdir -p TMP
@@ -66,14 +71,24 @@ fi
 
 test -s  TMP/bams.list
 
-MD5=`echo ${bed}  | sha1sum | cut -d ' ' -f1`
+if ${bed?true:false}
+then
 
-awk -F '\t' '{printf("%s:%d-%s\\n",\$1,int(\$2)+1,\$3);}' "${bed}"  > TMP/jeter.intervals
+    awk -F '\t' '{printf("%s:%d-%s\\n",\$1,int(\$2)+1,\$3);}' "${bed}"  > TMP/jeter.intervals
+
+else
+
+   bcftools query -f '%CHROM\t%POS0\t%END\\n' ${vcf_to_genotype} |\\
+        sort -t '\t' -T TMP -k1,1 -k2,2n -S ${task.memory.kilo} |\\
+        bedtools merge |\\
+        awk -F '\t' '{printf("%s:%d-%s\\n",\$1,int(\$2)+1,\$3);}' > TMP/jeter.intervals
+fi
+
 
 graphtyper genotype \\
         "${fasta}" \\
         ${optional_covlen?"--avg_cov_by_readlen=TMP/cov.length.tsv":""} \\
-	${vcf_to_genotype?"--vcf \"${vcf_to_genotype}\":""} \\
+	    ${vcf_to_genotype?"--vcf \"${vcf_to_genotype}\"":""} \\
         --output=TMP2 \\
         --force_no_copy_reference \\
         --force_use_input_ref_for_cram_reading \\
@@ -109,5 +124,10 @@ cat << END_VERSIONS > versions.yml
 ${task.process}:
     graphtyper: \$(graphtyper --help | tail -n 1 | sed 's/^   //')
 END_VERSIONS
+"""
+stub:
+    def prefix = task.ext.prefix?:"${meta.id}"
+"""
+touch versions.yml ${prefix}.bcf ${prefix}.bcf.csi
 """
 }

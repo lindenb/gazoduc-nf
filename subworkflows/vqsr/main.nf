@@ -1,6 +1,36 @@
+/*
 
-include {VCF_TO_BED         } from '../../modules/bcftools/vcf2bed'
-include {BCFTOOLS_CONCAT    } from '../../modules/bcftools/concat3'
+Copyright (c) 2026 Pierre Lindenbaum
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+The MIT License (MIT)
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
+include { BCFTOOLS_CONCAT                  } from '../../modules/bcftools/concat3'
+include { verify                           } from '../../modules/utils/functions.nf'
+include { isBlank                          } from '../../modules/utils/functions.nf'
+include { flatMapByIndex                   } from '../../modules/utils/functions.nf'
+include { VARIANT_RECALIBRATOR             } from '../../modules/gatk/variantrecalibrator'
+include { APPLY_VQSR  as APPLY_VQSR_SNPS   } from '../../modules/gatk/applyvqsr'
+include { APPLY_VQSR  as APPLY_VQSR_INDELS } from '../../modules/gatk/applyvqsr'
+include { SPLIT_N_VARIANTS                 } from '../../modules/jvarkit/splitnvariants'
+include { BCFTOOLS_INDEX                   } from '../../modules/bcftools/index'
 
 workflow VQSR {
     take:
@@ -9,94 +39,96 @@ workflow VQSR {
         fai
         dict
         dbsnp
-        recal_snps//val(meta),val(argument for recal snp)
-        recal_indels//val(meta),val(argument for recal indels)
         vcfs
     main:
         versions = Channel.empty()
+		multiqc = Channel.empty()
 
+		/** extract concatenated variant of VCF input without genotypes */
         BCF_TO_VCF(
             vcfs.map{meta,vcf,tbi->[vcf,tbi]}
 				.flatMap()
                 .collect()
-                .map{files->[[id:"vqsr"],files.sort()]}
+                .map{files->[metadata,files.sort()]}
             )
         versions = versions.mix(BCF_TO_VCF.out.versions)
 
-        COMPILE_MINIKIT(metadata)
-		versions = versions.mix(COMPILE_MINIKIT.out.versions)
+        GUESS_PARAMETERS(
+			BCF_TO_VCF.out.vcf.combine(Channel.of("snps","indels"))
+				.map{meta,vcf,idx,t->[meta.plus(type:t),vcf,idx]}
+			)
+		versions = versions.mix(GUESS_PARAMETERS.out.versions)
 
-        RECALIBRATE_SNP(
+		/** transfert meta2.type to meta */
+		ch1 = BCF_TO_VCF.out.vcf
+			.combine(GUESS_PARAMETERS.out.arguments)
+			.filter{meta,vcf,tbi,meta2,args->meta.id==meta2.id} //paranoid
+			.multiMap{meta,vcf,tbi,meta2,args->
+				arguments : [meta2,args]
+				vcf :  [meta.plus(type:meta2.type),vcf,tbi]
+			}
+
+        VARIANT_RECALIBRATOR(
 			fasta,
 			fai,
-			dict, 
-			BCF_TO_VCF.out.vcf , 
-			COMPILE_MINIKIT.out.jar,
-			recal_snps
+			dict,
+			ch1.arguments,
+			ch1.vcf 
 			)
-		versions = versions.mix(RECALIBRATE_SNP.out.versions)
+		versions = versions.mix(VARIANT_RECALIBRATOR.out.versions)
 
-        RECALIBRATE_INDEL(
-			fasta,
-			fai,
-			dict,
-			BCF_TO_VCF.out.vcf , 
-			COMPILE_MINIKIT.out.jar,
-			recal_indels
+		SPLIT_N_VARIANTS(
+			[[id:"nobed"],[]],
+			vcfs
 			)
-		versions = versions.mix(RECALIBRATE_INDEL.out.versions)
-
-        
-        vcfs = vcfs.map{meta,vcf,idx->[
-            meta.plus(id:vcf.toRealPath().toString().md5()),//give each vcf it's own id
-           	vcf,
-           	idx
-            ]}
-        
-        
-        VCF_TO_BED(vcfs)
-        versions = versions.mix(VCF_TO_BED.out.versions)
-
-        ch2 = VCF_TO_BED.out.output
-            .splitCsv(sep:'\t',header:false,elem:1) //meta [ctg,start,end] vcf,vcfidx
-            .map{[it[0], it[1][0]+":"+((it[1][1] as int)+1)+"-"+it[1][2], it[2], it[3]]} //meta, interval,vcf,vcfidx
-        
-		VCF_TO_INTERVALS(ch2)
-		versions = versions.mix(VCF_TO_INTERVALS.out.versions)
-        
-       
-        ch3 = VCF_TO_INTERVALS.out.bed
-            .combine(RECALIBRATE_SNP.out.vcf.map{[it[1]/*snp*/,it[2]/*snpidx*/,it[3]/* tranche */]})
-            .combine(RECALIBRATE_INDEL.out.vcf.map{[it[1]/*index*/,it[2]/*indelidx*/,it[3]/* tranche */]})
-            
-
-        APPLY_RECALIBRATION_SNP(
-            fasta,
-			fai,
-			dict,
-            ch3
-            )
-		versions = versions.mix(APPLY_RECALIBRATION_SNP.out.versions)
-
-		APPLY_RECALIBRATION_INDEL(
-            fasta,
-			fai,
-			dict,
-            APPLY_RECALIBRATION_SNP.out.vcf
-            )
-		versions = versions.mix(APPLY_RECALIBRATION_INDEL.out.versions)
+		versions = versions.mix(SPLIT_N_VARIANTS.out.versions)
 		
-        BCFTOOLS_CONCAT(
-            APPLY_RECALIBRATION_INDEL.out.vcf
-                .map{meta,vcf,tbi->[vcf,tbi]}
-                .flatMap()
-				.collect()
-                .map{files->[[id:"vqsr"],files.sort()]}
-            )
-        versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
+		vcfs = SPLIT_N_VARIANTS.out.vcf.flatMap(row->flatMapByIndex(row,1))
+			.combine(SPLIT_N_VARIANTS.out.tbi.flatMap(row->flatMapByIndex(row,1)))
+			.filter{meta1,vcf,meta2,tbi->meta1.id==meta2.id && "${vcf.name}.tbi" == tbi.name}
+			.map{meta1,vcf,meta2,tbi->[meta1.plus(id:vcf.name.md5()),vcf,tbi]}
+		
+		ch1 = vcfs.combine(VARIANT_RECALIBRATOR.out.vcf.filter{meta,vcf,tbi,tranches->meta.type=="snps"})
+			.multiMap{meta1,vcf,tbi,meta2,recal,recalidx,tranches->
+				recal : [meta2,recal,recalidx,tranches]
+				vcf :  [meta1,vcf,tbi]
+			}
+
+
+		APPLY_VQSR_SNPS(
+			fasta,
+			fai,
+			dict,
+			ch1.recal,
+			ch1.vcf
+			)
+		versions = versions.mix(APPLY_VQSR_SNPS.out.versions)
+
+		
+		ch1 = APPLY_VQSR_SNPS.out.vcf
+			.combine(VARIANT_RECALIBRATOR.out.vcf.filter{meta,vcf,tbi,tranches->meta.type=="indels"})
+			.multiMap{meta1,vcf,tbi,meta2,recal,recalidx,tranches->
+				recal : [meta2,recal,recalidx,tranches]
+				vcf :  [meta1,vcf,tbi]
+			}
+
+		APPLY_VQSR_INDELS(
+			fasta,
+			fai,
+			dict,
+			ch1.recal,
+			ch1.vcf
+			)
+		versions = versions.mix(APPLY_VQSR_INDELS.out.versions)
+
+		/* for index by bcftools to get index metadata */
+		BCFTOOLS_INDEX(APPLY_VQSR_INDELS.out.vcf.map{meta,vcf,tbi->[meta,vcf]})
+		versions = versions.mix(BCFTOOLS_INDEX.out.versions)
+
     emit:
         versions
-        vcf = BCFTOOLS_CONCAT.out.vcf
+		multiqc
+        vcf = BCFTOOLS_INDEX.out.vcf
 }
 
 
@@ -140,307 +172,56 @@ touch chroms.txt ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi versions.yml
 }
 
 
-process VCF_TO_INTERVALS {
-tag "${interval} ${vcf.name}"
-label "process_single"
-afterScript "rm -rf TMP"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-input:
-	tuple val(meta),val(interval),path(vcf),path(idx)
-output:
-	tuple val(meta),path("*.bed"),path(vcf),path(idx),emit:bed
-	path("versions.yml"),emit:versions
-script:
-	def distance="10Mb"
-	def min_distance=100
-    def prefix = interval.md5().substring(0,7)
-"""
-hostname 1>&2
-mkdir -p TMP
-bcftools view -G "${vcf}" "${interval}" |\\
-	jvarkit -Xmx${task.memory.giga}G  -Djava.io.tmpdir=TMP vcf2intervals \
-		--bed \
-		--distance "${distance}" \
-		--min-distance "${min_distance}" > ${prefix}.bed
-
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-	java: todo
-	jvarkit: todo
-END_VERSIONS
-"""
-stub:
-	def prefix = interval.md5().substring(0,7)
- """
-touch versions.yml
-cat << EOF > ${prefix}.bed
-chr1	1	100	${vcf}	${idx}
-chr1	100	200	${vcf}	${idx}
-EOF
-"""
-}
 
 
-process COMPILE_MINIKIT {
-label "process_short"
-afterScript "rm -rf TMP"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-input:
-	val(meta)
-output:
-	tuple val(meta),path("minikit.jar"),emit:jar
-	path("versions.yml"),emit:versions
-script:
-"""
 
-mkdir -p TMP/TMP
-cp -v "${moduleDir}/Minikit.java" TMP/Minikit.java
-
-cat << EOF > TMP/tmp.mf
-Manifest-Version: 1.0
-Main-Class: Minikit
-EOF
-
-javac -d TMP -sourcepath TMP TMP/Minikit.java
-jar cfm minikit.jar TMP/tmp.mf -C TMP .
-
-
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-	java: todo
-END_VERSIONS
-"""
-stub:
-"""
-touch versions.yml  minikit.jar
-"""
-}
-
-
-process RECALIBRATE_SNP {
-tag "${vcf.name}"
+process GUESS_PARAMETERS {
+tag "${meta.type}"
 label "process_medium"
 afterScript 'rm -rf  TMP'
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
-	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai)
-	tuple val(meta3),path(dict)
 	tuple val(meta),path(vcf),path(vcfidx)
-	tuple val(meta4),path(minikit)
-	tuple val(meta5),val(recal_snps)
 output:
-	tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),path("*.tranches.txt"),emit:vcf
-	path("*.plot.R"),emit:R
+	tuple val(meta),path("*.list"),emit:arguments
 	path("versions.yml"),emit:versions
 script:
-	def prefix = task.ext.prefix?:vcf.name.md5()+".snp.recal"
-	def atts = task.ext.atts?:"ExcessHet,FS,InbreedingCoeff,QD,ReadPosRankSum,SOR,MQ,MQRankSum"
-	if(recal_snps.trim().isEmpty()) throw new IllegalArgumentException("missing  args in ${task.process}");
+	def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -XX:-UsePerfData"
+	def type = meta.type
+	verify(!isBlank(type),"type is blank")
+	def attributes = task.ext.attributes?:""
+	verify(!isBlank(attributes),"atts is blank. Should be like 'ExcessHet,FS,InbreedingCoeff,QD,ReadPosRankSum,SOR,MQ,MQRankSum' ")
+	def prefix = task.ext.prefix?:"${meta.id}.${type}"
+
+	def other_recal_args = task.ext.recal_args?:""
+	verify(!isBlank(other_recal_args),"For ${type} missing ext.recal_args in ${task.process}")
+
 """
-hostname 1>&2
-set -x
 mkdir -p TMP
+cp -v "${moduleDir}/Minikit.java" TMP/Minikit.java
+javac -d TMP -sourcepath TMP TMP/Minikit.java
 
 
-bcftools view --type snps -G "${vcf}" |\\
-	java  -Djava.io.tmpdir=TMP  -XX:-UsePerfData -jar ${minikit} --an '${atts}' > TMP/args.list
+bcftools view --type ${type} -G "${vcf}" |\\
+	java  ${jvm} -cp TMP Minikit --an '${attributes}' > TMP/args.list
+
 test -s TMP/args.list
 
 cat << EOF >> TMP/args.list
-${recal_snps}
+${other_recal_args}
 EOF
 
-gatk  --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -XX:-UsePerfData" VariantRecalibrator  \\
-	-R "${fasta}" \\
-	-V "${vcf}" \\
-	--arguments_file TMP/args.list \\
-	-mode SNP \\
-	-O "${prefix}.vcf.gz" \\
-	--tranches-file "${prefix}.tranches.txt" \\
-    --dont-run-rscript \\
-	--rscript-file  "${prefix}.plot.R"
+mv TMP/args.list "${prefix}.list"
 
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-	java: todo
-	jvarkit: todo
-END_VERSIONS
+touch versions.yml
 """
 stub:
-def prefix = task.ext.prefix?:vcf.name.md5()+".snp.recal" 
+	def type = meta.type
+	verify(!isBlank(type),"type is blank")
+	def prefix = task.ext.prefix?:"${meta.id}.${type}"
 """
-touch versions.yml  minikit.jar ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi ${prefix}.plot.R ${prefix}.tranches.txt
+touch versions.yml "${prefix}.list"
 """
 }
 
 
-process RECALIBRATE_INDEL {
-tag "${vcf.name}"
-label "process_medium"
-afterScript 'rm -rf  TMP'
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-input:
-	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai)
-	tuple val(meta3),path(dict)
-	tuple val(meta),path(vcf),path(vcfidx)
-	tuple val(meta4),path(minikit)
-	tuple val(meta5),val(recal_indels)
-output:
-	tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),path("*.tranches.txt"),emit:vcf
-	path("*.plot.R"),emit:R
-	path("versions.yml"),emit:versions
-script:
-    def prefix = task.ext.prefix?:vcf.name.md5()+".indel.recal"
-    def atts = task.ext.atts?:"ExcessHet,FS,InbreedingCoeff,QD,ReadPosRankSum,SOR,MQ,MQRankSum"
-
-"""
-hostname 1>&2
-mkdir -p TMP
-set -x
-
-bcftools view --type indels -G "${vcf}" |\\
-	java  -Djava.io.tmpdir=TMP   -XX:-UsePerfData -jar ${minikit} --an ${atts} > TMP/args.list
-
-test -s TMP/args.list
-
-cat << EOF  >> TMP/args.list
-${recal_indels}
-EOF
-
-# 20200630 add AS https://gatk.broadinstitute.org/hc/en-us/articles/360036510892-VariantRecalibrator
-# finalement AS ne semble pas marcher avec indel
-
-gatk  --java-options "-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP" VariantRecalibrator  \\
-	-R "${fasta}" \\
-	-V "${vcf}" \\
-	--arguments_file TMP/args.list \\
-	-mode INDEL \\
-	-O "${prefix}.recal.vcf.gz" \\
-	--tranches-file "indel${prefix}.tranches.txt" \\
-    --dont-run-rscript \\
-	--rscript-file ${prefix}.plot.R
-
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-	java: todo
-	jvarkit: todo
-END_VERSIONS
-"""
-
-stub:
-def prefix = task.ext.prefix?:vcf.name.md5()+".indel.recal" 
-"""
-touch versions.yml  minikit.jar ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi ${prefix}.plot.R ${prefix}.tranches.txt
-"""
-}
-
-process APPLY_RECALIBRATION_SNP {
-tag "${vcf.name} ${bed.name}"
-label "process_subgle"
-afterScript 'rm -rf  TMP'
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-input:
-	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai)
-	tuple val(meta3),path(dict)
-	tuple val(meta),
-        path(bed),
-        path(vcf),path(vcfidx),
-        path(recal_snp_vcf),path(recal_snp_vcf_idx),path(recal_snp_tranches),
-        path(recal_indel_vcf),path(recal_indel_vcf_idx),path(recal_indel_tranches)
-output:
-	tuple val(meta),
-        path(bed),
-		path("*.vcf.gz"),path("*.vcf.gz.tbi"),
-		path(recal_indel_vcf),path(recal_indel_vcf_idx),path(recal_indel_tranches),emit:vcf
-    path("versions.yml"),emit:versions
-script:
-    def prefix = task.ext.prefix?:(bed.name+vcf.name).md5().substring(0,7)+".snp"
-    def level = task.ext.level?:99.0
-"""
-hostname 1>&2
-mkdir -p TMP
-
-
-if ${vcf.name.endsWith(".bcf")} 
-then
-    bcftools view --threads ${task.cpus} --regions-file "${bed}"  -O z -o TMP/jeter.vcf.gz ${vcf}
-    bcftools index --threads ${task.cpus} -f -t  TMP/jeter.vcf.gz
-fi
-
-gatk  --java-options "-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP" ApplyVQSR  \\
-        -R "${fasta}" \\
-        -V ${vcf.name.endsWith(".bcf")?"TMP/jeter.vcf.gz":"${vcf}"} \\
-        -mode SNP \\
-        -L "${bed}" \\
-        --truth-sensitivity-filter-level ${level} \\
-        --recal-file "${recal_snp_vcf}" \\
-        --tranches-file "${recal_snp_tranches}" \\
-        -O "TMP/jeter2.vcf.gz"
-
-mv TMP/jeter2.vcf.gz ${prefix}.vcf.gz
-mv TMP/jeter2.vcf.gz.tbi ${prefix}.vcf.gz.tbi
-
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-	java: todo
-	bcftools: todo
-END_VERSIONS
-"""
-stub:
-    def prefix = task.ext.prefix?:(bed.name+vcf.name).md5().substring(0,7)+".snp"
-"""
-touch versions.yml  minikit.jar ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi
-"""
-}
-
-
-process APPLY_RECALIBRATION_INDEL {
-tag "${vcf.name} ${bed.name}"
-label "process_subgle"
-afterScript 'rm -rf  TMP'
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-input:
-	tuple val(meta1),path(fasta)
-	tuple val(meta2),path(fai)
-	tuple val(meta3),path(dict)
-	tuple val(meta ),path(bed),path(vcf),path(vcf_idx),
-		path(recal_indel_vcf),path(recal_indel_vcf_idx),path(recal_indel_tranches)
-output:
-	tuple val(meta ),path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:vcf
-    path("versions.yml"),emit:versions
-script:
-    def prefix = task.ext.prefix?:(bed.name+vcf.name).md5().substring(0,7)+".indel"
-    def level = task.ext.level?:99.0
-"""
-hostname 1>&2
-mkdir -p TMP
-
-gatk  --java-options "-Xmx${task.memory.giga}g -XX:-UsePerfData -Djava.io.tmpdir=TMP" ApplyVQSR  \\
-	-R "${fasta}" \\
-	-V "${vcf}"  \\
-	-mode INDEL \\
-	-L "${bed}" \\
-	--truth-sensitivity-filter-level ${level} \\
-	--recal-file "${recal_indel_vcf}" \\
-	--tranches-file "${recal_indel_tranches}" \\
-	-O "TMP/jeter.vcf.gz"
-
-mv TMP/jeter.vcf.gz "${prefix}.vcf.gz"
-mv TMP/jeter.vcf.gz.tbi "${prefix}.vcf.gz.tbi"
-
-
-cat << END_VERSIONS > versions.yml
-"${task.process}":
-	java: todo
-	jvarkit: todo
-END_VERSIONS
-"""
-stub:
-    def prefix = task.ext.prefix?:(bed.name+vcf.name).md5().substring(0,7)+".indel"
-"""
-touch versions.yml  minikit.jar ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi
-"""
-}

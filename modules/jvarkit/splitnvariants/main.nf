@@ -45,6 +45,7 @@ script:
 	def prefix = task.ext.prefix?:"${meta.id}.split${optional_bed?".${meta1.id}":""}"
 	def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData  -Djava.io.tmpdir=TMP"
 	def awk_expr = task.ext.awk_expr?:"(1==1)"
+	def jvarkit = task.ext.jvarkit?:"java ${jvm} -jar \${HOME}/jvarkit.jar"
 """
 hostname 1>&2
 mkdir -p TMP/OUT
@@ -75,7 +76,7 @@ fi
 bcftools view ${args1} \\
 	${has_bed?" --regions-file TMP/jeter3.bed":""} \\
 	"${vcf}" |\\
-	jvarkit ${jvm} vcfsplitnvariants \\
+	${jvarkit} vcfsplitnvariants \\
 	--manifest ${prefix}.MF \\
 	${method} \\
 	-o TMP/OUT/${prefix}
