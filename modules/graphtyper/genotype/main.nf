@@ -43,7 +43,6 @@ script:
     def args = task.ext.args?:""
     def prefix = task.ext.prefix?:"${meta.id}"
     verify((bed?true:false) || (vcf_to_genotype?true:false),"bed or vcf must be declared");
-    verify(!((bed?true:false) && (vcf_to_genotype?true:false)),"bed and vcf both declared");
 """
 
 mkdir -p TMP
@@ -87,6 +86,7 @@ fi
 
 graphtyper genotype \\
         "${fasta}" \\
+        --log=${prefix}.log \\
         ${optional_covlen?"--avg_cov_by_readlen=TMP/cov.length.tsv":""} \\
 	    ${vcf_to_genotype?"--vcf \"${vcf_to_genotype}\"":""} \\
         --output=TMP2 \\
@@ -100,25 +100,21 @@ graphtyper genotype \\
 rm -rf "TMP2/input_sites"
 
 
-rm -f TMP/jeter.list
 find TMP2 -type f -name "*.vcf.gz"  | while read F
 do
-        bcftools query -l "\${F}" | sort > TMP/ordered.samples.txt
-        bcftools view  --threads ${task.cpus} -O b -o "\${F}.bcf"  --samples-file TMP/ordered.samples.txt "\${F}"
-        bcftools index --threads ${task.cpus} "\${F}.bcf"
-	    
-        echo "\${F}.bcf" >> TMP/jeter.list
-        rm TMP/ordered.samples.txt
-        rm "\${F}" "\${F}.tbi"
+
+    bcftools query -l "\${F}" | sort -T TMP > TMP/ordered.samples.txt
+    bcftools view  --threads ${task.cpus} -O b -o "\${F}.rename.bcf"   --samples-file TMP/ordered.samples.txt "\${F}"
+    bcftools index --threads  ${task.cpus} -f "\${F}.rename.bcf"
+    echo "\${F}.rename.bcf"  >> TMP/jeter.list
+    
 done
 
+bcftools concat --threads ${task.cpus} --allow-overlaps --remove-duplicates -Ob -o TMP/merged.1.bcf --file-list TMP/jeter.list        
+bcftools index --threads  ${task.cpus} -f TMP/merged.1.bcf
 
-test -s TMP/jeter.list
-
-# merge all
-bcftools concat --threads ${task.cpus} --allow-overlaps --remove-duplicates -Ob -o "${prefix}.bcf" --file-list TMP/jeter.list
-bcftools index --threads ${task.cpus} ${prefix}.bcf
-
+mv TMP/merged.1.bcf "${prefix}.bcf"
+mv TMP/merged.1.bcf.csi "${prefix}.bcf.csi"
 
 cat << END_VERSIONS > versions.yml
 ${task.process}:

@@ -1,0 +1,65 @@
+nextflow_process {
+
+    name "Test Process DOWNLOAD_HIGH_LD"
+    script "modules/pihat/high_ld/main.nf"
+    process "DOWNLOAD_HIGH_LD"
+    tag "gitlab_ci"
+    tag "modules"
+    tag "modules/pihat"
+    tag "modules/pihat/high_ld"
+
+    test("HG19") {
+        when {
+            process {
+                """
+                input[0] = [[id:"r","ucsc_name":"hg19",],file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+    }
+
+
+
+
+    test("HG38") {
+        when {
+            process {
+                """
+	            input[0] = [[id:"r",ucsc_name:"hg38"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+    }
+
+
+
+    test("STUB") {
+	tag "stub"
+        options "-stub"
+        when {
+            process {
+                """
+	            input[0] = [[id:"r", ucsc_name:"hg19"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+    }
+
+
+
+}

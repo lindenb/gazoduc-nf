@@ -22,7 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {verify        } from '../../utils/functions.nf'
+include { verify              } from '../../utils/functions.nf'
+include { parseBoolean        } from '../../utils/functions.nf'
 
 process BEDTOOLS_SLOP {
 label "process_single"
@@ -41,6 +42,7 @@ script:
     def slop = task.ext.slop?:0
     def prefix = task.ext.prefix?:"${meta.id}.slop${slop}"
     def cmd1 = task.ext.cmd1?:"cat"
+    def sort = parseBoolean("${task.ext.sort?:true}")
 """
 hostname 1>&2
 mkdir -p TMP
@@ -49,7 +51,7 @@ cut -f1,2 "${fai}" |\\
     sort  -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n > TMP/jeter.genome
 
 bedtools slop -i "${bed}" -g TMP/jeter.genome  ${args} -b ${slop} |\\
-     sort  -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
+     ${sort ?"sort  -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n":"cat"} |\\
      ${cmd1} > TMP/jeter.bed
 
 mv TMP/jeter.bed "${prefix}.bed"

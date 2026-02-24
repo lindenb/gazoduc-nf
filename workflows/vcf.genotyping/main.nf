@@ -42,6 +42,11 @@ include { VCF_INPUT                                } from '../../subworkflows/nf
 include { JVARKIT_VCF_SET_DICTIONARY as VCFSETDICT1} from '../../modules/jvarkit/vcfsetdict'
 include { JVARKIT_VCF_SET_DICTIONARY as VCFSETDICT2} from '../../modules/jvarkit/vcfsetdict'
 include { GRAPHTYPER                               } from '../../modules/graphtyper/genotype'
+include { MINIGENOTYPER                            } from '../../modules/jvarkit/minigenotyper'
+include { BCFTOOLS_QUERY                           } from '../../modules/bcftools/query'
+include { BEDTOOLS_SLOP                            } from '../../modules/bedtools/slop'
+include { BEDTOOLS_MERGE                           } from '../../modules/bedtools/merge'
+
 
 List makeArray(meta, List array0,int n) {
 	def L = [];
@@ -133,6 +138,8 @@ workflow {
 				]}
 			.groupTuple()
 			.map{meta,fastas,fais,dicts->[meta,fastas.sort()[0],fais.sort()[0],dicts.sort()[0]]}
+		
+		all_references.count().map{c->"number of references: ${c}"}.view()
 
 		bams= bams.map{meta,bam,bai,fasta,fai,dict->[meta,bam,bai]}
 
@@ -149,16 +156,19 @@ workflow {
 		vcfs = VCF_INPUT.out.vcf
 			.map{meta,vcf,tbi->[meta.plus(id:vcf.toRealPath().toString().md5()),vcf,tbi]}
 		
-		SPLIT_N_VARIANTS(
-			[[id:"nobed"],[]],
-			vcfs
-			)
-		versions = versions.mix(SPLIT_N_VARIANTS.out.versions)
-		
-		vcfs = SPLIT_N_VARIANTS.out.vcf.flatMap(row->flatMapByIndex(row,1))
-            .combine(SPLIT_N_VARIANTS.out.tbi.flatMap(row->flatMapByIndex(row,1)))
-            .filter{meta1,vcf,meta2,tbi->meta1.id==meta2.id && "${vcf.name}.tbi" == tbi.name}
-            .map{meta1,vcf,meta2,tbi->[meta1.plus(id:vcf.name.md5()),vcf,tbi]}
+		/* split variants in small chunks */
+		if((params.n_variants as int)>0) {
+			SPLIT_N_VARIANTS(
+				[[id:"nobed"],[]],
+				vcfs
+				)
+			versions = versions.mix(SPLIT_N_VARIANTS.out.versions)
+			
+			vcfs = SPLIT_N_VARIANTS.out.vcf.flatMap(row->flatMapByIndex(row,1))
+				.combine(SPLIT_N_VARIANTS.out.tbi.flatMap(row->flatMapByIndex(row,1)))
+				.filter{meta1,vcf,meta2,tbi->meta1.id==meta2.id && "${vcf.name}.tbi" == tbi.name}
+				.map{meta1,vcf,meta2,tbi->[meta1.plus(id:vcf.name.md5()),vcf,tbi]}
+			}
 		
 		/** convert VCF input for each type of reference */
 		dispatch_ch = vcfs.combine(all_references)
@@ -208,14 +218,28 @@ workflow {
 			vcf = GATK_GENOTYPE_VCF.out.vcf
 			}
 		else if(params.method.equals("graphtyper")) {
+
+			BCFTOOLS_QUERY(VCFSETDICT1.out.vcf)
+			versions = versions.mix(BCFTOOLS_QUERY.out.versions)
+
+			BEDTOOLS_SLOP(
+				PREPARE_ONE_REFERENCE.out.fai,
+				BCFTOOLS_QUERY.out.output
+				)
+			versions = versions.mix(BEDTOOLS_SLOP.out.versions)
+
+			BEDTOOLS_MERGE(BEDTOOLS_SLOP.out.bed)
+			versions = versions.mix(BEDTOOLS_MERGE.out.versions)
+
 			bamvcf_ch = grouped_ch
-				.combine(VCFSETDICT1.out.vcf)
-				.filter{meta1,bam_array,meta2,vcf,tbi->meta1.fasta_id==meta2.fasta_id}
+				.combine(VCFSETDICT1.out.vcf.join(BEDTOOLS_MERGE.out.bed))
+				.filter{meta1,bam_array,meta2,vcf,tbi,bed->meta1.fasta_id==meta2.fasta_id}
 				.combine(all_references)
-				.filter{meta1,bam_array,meta2,vcf,tbi,meta3,fasta,fai,dict->meta1.fasta_id==meta3.fasta_id}
-				.multiMap{meta1,bams,meta2,vcf,tbi,meta3,fasta,fai,dict->
+				.filter{meta1,bam_array,meta2,vcf,tbi,bed,meta3,fasta,fai,dict->meta1.fasta_id==meta3.fasta_id}
+				.multiMap{meta1,bams,meta2,vcf,tbi,bed,meta3,fasta,fai,dict->
 					fasta: [meta3,fasta]
 					fai: [meta3,fai]
+					bed : [meta2,bed]
 					vcf : [meta2,vcf,tbi]
 					bam : [meta1.plus(vcf_id:meta2.id),bams]
 				}
@@ -226,15 +250,43 @@ workflow {
 				bamvcf_ch.fai,
 				[[id:"nocovlen"],[]],
 				bamvcf_ch.vcf,
+				bamvcf_ch.bed,
 				bamvcf_ch.bam
 				)
 			versions = versions.mix(GRAPHTYPER.out.versions)
 			vcf = GRAPHTYPER.out.vcf
 			}
+		else if(params.method.equals("jvarkit")) {
+			
+
+			bamvcf_ch = grouped_ch
+				.combine(VCFSETDICT1.out.vcf)
+				.filter{meta1,bam_array,meta2,vcf,tbi->meta1.fasta_id==meta2.fasta_id}
+				.combine(all_references)
+				.filter{meta1,bam_array,meta2,vcf,tbi,meta3,fasta,fai,dict->meta1.fasta_id==meta3.fasta_id}
+				.multiMap{meta1,bams,meta2,vcf,tbi,meta3,fasta,fai,dict->
+					fasta: [meta3,fasta]
+					fai: [meta3,fai]
+					dict: [meta3,dict]
+					vcf : [meta2,vcf]
+					bam : [meta1.plus(vcf_id:meta2.id),bams]
+				}
+			
+			MINIGENOTYPER(
+				bamvcf_ch.fasta,
+				bamvcf_ch.fai,
+				bamvcf_ch.dict,
+				bamvcf_ch.vcf,
+				bamvcf_ch.bam
+				)
+			versions = versions.mix(MINIGENOTYPER.out.versions)
+			vcf = MINIGENOTYPER.out.vcf
+			}
 		else if(params.method.equals("bcftools")) {
 			
 			VCF2TABIX(VCFSETDICT1.out.vcf.map{meta,vcf,tbi->[meta,vcf]})
 			versions = versions.mix(VCF2TABIX.out.versions)
+
 
 			bamtabix_ch = grouped_ch.combine(VCF2TABIX.out.tabix)
 				.filter{meta1,bam_array,meta2,tabix,tbi->meta1.fasta_id==meta2.fasta_id}

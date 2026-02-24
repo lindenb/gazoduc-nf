@@ -1,0 +1,72 @@
+nextflow_process {
+
+    name "Test Process MINIGENOTYPER"
+    script "modules/jvarkit/minigenotyper/main.nf"
+    process "MINIGENOTYPER"
+    tag "modules"
+    tag "modules/jvarkit"
+    tag "modules/jvarkit/minigenotyper"
+    tag "gitlab_ci"
+
+
+    test("BASIC") {
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            process {
+                """
+                input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[1] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[2] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[3] = [[id:"vcf"],file("${projectDir}/tests/data/rotavirus_rf.vcf.gz")]
+                input[4] = [[id:"z"],[
+                    file("${projectDir}/tests/data/S1.bam"),
+                    file("${projectDir}/tests/data/S1.bam.bai"),
+                    file("${projectDir}/tests/data/S2.bam"),
+                    file("${projectDir}/tests/data/S2.bam.bai")
+                    ]]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
+
+    test("STUB") {
+        options "-stub"
+        tag "stub"
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            process {
+                """
+                input[0] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa")]
+                input[1] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.fa.fai")]
+                input[2] = [[id:"ref"],file("${projectDir}/tests/data/rotavirus_rf.dict")]
+                input[3] = [[id:"vcf"],file("${projectDir}/tests/data/rotavirus_rf.vcf.gz")]
+                input[4] = [[id:"z"],[
+                    file("${projectDir}/tests/data/S1.bam"),
+                    file("${projectDir}/tests/data/S1.bam.bai"),
+                    file("${projectDir}/tests/data/S2.bam"),
+                    file("${projectDir}/tests/data/S2.bam.bai")
+                    ]]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+}
