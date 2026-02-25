@@ -22,6 +22,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include { verify       } from '../../../modules/utils/functions.nf'
+include { isBlank      } from '../../../modules/utils/functions.nf'
+
 process PER_CONTIG {
 tag "${meta.id}"
 afterScript "rm -rf TMP"
@@ -37,24 +40,24 @@ input:
     tuple val(metaG),path(gnomad),path(gnomad_idx) // optional
     tuple val(meta ),path(vcf_user),path(idx_user)
 output:
-    tuple val(meta ),path("indep_*"),emit:bfile
+    tuple val(meta ),path("*.bim"),path("*.bed"),path("*.fam"),emit:bfile
     path("versions.yml"),emit:versions
 script:
-    def norm_contig = meta.contig
-    def optional_contig_1k = metaK.contig
-    def optional_contig_gnomad = metaG.contig
+    def contig_user = meta.contig
+     verify(!isBlank(contig_user),"${task.process} contig_user is blank")
+    def norm_contig = meta.norm_contig
+    verify(!isBlank(norm_contig),"${task.process} norm_contig is blank")
+    def optional_contig_1k = metaK.contig?:"${contig_user}"
+    def optional_contig_gnomad = metaG.contig?:"${contig_user}"
     def arg1 = ""
     def cpus3 = task.cpus>3?"--thread ${(task.cpus/3) as int}":""
     def plink_args  = "--const-fid 1 --allow-extra-chr --allow-no-sex --threads ${task.cpus}"
-    def prefix = task.ext.prefix?:"${meta.id}"
+    def prefix = task.ext.prefix?:"${meta.id}.indep"
 """
 mkdir -p TMP
 set -x
 
-# 512Mb = max TBI
-echo '##INFO=<ID=IN_FILE1,Number=0,Type=Flag,Description="In File 1">' > TMP/file1.header
-echo '${contig_user}\t0\t512000000\t1' |bgzip >  TMP/select.bed.gz
-tabix -f -p bed TMP/select.bed.gz
+echo "${contig_user}\t${norm_contig}" > TMP/rename_contig.tsv
 
 ##
 ## ECRACT DATA FROM USER VCF
@@ -67,17 +70,16 @@ bcftools view  ${cpus3} \\
         -m2 -M2 \\
         -O u \\
         "${vcf_user}" |\\
+    bcftools view \\
+        -O u \\
+        ${optional_exclude_bed?"--targets-file ^${optional_exclude_bed} --targets-overlap 2 ":""} |\\
     bcftools annotate \\
         ${cpus3}  \\
-        -x "INFO,FILTER,QUAL,^FORMAT/GT" \\
-        -O u |\\
-     bcftools annotate \\
-        ${cpus3}  \\
-        -a  TMP/select.bed.gz \\
-        -h TMP/file1.header \\
-        -c "CHROM,FROM,TO,IN_FILE1" \\
-        -O b \\
+        ${contig_user==norm_contig?"":"--rename-chrs TMP/rename_contig.tsv"} \\
+        -x "INFO,ID,FILTER,QUAL,^FORMAT/GT" \\
+        -O b |\\
         -o TMP/jeter1.bcf
+       
 
 bcftools index --threads ${task.cpus} -f   TMP/jeter1.bcf
 
@@ -95,51 +97,51 @@ bcftools query -l TMP/jeter1.bcf | cat -n | tail 1>&2 || true
 if ${optional_vcf_1k?true:false}
 then
 
-    ## ADD FLAG to set in source of file 2
-    echo '##INFO=<ID=IN_FILE2,Number=0,Type=Flag,Description="In File 2">' > TMP/file2.header
+    bcftools query -f '%CHROM\t%POS0\t%END\\n' TMP/jeter1.bcf > TMP/jeter.bed
+    test -s TMP/jeter.bed
 
 
     ##
     ## ECRACT DATA FROM 1000 GENOMES
     ##
-    echo '${optional_contig_1k}\t${contig_user}' > TMP/chroms.txt 
+    echo '${optional_contig_1k}\t${norm_contig}' > TMP/chroms.txt 
 
-    bcftools view ${cpus3} --types snps --apply-filters 'PASS,.' --regions "${optional_contig_1k}" -m2 -M2 -O u "${optional_vcf_1k}" |\\
-        bcftools annotate \\
+    bcftools view ${cpus3} \\
+        --types snps \\
+        --apply-filters 'PASS,.' \\
+        --regions "${optional_contig_1k}" \\
+        -m2 -M2 \\
+        -O u \\
+        "${optional_vcf_1k}" |\\
+         bcftools annotate \\
             ${cpus3}  \\
             -x "INFO,FILTER,QUAL,^FORMAT/GT" \\
             --rename-chrs TMP/chroms.txt \\
-                -O u |\\
-        bcftools annotate \\
-            ${cpus3}  \\
-            -a  TMP/select.bed.gz \\
-            -h TMP/file2.header \\
-            -c "CHROM,FROM,TO,IN_FILE2" \\
-            -O b \\
-            -o TMP/jeter2.bcf
+            -O u |\\
+            bcftools view \\
+                -O b \\
+                --write-index \\
+                --targets-file  TMP/jeter.bed --targets-overlap 2 |\\
+                -o TMP/jeter2.bcf
+        
+
+    mkdir -p TMP/ISEC
+    bcftools isec --threads ${task.cpus} --write-index -O b  -c none -n=2 -w1,2 -p TMP/ISEC TMP/jeter1.bcf TMP/jeter2.bcf
+   
     
-    bcftools index --threads ${task.cpus} -f  TMP/jeter2.bcf
-
-    # view data
-    bcftools index -s  TMP/jeter2.bcf 1>&2
-    set +o pipefail
-    bcftools view -G --no-header TMP/jeter2.bcf |head 1>&2
-    bcftools query -l TMP/jeter2.bcf | cat -n | tail 1>&2
-    set -o pipefail
-
     ##
-    ## MERGE, CHECK VARIANT HAVE BOTH IN_FILE1 and IN_FILE2
+    ## MERGE, VARIANT HAVE BOTH IN_FILE1 and IN_FILE2
     ##
     bcftools merge  -m all -O u \\
         --threads ${task.cpus} \\
-        -Ou \\
-        TMP/jeter1.bcf TMP/jeter2.bcf |\
-        bcftools view \\
-            -i 'IN_FILE1=1 && IN_FILE2=1' \\
-            -O b -o TMP/jeter3.bcf
+         -O b -o TMP/jeter3.bcf \\
+        TMP/ISEC/0000.bcf TMP/ISEC/0001.bcf
+    
 
     mv TMP/jeter3.bcf TMP/jeter1.bcf
-fi
+           
+
+
 
 #
 # REMOVE VARIANTS OF LOW QUALITY IN GNOMAD
@@ -208,42 +210,8 @@ then
     fi
 fi
 
-
-if ${optional_exclude_bed?true:false}
-then
-    bcftools view \\
-         --threads ${task.cpus} \\
-        --targets-file ^${optional_exclude_bed} \\
-        --targets-overlap 2 \\
-        -O b \\
-        -o TMP/jeter2.bcf \\
-        TMP/jeter1.bcf
-    
-    mv TMP/jeter2.bcf TMP/jeter1.bcf
-fi
-
 bcftools index --threads ${task.cpus} -f   TMP/jeter1.bcf
  
-
-# rename chromosomes to no chr prefix
-paste <(echo '${contig_user}') <(echo '${contig_user}' | sed 's/^chr//') > TMP/chroms.txt 
-
-bcftools query -f '.\\n' TMP/jeter1.bcf | wc -l 1>&2
-
-# select variant after join
-bcftools annotate \\
-        --threads ${task.cpus} \\
-        -i 'F_MISSING < 0.01 && N_ALT=1 && AC>0' \\
-        --set-id '%CHROM:%POS:%REF:%ALT' \\
-        -x 'INFO' \\
-        --rename-chrs TMP/chroms.txt \\
-        -O z \\
-        -o TMP/jeter1.vcf.gz \\
-        TMP/jeter1.bcf
-
-bcftools query -f '.\\n' TMP/jeter1.vcf.gz | wc -l 1>&2
-bcftools index --threads ${task.cpus} -f -t TMP/jeter1.vcf.gz
-
 
 # check
 bcftools index -s  TMP/jeter1.vcf.gz 1>&2
@@ -286,9 +254,9 @@ plink ${plink_args} \\
     --bfile TMP/data_prune \\
     --exclude TMP/SNP_out.txt \\
     --make-bed \\
-    --out TMP/indep_${norm_contig}
+    --out TMP/${prefix}
 
-mv TMP/indep_${norm_contig}* ./
+mv TMP/${prefix}* ./
 
 cat << EOF > versions.yml
 ${task.process}:
@@ -297,7 +265,7 @@ ${task.process}:
 EOF
 """
 stub:
-def prefix = "indep_${norm_contig}"
+    def prefix = task.ext.prefix?:"${meta.id}.indep"
 """
 touch versions.yml ${prefix}.bim ${prefix}.bed ${prefix}.fam 
 """

@@ -29,16 +29,13 @@ include { paramsHelp                               } from 'plugin/nf-schema'
 include { paramsSummaryLog                         } from 'plugin/nf-schema'
 include { samplesheetToList                        } from 'plugin/nf-schema'
 include { runOnComplete                            } from '../../modules/utils/functions'
-include { BCFTOOLS_MERGE                           } from '../../modules/bcftools/merge3'
-include { BCFTOOLS_GENOTYPE                        } from '../../modules/bcftools/genotype'
+include { parseBoolean                             } from '../../modules/utils/functions'
 include { PIHAT                                    } from '../../subworkflows/pihat'
 include { PREPARE_ONE_REFERENCE                    } from '../../subworkflows/samtools/prepare.one.ref'
 include { MULTIQC                                  } from '../../subworkflows/multiqc'
 include { VCF_INPUT                                } from '../../subworkflows/nf/vcf_input'
 include { VCF_INPUT as VCF_INPUT_1KG               } from '../../subworkflows/nf/vcf_input'
 include { VCF_INPUT as VCF_INPUT_GNOMAD            } from '../../subworkflows/nf/vcf_input'
-include { META_TO_BAMS                             } from '../../subworkflows/samtools/meta2bams2'
-include { READ_SAMPLESHEET                         } from '../../subworkflows/nf/read_samplesheet'
 include { COMPILE_VERSIONS                         } from '../../modules/versions/main.nf'
 
 
@@ -111,15 +108,11 @@ workflow {
 		}
 
 	/* load user's VCF */
-	if(params.vcf==null && params.samplesheet==null) {
-		log.error("undefined option --vcf or --samplesheet")
+	if(params.vcf==null ) {
+		log.error("undefined option --vcf")
 		exit -1
 		}
-	else if(params.vcf!=null && params.samplesheet!=null) {
-		log.error("both defined: --vcf or --samplesheet")
-		exit -1
-		}
-	else if(params.vcf!=null) {
+	else  {
 		/***************************************************
 		*
 		* VCF input
@@ -136,71 +129,12 @@ workflow {
 		uservcf_ch = VCF_INPUT.out.vcf
 	    	.map{meta,vcf,tbi->[metadata,vcf,tbi]}
 		}
-	else 
-		{
-		if(params.gnomad==null) {
-			log.error("--gnomad must be defined when input is bam")
-			exit -1
-			}
-
-		/* Read samplesheet */
-		READ_SAMPLESHEET(
-			metadata.plus([arg_name:"samplesheet"]),
-			params.samplesheet
-			)
-		versions = versions.mix(READ_SAMPLESHEET.out.versions)
-
-		/** extract BAM/bai/fasta/fai/dict from samplesheet */
-		META_TO_BAMS(
-			metadata,
-			PREPARE_ONE_REFERENCE.out.fasta,
-			PREPARE_ONE_REFERENCE.out.fai,
-			PREPARE_ONE_REFERENCE.out.dict,
-			READ_SAMPLESHEET.out.samplesheet
-			)
-		versions = versions.mix(META_TO_BAMS.out.versions)
-
-		/** extract all frequent sites in gnomad  for each contig */
-		FIND_SITES_IN_GNOMAD(
-			PREPARE_ONE_REFERENCE.out.dict,
-			PREPARE_ONE_REFERENCE.out.fai.splitCsv(sep:'\t',header:false)
-				.map{meta,row->[meta,row[0]/* contig*/]}
-				.filter{_meta,contig->contig.matches("${params.contigs_regex}")}
-				.combine(gnomad_ch)
-				.map{_meta1,ctg,meta2,vcf,tbi->[meta2.plus(contig:ctg),vcf,tbi]}
-			)
-		versions = versions.mix(FIND_SITES_IN_GNOMAD.out.versions)
-
-		if(params.genotype_method=="gatk")
-			/** genotype each BAM for each contig */
-			GENOTYPE_GATK(
-				PREPARE_ONE_REFERENCE.out.dict,
-				META_TO_BAMS.out.bams.combine(FIND_SITES_IN_GNOMAD.out.vcf)
-					.map{meta1,bam,bai,fasta,fai,dict,meta2,vcf,tbi->[meta1.plus(contig:meta2.contig),bam,bai,fasta,fai,dict,vcf,tbi]}
-				)
-			versions = versions.mix(GENOTYPE_GATK.out.versions)
-				/** merge per contig */
-			BCFTOOLS_MERGE(
-				to_merge_vcf
-					.map{meta,vcf,tbi->[meta.contig,[vcf,tbi]]}
-					.groupTuple()
-					.map{contig,files->[ [id:contig],files.flatten().sort()]}
-				)
-			versions = versions.mix(BCFTOOLS_MERGE.out.versions)
-
-			uservcf_ch = BCFTOOLS_MERGE.out.vcf
-			}
-		else
-			{
-			log.error("undefined/unknown ${params.genotype_method}.")
-			exit -1
-			}
-		
-		}
 	
-
-
-	
+	/***************************************************
+	*
+	* samples to population
+	*
+	*/
 	if(params.sample2pop==null) {
 		sample2pop_ch = Channel.of([[id:"nosample2pop"],[]])
 		}
@@ -208,7 +142,11 @@ workflow {
 		{
 		sample2pop_ch = Channel.of([[id:"sample2pop"],file(params.sample2pop)])
 		}
-
+	/***************************************************
+	*
+	* samples to exclude
+	*
+	*/
 	if(params.remove_samples==null) {
 		exclude_samples_ch = Channel.of([[id:"no_x_samples"],[]])
 		}
@@ -216,6 +154,11 @@ workflow {
 		{
 		exclude_samples_ch = Channel.of([[id:"exclude_samples"],file(params.remove_samples)])
 		}
+	/***************************************************
+	*
+	* BED of regions to exclude
+	*
+	*/
 	if(params.exclude_bed==null) {
 		exclude_bed_ch = Channel.of([[id:"no_x_bed"],[]])
 		}
@@ -242,14 +185,15 @@ workflow {
 	multiqc = multiqc.mix(PIHAT.out.multiqc)
 	versions = versions.mix(PIHAT.out.versions)
 	
-	
-	MULTIQC(
-		metadata.plus("id":"pihat"),
-		sample2pop_ch,
-		versions,
-		[[id:"no_mqc_config"],[]],
-		multiqc
-		)
+	if(parseBoolean(params.with_multiqc)) {
+		MULTIQC(
+			metadata.plus("id":"pihat"),
+			sample2pop_ch,
+			versions,
+			[[id:"no_mqc_config"],[]],
+			multiqc
+			)
+		}
 	}
 
 runOnComplete(workflow);

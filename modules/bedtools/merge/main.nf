@@ -40,7 +40,15 @@ script:
 hostname 1>&2
 mkdir -p TMP
 
-if  sort --check=quiet -T TMP -t '\t' -k1,1 -k2,2 "${bed}"
+if ${(bed instanceof List)}
+then
+
+	cat ${bed.join(" ")} |\\
+	sort  -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
+        bedtools merge ${args} -i -  > TMP/jeter.bed
+	
+
+elif  sort --check=quiet -T TMP -t '\t' -k1,1 -k2,2 "${bed}"
 then
 
    bedtools merge ${args} -i "${bed}"   > TMP/jeter.bed

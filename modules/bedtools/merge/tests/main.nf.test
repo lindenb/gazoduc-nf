@@ -26,6 +26,24 @@ nextflow_process {
 
     }
 
+    test("MULTIPLE") {
+
+        when {
+            
+            process {
+                """
+ 				input[0] = [ [id:"multi"],[file("${projectDir}/tests/data/rotavirus_rf.01.bed"),file("${projectDir}/tests/data/rotavirus_rf.02.bed")]]
+               """
+            }
+        }
+
+        then {
+            assert process.success
+            //assert snapshot(process.out).match()
+        }
+
+    }
+
 
 
     test("BASIC") {

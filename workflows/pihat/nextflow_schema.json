@@ -9,7 +9,7 @@
       "title": "Input / Ouput",
       "type": "object",
       "description": "General Parameters",
-      "required": ["fasta","samplesheet","gnomad"],
+      "required": ["fasta","vcf"],
       "properties": {
         "fasta": {
           "type": "string",
@@ -20,15 +20,23 @@
           "description": "Path to FASTA REFERENCE file.",
           "fa_icon": "far fa-file-code"
         },
-        "samplesheet": {
+        "vcf": {
           "type": "string",
           "format": "file-path",
           "exists": true,
           "mimetype": "text/plain",
-          "description": "Path to Samplesheet.",
+          "description": "Path to VCF file.",
           "fa_icon": "far fa-file-code"
         },
         "gnomad": {
+          "type": "string",
+          "format": "file-path",
+          "exists": true,
+          "mimetype": "text/plain",
+          "description": "Path to gnomad.",
+          "fa_icon": "far fa-file-code"
+        },
+        "onekg": {
           "type": "string",
           "format": "file-path",
           "exists": true,

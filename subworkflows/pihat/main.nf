@@ -22,6 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include { isBlank                       } from '../../modules/utils/functions.nf'
 include { VCF_TO_BED                    } from '../../modules/bcftools/vcf2bed'
 include { DOWNLOAD_1KG_SAMPLE2POP       } from '../../modules/pihat/download.1kg.pop'
 include { PER_CONTIG                    } from '../../modules/pihat/per_contig'
@@ -31,6 +32,8 @@ include { PLOT_PIHAT                    } from '../../modules/pihat/plot.pihat'
 include { AVERAGE_PIHAT                 } from '../../modules/pihat/average.pihat'
 include { PLINK_ASSOC                   } from '../../modules/pihat/plink.assoc'
 include { PLINK_GENOME                  } from '../../modules/pihat/plink.genome'
+include { BEDTOOLS_MERGE                } from '../../modules/bedtools/merge'
+include { DOWNLOAD_HIGH_LD              } from '../../modules/pihat/high_ld'
 
 String normContig(String s) {
     if(s==null) return "";
@@ -56,28 +59,31 @@ workflow PIHAT {
 
         versions = Channel.empty()
         multiqc = Channel.empty()
+
+        vcfs =  vcfs.map{meta,vcf,tbi->[meta.plus(source:"user"),vcf,tbi]}
+        gnomad = gnomad.map{meta,vcf,tbi->[meta.plus(source:"gnomad"),vcf,tbi]}
+        vcf1kg = vcf1kg.map{meta,vcf,tbi->[meta.plus(source:"1kg"),vcf,tbi]}
         
-        VCF_TO_BED(
-            vcfs.map{meta,vcf,tbi->[meta.plus(source:"user"),vcf,tbi]}
-            .mix(gnomad.map{meta,vcf,tbi->[meta.plus(source:"gnomad"),vcf,tbi]})
-            .mix(vcf1kg.map{meta,vcf,tbi->[meta.plus(source:"1kg"),vcf,tbi]})
-            )
+        all_kind_of_vcf = vcfs.mix(gnomad).mix(vcf1kg);
+
+        VCF_TO_BED(all_kind_of_vcf)
         versions = versions.mix(VCF_TO_BED.out.versions)
         
-        /** read vcfs, extract chromosomes */
-        ch1 = VCF_TO_BED.out.output
-            .splitCsv(sep:'\t',header:false,elem:1)
-            .map{meta,bedrecord,vcf,idx->[
-                normContig(bedrecord[0]),
-                meta.plus([
-                    id : meta.id+ "."+bedrecord[0],
-                    contig: bedrecord[0],
-                    norm_contig: normContig(bedrecord[0]),
+        ch1  = VCF_TO_BED.out.bed.splitCsv(sep:'\t',header:false,elem:1)
+            .map{meta,bedrecord->[meta,bedrecord[0]]}
+            .combine(all_kind_of_vcf)
+            .filter{meta1,contig,meta2,_vcf,_tbi->meta1.id==meta2.id && meta1.source==meta2.source}
+            .map{meta1,contig,meta2,vcf,tbi->[
+                normContig(contig),
+                meta1.plus([
+                    id : meta1.id+ "."+contig,
+                    contig: contig,
+                    norm_contig: normContig(contig),
                     ]),
                 vcf,
                 idx
-                ]} /* contig, vcf, vcfidx */
-            .filter{ctg,_meta,_vcf,_tbi->!ctg.isEmpty()}
+                ]}
+             .filter{ctg,_meta,_vcf,_tbi->!isBlank(ctg)}
 
 
 
@@ -119,23 +125,37 @@ workflow PIHAT {
                             gnomad : [metag,vcfg,tbig]
                         }
 
+        /** regions always with high LD */
+        DOWNLOAD_HIGH_LD(dict)
+        versions = versions.mix(DOWNLOAD_HIGH_LD.out.versions)
 
-	/* download sample of 1000genome only if vcf1kg defined */
+        /** merge with user exclude regions */
+        BEDTOOLS_MERGE(DOWNLOAD_HIGH_LD.out.mix(exclude_bed)
+            .map{_meta,f->f}
+            .collect()
+            .map{files->[[id:"exclude"],files.sort()]}
+            )
+        versions = versions.mix(BEDTOOLS_MERGE.out.versions)
+
+	    /* download sample of 1000genome only if vcf1kg defined */
         DOWNLOAD_1KG_SAMPLE2POP(
-            vcf1kg.count()
+            k1g_ch
+                .count()
                 .combine(Channel.of(workflow_metadata))
                 .filter{count,_meta-> count>0}
                 .map{_count,meta->meta}
                 .first()
             )
         versions = versions.mix(DOWNLOAD_1KG_SAMPLE2POP.out.versions)
-            
+        
+
+
         PER_CONTIG(
             fasta,
             fai,
             dict,
             exclude_samples.first(),
-            exclude_bed.first(),
+            BEDTOOLS_MERGE.out.bed,
             dispatch_ch.k1g,
             dispatch_ch.gnomad,
             dispatch_ch.user
@@ -149,7 +169,7 @@ workflow PIHAT {
             dict,
             PER_CONTIG.out.bfile
                 .collect()
-                .map{[[id:"pihat"],it]}
+                .map{[[id:workflow_metadata.id],it]}
             )
         versions = versions.mix(PLINK_GENOME.out.versions)
 
@@ -179,7 +199,7 @@ workflow PIHAT {
 
         PLOT_PIHAT(PLINK_GENOME.out.genome)
         versions = versions.mix(PLOT_PIHAT.out.versions)
-	multiqc = multiqc.mix(PLOT_PIHAT.out.pict.filter{_meta,img->img.name.endsWith(".png")})
+	    multiqc = multiqc.mix(PLOT_PIHAT.out.pict.filter{_meta,img->img.name.endsWith(".png")})
 
         components = Channel.of(["C1","C2"],["C1","C3"],["C2","C3"])
         formats = Channel.of("pdf","png")
