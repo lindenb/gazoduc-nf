@@ -29,7 +29,7 @@ process PER_CONTIG {
 tag "${meta.id}"
 afterScript "rm -rf TMP"
 label "process_single"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
     tuple val(meta1),path(fasta)
     tuple val(meta2),path(fai)
@@ -53,9 +53,18 @@ script:
     def cpus3 = task.cpus>3?"--thread ${(task.cpus/3) as int}":""
     def plink_args  = "--const-fid 1 --allow-extra-chr --allow-no-sex --threads ${task.cpus}"
     def prefix = task.ext.prefix?:"${meta.id}.indep"
+    def jvm = task.ext.jvm?:"-Djava.io.tmpdir=TMP"
 """
 mkdir -p TMP
 set -x
+
+function dump_vcf() {
+    # view data
+    echo "DEBUG VCF for \$1:" 1>&2
+    bcftools index -s  "\$1" 1>&2
+    bcftools view -G --no-header "\$1" |head 1>&2 || true
+    bcftools query -l "\$1" | cat -n | tail 1>&2 || true
+    }
 
 echo "${contig_user}\t${norm_contig}" > TMP/rename_contig.tsv
 
@@ -77,18 +86,13 @@ bcftools view  ${cpus3} \\
         ${cpus3}  \\
         ${contig_user==norm_contig?"":"--rename-chrs TMP/rename_contig.tsv"} \\
         -x "INFO,ID,FILTER,QUAL,^FORMAT/GT" \\
-        -O b |\\
+        -O b \\
         -o TMP/jeter1.bcf
        
 
 bcftools index --threads ${task.cpus} -f   TMP/jeter1.bcf
 
-
-# view data
-bcftools index -s  TMP/jeter1.bcf 1>&2
-
-bcftools view -G --no-header TMP/jeter1.bcf |head 1>&2 || true
-bcftools query -l TMP/jeter1.bcf | cat -n | tail 1>&2 || true
+dump_vcf TMP/jeter1.bcf
 
 
 # 
@@ -115,19 +119,19 @@ then
         "${optional_vcf_1k}" |\\
          bcftools annotate \\
             ${cpus3}  \\
-            -x "INFO,FILTER,QUAL,^FORMAT/GT" \\
+            -x "INFO,ID,FILTER,QUAL,^FORMAT/GT" \\
             --rename-chrs TMP/chroms.txt \\
             -O u |\\
             bcftools view \\
                 -O b \\
                 --write-index \\
-                --targets-file  TMP/jeter.bed --targets-overlap 2 |\\
+                --targets-file  TMP/jeter.bed --targets-overlap 2 \\
                 -o TMP/jeter2.bcf
         
 
     mkdir -p TMP/ISEC
     bcftools isec --threads ${task.cpus} --write-index -O b  -c none -n=2 -w1,2 -p TMP/ISEC TMP/jeter1.bcf TMP/jeter2.bcf
-   
+    find TMP/ISEC 1>&2
     
     ##
     ## MERGE, VARIANT HAVE BOTH IN_FILE1 and IN_FILE2
@@ -136,10 +140,15 @@ then
         --threads ${task.cpus} \\
          -O b -o TMP/jeter3.bcf \\
         TMP/ISEC/0000.bcf TMP/ISEC/0001.bcf
-    
+
+    rm -rvf TMP/ISEC
 
     mv TMP/jeter3.bcf TMP/jeter1.bcf
-           
+    bcftools index --threads ${task.cpus} -f   TMP/jeter1.bcf
+
+
+    dump_vcf TMP/jeter1.bcf
+fi
 
 
 
@@ -153,7 +162,7 @@ then
         bcftools query  \\
             -f '%CHROM\t%POS0\t%END\\n' \\
             TMP/jeter1.bcf |\\
-			jvarkit -Djava.io.tmpdir=TMP bedrenamechr -f "${gnomad}" --column 1 --convert SKIP |\\
+			jvarkit ${jvm} bedrenamechr -f "${gnomad}" --column 1 --convert SKIP |\\
 			sort -T TMP -t '\t' -k1,1 -k2,2n |\\
 			bedtools merge -i - -d 1000 > TMP/gnomad.bed
 	
@@ -167,7 +176,7 @@ then
             --regions-file TMP/gnomad.bed \\
             -f '%CHROM\t%POS0\t%END\\n' \\
             "${gnomad}" |\\
-			jvarkit  -Djava.io.tmpdir=TMP bedrenamechr -f "${fasta}" --column 1 --convert SKIP |\\
+			jvarkit ${jvm} bedrenamechr -f "${fasta}" --column 1 --convert SKIP |\\
 			sort -T	TMP -t '\t' -k1,1	-k2,2n > TMP/x.gnomad.bed
 		
 		if [ ! -s x.gnomad.bed ] ; then
@@ -183,8 +192,9 @@ then
             TMP/jeter1.bcf
         	
 	mv TMP/jeter2.bcf TMP/jeter1.bcf
+    bcftools index --threads ${task.cpus} -f   TMP/jeter1.bcf
 
-	bcftools query -f '.\\n' TMP/jeter1.bcf | wc -l 1>&2
+	dump_vcf TMP/jeter1.bcf
 fi
 
 
@@ -210,17 +220,12 @@ then
     fi
 fi
 
-bcftools index --threads ${task.cpus} -f   TMP/jeter1.bcf
- 
+bcftools view -O z -o TMP/jeter1.vcf.gz TMP/jeter1.bcf
+bcftools index --threads ${task.cpus} -f -f   TMP/jeter1.vcf.gz
+dump_vcf TMP/jeter1.vcf.gz
 
-# check
-bcftools index -s  TMP/jeter1.vcf.gz 1>&2
-set +o pipefail
-bcftools view -G --no-header TMP/jeter1.vcf.gz |head 1>&2
-bcftools query -l TMP/jeter1.vcf.gz | cat -n | tail 1>&2
-set -o pipefail
 
-rm -rvf TMP/ISEC
+
 
 # Thank you Floriane S for that wonderful code
 
@@ -230,18 +235,18 @@ plink ${plink_args} \\
     --out TMP/data_sansXYMT
 
 ## Selection of independents SNP
-plink ${plink_args} \\
+plink2 ${plink_args} \\
     --bfile TMP/data_sansXYMT \\
     --indep-pairwise 50 10 0.2 \\
     --out TMP/plink
 
-plink ${plink_args} \\
+plink2 ${plink_args} \\
     --bfile TMP/data_sansXYMT \\
     --extract TMP/plink.prune.in \\
     --make-bed \\
     --out TMP/data_prune
 
-plink ${plink_args} \\
+plink2 ${plink_args} \\
     --bfile TMP/data_prune \\
     --ld-window 50 \\
     --ld-window-kb 5000 \\
@@ -250,7 +255,7 @@ plink ${plink_args} \\
 
 awk '{print \$3}' TMP/ld.ld > TMP/SNP_out.txt
 
-plink ${plink_args} \\
+plink2 ${plink_args} \\
     --bfile TMP/data_prune \\
     --exclude TMP/SNP_out.txt \\
     --make-bed \\

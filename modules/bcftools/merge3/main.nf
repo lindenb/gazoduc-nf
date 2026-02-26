@@ -22,6 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include {isBlank} from "${moduleDir}/../../../modules/utils/functions.nf"
 
 
 /*
@@ -109,14 +110,28 @@ else
 
 fi
 
-# give a chance to filter-out things, or bcftools annotate
-bcftools ${cmd} ${args2} -O u TMP/jeter2.bcf |\\
-bcftools  +fill-tags \\
-	${args3} \\
+if ${isBlank(tags)}
+then
+
+bcftools ${cmd} \\
+	${args2} \\
 	--threads ${task.cpus} \\
-	-O z9  \\
+	-O z9 \\
 	-o TMP/jeter.vcf.gz \\
-	-- -t ${tags}
+	TMP/jeter2.bcf
+
+else
+
+	# give a chance to filter-out things, or bcftools annotate
+	bcftools ${cmd} ${args2} -O u TMP/jeter2.bcf |\\
+	bcftools  +fill-tags \\
+		${args3} \\
+		--threads ${task.cpus} \\
+		-O z9  \\
+		-o TMP/jeter.vcf.gz \\
+		-- -t ${tags}
+fi
+
 
 bcftools index  -f -t --threads ${task.cpus}  TMP/jeter.vcf.gz
 

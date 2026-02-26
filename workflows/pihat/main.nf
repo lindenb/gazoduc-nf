@@ -72,6 +72,7 @@ workflow {
 	/* load gnomad */
 	if(params.gnomad==null) {
 		gnomad_ch = Channel.empty()
+		log.warn("No --gnomad defined")
 		}
 	else {
 		VCF_INPUT_GNOMAD(metadata.plus([
@@ -88,6 +89,7 @@ workflow {
 	/* load 1000G */
 	if(params.onekg==null) {
 		onekg_ch = Channel.empty()
+		log.warn("No --onekg defined")
 		}
 	else
 		{
@@ -127,7 +129,7 @@ workflow {
 			]))
 		versions = versions.mix(VCF_INPUT.out.versions)
 		uservcf_ch = VCF_INPUT.out.vcf
-	    	.map{meta,vcf,tbi->[metadata,vcf,tbi]}
+	    	.map{meta,vcf,tbi->[meta,vcf,tbi]}
 		}
 	
 	/***************************************************

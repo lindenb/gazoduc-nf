@@ -66,6 +66,16 @@ workflow PIHAT {
         
         all_kind_of_vcf = vcfs.mix(gnomad).mix(vcf1kg);
 
+        /** check vcf meta.id are unique */
+        all_kind_of_vcf
+            .map{meta,vcf,tbi->[meta.id,vcf]}
+            .groupTuple()
+            .filter{id,array->array.size()>1}
+            .map{id,array->
+                throw new IllegalArgumentException("Duplicate vcf id ${id} for :\n\t${array.join("\n\t")}");
+                return -1;
+            }
+
         VCF_TO_BED(all_kind_of_vcf)
         versions = versions.mix(VCF_TO_BED.out.versions)
         
@@ -81,7 +91,7 @@ workflow PIHAT {
                     norm_contig: normContig(contig),
                     ]),
                 vcf,
-                idx
+                tbi
                 ]}
              .filter{ctg,_meta,_vcf,_tbi->!isBlank(ctg)}
 
@@ -130,7 +140,7 @@ workflow PIHAT {
         versions = versions.mix(DOWNLOAD_HIGH_LD.out.versions)
 
         /** merge with user exclude regions */
-        BEDTOOLS_MERGE(DOWNLOAD_HIGH_LD.out.mix(exclude_bed)
+        BEDTOOLS_MERGE(DOWNLOAD_HIGH_LD.out.bed.mix(exclude_bed)
             .map{_meta,f->f}
             .collect()
             .map{files->[[id:"exclude"],files.sort()]}
