@@ -26,14 +26,19 @@ include { isBlank                       } from '../../modules/utils/functions.nf
 include { VCF_TO_BED                    } from '../../modules/bcftools/vcf2bed'
 include { DOWNLOAD_1KG_SAMPLE2POP       } from '../../modules/pihat/download.1kg.pop'
 include { PER_CONTIG                    } from '../../modules/pihat/per_contig'
-include { PLOT_ASSOC                    } from '../../modules/pihat/plot.assoc'
-include { PLOT_MDS                      } from '../../modules/pihat/plot.mds'
-include { PLOT_PIHAT                    } from '../../modules/pihat/plot.pihat'
-include { AVERAGE_PIHAT                 } from '../../modules/pihat/average.pihat'
-include { PLINK_ASSOC                   } from '../../modules/pihat/plink.assoc'
-include { PLINK_GENOME                  } from '../../modules/pihat/plink.genome'
+include { PLOT_ASSOC                    } from '../../modules/plink/plot.assoc'
+include { PLOT_MDS                      } from '../../modules/plink/plot.mds'
+include { PLOT_PIHAT                    } from '../../modules/plink/plot.pihat'
+include { AVERAGE_PIHAT                 } from '../../modules/plink/average.pihat'
+include { PLINK_ASSOC                   } from '../../modules/plink/assoc'
 include { BEDTOOLS_MERGE                } from '../../modules/bedtools/merge'
 include { DOWNLOAD_HIGH_LD              } from '../../modules/pihat/high_ld'
+include { PLINK_MERGE_BIM_BED_FAM       } from '../../modules/plink/merge'
+include { PLINK_GENOME                  } from '../../modules/plink/genome'
+include { PLINK_MAKEBED                 } from '../../modules/plink/makebed'
+include { PLINK_MDS                     } from '../../modules/plink/mds'
+include { flatMapByIndex                }from '../../modules/utils/functions.nf'
+
 
 String normContig(String s) {
     if(s==null) return "";
@@ -173,55 +178,89 @@ workflow PIHAT {
         versions = versions.mix(PER_CONTIG.out.versions)
 
         
-        PLINK_GENOME(
-            fasta,
-            fai,
-            dict,
+        PLINK_MERGE_BIM_BED_FAM(
             PER_CONTIG.out.bfile
+                .map{meta,bim,bed,fam->[bim,bed,fam]}
+                .flatMap()
                 .collect()
-                .map{[[id:workflow_metadata.id],it]}
+                .map{files->[[id:workflow_metadata.id],files.sort()]}
+            )
+        versions = versions.mix(PLINK_MERGE_BIM_BED_FAM.out.versions)
+        
+        PLINK_GENOME(PLINK_MERGE_BIM_BED_FAM.out.bfile)
+        versions = versions.mix(PLINK_GENOME.out.versions)
+
+        PLINK_MAKEBED(
+            PLINK_GENOME.out.related,
+            PLINK_MERGE_BIM_BED_FAM.out.bfile
             )
         versions = versions.mix(PLINK_GENOME.out.versions)
+
+        PLINK_MDS(
+            PLINK_GENOME.out.genome,
+            PLINK_MAKEBED.out.bfile
+            )
+        versions = versions.mix(PLINK_MDS.out.versions)
 
 
         MERGE_SAMPLE2POP(
             DOWNLOAD_1KG_SAMPLE2POP.out.tsv,
             sample2pop,
-            PLINK_GENOME.out.merged_plink
+            PLINK_MAKEBED.out.bfile
             )
         versions = versions.mix(MERGE_SAMPLE2POP.out.versions)
 
+        // header of MDS looks like ' FID IID SOL C1 C2 C3 ' . get number of components
+        components0_ch = PLINK_MDS.out.mds.splitCsv(header:false,limit:1,sep:' ',strip:true)
+            .map{meta,array->array.join(" ")}
+            .map{S->S.trim()}
+            .map{S->java.util.Arrays.asList(S.split("[ ]+"))}
+            .map{array->array.subList(3,array.size())}
+            .flatMap()
+        
+        // all pairs C1,C2 / C1,C3 / C2,C3 etc...
+        components1_ch = components0_ch
+            .combine(components0_ch)
+            .filter{C1,C2 -> C1.compareTo(C2)<0}
 
-        PLINK_ASSOC(fasta, fai, dict, PLINK_GENOME.out.merged_plink , PLINK_GENOME.out.mds )
-        versions = versions.mix(PLINK_ASSOC.out.versions)
-
-
-        PLOT_ASSOC(
-            fasta,
-            fai,
-            dict,
-            PLINK_ASSOC.out.assoc
-                .flatMap{it[1]}
-                .filter{it.name.matches(".*C[123].qassoc")}
-                .map{[[id:"pihat"],it]}
+        PLOT_MDS(
+            MERGE_SAMPLE2POP.out.sample2pop.first(),
+            PLINK_MDS.out.mds
+                .combine(components1_ch)
+                .map{meta,mds,CX,CY->[meta.plus(Cx:CX,Cy:CY,id:meta.id+".${CX}_${CY}"),mds]}
             )
-        versions = versions.mix(PLOT_ASSOC.out.versions)
+        versions = versions.mix(PLOT_MDS.out.versions)
+        multiqc = multiqc.mix(PLOT_MDS.out.png)
 
         PLOT_PIHAT(PLINK_GENOME.out.genome)
         versions = versions.mix(PLOT_PIHAT.out.versions)
-	    multiqc = multiqc.mix(PLOT_PIHAT.out.pict.filter{_meta,img->img.name.endsWith(".png")})
+        multiqc = multiqc.mix(PLOT_PIHAT.out.png)
 
-        components = Channel.of(["C1","C2"],["C1","C3"],["C2","C3"])
-        formats = Channel.of("pdf","png")
-       
-        PLOT_MDS(PLINK_GENOME.out.mds.combine(components).combine(formats))
-        versions = versions.mix(PLOT_MDS.out.versions)
-       
-	multiqc = multiqc.mix(PLOT_MDS.out.plot.filter{_meta,img->img.name.endsWith(".png")})
 
-        AVERAGE_PIHAT(PLINK_GENOME.out.genome, MERGE_SAMPLE2POP.out.sample2pop)
-	multiqc = multiqc.mix(AVERAGE_PIHAT.out.png)
+        AVERAGE_PIHAT(
+            PLINK_GENOME.out.genome,
+            MERGE_SAMPLE2POP.out.sample2pop.first()
+            )
+	    multiqc = multiqc.mix(AVERAGE_PIHAT.out.png)
         versions = versions.mix(AVERAGE_PIHAT.out.versions)
+
+
+        PLINK_ASSOC(
+            PLINK_MDS.out.mds,
+            PLINK_MAKEBED.out.bfile
+            )
+        versions = versions.mix(PLINK_ASSOC.out.versions)
+        
+
+        PLOT_ASSOC(
+            fai,
+            PLINK_ASSOC.out.assoc
+                .flatMap{row->flatMapByIndex(row,1)}
+                .map{meta,assoc->[meta.plus(id:assoc.name),assoc]}
+            )
+        versions = versions.mix(PLOT_ASSOC.out.versions)
+        multiqc = multiqc.mix(PLOT_ASSOC.out.png)
+        
     emit:
         versions
         genome = PLINK_GENOME.out.genome
@@ -237,12 +276,11 @@ label "process_single"
 input:
     tuple val(meta1),path(opt_tsv1)
     tuple val(meta2),path(opt_tsv2)
-    tuple val(meta),path(merged_plink)
+    tuple val(meta),path(bim),path(bed),path(fam)
 output:
     tuple val(meta1),path("*.tsv"),emit:sample2pop
     path("versions.yml"),emit:versions
 script:
-    def fam = merged_plink.find{it.name.endsWith(".fam")}
     def prefix = task.ext.prefix?:"merged_sample2pop"
     def other_name = task.ext.other?:"OTHER"
 """

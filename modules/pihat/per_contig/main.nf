@@ -62,7 +62,8 @@ function dump_vcf() {
     # view data
     echo "DEBUG VCF for \$1:" 1>&2
     bcftools index -s  "\$1" 1>&2
-    bcftools view -G --no-header "\$1" |head 1>&2 || true
+    bcftools +fill-tags -O u "\$1" -- -t  AN,AC,AF,AC_Hom,AC_Het,AC_Hemi,NS |\\
+        bcftools view -G --no-header |head 1>&2 || true
     bcftools query -l "\$1" | cat -n | tail 1>&2 || true
     }
 
@@ -73,6 +74,7 @@ echo "${contig_user}\t${norm_contig}" > TMP/rename_contig.tsv
 ##
 bcftools view  ${cpus3} \\
         --types snps  \\
+        -i 'F_MISSING < 0.01' \\
         --exclude-uncalled \\
         --apply-filters 'PASS,.' \\
         --regions "${contig_user}" \\
@@ -138,8 +140,9 @@ then
     ##
     bcftools merge  -m all -O u \\
         --threads ${task.cpus} \\
-         -O b -o TMP/jeter3.bcf \\
-        TMP/ISEC/0000.bcf TMP/ISEC/0001.bcf
+       -O u \\
+        TMP/ISEC/0000.bcf TMP/ISEC/0001.bcf |\\
+            bcftools view -i 'F_MISSING<0.01'  -O b -o TMP/jeter3.bcf \\
 
     rm -rvf TMP/ISEC
 
@@ -220,7 +223,10 @@ then
     fi
 fi
 
-bcftools view -O z -o TMP/jeter1.vcf.gz TMP/jeter1.bcf
+#
+# Assign variant ID
+#
+bcftools annotate --set-id +'%VKX' -O z -o TMP/jeter1.vcf.gz TMP/jeter1.bcf
 bcftools index --threads ${task.cpus} -f -f   TMP/jeter1.vcf.gz
 dump_vcf TMP/jeter1.vcf.gz
 
@@ -246,7 +252,7 @@ plink2 ${plink_args} \\
     --make-bed \\
     --out TMP/data_prune
 
-plink2 ${plink_args} \\
+plink ${plink_args} \\
     --bfile TMP/data_prune \\
     --ld-window 50 \\
     --ld-window-kb 5000 \\

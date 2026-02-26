@@ -24,10 +24,10 @@ SOFTWARE.
 */
 
 process AVERAGE_PIHAT {
-tag "${genome.name}"
+tag "${meta.id}"
 afterScript "rm -rf TMP"
 label "process_single"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
     tuple val(meta ), path(genome)
     tuple val(meta2), path(sample2group)
@@ -36,7 +36,7 @@ output:
     tuple val(meta),path("*.png"),optional:true,emit:png
     path("versions.yml"),emit:versions
 script:
-    def prefix = task.ext.prefix?:"sample2avg.pihat"
+    def prefix = task.ext.prefix?:"${meta.id}.avg.pihat"
     def sub_title = task.ext.sub?:""
     def max_pihat = task.ext.max_pihat?:0.1
 """
@@ -104,5 +104,10 @@ cat << EOF > versions.yml
 ${task.process}:
     R: todo
 EOF
+"""
+stub:
+    def prefix = task.ext.prefix?:"${prefix}.avg.pihat"
+"""
+touch versions.yml ${prefix}.tsv ${prefix}.png
 """
 }

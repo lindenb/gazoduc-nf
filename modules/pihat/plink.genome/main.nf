@@ -22,7 +22,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-
 process PLINK_GENOME {
 tag "${meta.id?:""}"
 afterScript "rm -rf TMP"
@@ -32,10 +31,9 @@ input:
     tuple val(meta1),path(fasta)
     tuple val(meta2),path(fai)
     tuple val(meta3),path(dict)
-    tuple val(meta),path("PLINK/*")
+    tuple val(meta),path(bim),path(bed),path(fam)
 output:
     tuple val(meta),path("*.genome"),emit:genome
-    tuple val(meta),path("*.mds"),emit:mds
     tuple val(meta),path("merged.*"),emit:merged_plink
     path("versions.yml"),emit:versions
 script:
@@ -45,20 +43,11 @@ script:
 """
 mkdir -p TMP
 set -x
-find PLINK/  -name "*.bim" | sed 's/\\.bim\$//' | sort > TMP/jeter.list
-test -s TMP/jeter.list
-
-plink \\
-    ${plink_args} \\
-    --merge-list TMP/jeter.list \\
-    --make-bed \\
-    --out TMP/merged
 
 ## IBS matrix
-plink --bfile TMP/merged --genome --out TMP/matIBS_data
+plink --bfile ${bim.baseName} --genome --out TMP/matIBS_data
 wc -l TMP/matIBS_data.genome 1>&2
 cp TMP/matIBS_data.genome "${prefix}.genome"
-
 
 
 ## Remove related individuals

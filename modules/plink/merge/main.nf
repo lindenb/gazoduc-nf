@@ -25,16 +25,16 @@ SOFTWARE.
 process PLINK_MERGE_BIM_BED_FAM {
 tag "${meta.id?:""}"
 label "process_single"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
-
 input:
     tuple val(meta),path("PLINK/*")
 output:
-	tuple val(meta),path("*.bim"),path("*.bed"),path("*.fam"),emit:plink
-    path("versions.yml")
+	tuple val(meta),path("*.bim"),path("*.bed"),path("*.fam"),emit:bfile
+    tuple val(meta),path("*.log"),emit:log
+    path("versions.yml"),emit:versions
 script:
-    def prefix = task.ext.prefix?:"${meta.id}"
+    def prefix = task.ext.prefix?:"${meta.id}.merge"
     def args1  = "--const-fid 1 --allow-extra-chr --allow-no-sex "
 
 """
@@ -50,7 +50,10 @@ plink \\
     --make-bed \\
     --out ${prefix}
 
-touch versions.yml
+cat << EOF > versions.yml
+${task.process}:
+    plink: \$(plink --version)
+EOF
 """
 stub:
 """

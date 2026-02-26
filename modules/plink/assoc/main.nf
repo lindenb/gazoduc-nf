@@ -24,25 +24,21 @@ SOFTWARE.
 */
 
 process PLINK_ASSOC {
+tag "${meta.id}"
 afterScript "rm -rf TMP"
 label "process_single"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-    tuple val(meta1),path(fasta)
-    tuple val(meta2),path(fai)
-    tuple val(meta3),path(dict)
-    tuple val(meta4),path("PLINK/*")
-	tuple val(meta ),path(mds)
+	tuple val(meta1 ),path(mds)
+	tuple val(meta ),path(bim),path(bed),path(fam)
 output:
-    tuple val(meta ),path("*.qassoc"),emit:assoc
+    tuple val(meta ),path("*.qassoc", arity: '1..*'),emit:assoc
+	tuple val(meta ),path("*.log"),emit:log
     path("versions.yml"),emit:versions
 script:
-    def treshold = task.ext.treshold?:5E-8
-    def plink_args  = "--const-fid 1 --allow-extra-chr --allow-no-sex --threads ${task.cpus}"
-
-
+    def plink_args  = "--const-fid 1 --allow-extra-chr --allow-no-sex "
+	def prefix = task.ext.prefix?:"${meta.id}"
 	"""
-	hostname 2>&1
 	mkdir -p TMP
 
 	# create pheno file https://www.cog-genomics.org/plink/1.9/input#pheno
@@ -50,17 +46,22 @@ script:
 
 	plink \\
         ${plink_args} \\
-        --bfile `find PLINK/ -name "*.fam" | sed 's/\\.fam\$//'` \\
+		--threads ${task.cpus} \\
+        --bfile ${bim.baseName} \\
 		--pheno TMP/pheno.tsv \\
 		--all-pheno \\
 		--assoc \\
-		--out PHENO
+		--out TMP/${prefix}
 	
+mv TMP/${prefix}* ./
 
 cat << EOF > versions.yml
 ${task.process}:
-    plink: \$(plink --version | awk '{print \$2}')
-    R: todo
+    plink: \$(plink --version | awk '(NR==1) {print \$2}')
 EOF
-	"""
-	}
+"""
+stub:
+"""
+touch versions.yml
+"""
+}

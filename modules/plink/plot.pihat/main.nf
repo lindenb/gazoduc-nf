@@ -23,19 +23,21 @@ SOFTWARE.
 
 */
 process PLOT_PIHAT {
-tag "${genome.name}"
+tag "${meta.id}"
 afterScript "rm -rf TMP"
 label "process_single"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
     tuple val(meta), path(genome)
 output:
-    tuple val(meta),path("*.{png,pdf}"),emit:pict
+    tuple val(meta),path("*.png"),optional:true,emit:png
+    tuple val(meta),path("*.pdf"),optional:true,emit:pdf
     path("versions.yml"),emit:versions
 script:
     def format = task.ext.format?:(meta.format?:"png")
-    def prefix=task.ext.prefix?:"pihat"
+    def prefix=task.ext.prefix?:"${meta.id}.pihat"
     def max_pihat = task.ext.max_pihat?:0.1
+    def plot_size = task.ext.plot_size?:500
 
 """
 mkdir -p TMP
@@ -45,7 +47,7 @@ genome <- read.table(file="${genome}",header=TRUE)
 
 head(genome)
 
-${format}("TMP/jeter.${format}")
+${format}("TMP/${prefix}_mqc.${format}",width = ${plot_size}, height = ${plot_size}, unit = "px")
 plot(genome\$PI_HAT,
     ylim=c(0,1.0),
     xlab="Individuals Pair",
@@ -58,7 +60,7 @@ __EOF__
 
 R --no-save < TMP/jeter.R
 
-mv "TMP/jeter.${format}" "${prefix}.samples.${format}"
+mv TMP/${prefix}* ./
 
 cat << EOF > versions.yml
 ${task.process}:

@@ -42,7 +42,7 @@ script:
 mkdir -p TMP
 
 plink \\
-     --threads ${task.cpus} \\
+    --threads ${task.cpus} \\
     --bfile ${bim.baseName} \\
     --genome \\
     --out TMP/${prefix}
