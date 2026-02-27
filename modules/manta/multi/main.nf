@@ -53,7 +53,7 @@ process MANTA_MULTI {
 
 	if ${has_bed}
     then
-		${optional_bed.name.endsWith(".gz")?"gunzip -c":"cat"} ${optional_bed} |\\
+		${(optional_bed?true:false) && optional_bed.name.endsWith(".gz")?"gunzip -c":"cat"} ${optional_bed} |\\
 		sort -T TMP -t '\t' -k1,1 -k2,2n > manta.bed
 	    bgzip manta.bed
 	    tabix -fp bed manta.bed.gz

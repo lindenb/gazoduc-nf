@@ -76,7 +76,7 @@ main:
                 dict,
                 optional_bed,
                 group_by_batch.multi
-                        .map{batch_id,metas,bams,bais->[[id:batch_id],bams.plus(bais).flatten().sort()]}
+                        .map{batch_id,metas,bams,bais->[[id:batch_id],bams.plus(bais).flatten().sort()]}.view()
                 )
         versions = versions.mix(MANTA_MULTI.out.versions)
         diploidSV_ch = diploidSV_ch.mix( MANTA_MULTI.out.diploidSV)

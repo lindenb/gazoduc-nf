@@ -31,7 +31,7 @@ include {MULTIQC                          } from '../../../modules/multiqc'
 include {COMPILE_VERSIONS                 } from '../../../modules/versions/main.nf'
 include {JVARKIT_VCF_SET_DICTIONARY       } from '../../../modules/jvarkit/vcfsetdict'
 include {JVARKIT_VCF_CLUSTER              } from '../../../modules/jvarkit/vcfcluster'
-include {BCFTOOLS_CONCAT                  } from '../../../modules/bcftools/concat'
+include {BCFTOOLS_CONCAT                  } from '../../../modules/bcftools/concat3'
 include {JVARKIT_BAM_RENAME_CONTIGS       } from '../../../modules/jvarkit/bamrenamechr'
 include {PLOT_COVERAGE_01                 } from '../../../subworkflows/plotdepth'
 include { PREPARE_ONE_REFERENCE           } from '../../../subworkflows/samtools/prepare.one.ref'
@@ -97,14 +97,14 @@ workflow {
 
     
 
-	def vcf = Channel.of(params.vcf)
+	def vcf_ch = Channel.of(params.vcf)
         .map{vcf-> [
             [id:removeCommonSuffixes(file(vcf).name)],
             file(vcf)
             ]}
 
 
-	JVARKIT_VCF_CLUSTER( vcf )
+	JVARKIT_VCF_CLUSTER( vcf_ch )
 	versions = versions.mix(JVARKIT_VCF_CLUSTER.out.versions)
 
     vcfs = JVARKIT_VCF_CLUSTER.out.vcf
@@ -125,10 +125,10 @@ workflow {
 
 
 
-    grouped_bams = META_TO_BAMS.out.bams.map{meta,bam,bai->[bam,bai]}
+    grouped_bams = META_TO_BAMS.out.bams.map{_meta,bam,bai->[bam,bai]}
         .flatMap()
         .collect()
-        .map{[[id:"bams"],it.sort()]}
+        .map{files->[[id:"bams"],files.sort()]}
 
 
     GRAPHTYPER_GENOTYPE_SV(
@@ -138,18 +138,15 @@ workflow {
 		grouped_bams,
 		vcfs
 		)
+    versions = versions.mix(GRAPHTYPER_GENOTYPE_SV.out.versions)
 
-    /*
-    vcfs = JVARKIT_VCF_CLUSTER.out.vcf
-        .map{meta,files->[meta,(files instanceof List?files:[files])]}
-        .flatMap()
-        .map{vcf->[[id:removeCommonSuffixes(vcf.name)],vcf]}
-
-	 = bams2_ch.
-   
-	
-	versions = versions.mix(GRAPHTYPER_GENOTYPE_SV.out.versions)
-    */
+    BCFTOOLS_CONCAT(
+        GRAPHTYPER_GENOTYPE_SV.out.vcf.map{_meta,vcf,tbi->[vcf,tbi]}
+            .flatMap()
+            .collect()
+            .map{files->[[id:"graphtyper"],files.sort()]}
+        )
+    versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
 
     
 	/*
