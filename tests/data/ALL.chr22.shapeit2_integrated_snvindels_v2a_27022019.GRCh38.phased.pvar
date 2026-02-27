@@ -1,0 +1,26 @@
+##reference=ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/GRCh38_reference_genome/GRCh38_full_analysis_set_plus_decoy_hla.fa
+##contig=<ID=22>
+##bcftools_viewVersion=1.21+htslib-1.21
+##bcftools_viewCommand=view /LAB-DATA/GLiCID/projects/BiRD_resources/species/human/ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000_genomes_project/release/20190312_biallelic_SNV_and_INDEL/ALL.chr22.shapeit2_integrated_snvindels_v2a_27022019.GRCh38.phased.vcf.gz; Date=Fri Feb 27 16:48:19 2026
+##bcftools_annotateVersion=1.21+htslib-1.21
+##bcftools_annotateCommand=annotate -x IF,FILTER,INFO; Date=Fri Feb 27 16:48:19 2026
+##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles in called genotypes">
+##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count in genotypes">
+##INFO=<ID=AF,Number=A,Type=Float,Description="Allele frequency">
+##bcftools_pluginVersion=1.21+htslib-1.21
+##bcftools_pluginCommand=plugin fill-tags -- -t AC,AF,AN; Date=Fri Feb 27 16:48:19 2026
+##bcftools_viewCommand=view --write-index -O z9 -o tests/data/ALL.chr22.shapeit2_integrated_snvindels_v2a_27022019.GRCh38.phased.vcf.gz; Date=Fri Feb 27 16:48:19 2026
+#CHROM	POS	ID	REF	ALT	INFO
+22	10516173	.	A	G	AN=22;AF=0;AC=0
+22	10522217	.	G	A	AN=22;AF=0;AC=0
+22	10526445	.	A	G	AN=22;AF=1;AC=22
+22	10527034	.	G	T	AN=22;AF=0;AC=0
+22	10527038	.	C	G	AN=22;AF=0;AC=0
+22	10527074	.	A	G	AN=22;AF=0;AC=0
+22	10530662	.	A	G	AN=22;AF=0;AC=0
+22	10530667	.	G	A	AN=22;AF=0;AC=0
+22	10530667	.	GA	G	AN=22;AF=0;AC=0
+22	10530699	.	A	G	AN=22;AF=0;AC=0
+22	10530754	.	A	C	AN=22;AF=0;AC=0
+22	10530759	.	A	G	AN=22;AF=0;AC=0
+22	10531288	.	A	C	AN=22;AF=0;AC=0

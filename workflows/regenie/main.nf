@@ -23,20 +23,23 @@ SOFTWARE.
 
 */
 /** https://github.com/FINNGEN/regenie-pipelines */
+// https://gitlab.univ-nantes.fr/pierre.lindenbaum/gazoduc-nf/-/blob/d9f89be7c2cccc39336ea282bd54e26146ca645e/workflows/regenie/main.nf
 
-include {SNPEFF_DOWNLOAD} from '../../modules/snpeff/download'
-include {JVARKIT_VCF_TO_INTERVALS_01} from '../../subworkflows/vcf2intervals'
-include {BCFTOOLS_CONCAT_CONTIGS} from '../../subworkflows/bcftools/concat.contigs'
-include {DOWNLOAD_GENCODE} from '../../modules/ucsc/download.gencode'
-include {runOnComplete} from '../../modules/utils/functions.nf'
-include { PLINK_BFILE2VCF                         } from '../../modules/plink/bfile2vcf'
-include { REGENIE_STEP1                           } from '../../modules/regenie/step1'
-include { REGENIE_STEP2                           } from '../../modules/regenie/step2'
-
+include { validateParameters                       } from 'plugin/nf-schema'
+include { paramsHelp                               } from 'plugin/nf-schema'
+include { paramsSummaryLog                         } from 'plugin/nf-schema'
+include { samplesheetToList                        } from 'plugin/nf-schema'
+include {SNPEFF_DOWNLOAD                           } from '../../modules/snpeff/download'
+include {JVARKIT_VCF_TO_INTERVALS_01               } from '../../subworkflows/vcf2intervals'
+include { BCFTOOLS_CONCAT_CONTIGS                  } from '../../subworkflows/bcftools/concat.contigs'
+include {DOWNLOAD_GENCODE                          } from '../../modules/ucsc/download.gencode'
+include {runOnComplete                             } from '../../modules/utils/functions.nf'
+include { PLINK_BFILE2VCF                          } from '../../modules/plink/bfile2vcf'
+include { REGENIE_STEP1                            } from '../../modules/regenie/step1'
+include { REGENIE_STEP2                            } from '../../modules/regenie/step2'
+include { PREPARE_USER_BED                         } from '../../subworkflows/bedtools/prepare.user.bed'
 
 workflow {
-	if(!file(params.vcf).name.contains(".")) throw new IllegalArgumentException("--vcf missing");
-	if(!file(params.samplesheet).name.contains(".")) throw new IllegalArgumentException("--samplesheet missing");
 
 	metadata = [id:"regenie"]
 
@@ -48,6 +51,10 @@ workflow {
 		log.warn("--fasta missing")
 		exit -1
 		}
+	if(params.covariate==null) {
+		log.warn("--covariate missing")
+		exit -1
+	}
 
   /***************************************************
    *
@@ -55,71 +62,63 @@ workflow {
    *
    */
 	PREPARE_ONE_REFERENCE(
-			metadata,
-			Channel.of(params.fasta).map{file(it)}.map{[[id:it.baseName],it]}
+			metadata.plus(with_scatter:false),
+			Channel.of(params.fasta).map{f->file(f)}.map{f->[[id:f.baseName],f]}
 			)
 	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
 
+   /***************************************************
+   *
+   * PREPARE BED
+   *
+   */
+  if(params.bed==null) {
+		bed =  PREPARE_ONE_REFERENCE.out.scatter_bed
+		}
+	else {
+		PREPARE_USER_BED(
+				metadata.plus([:]),
+				PREPARE_ONE_REFERENCE.out.fasta,
+				PREPARE_ONE_REFERENCE.out.fai,
+				PREPARE_ONE_REFERENCE.out.dict,
+				PREPARE_ONE_REFERENCE.out.scatter_bed,
+				Channel.of([[id:"capture"],file(params.bed)])
+				)
+		versions = versions.mix(PREPARE_USER_BED.out.versions)
+		multiqc = multiqc.mix(PREPARE_USER_BED.out.multiqc)
+		bed = PREPARE_USER_BED.out.bed
+		}
 
-	reference = Channel.of(file(params.fasta), file(params.fai), file(params.dict)).collect()
-	user_bed = file(params.bed)
+	if(params.vcf.endsWith(".vcf.gz")) {
 
-	tobed_ch = JVARKIT_VCF_TO_INTERVALS_01(Channel.fromPath(params.vcf), user_bed)
-
-	snpeff_ch = SNPEFF_DOWNLOAD(params.snpeff_db)
-
-	snsheet_ch = DIGEST_SAMPLESHEET( tobed_ch.bed.
-			splitCsv(header:false,sep:'\t').
-			map{it[3]}.
-			first() ,
-		file(params.samplesheet)
-		)
-
-	wch1_ch = WGSELECT(
-			reference,
-			snpeff_ch.output,
-			snsheet_ch.output,
-			tobed_ch.bed.splitCsv(header:false,sep:'\t').
-				map{[it[0],((it[1] as int)+1),(it[2] as int),file(it[3]),file(it[4])]}.
-				filter{it[0].matches(params.skip_XY?"(chr)?[0-9]+":"(chr)?[0-9XY]+")}
-			)
-
-	wch1_ch = wch1_ch.output.map{[(it[0].startsWith("chr") ? it[0].substring(3) : it[0] ) , it[1], it[2] ]}
-
-
-	wch2_ch = BCFTOOLS_CONCAT_CONTIGS(
-		wch1_ch ,
-		user_bed
-		)
-	pgen_ch = PLINK2_VCF2PGEN(reference, snsheet_ch.output, wch2_ch.output)
-	bgen_ch = PLINK2_MERGE_PGEN(snsheet_ch.output, pgen_ch.output.collect())
-
-	if(!params.covariate.contains(".")) {
-		pca_ch = RUN_PCA(snsheet_ch.output, wch2_ch.output)
-		make_covar_ch = MAKE_COVARIATES(pca_ch.output)
-		covar_ch = make_covar_ch.output
 		}
 	else
 		{
-		covar_ch = Channel.of(file(params.covariate))
+		wch2_ch = BCFTOOLS_CONCAT_CONTIGS( wch1_ch)
+		versions = versions.mix(BCFTOOLS_CONCAT_CONTIGS.out.versions)
+		multiqc = multiqc.mix(BCFTOOLS_CONCAT_CONTIGS.out.multiqc)
 		}
 
-	/* read header of covariates */
-	pca_cols_ch = covar_ch.splitCsv(sep:'\t',header:false).
-		take(1).
-		flatMap{T->T[2 ..< T.size()]}
+	PLINK2_VCF2PGEN(reference, snsheet_ch.output,
+		BCFTOOLS_CONCAT_CONTIGS
+		)
+	versions = versions.mix(PLINK2_VCF2PGEN.out.versions)
+
+
+	bgen_ch = PLINK2_MERGE_PGEN(snsheet_ch.output, pgen_ch.output.collect())
+
+	covar_ch = Channel.of([id:"covariates"],file(params.covariate))
 	
-	/** plot pca for each pair of columns */
-	PLOT_PCA(covar_ch, snsheet_ch.output, pca_cols_ch.combine(pca_cols_ch).filter{it[0].compareTo(it[1])<0})
 
 	if(!params.step1_loco.contains(".")) {
-		step1 = STEP1( 
-			bgen_ch.output /* bgen file */,
+		step1 = REGENIE_STEP1( 
+			PLINK2_MERGE_PGEN.out.output /* bgen file */,
 			covar_ch /* covariates */, 
 			snsheet_ch.output /* samples, sex, phenotype */, 
 			pca_ch.output /* contains list of SNP to retain for step 1 */
 			)
 		loco_ch = step1.output
+		versions = versions.mix(STEP1.out.versions)
 		}
 	else {
 		loco_ch = file(params.step1_loco)
@@ -212,10 +211,10 @@ tag "${vcf.name}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
-	path(vcf)
-	path(samplesheet)
+	tuple val(meta1),path(vcf)
+	tuple val(meta2),path(samplesheet)
 output:
-	path("pedigree.*"),emit:output
+	tuple val(meta2),path("pedigree.*"),emit:output
 script:
 """
 hostname 1>&2
@@ -248,7 +247,7 @@ if(!"population" %in% colnames(T1)) {
   # Copy the content of 'status' column into the new 'population' column
   T1\$population <- T1\$status
 }
-
+meta1
 T1\$population[T1\$population == ""] <- "NA"
 T1\$population[T1\$population == "."] <- "NA"
 
@@ -506,11 +505,10 @@ mv  TMP/merged.new.psam merged.psam
 process MAKE_COVARIATES {
 executor "local"
 input:
-	path(plink_files)
+	tuple val(meta),path(mds)
 output:
-	path("covariates.tsv"),emit:output
+	tuple val(meta),path("covariates.tsv"),emit:output
 script:
-	mds = plink_files.find{it.name.endsWith(".mds")}
 """
 awk 'BEGIN{printf("FID\tIID\tY1\tY2\tY3\\n");} (NR>1) {printf("%s\t%s\t%s\t%s\t%s\\n",\$2,\$2,\$4,\$5,\$6);}' "${mds}" > covariates.tsv
 """
@@ -554,8 +552,8 @@ plink2 --bgen ${bgen} ref-first \\
 	--const-fid 1 \\
 	--allow-no-sex \\
 	--rm-dup force-first \\
-        --indep-pairwise 50 1 0.2 \\
-        --out TMP/plink
+	--indep-pairwise 50 1 0.2 \\
+	--out TMP/plink
 
 
 find TMP 1>&2
@@ -594,9 +592,6 @@ awk '{print \$2}' TMP/indepSNP_data.bim |\\
 	head -n 1000000 > TMP/keep.txt
 
 mv TMP/keep.txt ./
-
-
-
 
 """
 }

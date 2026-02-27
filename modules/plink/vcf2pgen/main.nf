@@ -23,20 +23,20 @@ SOFTWARE.
 
 */
 process PLINK2_VCF2PGEN {
-label "process_single_high"
+label "process_single"
 afterScript "rm -rf TMP"
 tag "${meta.id}"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-	tuple val(meta1),path(fasta) /* or any ... */) //for PAR region
+	tuple val(meta1),path(fasta) /* or any ...  for PAR region */
 	tuple val(meta2),path(plink_ped)
 	tuple val(meta ),path(vcf)
 output:
-	tuple val(meta),path("*"),emit:output
-    path("versions.yml")
+    tuple val(meta),path("*.pgen"),path("*.psam"),path("*.pvar"),emit:pgen
+    tuple val(meta),path("*.log"),emit:log
+    path("versions.yml"),emit:versions
 script:
-	def k1 = k1_signature()
-	def args = contig.matches("(chr)?[XY]")?" --update-sex ${plink_ped} --split-par ${meta1.ucsc_name?:"undefined"}":""
+    def args = task.ext.args?:""
     def prefix = task.ext.prefix?:"${meta.id}"
 """
 mkdir -p TMP
@@ -44,13 +44,19 @@ mkdir -p TMP
 plink2 ${vcf.name.endsWith(".bcf")?"--bcf":"--vcf"} "${vcf}"  \\
 	${args} \\
 	--make-pgen erase-phase \\
+    ${plink_ped?" --update-sex ${plink_ped} --split-par ${meta1.ucsc_name?:"undefined"}":""} \\
 	--threads ${task.cpus} \\
 	--out "${prefix}"
 
-touch versions.yml
+cat << EOF > versions.yml
+${task.process}:
+    plink2: \$(plink2 --version)
+EOF
 """
+
 stub:
+    def prefix = task.ext.prefix?:"${meta.id}"
 """
-touch versions.yml
+touch versions.yml ${prefix}.log ${prefix}.pgen ${prefix}.psam ${prefix}.pvar
 """
 }
