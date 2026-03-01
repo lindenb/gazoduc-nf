@@ -29,21 +29,11 @@ include { paramsSummaryLog                         } from 'plugin/nf-schema'
 include { samplesheetToList                        } from 'plugin/nf-schema'
 include { VCF_INPUT                                } from '../../subworkflows/nf/vcf_input'
 include { PREPARE_ONE_REFERENCE                    } from '../../subworkflows/samtools/prepare.one.ref'
-include { DICT_TO_BED                              } from '../../modules/jvarkit/dict2bed'
 include { runOnComplete                            } from '../../modules/utils/functions.nf'
 include { isBlank                                  } from '../../modules/utils/functions.nf'
 include { verify                                   } from '../../modules/utils/functions.nf'
-include { VCF_TO_CONTIGS                           } from '../../subworkflows/bcftools/vcf2contigs'
-include { DOWNLOAD_CHAIN                           } from '../../modules/ucsc/download.chain'
-include {LIFTOVER_VCF                              } from '../../modules/gatk/liftovervcf'
-include { MERGE_VCFS  as MERGE_VCFS_LIFTED         } from '../../modules/gatk/mergevcfs'
-include { MERGE_VCFS  as MERGE_VCFS_FAIL           } from '../../modules/gatk/mergevcfs'
+include { LIFTOVER_VCF                             } from '../../subworkflows/liftovervcf'
 
-String toUcsc(String build) {
-	if(build.equalsIgnoreCase("grch38")) return "hg38";
-    if(build.equalsIgnoreCase("grch37")) return "hg19";
-	return build;
-	}
 
 workflow {
 
@@ -98,69 +88,15 @@ workflow {
 		]))
 	versions = versions.mix(VCF_INPUT.out.versions)
 
-	vcfs= VCF_INPUT.out.vcf
-	DICT_TO_BED(vcfs.map{meta,vcf,_tbi->[meta,vcf]})
-	versions = versions.mix(DICT_TO_BED.out.versions)
-	
-	ch1 = DICT_TO_BED.out.bed
-		.splitCsv(header:true,sep:'\t')
-		.map{meta,row->[meta,row.buildName]}
-		.filter{_meta,build->!(isBlank(build) || build==".")}
-		.map{meta,build->[meta,toUcsc(build)]}
-		.unique()
-		.groupTuple()
-		.map{meta,builds->{
-			verify(builds.size()==1,"multiple builds for ${meta}")
-			return [meta,builds[0]];
-			}}
-		.map{meta,build->[meta,build]}
-		.join(vcfs)
-		.combine(PREPARE_ONE_REFERENCE.out.dict)
-		.multiMap{meta1,build,vcf,_tbi,meta2,dict->
-			source: [meta1.plus(ucsc_name:build),vcf]
-			dest: [meta2,dict]
-			}
-	DOWNLOAD_CHAIN(ch1.source,ch1.dest)
-	versions = versions.mix(DOWNLOAD_CHAIN.out.versions)
-	
-
-	VCF_TO_CONTIGS(metadata,vcfs)
-	versions = versions.mix(VCF_TO_CONTIGS.out.versions)
-
-
-	ch2 = DOWNLOAD_CHAIN.out.chain
-		.map{meta1,_meta2,chain->[meta1,chain]}
-		.combine(VCF_TO_CONTIGS.out.vcf)
-		.filter{meta1,_chain,meta2,_vcf,_tbi->meta1.id==meta2.id}
-		.multiMap{meta1,liftchain,meta2,vcffile,tbi->
-			chain: [meta1,liftchain]
-			vcf: [meta2,vcffile,tbi]
-			}
-	
 	LIFTOVER_VCF(
+		metadata,
 		PREPARE_ONE_REFERENCE.out.fasta,
 		PREPARE_ONE_REFERENCE.out.fai,
 		PREPARE_ONE_REFERENCE.out.dict,
-		ch2.chain,
-		ch2.vcf
+		VCF_INPUT.out.vcf
 		)
-	versions = versions.mix(VCF_TO_CONTIGS.out.versions)
-
-	MERGE_VCFS_LIFTED(
-		LIFTOVER_VCF.out.vcf
-			.map{meta,vcf,tbi->[[id:meta.id],[vcf,tbi]]}
-			.groupTuple()
-			.map{meta,files->[meta,files.flatten().sort()]}
-		)
-	versions = versions.mix(MERGE_VCFS_LIFTED.out.versions)
-
-	MERGE_VCFS_FAIL(
-		LIFTOVER_VCF.out.fail
-			.map{meta,vcf,tbi->[[id:meta.id],[vcf,tbi]]}
-			.groupTuple()
-			.map{meta,files->[meta,files.flatten().sort()]}
-		)
-	versions = versions.mix(MERGE_VCFS_FAIL.out.versions)
+	versions = versions.mix(LIFTOVER_VCF.out.versions)
+	multiqc = multiqc.mix(LIFTOVER_VCF.out.multiqc)
 	}
 
 runOnComplete(workflow)
