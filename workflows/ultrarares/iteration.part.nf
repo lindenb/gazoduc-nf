@@ -35,6 +35,7 @@ include { BED_CLUSTER                      } from '../../modules/jvarkit/bedclus
 include { BEDTOOLS_SLOP                    } from '../../modules/bedtools/slop'
 include { BEDTOOLS_MERGE as BEDTOOLS_MERGE1} from '../../modules/bedtools/merge'
 include { BEDTOOLS_MERGE as BEDTOOLS_MERGE2} from '../../modules/bedtools/merge'
+include { parseBoolean                     } from '../../modules/utils/functions.nf'
 
 
 
@@ -66,14 +67,16 @@ main:
 		)
 	versions = versions.mix(GATK_BAM2VCF.out.versions)
 	vcfs = GATK_BAM2VCF.out.vcf.map{meta,vcf,tbi,bed->[meta,vcf]}
-	
-	BCFTOOLS_NORM(
-		fasta,
-		fai,
-		vcfs
-		)
-	versions = versions.mix(BCFTOOLS_NORM.out.versions)
-	vcfs = BCFTOOLS_NORM.out.vcf
+
+        if(metadata.with_norm==null || parseBoolean(metadata.with_norm)) {
+		BCFTOOLS_NORM(
+			fasta,
+			fai,
+			vcfs
+			)
+		versions = versions.mix(BCFTOOLS_NORM.out.versions)
+		vcfs = BCFTOOLS_NORM.out.vcf
+		}
 
 	JVARKIT_VCFFILTERJDK(
 		jvarkit_filter,
@@ -83,19 +86,24 @@ main:
 	versions = versions.mix(JVARKIT_VCFFILTERJDK.out.versions)
 	vcfs = JVARKIT_VCFFILTERJDK.out.vcf
 
-	JVARKIT_VCFGNOMAD(
-		gnomad_vcf,
-		vcfs
-		)
-	versions = versions.mix(JVARKIT_VCFGNOMAD.out.versions)
-	vcfs = 	JVARKIT_VCFGNOMAD.out.vcf
+        if(metadata.with_gnomad==null || parseBoolean(metadata.with_gnomad)) {
+		JVARKIT_VCFGNOMAD(
+			gnomad_vcf,
+			vcfs
+			)
+		versions = versions.mix(JVARKIT_VCFGNOMAD.out.versions)
+		vcfs = 	JVARKIT_VCFGNOMAD.out.vcf
+		}
 	
-	SNPEFF_APPLY(
-		snpeff_db,
-		vcfs
-		)
-	versions = versions.mix(SNPEFF_APPLY.out.versions)
-	vcfs = 	SNPEFF_APPLY.out.vcf
+
+        if(metadata.with_snpeff==null || parseBoolean(metadata.with_snpeff)) {
+		SNPEFF_APPLY(
+			snpeff_db,
+			vcfs
+			)
+		versions = versions.mix(SNPEFF_APPLY.out.versions)
+		vcfs = 	SNPEFF_APPLY.out.vcf
+		}
 	
 	BCFTOOLS_SORT(vcfs)
 	versions = versions.mix(BCFTOOLS_SORT.out.versions)

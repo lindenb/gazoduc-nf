@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UltraRares pipeline parameters",
+  "$id": "https://raw.githubusercontent.com/gazoduc/master/nextflow_schema.json",
+  "description": "Ultrarares Pipeline",
+  "type": "object",
+  "$defs": {
+    "input_and_output_params": {
+      "title": "Input / Ouput",
+      "type": "object",
+      "description": "General Parameters",
+      "required": ["fasta","samplesheet","gnomad"],
+      "properties": {
+        "fasta": {
+          "type": "string",
+          "format": "file-path",
+          "exists": true,
+          "mimetype": "text/plain",
+          "pattern": "^\\S+\\.(fasta|fa|fna)?(\\.gz)?$",
+          "description": "Path to FASTA REFERENCE file.",
+          "fa_icon": "far fa-file-code"
+        },
+        "samplesheet": {
+          "type": "string",
+          "format": "file-path",
+          "exists": true,
+          "mimetype": "text/plain",
+          "description": "Path to Samplesheet.",
+          "fa_icon": "far fa-file-code"
+        },
+        "gnomad": {
+          "type": "string",
+          "format": "file-path",
+          "exists": true,
+          "mimetype": "text/plain",
+          "description": "Path to gnomad.",
+          "fa_icon": "far fa-file-code"
+        },
+        "prefix": {
+          "type": "string",
+          "pattern": "^[a-zA-z0-9_\\.]+\\.$",
+          "description": "prefix for the save files. A good prefix would be 'YYYY-MM-DD.project_name.' ",
+          "help_text": "Ouput file prefix"
+        },
+        "extra_cluster_options": {
+          "type": "string",
+          "description": "extra parameters for the cluster. Can be used to exclude a node for example"
+        },
+        
+        "bed": {
+          "type": "string",
+          "format": "file-path",
+          "description": "Path to BED file that was used as the capture. 'exome' will automatically extract the exome bed from a gtf",
+          "help_text": "Capture BED"
+        },
+         "gtf": {
+          "type": "string",
+          "format": "file-path",
+          "description": "Path to GTF file used for bed/exome",
+          "help_text": "GTF file"
+        },
+        "outdir": {
+          "type": "string",
+          "format": "directory-path",
+          "description": "The output directory where the results will be saved. You have to use absolute paths to storage on Cloud infrastructure.",
+          "help_text": "output directory",
+          "fa_icon": "fas fa-folder-open"
+        },
+        "help": {
+          "type": "boolean"
+        },
+         "jvarkit_filter": {
+          "type": "string",
+          "format": "file-path",
+          "exists": true,
+          "description": "jvarkit filter that select variants of interest"
+        }
+      }
+    }
+    
+},
+  "allOf": [
+    { "$ref": "#/$defs/input_and_output_params" }
+  ]
+}

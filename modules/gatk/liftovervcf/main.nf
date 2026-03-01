@@ -42,20 +42,21 @@ script:
 	def prefix = task.ext.prefix?:"${meta.id}"
     def prefix2 = "${prefix}${meta1.ucsc_name?".${meta1.ucsc_name}":""}"
 	def args1 =  task.ext.args1?:""
-    def args2 =  task.ext.args1?:""
+    def args2 =  task.ext.args2?:""
 	def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir=TMP" 
+	def need_convert = vcf.name.endsWith(".bcf") || !args1.trim().isEmpty()
 """
 hostname 1>&2
 mkdir -p TMP
 
-if ${vcf.name.endsWith(".bcf")}
+if ${need_convert}
 then
     bcftools view  ${args1} --threads ${task.cpus} -Oz -o TMP/jeter1.vcf.gz "${vcf}" 
 fi
 
 gatk --java-options "${jvm}" LiftoverVcf \\
 	--CHAIN ${chain} \\
-	--INPUT ${vcf.name.endsWith(".bcf")?"TMP/jeter1.vcf.gz":"${vcf}"} \\
+	--INPUT ${need_convert?"TMP/jeter1.vcf.gz":"${vcf}"} \\
 	--OUTPUT TMP/jeter2.vcf.gz \\
 	--REFERENCE_SEQUENCE ${fasta} \\
 	--REJECT TMP/reject.vcf.gz \\

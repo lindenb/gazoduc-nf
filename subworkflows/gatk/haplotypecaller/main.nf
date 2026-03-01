@@ -158,6 +158,8 @@ main:
 		{
 		throw new IllegalArgumentException("unknown meta.gvcf_merge_method = ${metadata.gvcf_merge_method}.");
 		}
+    vcf_bed_ch = vcf_out    
+
     BCFTOOLS_CONCAT(
         vcf_out.map{meta,vcf,tbi,bed->[vcf,tbi]}//gvcf,tbi
 			.flatMap()
@@ -169,6 +171,7 @@ main:
 emit:
     versions
 	multiqc
+    vcf_bed_ch
     vcf = vcf_out
 }
 

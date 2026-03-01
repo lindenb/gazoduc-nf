@@ -39,6 +39,7 @@ include {ULTRA_RARES_ITERATION as ITER_THIRD       } from './iteration.part.nf'*
 include { UNMAPPED                                 } from '../../subworkflows/unmapped'
 include { runOnComplete;dumpParams                 } from '../../modules/utils/functions.nf'
 include { isBlank                                  } from '../../modules/utils/functions.nf'
+include { parseBoolean                             } from '../../modules/utils/functions.nf'
 include { SAMTOOLS_STATS                           } from '../../modules/samtools/stats'
 include { MULTIQC                                  } from '../../modules/multiqc'
 include { COMPILE_VERSIONS                         } from '../../modules/versions/main.nf'
@@ -315,8 +316,14 @@ workflow {
 		)
 	versions = versions.mix(SNPEFF_DOWNLOAD.out.versions)
 
+	other_params = [
+		with_snpeff : parseBoolean(params.with_snpeff),
+		with_norm : parseBoolean(params.with_norm),
+		with_gnomad : parseBoolean(params.with_gnomad)
+		]
+	
 	ITER_10(
-		metadata.plus([id:"list10"]),
+		metadata.plus([id:"list10"]).plus(other_params),
 		PREPARE_ONE_REFERENCE.out.fasta,
 		PREPARE_ONE_REFERENCE.out.fai,
 		PREPARE_ONE_REFERENCE.out.dict,
@@ -333,7 +340,7 @@ workflow {
 
 
 	ITER_100(
-		metadata.plus([id:"list100"]),
+		metadata.plus([id:"list100"]).plus(other_params),
 		PREPARE_ONE_REFERENCE.out.fasta,
 		PREPARE_ONE_REFERENCE.out.fai,
 		PREPARE_ONE_REFERENCE.out.dict,
@@ -348,7 +355,7 @@ workflow {
 	multiqc = multiqc.mix(ITER_100.out.multiqc)
 
 	ITER_250(
-		metadata.plus([id:"list250"]),
+		metadata.plus([id:"list250"]).plus(other_params),
 		PREPARE_ONE_REFERENCE.out.fasta,
 		PREPARE_ONE_REFERENCE.out.fai,
 		PREPARE_ONE_REFERENCE.out.dict,
@@ -364,7 +371,7 @@ workflow {
 
 
 	ITER_500(
-		metadata.plus([id:"list500"]),
+		metadata.plus([id:"list500"]).plus(other_params),
 		PREPARE_ONE_REFERENCE.out.fasta,
 		PREPARE_ONE_REFERENCE.out.fai,
 		PREPARE_ONE_REFERENCE.out.dict,
@@ -379,7 +386,7 @@ workflow {
 	multiqc = multiqc.mix(ITER_500.out.multiqc)
 
 	ITER_1000(
-		metadata.plus([id:"list1000"]),
+		metadata.plus([id:"list1000"]).plus(other_params),
 		PREPARE_ONE_REFERENCE.out.fasta,
 		PREPARE_ONE_REFERENCE.out.fai,
 		PREPARE_ONE_REFERENCE.out.dict,
@@ -394,7 +401,7 @@ workflow {
 	multiqc = multiqc.mix(ITER_1000.out.multiqc)
 
 	ITER_ALL(
-		metadata.plus([id:"list_all"]),
+		metadata.plus([id:"list_all"]).plus(other_params),
 		PREPARE_ONE_REFERENCE.out.fasta,
 		PREPARE_ONE_REFERENCE.out.fai,
 		PREPARE_ONE_REFERENCE.out.dict,

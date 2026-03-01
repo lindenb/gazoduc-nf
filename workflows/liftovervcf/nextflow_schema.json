@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Indexcov pipeline parameters",
+  "$id": "https://raw.githubusercontent.com/gazoduc/master/nextflow_schema.json",
+  "description": "Indexcov Pipeline",
+  "type": "object",
+  "$defs": {
+    "input_and_output_params": {
+      "title": "Input / Ouput",
+      "type": "object",
+      "description": "General Parameters",
+      "required": ["fasta"],
+      "properties": {
+        "fasta": {
+          "type": "string",
+          "format": "file-path",
+          "exists": true,
+          "mimetype": "text/plain",
+          "pattern": "^\\S+\\.(fasta|fa|fna)?(\\.gz)?$",
+          "description": "Path to FASTA REFERENCE file.",
+          "fa_icon": "far fa-file-code"
+        },
+        "samplesheet": {
+          "type": "string",
+          "format": "file-path",
+          "exists": true,
+          "mimetype": "text/plain",
+          "pattern": "^\\S+\\.(csv|list|tsv|json)$",
+          "description": "Path to samplesheet with the appropriate suffix (csv or tsv or json).<br/>For **ora** files or **fastq.gz** from illumina/dragen, the 'sample' column is optional as it can be extracted from the fastq name",
+          "help_text": "path to fastq samplesheet."
+        },
+        "prefix": {
+          "type": "string",
+          "pattern": "^[a-zA-z0-9_\\.]+\\.$",
+          "description": "prefix for the save files. A good prefix would be 'YYYY-MM-DD.project_name.' ",
+          "help_text": "Ouput file prefix"
+        },
+        "extra_cluster_options": {
+          "type": "string",
+          "description": "extra parameters for the cluster. Can be used to exclude a node for example"
+        },
+        "outdir": {
+          "type": "string",
+          "format": "directory-path",
+          "description": "The output directory where the results will be saved. You have to use absolute paths to storage on Cloud infrastructure.",
+          "help_text": "output directory",
+          "fa_icon": "fas fa-folder-open"
+        },
+        "help": {
+          "type": "boolean"
+        },
+        "with_truvari": {
+          "type": "boolean"
+        }
+      }
+    }
+},
+  "allOf": [
+    { "$ref": "#/$defs/input_and_output_params" }
+  ]
+}
