@@ -71,21 +71,24 @@ script:
 	cat TMP/jeter.dups 1>&2
 	test ! -s TMP/jeter.dups
 	
+	# Use libjemalloc if available
+	command -v jemalloc-config &> /dev/null && LIBJEMALLOC_PATH=`jemalloc-config --libdir`/libjemalloc.so.`jemalloc-config --revision`
+
+	LD_PRELOAD=\${LIBJEMALLOC_PATH} \\
+		glnexus_cli \\
+		 	${args1} \\
+			--config ${optional_config?"${optional_config}":"${config}"} \\
+	        	${optional_bed?"--bed TMP/jeter.bed":""} \\
+			--threads ${task.cpus} \\
+			--mem-gbytes ${task.memory.giga} \\
+			--list TMP/jeter.list > TMP/jeter.bcf
 	
-	glnexus_cli \\
-	 	${args1} \\
-		--config ${optional_config?"${optional_config}":"${config}"} \\
-        ${optional_bed?"--bed TMP/jeter.bed":""} \\
-		--threads ${task.cpus} \\
-		--mem-gbytes ${task.memory.giga} \\
-		--list TMP/jeter.list > TMP/jeter.vcf.gz
-	
-	bcftools +fill-tags ${args2} --threads ${task.cpus} -O b -o TMP/jeter.bcf TMP/jeter.vcf.gz -- -t  AN,AC,AF,AC_Hom,AC_Het,AC_Hemi,NS
-	bcftools index --threads ${task.cpus} "TMP/jeter.bcf"
+	bcftools +fill-tags ${args2} --threads ${task.cpus} -O b -o TMP/jeter2.bcf TMP/jeter.bcf -- -t  AN,AC,AF,AC_Hom,AC_Het,AC_Hemi,NS
+	bcftools index --threads ${task.cpus} "TMP/jeter2.bcf"
 
 
-mv TMP/jeter.bcf ./${prefix}.bcf
-mv TMP/jeter.bcf.csi ./${prefix}.bcf.csi
+mv TMP/jeter2.bcf ./${prefix}.bcf
+mv TMP/jeter2.bcf.csi ./${prefix}.bcf.csi
 
 cat << EOF > versions.yml
 "${task.process}":
