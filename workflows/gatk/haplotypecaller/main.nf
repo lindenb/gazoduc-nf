@@ -179,7 +179,11 @@ workflow {
             }
     
     /** build pedigree from meta data */
-    META_TO_PED(workflow_metadata, bams_ch.map{it[0]})
+    META_TO_PED(
+		workflow_metadata, 
+		Channel.empty(),
+		bams_ch.map{it[0]}
+		)
     versions = versions.mix(META_TO_PED.out.versions)
 
 

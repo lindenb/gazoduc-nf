@@ -108,7 +108,11 @@ workflow {
 		)
 	versions = versions.mix(SAMPLESHEET_TO_FASTQ.out.versions)
 
-    META_TO_PED(workflow_metadata,ch0)
+    META_TO_PED(
+		workflow_metadata,
+		Channel.empty(),
+		ch0
+		)
     versions = versions.mix(META_TO_PED.out.versions)
     
 	bed = Channel.of([[id:"nobed"],[]]).first()

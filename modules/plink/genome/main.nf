@@ -62,6 +62,7 @@ ${task.process}:
 EOF
 """
 stub:
+ def prefix = task.ext.prefix?:"${meta.id}"
 """
 touch versions.yml ${prefix}.genome
 """

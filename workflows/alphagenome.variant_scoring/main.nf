@@ -1,4 +1,7 @@
+
 /*
+
+THIS FILE WAS GENERATED DO NOT EDIT !!!
 
 Copyright (c) 2026 Pierre Lindenbaum
 
@@ -23,45 +26,32 @@ SOFTWARE.
 
 */
 nextflow.enable.dsl=2
-include { validateParameters                       } from 'plugin/nf-schema'
-include { paramsHelp                               } from 'plugin/nf-schema'
-include { paramsSummaryLog                         } from 'plugin/nf-schema'
-include { samplesheetToList                        } from 'plugin/nf-schema'
-include { VCF_INPUT                                } from '../../subworkflows/nf/vcf_input'
-include { PREPARE_ONE_REFERENCE                    } from '../../subworkflows/samtools/prepare.one.ref'
-include { runOnComplete                            } from '../../modules/utils/functions.nf'
-include { LIFTOVER_VCF                             } from '../../subworkflows/liftovervcf'
 
+include { runOnComplete;dumpParams                 } from '../../modules/utils/functions.nf'
+include { PREPARE_ONE_REFERENCE                    } from '../../subworkflows/samtools/prepare.one.ref'
+include { VCF_INPUT                                } from '../../subworkflows/nf/vcf_input'
+include { APHAGENOME_VARIANT_SCORING               } from '../../subworkflows/alphagenome/variant_scoring'
 
 workflow {
-
-		if(!workflow.stubRun) {
-		validateParameters()
-		}
-
-	if( params.help ) {
-		log.info(paramsHelp())
-		exit 0
-		}  else {
-		// Print summary of supplied parameters
-		log.info paramsSummaryLog(workflow)
-		}
+  versions = Channel.empty()
+  multiqc = Channel.empty()
 
 
-
-	def metadata = [id:"liftover"]
+	def metadata = [id:"alphagenomevcf"]
 	versions = Channel.empty()
 	multiqc  = Channel.empty()
+
 
 
 	if(params.fasta==null) {
 			throw new IllegalArgumentException("undefined --fasta");
 			}
-	if(params.vcf==null) {
+	
+    if(params.vcf==null) {
 			throw new IllegalArgumentException("undefined --vcf");
 			}
-
-
+	
+  
   /***************************************************
    *
    *  PREPARE FASTA REFERENCE
@@ -73,10 +63,11 @@ workflow {
 			)
 	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
 
-
-	/**
-	* prepare VCF inputs :VCF may be composed of multiple VCFs (one per contig)
-	*/
+  /***************************************************
+   *
+   *  LOAD VCF
+   *
+   */
 	VCF_INPUT(metadata.plus([
 		path: params.vcf,
 		arg_name: "vcf",
@@ -86,15 +77,15 @@ workflow {
 		]))
 	versions = versions.mix(VCF_INPUT.out.versions)
 
-	LIFTOVER_VCF(
-		metadata,
-		PREPARE_ONE_REFERENCE.out.fasta,
-		PREPARE_ONE_REFERENCE.out.fai,
-		PREPARE_ONE_REFERENCE.out.dict,
-		VCF_INPUT.out.vcf
-		)
-	versions = versions.mix(LIFTOVER_VCF.out.versions)
-	multiqc = multiqc.mix(LIFTOVER_VCF.out.multiqc)
-	}
+    APHAGENOME_VARIANT_SCORING(
+        metadata,
+        PREPARE_ONE_REFERENCE.out.fasta,
+        PREPARE_ONE_REFERENCE.out.dict,
+        PREPARE_ONE_REFERENCE.out.fai,
+        VCF_INPUT.out.vcf
+        )
+	versions = versions.mix(APHAGENOME_VARIANT_SCORING.out.versions)
 
-runOnComplete(workflow)
+
+}
+

@@ -56,22 +56,38 @@ mds_file <- "${mds}"
 pop_file <- "${sample2pop?:"NO_SAMPLE_TO_POP"}"
 
 mds <- read.table(mds_file,header=TRUE, stringsAsFactors = FALSE)
-mds\$color <-rep("black", nrow(mds))
+mds\$group_name <- "OTHER"
 
 
 ## If population file exists, read + merge population info
 if (file.exists(pop_file)) {
     # Read the sample-to-group mapping
-    sample2group <- read.table(pop_file, sep="\t", header=FALSE,col.names=c("IID","G"), colClasses=c("character", "character"), stringsAsFactors = FALSE)
+    sample2group <- read.table(
+            pop_file,
+            sep="\t",
+            header=FALSE,
+            col.names=c("IID","group_name"),
+            colClasses=c("character", "character"),
+            stringsAsFactors = FALSE
+            )
 
-    # Merge to get group information for each sample
-    mds <- merge(mds, sample2group, by="IID", all.x=TRUE, sort = FALSE)
+     # Match group names by IID (preserves original mds order)
+    idx <- match(mds\$IID, sample2group\$IID)
 
-    # Assign a color to each group
-    groups <- unique(sample2group\$G)
-    group_colors <- setNames(rainbow(length(groups)), groups)
-    mds\$color <- group_colors[mds\$G]
+
+    # Assign group_name where match is found
+    mds\$group_name[!is.na(idx)] <- sample2group\$group_name[idx[!is.na(idx)]]
 }
+
+
+
+# Generate colors per group
+groups <- unique(mds\$group_name)
+head(groups)
+colors <- adjustcolor( rainbow(length(groups)) , alpha.f = 0.9)
+head(colors)
+group_colors <- setNames(colors, groups)
+head(group_colors)
 
 head(mds)
 
@@ -84,14 +100,18 @@ plot(
     xlab = "${Cx}",
     ylab = "${Cy}",
     sub="${R_sub}",
-    col=mds\$color
+    col=group_colors[mds\$group_name]
     )
 
 
 ## Legend only if we actually have populations/colors
 if (file.exists(pop_file)) {
+    # Count number of samples per group
+    group_counts <- table(mds\$group_name)
+    # Build legend labels with N=
+    legend_labels <- paste0(groups, " (N=", group_counts[groups], ")")
     # Add legend
-    legend("topright", legend=groups, fill=group_colors, title="POP")
+    legend("topright", legend=legend_labels, fill=colors, title="POP",pch = 19)
 }
 
 dev.off()

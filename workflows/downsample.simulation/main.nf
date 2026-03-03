@@ -173,7 +173,11 @@ workflow {
 		   			bai
 		   			]}}
 		 
-		META_TO_PED(hash_ref, bams_ch.map{it[0]})
+	META_TO_PED(
+		hash_ref,
+		Channel.empty(),
+		bams_ch.map{it[0]}
+		)
         versions = versions.mix(META_TO_PED.out.versions)
 		 
 	

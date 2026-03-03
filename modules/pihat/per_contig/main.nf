@@ -24,6 +24,7 @@ SOFTWARE.
 */
 include { verify       } from '../../../modules/utils/functions.nf'
 include { isBlank      } from '../../../modules/utils/functions.nf'
+include { parseBoolean } from '../../../modules/utils/functions.nf'
 
 process PER_CONTIG {
 tag "${meta.id}"
@@ -52,6 +53,7 @@ script:
     def arg1 = ""
     def cpus3 = task.cpus>3?"--thread ${(task.cpus/3) as int}":""
     def plink_args  = "--const-fid 1 --allow-extra-chr --allow-no-sex --threads ${task.cpus}"
+    def no_call_to_hom_ref= parseBoolean(task.ext.no_call_to_hom_ref?:true)
     def prefix = task.ext.prefix?:"${meta.id}.indep"
     def jvm = task.ext.jvm?:"-Djava.io.tmpdir=TMP"
 """
@@ -224,13 +226,20 @@ then
 fi
 
 #
+# translate NO_CALL to HOM_REF
+#
+if ${no_call_to_hom_ref}
+then
+    bcftools +setGT --threads ${task.cpus} -O b  -o "TMP/jeter2.bcf"  TMP/jeter1.bcf  --  -t '.' -n 0
+    mv TMP/jeter2.bcf TMP/jeter1.bcf
+fi
+
+#
 # Assign variant ID
 #
-bcftools annotate --set-id +'%VKX' -O z -o TMP/jeter1.vcf.gz TMP/jeter1.bcf
+bcftools annotate --threads ${task.cpus} --set-id +'%VKX' -O z -o TMP/jeter1.vcf.gz TMP/jeter1.bcf
 bcftools index --threads ${task.cpus} -f -f   TMP/jeter1.vcf.gz
 dump_vcf TMP/jeter1.vcf.gz
-
-
 
 
 # Thank you Floriane S for that wonderful code

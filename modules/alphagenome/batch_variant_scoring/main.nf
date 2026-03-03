@@ -35,6 +35,7 @@ input:
     tuple val(meta ),path(variants) /* tsv file variant_id\tCHROM\POS\REF\ALT */
 output:
     tuple val(meta),path("*.tsv.gz"),emit:tsv
+    path("versions.yml"),emit:versions
 script:
     def organism  = task.ext.organism?:"human"
     def sequence_length = task.ext.sequence_length ?:"1MB" 

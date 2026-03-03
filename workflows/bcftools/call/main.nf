@@ -115,7 +115,7 @@ workflow {
 	versions = versions.mix(META_TO_BAMS.out.versions)
 
 
-	META_TO_PED(metadata, META_TO_BAMS.out.bams.map{it[0]})
+	META_TO_PED(metadata,Channel.empty(),  META_TO_BAMS.out.bams.map{it[0]})
 	versions = versions.mix(META_TO_PED.out.versions)
 
 

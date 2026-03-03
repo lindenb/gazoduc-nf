@@ -87,7 +87,7 @@ workflow {
 		.map{it.id?it:it.plus(id:it.sample)}
 		
 	
-	META_TO_PED(hash_ref, ch0)
+	META_TO_PED(hash_ref, Channel.empty(), ch0)
     versions = versions.mix(META_TO_PED.out.versions)
 		
 	if(params.pedigree==null) {

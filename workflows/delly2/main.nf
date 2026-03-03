@@ -83,7 +83,11 @@ workflow {
   		
   		bams_ch = META_TO_BAMS.out.bams
   		
-  		META_TO_PED(metadata, bams_ch.map{it[0]})
+  		META_TO_PED(
+			metadata, 
+			Channel.empty(),
+			bams_ch.map{it[0]}
+			)
     	versions = versions.mix(META_TO_PED.out.versions)
     	
 		exclude_bed = PREPARE_ONE_REFERENCE.out.complement_bed.first()

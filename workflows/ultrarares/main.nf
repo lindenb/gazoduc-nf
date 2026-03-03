@@ -159,6 +159,7 @@ workflow {
 	*/
 	META_TO_PED(
 		metadata,
+		Channel.empty(),
 		META_TO_BAMS.out.bams.map{meta,bam,bai->meta}
 		)
 	versions = versions.mix(META_TO_PED.out.versions)

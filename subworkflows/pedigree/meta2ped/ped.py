@@ -118,6 +118,12 @@ def main():
                  f.write(row[0] + "\t" + row[4] + "\n")
             if not is_empty(row[5]):
                  f.write(row[0] + "\t" + row[5] + "\n")
+    with open("sample2group.tsv", "w") as f:
+        for row in rows:
+            if not is_empty(row[5]):
+                f.write(row[0] + "\t" + row[5] + "\n")
+            else:
+                f.write(row[0] + "\tundefined\n")
     with open("sample2status.tsv", "w") as f:
         for row in rows:
             if not is_empty(row[4]) and (row[4] == "control" or row[4] == "case"):
@@ -171,6 +177,31 @@ def main():
                 f.write("1")
             else:
                 f.write("0")
+            f.write("\n")
+    # write pedigree for plink
+    with open("plink.fam","w") as f:
+        for row in rows:
+            f.write("1")
+            f.write("\t")
+            f.write(row[0])
+            f.write("\t")
+            f.write(row[1])
+            f.write("\t")
+            f.write(row[2])
+            f.write("\t")
+            if row[3]=="male":
+                f.write("1")
+            elif row[3]=="female":
+                f.write("2")
+            else:
+                f.write("0")
+            f.write("\t")
+            if row[4]=="case":
+                f.write("2")
+            elif row[4]=="control":
+                f.write("1")
+            else:
+                f.write("-9")
             f.write("\n")
 if __name__ == "__main__":
     main()

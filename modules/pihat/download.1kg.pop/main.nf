@@ -35,9 +35,8 @@ script:
     def prefix = task.ext.prefix?:"integrated_call_samples_1kg"
     def url = task.ext.url?:"https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/integrated_call_samples_v3.20250704.ALL.ped"
 """
-curl -L "${url}" |\\
-    cut -f 2,7 |\\
-    tail -n+2 >  ${prefix}.tsv
+curl -L "${url}"  |\\
+	sed '1s/[ ]/_/g' > "${prefix}.tsv"
 
 cat << EOF > versions.yml
 ${task.process}:

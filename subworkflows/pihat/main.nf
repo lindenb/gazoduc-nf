@@ -23,6 +23,7 @@ SOFTWARE.
 
 */
 include { isBlank                       } from '../../modules/utils/functions.nf'
+include { parseBoolean                  } from '../../modules/utils/functions.nf'
 include { VCF_TO_BED                    } from '../../modules/bcftools/vcf2bed'
 include { DOWNLOAD_1KG_SAMPLE2POP       } from '../../modules/pihat/download.1kg.pop'
 include { PER_CONTIG                    } from '../../modules/pihat/per_contig'
@@ -37,7 +38,8 @@ include { PLINK_MERGE_BIM_BED_FAM       } from '../../modules/plink/merge'
 include { PLINK_GENOME                  } from '../../modules/plink/genome'
 include { PLINK_MAKEBED                 } from '../../modules/plink/makebed'
 include { PLINK_MDS                     } from '../../modules/plink/mds'
-include { flatMapByIndex                }from '../../modules/utils/functions.nf'
+include { flatMapByIndex                } from '../../modules/utils/functions.nf'
+include { META_TO_PED                   } from '../../subworkflows/pedigree/meta2ped'
 
 
 String normContig(String s) {
@@ -53,7 +55,7 @@ workflow PIHAT {
         fasta
         fai
         dict
-        sample2pop
+        meta_samples // metas about samples....
         exclude_samples
         exclude_bed
         vcf1kg //[meta,vcf,vcfidx]
@@ -87,8 +89,8 @@ workflow PIHAT {
         ch1  = VCF_TO_BED.out.bed.splitCsv(sep:'\t',header:false,elem:1)
             .map{meta,bedrecord->[meta,bedrecord[0]]}
             .combine(all_kind_of_vcf)
-            .filter{meta1,contig,meta2,_vcf,_tbi->meta1.id==meta2.id && meta1.source==meta2.source}
-            .map{meta1,contig,meta2,vcf,tbi->[
+            .filter{meta1,_contig,meta2,_vcf,_tbi->meta1.id==meta2.id && meta1.source==meta2.source}
+            .map{meta1,contig,_meta2,vcf,tbi->[
                 normContig(contig),
                 meta1.plus([
                     id : meta1.id+ "."+contig,
@@ -163,6 +165,19 @@ workflow PIHAT {
             )
         versions = versions.mix(DOWNLOAD_1KG_SAMPLE2POP.out.versions)
         
+        meta_samples = meta_samples.mix(
+            DOWNLOAD_1KG_SAMPLE2POP.out.tsv
+                .map{meta,f->f}
+                .splitCsv(header:true,sep:'\t')
+                .map{meta->[id:meta.Individual_ID, collection:meta.Population, population:meta.Population,  sex:meta.Gender]}
+            )
+
+        META_TO_PED(
+            workflow_metadata,
+            Channel.empty(),
+            meta_samples
+            )
+        versions = versions.mix(META_TO_PED.out.versions)
 
 
         PER_CONTIG(
@@ -190,25 +205,31 @@ workflow PIHAT {
         PLINK_GENOME(PLINK_MERGE_BIM_BED_FAM.out.bfile)
         versions = versions.mix(PLINK_GENOME.out.versions)
 
-        PLINK_MAKEBED(
-            PLINK_GENOME.out.related,
-            PLINK_MERGE_BIM_BED_FAM.out.bfile
-            )
-        versions = versions.mix(PLINK_GENOME.out.versions)
+        bfile_ch = PLINK_MERGE_BIM_BED_FAM.out.bfile
+        /**
+         * FILTER out related if needed
+         */ 
+        if(workflow_metadata.filter_out_related==null || parseBoolean(workflow_metadata.filter_out_related)) {
+            PLINK_MAKEBED(
+                PLINK_GENOME.out.related,
+                PLINK_MERGE_BIM_BED_FAM.out.bfile
+                )
+            versions = versions.mix(PLINK_GENOME.out.versions)
+            bfile_ch=  PLINK_MAKEBED.out.bfile
+            }
 
+        /**
+         *
+         * invoke PLINK MDS
+         */ 
         PLINK_MDS(
             PLINK_GENOME.out.genome,
-            PLINK_MAKEBED.out.bfile
+            bfile_ch
             )
         versions = versions.mix(PLINK_MDS.out.versions)
 
 
-        MERGE_SAMPLE2POP(
-            DOWNLOAD_1KG_SAMPLE2POP.out.tsv,
-            sample2pop,
-            PLINK_MAKEBED.out.bfile
-            )
-        versions = versions.mix(MERGE_SAMPLE2POP.out.versions)
+     
 
         // header of MDS looks like ' FID IID SOL C1 C2 C3 ' . get number of components
         components0_ch = PLINK_MDS.out.mds.splitCsv(header:false,limit:1,sep:' ',strip:true)
@@ -224,7 +245,7 @@ workflow PIHAT {
             .filter{C1,C2 -> C1.compareTo(C2)<0}
 
         PLOT_MDS(
-            MERGE_SAMPLE2POP.out.sample2pop.first(),
+            META_TO_PED.out.sample2group.first(),
             PLINK_MDS.out.mds
                 .combine(components1_ch)
                 .map{meta,mds,CX,CY->[meta.plus(Cx:CX,Cy:CY,id:meta.id+".${CX}_${CY}"),mds]}
@@ -239,7 +260,7 @@ workflow PIHAT {
 
         AVERAGE_PIHAT(
             PLINK_GENOME.out.genome,
-            MERGE_SAMPLE2POP.out.sample2pop.first()
+            META_TO_PED.out.sample2group.first()
             )
 	    multiqc = multiqc.mix(AVERAGE_PIHAT.out.png)
         versions = versions.mix(AVERAGE_PIHAT.out.versions)
@@ -247,7 +268,7 @@ workflow PIHAT {
 
         PLINK_ASSOC(
             PLINK_MDS.out.mds,
-            PLINK_MAKEBED.out.bfile
+            bfile_ch
             )
         versions = versions.mix(PLINK_ASSOC.out.versions)
         
@@ -264,59 +285,8 @@ workflow PIHAT {
     emit:
         versions
         genome = PLINK_GENOME.out.genome
-        mds = PLINK_GENOME.out.mds
-	multiqc
-}
-
-
-process MERGE_SAMPLE2POP {
-tag "${meta1.id?:""}"
-afterScript "rm -rf TMP"
-label "process_single"
-input:
-    tuple val(meta1),path(opt_tsv1)
-    tuple val(meta2),path(opt_tsv2)
-    tuple val(meta),path(bim),path(bed),path(fam)
-output:
-    tuple val(meta1),path("*.tsv"),emit:sample2pop
-    path("versions.yml"),emit:versions
-script:
-    def prefix = task.ext.prefix?:"merged_sample2pop"
-    def other_name = task.ext.other?:"OTHER"
-"""
-touch jeter.tsv
-
-if ${opt_tsv1?true:false}
-then
-    cat ${opt_tsv1} >> jeter.tsv
-fi
-
-if ${opt_tsv2?true:false}
-then
-    cat ${opt_tsv2} >> jeter.tsv
-fi
-
-cut -f1,2 jeter.tsv |\\
-    sort -T . -t '\t' -k1,1 --unique > jeter2.tsv
-
-mv jeter2.tsv jeter.tsv
-
-# all uniq names in 1kg and sample2pop
-cut -f1 jeter.tsv | sort -T TMP | uniq >  jeter2.tsv
-# sample names in plink.fam
-awk '{print \$2}' "${fam}" | sort -T TMP | uniq >  jeter3.tsv
-# extract sample without name in jeter.tsv
-comm -13 jeter2.tsv jeter3.tsv |\\
-    awk '{printf("%s\t${other_name}\\n",\$1);}' >> jeter.tsv
-
-rm jeter2.tsv jeter3.tsv
-mv jeter.tsv '${prefix}.tsv'
-
-cat << EOF > versions.yml
-${task.process}:
-    sort: todo
-EOF
-"""
+        mds = PLINK_MDS.out.mds
+	    multiqc
 }
 
 

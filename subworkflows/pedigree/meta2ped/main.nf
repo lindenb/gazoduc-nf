@@ -22,19 +22,36 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include { verify  } from '../../../modules/utils/functions.nf'
-include { isBlank } from '../../../modules/utils/functions.nf'
+include { verify                    } from '../../../modules/utils/functions.nf'
+include { isBlank                   } from '../../../modules/utils/functions.nf'
+include { BCFTOOLS_QUERY_SAMPLES    } from '../../../modules/bcftools/query.samples'
 
 workflow META_TO_PED{
 take:
 	metadata
+	limit_samples// [meta,sample_file] limit to those samples, could be a vcf or a text file
 	metas
 main:
 	versions = Channel.empty()
 	multiqc = Channel.empty()
-	MAKE_PED(
-		metadata,
-		metas
+
+	ch1 = limit_samples.branch{meta,file->
+		vcf: file.name.endsWith(".vcf") || file.name.endsWith(".vcf.gz") || file.name.endsWith(".bcf")
+		txt : true
+		}
+
+	BCFTOOLS_QUERY_SAMPLES(ch1.vcf)
+	versions = versions.mix(BCFTOOLS_QUERY_SAMPLES.out.versions)
+
+	kee_samples_ch = BCFTOOLS_QUERY_SAMPLES.out.samples.map{meta,f->f}.splitText()
+		.mix(ch1.txt.map{meta,f->f}.splitText())
+		.filter{line->!line.startsWith("#") && !line.trim().isEmpty()}
+		.map{it.trim()}
+		.collectFile(name:"keep_samples.txt",newLine:true,sort:true)
+		.map{f->[metadata,f]}
+		.ifEmpty([["id:no_keep_samples"],[]])
+
+	meta_as_tsv = metas
 			.map{[ /* weird bug, if I don't use quote, just it?:something, it doesn't work... */
 			"${it.id?:(it.sample?:"")}",
 			"${it.father?:""}",
@@ -44,7 +61,13 @@ main:
 			"${it.collection?:(it.population?:"")}"
 			]}
 		.map{it.join("\t")}
-		.collect()
+		.collectFile(name:"pedigree_data.tsv",newLine:true,sort:true)
+		.map{f->[metadata,f]}
+
+	MAKE_PED(
+		metadata,
+		kee_samples_ch,
+		meta_as_tsv
 		)
 	versions = versions.mix(MAKE_PED.out.versions)
 	
@@ -52,20 +75,25 @@ main:
 	controls = MAKE_PED.out.controls.ifEmpty([[id:"no.controls"],[]])
 	pedigree = MAKE_PED.out.ped.ifEmpty([[id:"nojvarkitped"],[]])
 	sample2collection = MAKE_PED.out.sample2col.ifEmpty( [[id:"nosn2col"],[]])
+	sample2group = MAKE_PED.out.sample2group.ifEmpty( [[id:"nosn2group"],[]])
 	pedigree_gatk  = MAKE_PED.out.gatk.ifEmpty( [[id:"nogatkped"],[]])
 	sample2status = MAKE_PED.out.sample2status.ifEmpty( [[id:"nosample2status"],[]])
 	males = MAKE_PED.out.males.ifEmpty([[id:"no.males"],[]])
 	females = MAKE_PED.out.females.ifEmpty([[id:"no.females"],[]])
-	
+	plink_fam = MAKE_PED.out.plink_fam.ifEmpty([[id:"no.plink_fam"],[]])
+
 	MAKE_DEFAULT_SELECT_CODE(cases,controls)
 	versions = versions.mix(MAKE_DEFAULT_SELECT_CODE.out.versions)
 	select_code = MAKE_DEFAULT_SELECT_CODE.out.select_code.ifEmpty([[id:"no.code"],[]])
+	
 emit:
 	cases
 	controls
 	pedigree
 	pedigree_gatk
+	plink_fam
 	sample2collection
+	sample2group
 	sample2status
 	males
 	females
@@ -76,10 +104,13 @@ emit:
 
 process MAKE_PED {
 label "process_single"
+tag "${meta.id}"
+afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/multiqc.yml"
 input:
 	val(meta)
-	val(L)
+	tuple val(meta2),path(keep_samples)
+	tuple val(meta1),path(samples_metadata)
 output:
 	tuple val(meta),path("*.pedigree4gatk.ped"),optional:true,emit:gatk
 	tuple val(meta),path("*.jvarkit.ped"),optional:true,emit:ped
@@ -88,21 +119,28 @@ output:
 	tuple val(meta),path("*.cases.txt"),optional:true,emit:cases
 	tuple val(meta),path("*.controls.txt"),optional:true,emit:controls
 	tuple val(meta),path("*.sample2collection.tsv"),optional:true,emit:sample2col
+	tuple val(meta),path("*.sample2group.tsv"),optional:true,emit:sample2group
 	tuple val(meta),path("*.sample2status.tsv"),optional:true,emit:sample2status
-	
+	tuple val(meta),path("*.plink.fam"),optional:true,emit:plink_fam
 	path("versions.yml"),emit:versions
 script:
 
 	def prefix= task.ext.prefix?:"${meta.id?:""}"
 	verify(prefix!=null && !isBlank(prefix.toString()),"${task.process} meta.id must be defined")
 """
-cat << EOF | sort -T . | uniq > raw.ped
-${L.join("\n")}
-EOF
+mkdir -p TMP
+sort -T TMP -t '\t' -k1,1 "${samples_metadata}" --unique > raw.ped
+
+if ${keep_samples?true:false}
+then
+	sort -T TMP "${keep_samples}" | uniq  > TMP/jeter1.txt
+	join -t '\t'-o '2.1,2.2,2.3,2.4,2.5,2.6' -1 1 -2 1  TMP/jeter1.txt raw.ped  > TMP/jeter2.txt
+	mv TMP/jeter2.txt raw.ped
+fi
 
 python3 ${moduleDir}/ped.py raw.ped > /dev/null
 
-for F in males.txt females.txt cases.txt controls.txt sample2collection.tsv pedigree4gatk.ped sample2status.tsv jvarkit.ped
+for F in males.txt females.txt cases.txt controls.txt sample2collection.tsv sample2group.tsv pedigree4gatk.ped sample2status.tsv jvarkit.ped plink.fam
 do
 	if test ! -s "\${F}"
 	then
@@ -122,7 +160,7 @@ stub:
 	def prefix= task.ext.prefix?:"${meta.id?:""}"
 	verify(prefix!=null && !isBlank(prefix.toString()),"${task.process} meta.id must be defined")
 """
-for F in males.txt females.txt cases.txt controls.txt sample2collection.tsv pedigree4gatk.ped sample2status.tsv jvarkit.ped
+for F in males.txt females.txt cases.txt controls.txt sample2collection.tsv pedigree4gatk.ped sample2group.tsv sample2status.tsv jvarkit.ped plink.fam
 do
 	touch "${prefix}.\${F}"
 done

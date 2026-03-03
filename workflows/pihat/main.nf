@@ -37,6 +37,7 @@ include { VCF_INPUT                                } from '../../subworkflows/nf
 include { VCF_INPUT as VCF_INPUT_1KG               } from '../../subworkflows/nf/vcf_input'
 include { VCF_INPUT as VCF_INPUT_GNOMAD            } from '../../subworkflows/nf/vcf_input'
 include { COMPILE_VERSIONS                         } from '../../modules/versions/main.nf'
+include { READ_SAMPLESHEET                         } from '../../subworkflows/nf/read_samplesheet'
 
 
 
@@ -137,12 +138,17 @@ workflow {
 	* samples to population
 	*
 	*/
-	if(params.sample2pop==null) {
-		sample2pop_ch = Channel.of([[id:"nosample2pop"],[]])
+	if(params.samplesheet==null) {
+		meta_samples = Channel.empty()
 		}
 	else
 		{
-		sample2pop_ch = Channel.of([[id:"sample2pop"],file(params.sample2pop)])
+		READ_SAMPLESHEET(
+			metadata.plus([arg_name:"samplesheet"]),
+			params.samplesheet
+			)
+		versions = versions.mix(READ_SAMPLESHEET.out.versions)
+		meta_samples = READ_SAMPLESHEET.out.samplesheet
 		}
 	/***************************************************
 	*
@@ -172,12 +178,13 @@ workflow {
 	 PIHAT(
 		metadata.plus([
 			level:1,
-			contigs_regex:"${params.contigs_regex}"
+			contigs_regex:"${params.contigs_regex}",
+			filter_out_related : parseBoolean(params.filter_out_related)
 			]),
 		PREPARE_ONE_REFERENCE.out.fasta,
 		PREPARE_ONE_REFERENCE.out.fai,
 		PREPARE_ONE_REFERENCE.out.dict,
-		sample2pop_ch,
+		meta_samples,
 		exclude_samples_ch,
 		exclude_bed_ch,
 		onekg_ch,
@@ -190,7 +197,7 @@ workflow {
 	if(parseBoolean(params.with_multiqc)) {
 		MULTIQC(
 			metadata.plus("id":"pihat"),
-			sample2pop_ch,
+			Channel.empty(),
 			versions,
 			[[id:"no_mqc_config"],[]],
 			multiqc

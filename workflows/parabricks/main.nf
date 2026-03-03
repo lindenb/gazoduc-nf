@@ -560,7 +560,7 @@ if(params.known_indels_vcf!=null) {
    * BUILD A PEDIGREE FROM META INFO
    *
    */
-  META_TO_PED(metadata, bams_ch.map{it[0]})
+  META_TO_PED(metadata, Channel.empty(), bams_ch.map{it[0]})
 	versions = versions.mix(META_TO_PED.out.versions)
 
   pedigree_ch = META_TO_PED.out.pedigree_gatk

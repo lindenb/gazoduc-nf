@@ -81,14 +81,8 @@ boxplot(T1\$X ,
     main="AVG(PIHAT)/SAMPLE",
     sub="${sub_title}",
     xlab="Sample",
-    ylab="pihat",
-    col=T1\$color
+    ylab="pihat"
     )
-abline(h=${max_pihat},col="blue")
-
-
-# Add legend
-legend("topright", legend=groups, fill=group_colors, title="POP")
 
 
 dev.off()
@@ -98,7 +92,7 @@ __EOF__
 R --no-save < TMP/jeter.R
 
 mv TMP/jeter.tsv ${prefix}.tsv
-mv TMP/jeter.png ${prefix}.png || true
+mv TMP/jeter.png ${prefix}_mqc.png || true
 
 cat << EOF > versions.yml
 ${task.process}:

@@ -61,7 +61,7 @@ workflow {
 	ch0 = Channel.fromPath(params.samplesheet)
         .splitCsv(header:true,sep:",")
         
-    META_TO_PED(metadata,ch0)
+    META_TO_PED(metadata, Channel.empty(), ch0)
     versions = versions.mix(META_TO_PED.out.versions)    
         
         
