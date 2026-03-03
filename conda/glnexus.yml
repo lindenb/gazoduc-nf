@@ -4,6 +4,7 @@ channels:
   - conda-forge
   - bioconda
 dependencies:
-  - bioconda::bcftools=1.21
+  - bioconda::bcftools>=1.23
   - bioconda::bedtools>=2.30.0
   - bioconda::glnexus=1.4.1
+  - conda-forge::jemalloc=5.3.0
