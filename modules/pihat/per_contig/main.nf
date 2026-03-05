@@ -56,6 +56,8 @@ script:
     def no_call_to_hom_ref= parseBoolean(task.ext.no_call_to_hom_ref?:true)
     def prefix = task.ext.prefix?:"${meta.id}.indep"
     def jvm = task.ext.jvm?:"-Djava.io.tmpdir=TMP"
+    def maf = task.ext.maf?:0.1
+    def f_missing = task.ext.f_missing?:0.01
 """
 mkdir -p TMP
 set -x
@@ -76,7 +78,8 @@ echo "${contig_user}\t${norm_contig}" > TMP/rename_contig.tsv
 ##
 bcftools view  ${cpus3} \\
         --types snps  \\
-        -i 'F_MISSING < 0.01' \\
+	--min-af "${maf}" --max-af "${1.0 - (maf as double)}"  \
+        -i 'F_MISSING < ${f_missing}' \\
         --exclude-uncalled \\
         --apply-filters 'PASS,.' \\
         --regions "${contig_user}" \\
@@ -243,11 +246,39 @@ dump_vcf TMP/jeter1.vcf.gz
 
 
 # Thank you Floriane S for that wonderful code
+# convert VCF to plink (BCF marche pas ?)
 
 plink ${plink_args} \\
-    --vcf TMP/jeter1.vcf.gz \\
-    --make-bed \\
-    --out TMP/data_sansXYMT
+	--vcf TMP/jeter1.vcf.gz \\
+	--make-bed \\
+	--out TMP/jeter1 1>&2
+
+find TMP -type f 1>&2
+
+#
+# Dans le fichier hardyweinberg.hwe enlever les variants dont la colonne P < 0.00001
+#
+
+plink ${plink_args} \\
+	--bfile TMP/jeter1 \\
+	--hardy gz \\
+	--out "TMP/hardyweinberg.txt" 1>&2
+
+find TMP -type f 1>&2
+file TMP/hardyweinberg.txt.hwe.gz 1>&2
+
+gunzip -c TMP/hardyweinberg.txt.hwe.gz |\\
+	awk '(\$9 <  0.00001) {print \$2}'  > TMP/xclude_ids.txt
+
+wc -l TMP/xclude_ids.txt 1>&2
+
+# remove variants with those IDS
+plink ${plink_args} \\
+	--bfile TMP/jeter1 \\
+	--make-bed \\
+	--exclude TMP/xclude_ids.txt \\
+	--out TMP/data_sansXYMT 1>&2
+
 
 ## Selection of independents SNP
 plink2 ${plink_args} \\

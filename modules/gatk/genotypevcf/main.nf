@@ -23,6 +23,9 @@ SOFTWARE.
 
 */
 
+/**
+ * genotype one or more bam for variants in a VCF
+ */
 process GATK_GENOTYPE_VCF {
 label "process_single"
 tag "bams:${meta.id} vcf:${metaV.id}"
@@ -41,7 +44,7 @@ output:
 script:
 	def prefix = task.ext.meta?:"${meta.id}.${metaV.id}"
     def args1 = task.ext.args1?:""
-    def jvm = task.ext.jvm?:"-XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
+    def jvm = task.ext.jvm?:"-XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP -DGATK_STACKTRACE_ON_USER_EXCEPTION=true "
 """
 mkdir -p TMP
 find BAMS/ -name "*.bam" -o -name "*.cram" > TMP/jeter.list
@@ -57,14 +60,20 @@ gatk --java-options "${jvm}" HaplotypeCaller \\
 	--output-mode EMIT_ALL_CONFIDENT_SITES \\
 	-O "TMP/jeter3.vcf.gz"
 
-bcftools index -ft TMP/jeter3.vcf.gz
+# remove 'Infinity' from QUAL
+gunzip -c TMP/jeter3.vcf.gz |\\
+	awk -F '\t' '/^#/ {print; OFS="\t";next;} {if(\$6=="Infinity") {\$6=".";} print;}' |\\
+	bcftools view -O z -o TMP/jeter4.vcf.gz
 
-mv TMP/jeter3.vcf.gz ./${prefix}.vcf.gz
-mv TMP/jeter3.vcf.gz.tbi  ./${prefix}.vcf.gz.tbi
+bcftools index -ft TMP/jeter4.vcf.gz
+
+mv TMP/jeter4.vcf.gz ./${prefix}.vcf.gz
+mv TMP/jeter4.vcf.gz.tbi  ./${prefix}.vcf.gz.tbi
 
 cat << EOF > versions.yml
 ${task.process}:
     gatk: "\$( (gatk --java-options "${jvm}" --version 2> /dev/null  | paste -s -d ' ' ) || true ) "
+	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
 EOF
 """
 stub:

@@ -46,7 +46,7 @@ include { MINIGENOTYPER                            } from '../../modules/jvarkit
 include { BCFTOOLS_QUERY                           } from '../../modules/bcftools/query'
 include { BEDTOOLS_SLOP                            } from '../../modules/bedtools/slop'
 include { BEDTOOLS_MERGE                           } from '../../modules/bedtools/merge'
-
+include { BIM_TO_VCF                               } from '../../modules/plink/bim2vcf'
 
 List makeArray(meta, List array0,int n) {
 	def L = [];
@@ -120,6 +120,7 @@ workflow {
 			)
 		versions = versions.mix(META_TO_BAMS.out.versions)
 
+
 		//add fasta-id
 		bams = META_TO_BAMS.out.bams.map{meta,bam,bai,fasta,fai,dict->[
 			meta.plus([fasta_id:fasta.toRealPath().toString().md5()]),
@@ -143,19 +144,34 @@ workflow {
 
 		bams= bams.map{meta,bam,bai,fasta,fai,dict->[meta,bam,bai]}
 
-		VCF_INPUT(metadata.plus([
-			path: params.vcf,
-			arg_name: "vcf",
-			require_index : true,
-			required: true,
-			unique : false
-			]))
-		versions = versions.mix(VCF_INPUT.out.versions)
+		if(params.vcf.endsWith(".bim")) {
+			bim_ch = [[id:"bim"],file(params.vcf)]
+			BIM_TO_VCF(
+				PREPARE_ONE_REFERENCE.out.fasta,
+				PREPARE_ONE_REFERENCE.out.fai,
+				PREPARE_ONE_REFERENCE.out.dict,
+				bim_ch
+				)
+			versions = versions.mix(BIM_TO_VCF.out.versions)
+			vcfs = BIM_TO_VCF.out.vcf
+			}
+		else
+			{
+			VCF_INPUT(metadata.plus([
+				path: params.vcf,
+				arg_name: "vcf",
+				require_index : true,
+				required: true,
+				unique : false
+				]))
+			versions = versions.mix(VCF_INPUT.out.versions)
 
-		
-		vcfs = VCF_INPUT.out.vcf
-			.map{meta,vcf,tbi->[meta.plus(id:vcf.toRealPath().toString().md5()),vcf,tbi]}
-		
+			
+			vcfs = VCF_INPUT.out.vcf
+				.map{meta,vcf,tbi->[meta.plus(id:vcf.toRealPath().toString().md5()),vcf,tbi]}
+			
+			}
+
 		/* split variants in small chunks */
 		if((params.n_variants as int)>0) {
 			SPLIT_N_VARIANTS(

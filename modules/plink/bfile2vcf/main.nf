@@ -104,6 +104,6 @@ touch versions.yml
 
 stub:
 """
-touch versions.yml "${meta.id}.vcf.gz" "${meta.id}.vcf.gz.tbi" ${meta.id}.log"
+touch versions.yml "${meta.id}.vcf.gz" "${meta.id}.vcf.gz.tbi" "${meta.id}.log"
 """
 }

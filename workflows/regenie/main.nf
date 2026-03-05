@@ -38,6 +38,7 @@ include { PLINK_BFILE2VCF                          } from '../../modules/plink/b
 include { REGENIE_STEP1                            } from '../../modules/regenie/step1'
 include { REGENIE_STEP2                            } from '../../modules/regenie/step2'
 include { PREPARE_USER_BED                         } from '../../subworkflows/bedtools/prepare.user.bed'
+include { VCF_INPUT                                } from '../../subworkflows/nf/vcf_input'
 
 workflow {
 
@@ -89,49 +90,74 @@ workflow {
 		bed = PREPARE_USER_BED.out.bed
 		}
 
-	if(params.vcf.endsWith(".vcf.gz")) {
 
-		}
-	else
-		{
-		wch2_ch = BCFTOOLS_CONCAT_CONTIGS( wch1_ch)
-		versions = versions.mix(BCFTOOLS_CONCAT_CONTIGS.out.versions)
-		multiqc = multiqc.mix(BCFTOOLS_CONCAT_CONTIGS.out.multiqc)
-		}
+	VCF_INPUT(metadata.plus([
+			path: params.vcf,
+			arg_name: "vcf",
+			require_index : true,
+			required: true,
+			unique : false
+			]))
+	versions = versions.mix(VCF_INPUT.out.versions)
+	
 
-	PLINK2_VCF2PGEN(reference, snsheet_ch.output,
-		BCFTOOLS_CONCAT_CONTIGS
+	PLINK2_VCF2PGEN(
+		snsheet_ch.output,
+		PEDIGREE.out.plink_ped,
+		VCF_INPUT.out.vcfs
 		)
 	versions = versions.mix(PLINK2_VCF2PGEN.out.versions)
 
 
-	bgen_ch = PLINK2_MERGE_PGEN(snsheet_ch.output, pgen_ch.output.collect())
+	PLINK2_MERGE_PGEN(
+		PLINK2_VCF2PGEN.out.pgen
+		)
+	versions = versions.mix(PLINK2_MERGE_PGEN.out.versions)
 
-	covar_ch = Channel.of([id:"covariates"],file(params.covariate))
+	covar_ch =  [id:"covariates"],file(params.covariate)]
 	
-
-	if(!params.step1_loco.contains(".")) {
-		step1 = REGENIE_STEP1( 
+	/**
+	 * REGENIE STEP 1
+	 */
+	if(params.step1_loco==null) {
+		REGENIE_STEP1( 
 			PLINK2_MERGE_PGEN.out.output /* bgen file */,
 			covar_ch /* covariates */, 
 			snsheet_ch.output /* samples, sex, phenotype */, 
 			pca_ch.output /* contains list of SNP to retain for step 1 */
 			)
-		loco_ch = step1.output
+		loco_ch = REGENIE_STEP1.out.output
 		versions = versions.mix(STEP1.out.versions)
 		}
 	else {
-		loco_ch = file(params.step1_loco)
+		loco_ch = [[id:"locostep1"],file(params.step1_loco)]
 		}
 
-	if(!params.PCA_only) {
 
 		the_annot_ch = Channel.empty()
 	
-	if(params.disable_functional_annotations==false) {
-		scores_ch = FUNCTIONAL_ANNOTATION_SCORES(file(params.custom_annotation2mask))
-		gencode_ch = DOWNLOAD_GENCODE(reference)
-		func_annot_ch = MAKE_FUNCTIONAL_ANNOT_PER_CTG(scores_ch.output, gencode_ch.output, wch2_ch.output)
+	if(!parseBoolean(params.disable_functional_annotations)) {
+		
+		if(params.custom_annotation2mask==null) {
+			log.info("using default masks: ${moduleDir}/default_scores.txt")
+			mask_ch = [[id:"masks"],file("${moduleDir}/default_scores.txt")]
+			}
+		else
+			{
+			mask_ch = [[id:"masks"],file("${params.custom_annotation2mask}")]
+			}
+
+		FUNCTIONAL_ANNOTATION_SCORES(mask_ch)
+		versions = versions.mix(FUNCTIONAL_ANNOTATION_SCORES.out.versions)
+
+		gencode_ch = DOWNLOAD_GENCODE(PREPARE_ONE_REFERENCE.out.dict)
+		versions = versions.mix(DOWNLOAD_GENCODE.out.versions)
+
+		func_annot_ch = MAKE_FUNCTIONAL_ANNOT_PER_CTG(
+			FUNCTIONAL_ANNOTATION_SCORES.out.tsv,
+			gencode_ch.output,
+			wch2_ch.output
+			)
 		the_annot_ch = the_annot_ch.mix(func_annot_ch.output)
 		}
 
@@ -152,17 +178,25 @@ workflow {
 		}
 
 
-	if(file(params.select_bed).name.contains(".")) {
+	if(params.select_bed!=null) {
 		log.info("making bed from ${params.select_bed}");
-		if(file(params.select_bed).name.endsWith(".list")) {
-			make_bed_ch = MAKE_BED(Channel.fromPath(params.select_bed).splitText().map{file(it.trim())},wch2_ch.output)
+		if(params.select_bed.endsWith(".list")) {
+			ch1 = Channel.fromPath(params.select_bed)
+				.splitText()
+				.map{fn->[[id:makeKey(fn)],file(nf.trim())]}
+				;
 			}
 		else
 			{
-			make_bed_ch = MAKE_BED(file(params.select_bed),wch2_ch.output)
+			ch1  = Channel.of(params.select_bed)
+				.map{fn->[[id:makeKey(fn)],file(nf.trim())]}
+				;
 			}
+		make_bed_ch = MAKE_BED(ch1,wch2_ch.output)
+		versions = versions.mix(MAKE_BED.out.versions)
+
 		make_bed_ch.output.ifEmpty("[Warning] There is NO output after MAKE_BED.").view()
-		the_annot_ch = the_annot_ch.mix(make_bed_ch.output)
+		the_annot_ch = the_annot_ch.mix(MAKE_BED.out.output)
 		}
 	else
 		{
@@ -170,19 +204,20 @@ workflow {
 		}
 
 
-	for_step2_ch = the_annot_ch.splitCsv(header:false,sep:'\t',elem:2).
+	for_step2_ch = the_annot_ch
+			.splitCsv(header:false,sep:'\t',elem:2).
 			map{[it[0],it[1],it[2][0],it[2][1],it[2][2],it[2][3]]}
 
 
 
-	step2_ch = STEP2(
+	STEP2(
 		bgen_ch.output,
 		covar_ch,
 		snsheet_ch.output, 
 		loco_ch ,
 		for_step2_ch
 		)
-
+	versions = versions.mix(STEP2.out.versions)
 
 	ch5 = MERGE_AND_PLOT(
 		reference,
@@ -196,7 +231,6 @@ workflow {
 		step2_ch.output.map{it[1]}.collect(),
 		step2_ch.masks_snplist.map{it[1]}.collect()
 		)
-	} // end of PCA-only
 
 	README()
 	}
@@ -701,9 +735,9 @@ bcftools view "${vcf}" |\\
 process FUNCTIONAL_ANNOTATION_SCORES {
 executor "local"
 input:
-	path(user_custom_scores)
+	tuple val(meta),path(user_custom_scores)
 output:
-	path("scores.tsv"),emit:output
+	tuple val(meta),path("scores.tsv"),emit:tsv
 script:
 if(user_custom_scores.name.contains("."))
 """
@@ -719,43 +753,8 @@ mv jeter.tsv scores.tsv
 """
 else
 """
-cat << EOF | tr -s " " | tr " " "\t" > scores.tsv
-3_prime_UTR_variant     0.1     UTR,UTR3,ALL,mrna
-5_prime_UTR_premature_start_codon_gain_variant  0.2     UTR,UTR5,ALL,mrna
-5_prime_UTR_truncation  0.5     UTR,UTR5,ALL,mrna
-3_prime_UTR_truncation  0.5     UTR,UTR3,ALL,mrna
-5_prime_UTR_variant     0.2     UTR,UTR5,ALL,mrna
-bidirectional_gene_fusion       1.0	ALL,mrna
-conservative_inframe_deletion   0.1     protein_altering,ALL,mrna
-conservative_inframe_insertion  0.3     protein_altering,ALL,mrna
-disruptive_inframe_deletion     0.2     protein_altering,ALL,mrna
-disruptive_inframe_insertion    0.2     protein_altering,ALL,mrna
-downstream_gene_variant 0.1     downstream,updownstream,ALL,mrna
-exon_loss_variant       1.0     protein_altering,ALL,mrna
-frameshift_variant      0.4	protein_altering,ALL,mrna
-gene_fusion     0.9     protein_altering,ALL,mrna
-intergenic_region       0.001	ALL
-intragenic_variant      0.01	ALL
-initiator_codon_variant	0.5     protein_altering,ALL,mrna
-intron_variant  0.05    intronic,ALL
-missense_variant        0.9     protein_altering,ALL,mrna
-non_coding_transcript_exon_variant      0.1     non_coding,ALL,mrna
-non_coding_transcript_variant   0.1     non_coding,ALL,mrna
-splice_acceptor_variant 0.5     protein_altering,splice,ALL,mrna
-splice_donor_variant    0.5     protein_altering,splice,ALL,mrna
-splice_region_variant   0.5     protein_altering,splice,ALL,mrna
-start_retained_variant	0.1      synonymous,ALL,mrna
-start_lost      0.6     protein_altering,ALL,mrna
-stop_gained     0.9     protein_altering,ALL,mrna
-stop_lost       0.6     protein_altering,ALL,mrna
-stop_retained_variant   0.2     synonymous,ALL,mrna
-synonymous_variant      0.1     synonymous,ALL,mrna
-upstream_gene_variant   0.1     upstream,updownstream,ALL
-#
-# first_intron is used by jvarkit, do not mix with other masks
-#
-first_intron	0.1	first_intron
-EOF
+tr -s " " < ${user_custom_scores} | tr " " "\t" > scores.tsv
+
 """
 
 }
@@ -769,35 +768,43 @@ label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"   
 afterScript "rm -rf TMP"
 input:
-	path(annotations)
-	path(gencode_files)
-        tuple val(contig),path(vcf_files)
+	tuple val(meta1),path(annotations)
+	tuple val(meta2),path(gencode),path(gencode_tbi)
+    tuple val(contig),path(vcf),path(vcf_tbi)
 output:
-        tuple val("functional"),val(contig),path("OUT/manifest.tsv"),emit:output
+    tuple val("functional"),val(contig),path("OUT/manifest.tsv"),emit:output
+	path("versions.yml"),emit:versions
 when:
 	!(params.skip_XY && contig.matches("(chr)?[XY]"))
 script:
-        def vcf = vcf_files.find{it.name.endsWith(".bcf") || it.name.endsWith(".vcf.gz")}
-	def kg = gencode_files.find{it.name.endsWith(".gz")}
-
+	def jvm =tak.ext.jvm?:"-Djava.io.tmpdir=TMP "
+	def jvarkit = task.ext.jvarkit?:"java -jar  ${jvm} \${HOME}/jvarkit.jar"
+	def contig = meta.contig
+	def freq = task.ext.freq?:""
+	verify(!isBlank(contig),"${task.process} : contig is blank")
 """
 set -o pipefail
 mkdir -p TMP
 mkdir -p OUT
 
 bcftools view -O v '${vcf}' |\\
-	java -Djava.io.tmpdir=TMP -jar "\${HOME}/packages/jvarkit/dist/jvarkit.jar" regeniefunctionalannot \\
+	${jvarkit} regeniefunctionalannot \\
 		--annotations "${annotations}" \\
-		--kg '${kg}' \\
-		-f ${params.freq} |\\
-	java -Djava.io.tmpdir=TMP -jar "\${HOME}/packages/jvarkit/dist/jvarkit.jar" regeniemakeannot \\
+		--kg '${gencode}' \\
+		-f "${freq}" |\\
+	${jvarkit} regeniemakeannot \\
 		-m "${annotations}" \\
 		--prefix "chr${contig}chunk" \\
 		--reserve 20 \\
 		-o \${PWD}/OUT \\
 		--gzip \\
 		-N 5000
-	
+
+touch versions.yml
+"""
+stub:
+"""
+touch versions.yml
 """
 }
 
@@ -809,14 +816,15 @@ conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
 	path(select_bed)
-        tuple val(contig),path(vcf_files)
+    tuple val(contig),path(vcf_files)
 output:
         tuple val("user_bed"),val(contig),path("OUT/manifest.tsv"),emit:output
 when:
 	!(params.skip_XY && contig.matches("(chr)?[XY]"))
 script:
-        def vcf = vcf_files.find{it.name.endsWith(".bcf") || it.name.endsWith(".vcf.gz")}
-	def min_length=(params.min_bed_length?:0)
+	def jvm =tak.ext.jvm?:"-Djava.io.tmpdir=TMP "
+	def jvarkit = task.ext.jvarkit?:"java -jar  ${jvm} \${HOME}/jvarkit.jar"
+	def min_length= task.ext.min_bed_length?:"0" //(params.min_bed_length?:0)
 """
 set -o pipefail
 mkdir -p TMP
@@ -827,7 +835,7 @@ bcftools view --header-only  -O z -o TMP/dict.vcf.gz '${vcf}'
 
 # rename contig in user bed
 ${select_bed.name.endsWith(".gz")?"gunzip -c ":"cat"} "${select_bed}" |\\
-	jvarkit -Djava.io.tmpdir=TMP bedrenamechr -R TMP/dict.vcf.gz --column 1 > TMP/jeter.bed
+	${jvarkit} bedrenamechr -R TMP/dict.vcf.gz --column 1 > TMP/jeter.bed
 
 # prevent empty file
 if test ! -s TMP/jeter.bed
@@ -836,17 +844,24 @@ then
 fi
 
 bcftools view --regions-file TMP/jeter.bed -O v '${vcf}' |\\
-	java -Djava.io.tmpdir=TMP -jar "\${HOME}/packages/jvarkit/dist/jvarkit.jar" regeniebedannot \\
+	${jvarkit} regeniebedannot \\
 		--bed "${select_bed}" \\
 		--min-length ${min_length} \\
 		${params.skip_XY?"--noXY":""} \\
 		-f ${params.freq} |\\
-	java -Djava.io.tmpdir=TMP -jar "\${HOME}/packages/jvarkit/dist/jvarkit.jar" regeniemakeannot \\
+	${jvarkit} regeniemakeannot \\
 		--prefix "chr${contig}_bed_chunk" \\
 		-o \${PWD}/OUT \\
 		--reserve 10 \\
 		--gzip \\
 		-N 5000
+
+touch versions.yml
+"""
+stub:
+
+"""
+touch versions.yml
 """
 }
 

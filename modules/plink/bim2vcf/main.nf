@@ -1,4 +1,5 @@
 /*
+
 Copyright (c) 2026 Pierre Lindenbaum
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -21,57 +22,53 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include { isBlank } from "../../../modules/utils/functions.nf"
-include { verify  } from "../../../modules/utils/functions.nf"
-
-
-process DOWNLOAD_GENCODE {
+process BIM_TO_VCF {
+tag "${meta.id}"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
-	tuple val(meta),path(dict)
+    tuple val(meta1), path(fasta)
+    tuple val(meta2), path(fai)
+    tuple val(meta3), path(dict)
+    tuple val(meta),path(bim)
 output:
-	tuple val(meta),path("*.txt.gz"),path("*.txt.gz.tbi"),emit:gencode
-	path("versions.yml"),emit:versions
+    tuple val(meta),path("*.vcf.gz"),path("*.tbi"),emit:vcf
+    path("versions.yml"),emit:versions
 script:
-	def prefix=task.ext.prefix?:"${meta.id}.gencode"
-	def version= task.ext.version?:"V47"
-	def url= task.ext.url?:""
-	if(isBlank(url)) {
-		if(meta.ucsc_name=="hg19") {
-			url ="https://hgdownload.soe.ucsc.edu/goldenpath/hg19/database/wgEncodeGencodeComp${version}lift37.txt.gz"
-			}
-		else if(meta.ucsc_name=="hg38") {
-			url ="https://hgdownload.soe.ucsc.edu/goldenpath/hg38/database/wgEncodeGencodeComp${version}.txt.gz"
-			}
-		}
-	verify(!isBlank(url),"${task.process} url is empty")
+    def prefix = task.ext.prefix?:"${meta.id}.bim2vcf"
+    def args  = task.ext.args ?:""
+    def awk_expr = task.ext.awk_expr?:"1==1"
+    def jvm = task.ext.jvm?:"-XX:-UsePerfData -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
+    def jvarkit = task.ext.jvarkit?:"java ${jvm} -jar \${HOME}/jvarkit.jar"
 """
-hostname 1>&2
 mkdir -p TMP
 
-curl -L -o TMP/gencode.txt.gz  "${url}"
+${jvarkit} dict2vcf "${dict}"  | grep -v '^##FORMAT' > TMP/jeter.vcf
 
-gunzip -c TMP/gencode.txt.gz |\\
-		jvarkit bedrenamechr -f "${dict}" --column 3 --convert SKIP |\\
-		sort -S ${task.memory.kilo} -T TMP -t '\t' -k3,3 -k5,5n |\\
-		bgzip > "${prefix}.gencode.txt.gz"
+awk -F '\t' '(${awk_expr}) {printf("%s\t%s\t%s\t%s\t%s\t.\t.\t.\\n",\$1,\$4,\$2,\$5,\$6)}' '${bim}' |\\
+    ${jvarkit}  bedrenamechr -c 1 -R '${dict}' --convert SKIP >> TMP/jeter.vcf
 
-tabix -f -0 -b 5 -e 6 -s 3 "${prefix}.gencode.txt.gz"
 
-#mv TMP/gencode.sql  "${prefix}.gencode.sql"
+bcftools norm  --check-ref s --fasta-ref "${fasta}" -O u  TMP/jeter.vcf |\\
+    bcftools sort -m ${task.memory.giga}G --temp-dir TMP/sort -O z -o TMP/jeter2.vcf.gz 
 
+
+bcftools index --threads ${task.cpus} -f -t TMP/jeter2.vcf.gz 
+
+mv TMP/jeter2.vcf.gz  ${prefix}.vcf.gz
+mv TMP/jeter2.vcf.gz.tbi  ${prefix}.vcf.gz.tbi
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	url: "${url}"
+	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
 END_VERSIONS
 """
+
 stub:
-def prefix=task.ext.prefix?:"${meta.id}.gencode"
+    def prefix = task.ext.prefix?:"${meta.id}.bim2vcf"
+
 """
-touch versions.yml ${prefix}.txt.gz ${prefix}.txt.gz.tbi 
+touch versions.yml "${prefix}.vcf.gz" "${prefix}.vcf.gz.tbi" 
 """
 }
-
