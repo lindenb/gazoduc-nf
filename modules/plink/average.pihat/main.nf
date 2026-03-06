@@ -29,18 +29,24 @@ afterScript "rm -rf TMP"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-    tuple val(meta ), path(genome)
+    tuple val(meta ), path(genome) // plink genome-file
     tuple val(meta2), path(sample2group)
 output:
-    tuple val(meta),path("*.tsv"),optional:true,emit:tsv
+    tuple val(meta),path("*.avg.pihat.tsv"),emit:tsv
+    tuple val(meta),path("*.exclude.tsv"),emit:exclude
     tuple val(meta),path("*.png"),optional:true,emit:png
     path("versions.yml"),emit:versions
 script:
-    def prefix = task.ext.prefix?:"${meta.id}.avg.pihat"
+    def prefix = task.ext.prefix?:"${meta.id}"
     def sub_title = task.ext.sub?:""
     def max_pihat = task.ext.max_pihat?:0.1
+    def plot_size= task.ext.plot_size?:1000
+    def format = task.ext.format?:"png"
 """
 mkdir -p TMP
+
+# check genome file is ok
+awk '(NR==1) {print \$10;}' "${genome}"  | grep -w -F PI_HAT 1>&2
 
 cat << '__EOF__' > TMP/jeter.awk
 (NR>1) {
@@ -58,31 +64,54 @@ __EOF__
 
 # create table sample/avg(pihat)/status
 awk -f TMP/jeter.awk '${genome}' |\\
-	LC_ALL=C sort -T . -t '\t' -k2,2gr > "TMP/jeter.tsv"
+    sort -T TMP -t '\t' -k1,1 > "TMP/jeter.tsv"
 
+if ${sample2group?true:false}
+then
+
+    sort -T TMP -t '\t' -k1,1 --unique "${sample2group}" > TMP/jeter.a.tsv
+    join -t '\t' -1 1 -2 1 -e other -a 1 -o '1.1,1.2,2.2'  TMP/jeter.tsv TMP/jeter.a.tsv > TMP/jeter2.tsv
+    mv TMP/jeter2.tsv  TMP/jeter.tsv
+
+else
+
+    awk -F '\t' '{printf("%s\tall\\n",\$0);}' TMP/jeter.tsv > TMP/jeter2.tsv
+    mv TMP/jeter2.tsv TMP/jeter.tsv
+fi
+
+sort -T TMP -t '\t' -k2,2gr  "TMP/jeter.tsv"  > TMP/jeter2.tsv
+mv TMP/jeter2.tsv TMP/jeter.tsv
+
+head TMP/jeter.tsv 1>&2
 
 cat << '__EOF__' > TMP/jeter.R
-T1<-read.table("TMP/jeter.tsv",sep="\\t",header=FALSE,col.names=c("S","X"),colClasses=c("character","numeric"))
+T1<-read.table("TMP/jeter.tsv",sep="\\t",header=FALSE,stringsAsFactors=FALSE, col.names=c("sample_name","p_value","group_name"),colClasses=c("character","numeric","character"))
+head(T1)
 
-# Read the sample-to-group mapping
-sample2group <- read.table("${sample2group}", sep="\t", header=FALSE,col.names=c("S","G"), colClasses=c("character", "character"))
+# create a vector or unique groups
+groups <- unique(T1\$group_name)
 
-# Merge to get group information for each sample
-T1 <- merge(T1, sample2group, by="S", all.x=TRUE)
+cols = rainbow(length(groups))
+${format}("TMP/jeter.${format}",width = ${plot_size}, height = ${plot_size}, unit = "px")
 
-# Assign a color to each group
-groups <- unique(T1\$G)
-group_colors <- setNames(rainbow(length(groups)), groups)
-T1\$color <- group_colors[T1\$G]
 
-png("TMP/jeter.png", width=800, height=800, units="px")
-boxplot(T1\$X ,
-    ylim=c(0,max(T1\$X)),
-    main="AVG(PIHAT)/SAMPLE",
-    sub="${sub_title}",
-    xlab="Sample",
-    ylab="pihat"
-    )
+# Draw boxplot by group
+bp <- boxplot(p_value ~ group_name,
+    data = T1,
+    col = cols,
+    border = "gray30",
+    ylab = "p_value",
+    xlab = "Group",
+    las = 2)
+
+if (length(groups) > 1) {
+  legend("topright",
+         legend = groups,
+         fill = cols,
+         border = "gray30",
+         bty = "n",
+         cex = 0.9)
+}
 
 
 dev.off()
@@ -91,12 +120,13 @@ __EOF__
 
 R --no-save < TMP/jeter.R
 
-mv TMP/jeter.tsv ${prefix}.tsv
-mv TMP/jeter.png ${prefix}_mqc.png || true
+awk -F '\t' '(\$2*1.0 > ${max_pihat})' TMP/jeter.tsv > ${prefix}.exclude.tsv
+mv TMP/jeter.tsv ${prefix}.avg.pihat.tsv
+mv TMP/jeter.${format} ${prefix}.avg.pihat_mqc.${format} || true
 
 cat << EOF > versions.yml
 ${task.process}:
-    R: todo
+    R: \$(R --version | awk '(NR==1) {print \$3;}')
 EOF
 """
 stub:

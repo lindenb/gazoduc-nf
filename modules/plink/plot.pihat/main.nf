@@ -37,7 +37,7 @@ script:
     def format = task.ext.format?:(meta.format?:"png")
     def prefix=task.ext.prefix?:"${meta.id}.pihat"
     def max_pihat = task.ext.max_pihat?:0.1
-    def plot_size = task.ext.plot_size?:500
+    def plot_size = task.ext.plot_size?:1000
 
 """
 mkdir -p TMP
@@ -52,7 +52,8 @@ plot(genome\$PI_HAT,
     ylim=c(0,1.0),
     xlab="Individuals Pair",
     ylab="PI-HAT",
-    main="PI-HAT"
+    main="PI-HAT",
+    sub="pihat for each pair of sample"
 )
 abline(h=${max_pihat},col="blue");
 dev.off()

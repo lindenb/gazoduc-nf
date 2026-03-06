@@ -119,7 +119,6 @@ workflow  {
 				)
 			versions = versions.mix(ALPHAMISSENSE_ANNOTATE.out.versions)
 			vcf = ALPHAMISSENSE_ANNOTATE.out.vcf
-			
 			}
 
 
