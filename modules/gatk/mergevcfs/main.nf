@@ -25,7 +25,7 @@ SOFTWARE.
 
 
 process MERGE_VCFS {
-label "process_short"
+label "process_single"
 tag "${meta.id?:""}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.02.yml"

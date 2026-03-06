@@ -24,16 +24,37 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-include {moduleLoad;runOnComplete} from '../../../modules/utils/functions.nf'
-//include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
-//include {BCFTOOLS_CONCAT_01} from '../bcftools/bcftools.concat.01.nf'
-//include {JVARKIT_VCF_TO_BED_01} from '../jvarkit/jvarkit.vcf2bed.01.nf'
-include {SNPEFF_DOWNLOAD} from '../../../modules/snpeff/download'
+include { validateParameters                       } from 'plugin/nf-schema'
+include { paramsHelp                               } from 'plugin/nf-schema'
+include { paramsSummaryLog                         } from 'plugin/nf-schema'
+include { samplesheetToList                        } from 'plugin/nf-schema'
+include { BCFTOOLS_CONCAT                          } from '../../../modules/bcftools/concat3'
+include {runOnComplete                             } from '../../../modules/utils/functions.nf'
+include {makeKey                                   } from '../../../modules/utils/functions.nf'
+include {flatMapByIndex                            } from '../../../modules/utils/functions.nf'
+include {parseBoolean                              } from '../../../modules/utils/functions.nf'
+include { PREPARE_ONE_REFERENCE                    } from '../../../subworkflows/samtools/prepare.one.ref'
+include { VCF_INPUT                                } from '../../../subworkflows/nf/vcf_input'
+include { VCF_TO_CONTIGS                           } from '../../../subworkflows/bcftools/vcf2contigs'
+include { SPLIT_N_VARIANTS                         } from '../../../modules/jvarkit/splitnvariants'
+include { SNPEFF_DOWNLOAD                          } from '../../../modules/snpeff/download'
+include { SNPEFF_APPLY                             } from '../../../modules/snpeff/apply'
+include { JVARKIT_VCFGNOMAD                        } from '../../../modules/jvarkit/vcfgnomad'
+include { BCFTOOLS_INDEX                           } from '../../../modules/bcftools/index'
+include { ALPHAMISSENSE_DOWNLOAD                   } from '../../../modules/alphamissense/download'
+include { ALPHAMISSENSE_ANNOTATE                   } from '../../../modules/alphamissense/annotate'
 
 workflow  {
+		versions = Channel.empty()
+		multiqc = Channel.empty()
+		def metadata = [id:"genotyping"]
 
-		reference = Channel.of(file(params.fasta),file(params.fai),file(params.dict)).collect()
-
+		PREPARE_ONE_REFERENCE(
+			metadata.plus(skip_scatter:true),
+			Channel.fromPath(params.fasta).map{[[id:it.baseName],it]}
+			)
+		versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
+		
 		if(params.vcf.endsWith(".list")) {
 			vcf_ch = Channel.fromPath(params.vcf).splitText().map{it.trim()}
 			}
@@ -41,193 +62,75 @@ workflow  {
 			{
 			vcf_ch = Channel.of(params.vcf)
 			}
-		vcf_ch = vcf_ch.map{[it,it+(it.endsWith(".bcf")?".csi":".tbi")]}
 		
 		
-		vcf2bed_ch = VCF_TO_BED(vcf_ch)
+		VCF_INPUT(metadata.plus([
+				path: params.vcf,
+				arg_name: "vcf",
+				require_index : true,
+				required: true,
+				unique : false
+				]))
+		versions = versions.mix(VCF_INPUT.out.versions)
 
-		vcf2inter_ch = VCF_TO_INTERVALS(vcf2bed_ch.output.splitCsv(header:false,sep:'\t').map{it.flatten()}, file(params.bed))
+		VCF_TO_CONTIGS( metadata,VCF_INPUT.out.vcf )
+		versions = versions.mix(VCF_TO_CONTIGS.out.versions)
 
-		//vcf2inter_ch.splitCsv(header:false,sep:'\t').view()
-		snpeff_ch =SNPEFF_DOWNLOAD(params.snpeff_db)
-
-
-		annot_ch = ANNOT(
-			reference,
-			snpeff_ch.output ,
-			file(params.bed),
-			vcf2inter_ch.output.splitCsv(header:false,sep:'\t').map{it.flatten()}.filter{!it[0].equals(".")}
+	
+		SPLIT_N_VARIANTS(
+			[[id:"no_bed"],[]],
+			VCF_TO_CONTIGS.out.vcf
 			)
-
-
-		CONCAT(annot_ch.output.flatten().collect())
+		versions = versions.mix(SPLIT_N_VARIANTS.out.versions)
 		
+		//vcf2inter_ch.splitCsv(header:false,sep:'\t').view()
+		SNPEFF_DOWNLOAD(
+				PREPARE_ONE_REFERENCE.out.fai
+                        .map{meta,_fai->[meta,file(params.snpeff_database_directory)]}
+				)
+		versions = versions.mix(SNPEFF_DOWNLOAD.out.versions)
+
+		SNPEFF_APPLY(
+			SNPEFF_DOWNLOAD.out.database,
+			SPLIT_N_VARIANTS.out.vcf.flatMap{flatMapByIndex(it,1)}.map{_meta,vcf->[[id:makeKey(vcf)],vcf]}
+			)
+		versions = versions.mix(SNPEFF_APPLY.out.versions)
+		vcf = SNPEFF_APPLY.out.vcf
+
+		JVARKIT_VCFGNOMAD(
+			[[id:"gnomad"],file(params.gnomad),file(params.gnomad+".tbi")],
+			vcf
+			)
+		versions = versions.mix(JVARKIT_VCFGNOMAD.out.versions)
+		vcf = JVARKIT_VCFGNOMAD.out.vcf
+
+
+		BCFTOOLS_INDEX(vcf)
+		versions = versions.mix(BCFTOOLS_INDEX.out.versions)
+		vcf = BCFTOOLS_INDEX.out.vcf
+
+		if(parseBoolean(params.with_alphamissense)) {
+			ALPHAMISSENSE_DOWNLOAD(PREPARE_ONE_REFERENCE.out.dict)
+			versions = versions.mix(ALPHAMISSENSE_DOWNLOAD.out.versions)
+			
+			ALPHAMISSENSE_ANNOTATE(
+				ALPHAMISSENSE_DOWNLOAD.out.output,
+				vcf
+				)
+			versions = versions.mix(ALPHAMISSENSE_ANNOTATE.out.versions)
+			vcf = ALPHAMISSENSE_ANNOTATE.out.vcf
+			
+			}
+
+
+		BCFTOOLS_CONCAT(
+			vcf.map{_meta,vcf,tbi->[vcf,tbi]}
+				.flatMap()
+				.collect()
+				.map{files->[metadata,files.sort()]}
+			)
+		versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
 	}
 
 
-process VCF_TO_BED {
-label "process_single"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-input:
-	tuple path(vcf),path(vcfidx)
-output:
-	tuple path("vcf.bed"),path(vcf),path(vcfidx),emit:output
-script:
-"""
-set -o pipefail
 
-bcftools index -s "${vcf}" |\
-	awk -F '\t' '{printf("%s\t0\t%s\\n",\$1,\$2);}' |\
-	sort -t '\t' -k1,1 -k2,2n -T . > vcf.bed
-"""
-}
-
-
-process VCF_TO_INTERVALS {
-tag "${contig} ${start0} ${end} ${vcf} ${vcfidx} ${bed}"
-label "process_single"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-afterScript "rm -rf TMP"
-input:
-	tuple val(contig),val(start0),val(end),path(vcf),path(vcfidx)
-	path(bed)
-output:
-	tuple path("intervals.bed"),path(vcf),path(vcfidx),emit:output
-script:
-"""
-mkdir -p TMP
-
-echo -e "${contig}\t${start0}\t${end}" > TMP/jeter1.bed
-
-if ${!bed.name.equals("NO_FILE")}
-then
-	sort -t '\t' -k1,1 -k2,2n -T TMP ${bed} > TMP/jeter2.bed
-	bedtools intersect -a TMP/jeter1.bed -b TMP/jeter2.bed > TMP/jeter3.bed
-	mv TMP/jeter3.bed TMP/jeter1.bed
-fi
-
-if test  -s TMP/jeter1.bed
-then
-
-	bcftools view -G --regions-file TMP/jeter1.bed  "${vcf}" |\\
-		jvarkit -Xmx${task.memory.giga}G  -Djava.io.tmpdir=TMP vcf2intervals --distance ${params.vcf2interval_distance} --bed |\\
-		cut -f1,2,3 > TMP/intervals.bed
-
-	mv TMP/intervals.bed ./
-else
-	echo -e ".\t0\t1" > intervals.bed
-fi
-
-"""
-}
-
-
-
-
-
-process ANNOT {
-tag "${contig}:${start0}-${end}"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-label "process_single"
-afterScript "rm -rf TMP"
-memory "5g"
-input:
-	path(reference)
-	path(snpeffdir)
-	path(bed)
-	tuple val(contig),val(start0),val(end),path(vcf),path(vcfidx)
-output:
-	path("${contig}_${start0}_${end}.*"),emit:output
-script:
-	def gnomadAF = params.gnomadAF
-	def gnomadPop = params.gnomadPop
-	def soacn = params.soacn
-	def soft_filters = params.soft_filters.toLowerCase().split("[, ]");
-	def soft_filter_gnomad = soft_filters.contains("gnomad") || params.soft_filters.equals("*")
-	def soft_filter_so = soft_filters.contains("so") || params.soft_filters.equals("*")
-"""
-hostname 1>&2
-mkdir -p TMP
-
-
-echo -e "${contig}\t${start0}\t${end}" > TMP/jeter.bed
-
-if ${!bed.name.equals("NO_FILE")}
-then
-	awk -F '\t' '(\$1=="${contig}")' "${bed}" | sort -T TMP -t '\t' -k1,1 -k2,2n | bedtools merge > TMP/jeter2.bed
-	bedtools intersect -a TMP/jeter.bed -b TMP/jeter2.bed > TMP/jeter3.bed
-	mv TMP/jeter3.bed  TMP/jeter.bed
-
-fi
-
-bcftools view --regions-file TMP/jeter.bed -O u  -o TMP/jeter1.bcf "${vcf}"
-
-
-bcftools view TMP/jeter1.bcf |\\
-snpEff -Xmx${task.memory.giga}G  -Djava.io.tmpdir=TMP eff \\
-	-dataDir "\${PWD}/${snpeffdir}" \\
-	-nodownload -noNextProt -noMotif -noInteraction -noLog -noStats -chr chr -i vcf -o vcf "${params.snpeff_db}" > TMP/jeter1.vcf
-
-
-if ${!soacn.isEmpty()} ; then
-	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  vcffilterso \\
-		${soft_filter_so?"--filterout BAD_SO":""} \\
-		--acn "${soacn}" TMP/jeter1.vcf > TMP/jeter2.vcf
-	mv TMP/jeter2.vcf TMP/jeter1.vcf
-fi
-
-jvarkit -Xmx${task.memory.giga}G  -Djava.io.tmpdir=TMP vcfgnomad  --bufferSize 10000 \
-		--gnomad "${params.gnomad}" \
-		--fields "${gnomadPop}" \
-		--max-af "${gnomadAF}" TMP/jeter1.vcf > TMP/jeter2.vcf
-
-mv TMP/jeter2.vcf TMP/jeter1.vcf
-
-if ${!soft_filter_gnomad}
-then
-	bcftools view -e 'FILTER ~ "GNOMAD_GENOME_InbreedingCoeff" || FILTER ~ "GNOMAD_GENOME_AC0" || FILTER  ~ "GNOMAD_GENOME_AS_VQSR" || FILTER ~ "GNOMAD_GENOME_BAD_AF"' TMP/jeter1.vcf > TMP/jeter2.vcf
-
-	mv TMP/jeter2.vcf TMP/jeter1.vcf
-fi
-
-
-if ${params.cadd!=null && !params.cadd.contains(".")}
-then
-
-	jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  vcfcadd \
-                        --tabix "${params.cadd}" TMP/jeter1.vcf > TMP/jeter2.vcf
-        mv TMP/jeter2.vcf TMP/jeter1.vcf
-fi
-
-
-if ${params.set_id!=null && !params.set_id.isEmpty()}
-then
-	bcftools annotate --set-id ${params.set_id}  TMP/jeter1.vcf > TMP/jeter2.vcf
-        mv TMP/jeter2.vcf TMP/jeter1.vcf
-fi
-
-
-bcftools view TMP/jeter1.vcf -O b9 -o "${contig}_${start0}_${end}.annot.bcf"
-
-bcftools index -f "${contig}_${start0}_${end}.annot.bcf"
-"""
-}
-
-
-
-process CONCAT {
-label "process_short"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
-input:
-	path("VCF/*")
-output:
-	path("annot.*"),emit:output
-script:
-"""
-find VCF  \\( -name "*.vcf.gz" -o -name "*.bcf" \\) > jeter.list
-test -s jeter.list
-bcftools concat -a -d all --file-list jeter.list -O b9 -o annot.bcf
-rm jeter.list
-bcftools index -f annot.bcf
-"""
-}
