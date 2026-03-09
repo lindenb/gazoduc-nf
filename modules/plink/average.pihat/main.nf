@@ -33,7 +33,7 @@ input:
     tuple val(meta2), path(sample2group)
 output:
     tuple val(meta),path("*.avg.pihat.tsv"),emit:tsv
-    tuple val(meta),path("*.exclude.tsv"),emit:exclude
+    tuple val(meta),path("*.exclude_mqc.tsv"),emit:exclude
     tuple val(meta),path("*.png"),optional:true,emit:png
     path("versions.yml"),emit:versions
 script:
@@ -120,7 +120,7 @@ __EOF__
 
 R --no-save < TMP/jeter.R
 
-awk -F '\t' '(\$2*1.0 > ${max_pihat})' TMP/jeter.tsv > ${prefix}.exclude.tsv
+awk -F '\t' '(\$2*1.0 > ${max_pihat})' TMP/jeter.tsv > ${prefix}.exclude_mqc.tsv
 mv TMP/jeter.tsv ${prefix}.avg.pihat.tsv
 mv TMP/jeter.${format} ${prefix}.avg.pihat_mqc.${format} || true
 
@@ -130,7 +130,7 @@ ${task.process}:
 EOF
 """
 stub:
-    def prefix = task.ext.prefix?:"${prefix}.avg.pihat"
+    def prefix = task.ext.prefix?:"${meta.id}"
 """
 touch versions.yml ${prefix}.tsv ${prefix}.png
 """

@@ -256,6 +256,7 @@ workflow PIHAT {
         PLOT_PIHAT(PLINK_GENOME.out.genome)
         versions = versions.mix(PLOT_PIHAT.out.versions)
         multiqc = multiqc.mix(PLOT_PIHAT.out.png)
+        multiqc = multiqc.mix(PLOT_PIHAT.out.high_txt)
 
 
         AVERAGE_PIHAT(
@@ -263,6 +264,7 @@ workflow PIHAT {
             META_TO_PED.out.sample2group.first()
             )
 	    multiqc = multiqc.mix(AVERAGE_PIHAT.out.png)
+        multiqc = multiqc.mix(AVERAGE_PIHAT.out.exclude)
         versions = versions.mix(AVERAGE_PIHAT.out.versions)
 
 

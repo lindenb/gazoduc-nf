@@ -58,6 +58,8 @@ script:
     def jvm = task.ext.jvm?:"-Djava.io.tmpdir=TMP"
     def maf = task.ext.maf?:0.1
     def f_missing = task.ext.f_missing?:0.01
+    def min_DP  = task.ext.min_DP?:20
+    def max_DP  = task.ext.max_DP?:300
 """
 mkdir -p TMP
 set -x
@@ -92,7 +94,7 @@ bcftools view  ${cpus3} \\
     bcftools annotate \\
         ${cpus3}  \\
         ${contig_user==norm_contig?"":"--rename-chrs TMP/rename_contig.tsv"} \\
-        -x "INFO,ID,FILTER,QUAL,^FORMAT/GT" \\
+        -x "INFO,ID,FILTER,QUAL" \\
         -O b \\
         -o TMP/jeter1.bcf
        
@@ -101,6 +103,17 @@ bcftools index --threads ${task.cpus} -f   TMP/jeter1.bcf
 
 dump_vcf TMP/jeter1.bcf
 
+#
+# filter out low/high dp
+#
+bcftools view TMP/jeter1.bcf  |\\
+    jvarkit ${jvm} vcffilterjdk -e 'if(variant.getGenotypes().stream().filter(G->G.hasAltAllele() && G.hasDP()).allMatch(G->G.getDP()< ${min_DP} || G.getDP()> ${max_DP}) ) return false; return true;'  |\\
+    bcftools view -O b -o TMP/jeter2.bcf
+
+mv TMP/jeter2.bcf TMP/jeter1.bcf
+bcftools index -f TMP/jeter1.bcf
+
+dump_vcf TMP/jeter1.bcf
 
 # 
 # 1000 GENOMES DATA
@@ -109,8 +122,10 @@ if ${optional_vcf_1k?true:false}
 then
 
     bcftools query -f '%CHROM\t%POS0\t%END\\n' TMP/jeter1.bcf > TMP/jeter.bed
-    test -s TMP/jeter.bed
-
+    if test ! -s TMP/jeter.bed
+    then
+        echo "${optional_contig_1k}\t0\t1" > TMP/jeter.bed
+    fi
 
     ##
     ## ECRACT DATA FROM 1000 GENOMES

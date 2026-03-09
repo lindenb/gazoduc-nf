@@ -32,6 +32,7 @@ input:
 output:
     tuple val(meta),path("*.png"),optional:true,emit:png
     tuple val(meta),path("*.pdf"),optional:true,emit:pdf
+    tuple val(meta),path("*_mqc.txt"),optional:true,emit:high_txt
     path("versions.yml"),emit:versions
 script:
     def format = task.ext.format?:(meta.format?:"png")
@@ -42,8 +43,11 @@ script:
 """
 mkdir -p TMP
 
+# check input file
+awk '(NR==1) {print \$10;}' '${genome}' | grep PI_HAT
+
 cat << '__EOF__' > TMP/jeter.R
-genome <- read.table(file="${genome}",header=TRUE)
+genome <- read.table(file="${genome}",header=TRUE,stringsAsFactors=FALSE)
 
 head(genome)
 
@@ -59,13 +63,24 @@ abline(h=${max_pihat},col="blue");
 dev.off()
 __EOF__
 
+
 R --no-save < TMP/jeter.R
 
-mv TMP/${prefix}* ./
+mv -v TMP/${prefix}* ./
+
+awk 'NR==1 || ((\$10 * 1.0) > ${max_pihat})' '${genome}' > '${prefix}.high_pihat_mqc.txt'
+
 
 cat << EOF > versions.yml
 ${task.process}:
-    sort: todo
+    R: \$(R --version | awk '(NR==1) {print \$3;}')
 EOF
+"""
+
+stub:
+    def format = task.ext.format?:(meta.format?:"png")
+    def prefix=task.ext.prefix?:"${meta.id}.pihat"
+"""
+touch versions.yml '${prefix}.${format}' '${prefix}.high_pihat_mqc.txt'
 """
 }
