@@ -204,6 +204,8 @@ workflow PIHAT {
         
         PLINK_GENOME(PLINK_MERGE_BIM_BED_FAM.out.bfile)
         versions = versions.mix(PLINK_GENOME.out.versions)
+        multiqc = multiqc.mix(PLINK_GENOME.out.related)
+        
 
         bfile_ch = PLINK_MERGE_BIM_BED_FAM.out.bfile
         /**

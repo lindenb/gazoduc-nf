@@ -31,7 +31,8 @@ input:
     tuple val(meta),path(bim),path(bed),path(fam)
 output:
 	tuple val(meta),path("*.genome"),emit:genome
-    tuple val(meta),path("*.related.tsv"),emit:related
+    tuple val(meta),path("*.genome.gz"),emit:genome_gz
+    tuple val(meta),path("*.related_mqc.tsv"),emit:related
     tuple val(meta),path("*.log"),emit:log
     path("versions.yml"),emit:versions
 script:
@@ -52,7 +53,10 @@ plink \\
 awk '(NR==1 || \$10 > ${treshold}) {printf("%s%s\t%s\\n",(NR==1?"#":""),\$3 ,\$4);}' TMP/${prefix}.genome |\\
     LC_ALL=C sort -T TMP |\\
     uniq  |\\
-    sed 's/^#//' > TMP/${prefix}.related.tsv
+    sed 's/^#//' > TMP/${prefix}.related_mqc.tsv
+
+
+gzip --best  < TMP/${prefix}.genome > TMP/${prefix}.genome.gz
 
 mv -v TMP/${prefix}* ./
 

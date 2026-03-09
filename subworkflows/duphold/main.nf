@@ -35,7 +35,7 @@ include {COLLECT_TO_FILE_01} from '../../modules/utils/collect2file.01.nf'
 
 workflow DUPHOLD {
 	take:
-		meta
+		metadata
 		fasta
 		fai
 		dict
@@ -81,6 +81,7 @@ workflow DUPHOLD {
 	
 	emit:
 		versions
+		multiqc
 		vcf = BCFTOOLS_MERGE.out.vcf
 	}
 
