@@ -22,6 +22,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+
+include {isBlank} from "${moduleDir}/../../../modules/utils/functions.nf"
+
+
 process BCFTOOLS_MERGE {
 label "process_single"
 tag "${meta.id?:""}"
@@ -35,10 +39,30 @@ output:
 	path("versions.yml"),emit:versions
 script:
         def args1  = task.ext.args1?:""
+		def args2  = task.ext.args2?:""
+        def args3  = task.ext.args3?:""
         def prefix = task.ext.prefix?:"${meta.id}"
+		def limit = (task.ext.limit?:100) as int
+		def cmd = task.ext.cmd?:"view"
+		def tags = task.ext.tags?:"AN,AC,AF,AC_Hom,AC_Het,AC_Hemi,NS"
+
 """
+set -x
 mkdir -p TMP
+
 find VCFS/ \\( -name "*.vcf.gz" -o -name "*.bcf" \\)  > TMP/jeter.list
+
+my_merge () {
+		bcftools merge \\
+			--threads ${task.cpus} \\
+			${optional_bed?"--regions-file \"${optional_bed}\"":""} \\
+			--write-index \\
+			${args1} \\
+			--file-list "\${1}" \\
+			-O "\${2}" \\
+			-o "\${3}"
+		}
+
 
 #
 # use the first sample of each VCF to be sure that samples will be ordered the same way 
@@ -52,39 +76,72 @@ done
 
 LC_ALL=C sort -t, -T TMP -k1,1 TMP/jeter2.list | cut -d, -f2 > TMP/jeter3.list
 
-if [[ \$(wc -l < TMP/jeter.list) -eq 1 ]]
+rm -f TMP/jeter.list TMP/jeter2.list
+
+if [[ \$(wc -l < TMP/jeter3.list) -eq 1 ]]
 then
+
 
 bcftools view \\
 	--threads ${task.cpus} \\
 	${optional_bed?"--regions-file \"${optional_bed}\"":""} \\
 	-O u \\
 	-o TMP/jeter2.bcf \\
-	`cat TMP/jeter.list`
+	`cat TMP/jeter3.list`
 
+
+elif test  `wc -l < TMP/jeter3.list` -le ${limit}
+then
+
+	my_merge TMP/jeter3.list u TMP/jeter2.bcf
 
 else
 
-bcftools merge \\
-	--threads ${task.cpus} \\
-	${args1} \\
-	${optional_bed?"--regions-file \"${optional_bed}\"":""} \\
-	--no-version \\
-	-O u \\
-	-o "TMP/jeter2.bcf" \\
-	--file-list TMP/jeter3.list
+		SQRT=`awk 'END{X=NR;if(X<10){print(X);} else {z=sqrt(X); print (z==int(z)?z:int(z)+1);}}' TMP/jeter3.list`
+		split -a 9 --additional-suffix=.list --lines=\${SQRT} TMP/jeter3.list TMP/chunck.
+
+
+		find TMP/ -type f -name "chunck*.list" | while read F
+		do
+			my_merge "\${F}" b "\${F}.bcf"
+			
+			echo "\${F}.bcf" >> TMP/jeter2.list
+		done
+
+		test -s TMP/jeter2.list
+		
+		my_merge TMP/jeter2.list u TMP/jeter2.bcf
+
+
 fi
 
-bcftools  +fill-tags \\
+if ${isBlank(tags)}
+then
+
+bcftools ${cmd} \\
+	${args2} \\
 	--threads ${task.cpus} \\
-	-O z  \\
+	-O z9 \\
 	-o TMP/jeter.vcf.gz \\
-	TMP/jeter2.bcf -- -t AN,AC,AF,AC_Hom,AC_Het,AC_Hemi,NS
+	TMP/jeter2.bcf
+
+else
+
+	# give a chance to filter-out things, or bcftools annotate
+	bcftools ${cmd} ${args2} -O u TMP/jeter2.bcf |\\
+	bcftools  +fill-tags \\
+		${args3} \\
+		--threads ${task.cpus} \\
+		-O z9  \\
+		-o TMP/jeter.vcf.gz \\
+		-- -t ${tags}
+fi
 
 bcftools index  -f -t --threads ${task.cpus}  TMP/jeter.vcf.gz
 
-mv TMP/jeter.vcf.gz     ${prefix}.vcf.gz
-mv TMP/jeter.vcf.gz.tbi ${prefix}.vcf.gz.tbi
+mv TMP/jeter.vcf.gz  ${prefix}.vcf.gz
+mv TMP/jeter.vcf.gz.tbi  ${prefix}.vcf.gz.tbi
+
 
 cat << END_VERSIONS > versions.yml
 ${task.process}:
@@ -93,10 +150,8 @@ END_VERSIONS
 """
 
 stub:
- def prefix = task.ext.prefix?:"zozo"+(meta.id?meta.id.md5().substring(0,7):"")+ ((optional_bed?true:false)?optional_bed.baseName:"")
- // "f"+(meta.id?"."+meta.id.md5():"") + (optional_bed?"."+optional_bed.baseName:"")
+        def prefix = task.ext.prefix?:"${meta.id}"
 """
-find VCFS/ \\( -name "*.vcf.gz" -o -name "*.bcf"  \\) 
 touch versions.yml ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi
 """
 }

@@ -22,6 +22,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+
+/**
+ * Convert a BIM file to VCF
+ *  @param meta1 meta data about fasta
+ *  @param fasta fasta file
+ */
 process BIM_TO_VCF {
 tag "${meta.id}"
 label "process_single"
@@ -30,11 +36,11 @@ afterScript "rm -rf TMP"
 input:
     tuple val(meta1), path(fasta)
     tuple val(meta2), path(fai)
-    tuple val(meta3), path(dict)
-    tuple val(meta),path(bim)
+    tuple val(meta3), path(dict) /* sequence dictionary */
+    tuple val(meta),path(bim) /* the BIM file */
 output:
-    tuple val(meta),path("*.vcf.gz"),path("*.tbi"),emit:vcf
-    path("versions.yml"),emit:versions
+    tuple val(meta),path("*.vcf.gz"),path("*.tbi"),emit:vcf /** indexed VCF file as vcf.gz */
+    path("versions.yml"),emit:versions /* versions */
 script:
     def prefix = task.ext.prefix?:"${meta.id}.bim2vcf"
     def args  = task.ext.args ?:""

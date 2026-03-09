@@ -22,6 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+ 
 process PLINK2_VCF2PGEN {
 label "process_single"
 afterScript "rm -rf TMP"
