@@ -56,7 +56,7 @@ process JVARKIT_VCFFILTERSO {
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	jvarkit: todo
+	jvarkit: "\$(jvarkit --version)"
 END_VERSIONS
 	"""
 

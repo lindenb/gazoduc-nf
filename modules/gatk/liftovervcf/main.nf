@@ -80,7 +80,7 @@ mv TMP/jeter4.vcf.gz.tbi "${prefix}.fail.vcf.gz.tbi"
  
 cat << EOF > versions.yml
 ${task.process}:
-    gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
+    gatk: "\$((gatk --java-options "${jvm}" --version 2> /dev/null  | paste -s -d ' ' ) || true)"
 EOF
 """
 

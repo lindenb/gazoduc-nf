@@ -72,7 +72,7 @@ mv -v TMP/jeter.vcf.gz "${prefix}.vcf.gz"
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	jvarkit: todo
+	jvarkit: "\$(jvarkit --version)"
 END_VERSIONS
 	"""
 

@@ -72,8 +72,8 @@ mv -v TMP/${prefix}.* ./
 cat << EOF > versions.yml
 ${task.process}:
 	URL: "\$(cat TMP/jeter.url)"
-	bcftools: todo
-	jvarkit: todo
+	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
+	jvarkit: "\$(jvarkit --version)"
 EOF
 """
 stub:

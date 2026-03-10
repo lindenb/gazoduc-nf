@@ -69,7 +69,7 @@ process JVARKIT_VCF_SET_DICTIONARY {
 
 cat << EOF > versions.yml
 ${task.process}:
-	jvarkit: "\$(jvarkit --version)"
+	jvarkit: "\$(${jvarkit} --version)"
 EOF
 	"""
 

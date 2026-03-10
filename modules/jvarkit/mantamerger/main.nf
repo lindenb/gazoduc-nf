@@ -59,7 +59,7 @@ process MANTA_MERGER {
 
 cat << EOF > versions.yml
 ${task.process}:
-	jvarkit: "\$(jvarkit --version)"
+	jvarkit: "\$(${jvarkit} --version)"
 EOF
 	"""
 	

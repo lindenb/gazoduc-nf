@@ -56,7 +56,7 @@ mv -v "TMP/${prefix}.bam.bai" "${prefix}.bam.bai"
 
 cat << EOF > versions.yml
 ${task.process}:
-    gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
+    gatk: "\$( (gatk --java-options "${jvm}" --version 2> /dev/null  | paste -s -d ' ' ) || true)"
 EOF
 """
 

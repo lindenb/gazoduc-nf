@@ -64,7 +64,7 @@ process JVARKIT_VCFGNOMAD {
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	jvarkit: todo
+	jvarkit: "\$(jvarkit --version)"
 END_VERSIONS
 	"""
 

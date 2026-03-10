@@ -82,7 +82,7 @@ mv TMP/jeter.ps ${prefix}.ps
 
 cat << EOF > versions.yml
 ${task.process}:
-	jvarkit: "\$(jvarkit --version)"
+	jvarkit: "\$(${jvarkit} --version)"
 EOF
 """
 	

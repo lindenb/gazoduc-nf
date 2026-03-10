@@ -64,7 +64,7 @@ gatk --java-options "-Xmx${task.memory.giga}g  -XX:-UsePerfData -Djava.io.tmpdir
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	gatk: "\$(gatk --version 2>&1  | paste -s -d ' ' | tr -c -d 'A-Za-z0-9._-' )"
+	gatk: "\$((gatk --version 2> /dev/null  | paste -s -d ' ' ) || true)"
 END_VERSIONS
 """
 

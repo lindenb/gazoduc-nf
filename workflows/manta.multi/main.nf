@@ -254,7 +254,7 @@ process MERGE_CANDIDATE_SV {
 
     cat << EOF > versions.yml
     "${task.process}":
-        jvarkit: todo
+        jvarkit: "\$(jvarkit --version)"
     EOF
     """
     }
@@ -349,7 +349,7 @@ EOF
 
 cat << EOF > versions.yml
 "${task.process}":
-	jvarkit: todo
+	jvarkit: "\$(jvarkit --version)"
 EOF
 """
 }

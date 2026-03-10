@@ -54,7 +54,7 @@ process BED_CLUSTER {
 
 cat << EOF > versions.yml
 ${task.process}:
-	jvarkit: "\$(jvarkit --version)"
+	jvarkit: "\$(${jvarkit} --version)"
 EOF
 """
 	

@@ -72,7 +72,7 @@ mv TMP/jeter4.vcf.gz.tbi  ./${prefix}.vcf.gz.tbi
 
 cat << EOF > versions.yml
 ${task.process}:
-    gatk: "\$( (gatk --java-options "${jvm}" --version 2> /dev/null  | paste -s -d ' ' ) || true ) "
+    gatk: "\$((gatk --java-options "${jvm}" --version 2> /dev/null  | paste -s -d ' ' ) || true)"
 	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
 EOF
 """

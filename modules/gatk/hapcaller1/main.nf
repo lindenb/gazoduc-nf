@@ -83,6 +83,7 @@ samtools samples -f "${fasta}" -F TMP/references.txt "${bam}" | cut -f1,3 | head
             -R "\${REF}" \\
             -I "${bam}" \\
             -ERC GVCF \\
+            --native-pair-hmm-threads ${task.cpus} \\
             ${args1} ${args2}\\
             -O "TMP/jeter.g.vcf.gz"
 
@@ -170,7 +171,9 @@ mv "TMP/jeter.g.vcf.gz.tbi" ${prefix}.g.vcf.gz.tbi
 
 cat << EOF > versions.yml
 ${task.process}:
-    gatk: "\$( (gatk --java-options "${jvm}"  --version 2> /dev/null  | paste -s -d ' ' )  || true )"
+    samtools: "\$(samtools version | awk '(NR==1) {print \$NF;}')"
+    bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
+    gatk: "\$((gatk --java-options "${jvm}" --version 2> /dev/null  | paste -s -d ' ' ) || true)"
 EOF
 """
 

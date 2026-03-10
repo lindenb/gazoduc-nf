@@ -131,7 +131,7 @@ bcftools view  ${args1} "${vcf}" |\\
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	jvarkit: todo
+	jvarkit: "\$(jvarkit --version)"
 END_VERSIONS
 	"""
 stub:

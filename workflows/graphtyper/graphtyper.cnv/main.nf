@@ -324,8 +324,8 @@ EOF
 
 cat << EOF > versions.yml
 "${task.process}":
-	jvarkit: todo
-	gatk: todo
+	jvarkit: "\$(jvarkit --version)"
+	gatk: "\$((gatk --version 2> /dev/null  | paste -s -d ' ' ) || true)"
 EOF
 """
 }
@@ -362,8 +362,7 @@ mv TMP/jeter.bed "${prefix}.bed"
 
 cat << EOF > versions.yml
 "${task.process}":
-        jvarkit: todo
-        gatk: todo
+        gatk: "\$((gatk --version 2> /dev/null  | paste -s -d ' ' ) || true)"
 EOF
 """
 }
