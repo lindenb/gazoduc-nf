@@ -52,7 +52,7 @@ mv -v TMP/jeter.table ${prefix}.${suffix}
 
 cat << EOF > versions.yml
 ${task.process}:
-	jvarkit: TODO
+	jvarkit: "\$(jvarkit --version)"
 EOF
 	"""
 

@@ -72,7 +72,7 @@ fi
 cat << EOF > versions.yml
 "${task.process}":
 	snpeff: todo
-	jvarkit: todo
+	jvarkit: "\$(jvarkit --version)"
 EOF
 """
 

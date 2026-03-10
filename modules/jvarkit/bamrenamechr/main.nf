@@ -85,7 +85,7 @@ script:
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	jvarkit: todo
+	jvarkit: "\$(jvarkit --version)"
     samtools: "\$(samtools version | awk '(NR==1) {print \$NF;}')"
 END_VERSIONS
 """

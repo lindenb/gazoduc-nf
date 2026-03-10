@@ -49,7 +49,7 @@ process GATK_CALCULATE_GENOTYPE_POSTERIORS {
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	gatk: "\$(gatk --version 2>&1  | paste -s -d ' ' | tr -c -d 'A-Za-z0-9._-' )"
+	gatk: "\$((gatk --version 2> /dev/null  | paste -s -d ' ' ) || true)"
 END_VERSIONS
     """
     }

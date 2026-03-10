@@ -351,7 +351,7 @@ mv -v TMP/jeter.tsv "${prefix}.bed"
 
 cat << EOF > versions.yml
 ${task.process}:
-	jvarkit: "todo"
+	jvarkit: "\$(jvarkit --version)"
 EOF
 """
 stub:
@@ -408,7 +408,7 @@ mv -v TMP/jeter.tsv "${prefix}.junctions.tsv"
 
 cat << EOF > versions.yml
 ${task.process}:
-        jvarkit: "todo"
+    samtools: "\$(samtools version | awk '(NR==1) {print \$NF;}')"
 EOF
 """
 
@@ -513,7 +513,7 @@ done
 
 cat << EOF > versions.yml
 ${task.process}:
-	jvarkit: "todo"
+	jvarkit: "\$(jvarkit --version)"
 EOF
 """
 

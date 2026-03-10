@@ -91,7 +91,7 @@ EOF
 
 cat << EOF > versions.yml
 ${task.process}:
-	jvarkit: TODO
+	jvarkit: "\$(jvarkit --version)"
 	url : ${url}
 EOF
 """

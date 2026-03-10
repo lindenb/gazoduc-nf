@@ -54,8 +54,8 @@ mv TMP/jeter.vcf.gz.tbi "${prefix}.vcf.gz.tbi"
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	gatk: todo
-	bcftools: todo
+	gatk: "\$((gatk --java-options "${jvm}" --version 2> /dev/null  | paste -s -d ' ' ) || true)"
+	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
 END_VERSIONS
 """
 

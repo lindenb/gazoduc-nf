@@ -69,7 +69,7 @@ fi
 
 cat << EOF > versions.yml
 ${task.process}:
-    gatk: "\$( (gatk --java-options "${jvm}" --version 2> /dev/null  | paste -s -d ' ' ) || true ) "
+    gatk: "\$((gatk --java-options "${jvm}" --version 2> /dev/null  | paste -s -d ' ' ) || true)"
 EOF
 """
 

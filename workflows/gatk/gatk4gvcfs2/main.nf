@@ -350,8 +350,8 @@ mv TMP/jeter.g.vcf.gz.tbi "${prefix}.g.vcf.gz.tbi"
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-	gatk: todo
-	bcftools: todo
+	gatk: "\$((gatk --version 2> /dev/null  | paste -s -d ' ' ) || true)"
+	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
 END_VERSIONS
 """
 }

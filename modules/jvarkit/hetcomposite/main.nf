@@ -104,7 +104,7 @@ mv TMP/${prefix}.${suffix.contains("b")?"bcf.csi":"vcf.gz.tbi"} ./
 
 cat << EOF > versions.yml
 ${task.process}:
-	jvarkit: TODO
+	jvarkit: "\$(jvarkit --version)"
 	max-variants: "${max_variants}"
 	extractors: "${extractors}"
 EOF

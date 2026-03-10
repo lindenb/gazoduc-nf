@@ -56,7 +56,7 @@ process VCF_BED_SET_FILTER {
 
 cat << EOF > versions.yml
 ${task.process}:
-	jvarkit: "\$(jvarkit --version)"
+	jvarkit: "\$(${jvarkit} --version)"
 EOF
 """
 	

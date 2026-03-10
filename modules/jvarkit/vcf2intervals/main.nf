@@ -46,14 +46,14 @@ process JVARKIT_VCF_TO_INTERVALS {
 	mkdir -p TMP
 
 	bcftools view -G --threads ${cpu2} ${args1} ${optional_bed?"--regions-file \"${optional_bed.name}\"":""} "${vcf}" |\\
-	java ${jvm}  -jar ${HOME}/jvarkit.jar  vcf2intervals  --bed  ${args2} |\\
+	java ${jvm}  -jar \${HOME}/jvarkit.jar  vcf2intervals  --bed  ${args2} |\\
 		awk  -F '\t' '${awk_expr} {printf("%s\t%s\t%s\t%s\t%s\\n",\$1,\$2,\$3,"${vcf.toRealPath()}","${idx?idx.toRealPath().toString():""}");}' > TMP/intervals.bed
 
 	mv TMP/intervals.bed "${prefix}.bed"
 
 cat << EOF > versions.yml
 ${task.process}:
-	jvarkit: TODO
+	jvarkit: "\$(\${HOME}/jvarkit --version)"
 EOF
 	"""
 stub:

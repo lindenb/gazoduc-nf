@@ -54,7 +54,7 @@ mv TMP/jeter.pileups.table "${meta.id}.pileups.table"
 
 cat << EOF > version.yml
 ${task.process}:
-    gatk: "\$( gatk --version 2> /dev/null  | paste -s -d ' ' )"
+    gatk: "\$((gatk --java-options "${jvm}" --version 2> /dev/null  | paste -s -d ' ' ) || true)"
 EOF
 """
 stub:

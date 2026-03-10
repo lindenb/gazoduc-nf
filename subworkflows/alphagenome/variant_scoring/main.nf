@@ -115,7 +115,7 @@ mv TMP/${prefix}.xml.gz ./
 
 cat << EOF > versions.yml
 ${task.process}:
-	jvarkit: "\$(jvarkit --version)"
+	jvarkit: "\$(${jvarkit} --version)"
     xmllint: \$(xmllint --version 2>&1 |awk '(NR==1) {print \$NF;}')
 EOF
 """

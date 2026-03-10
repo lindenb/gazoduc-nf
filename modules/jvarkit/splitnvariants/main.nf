@@ -92,7 +92,7 @@ mv TMP/OUT/*.vcf.gz.tbi ./ || true
 
 cat << EOF > versions.yml
 ${task.process}:
-	jvarkit: "\$(jvarkit --version)"
+	jvarkit: "\$(${jvarkit} --version)"
 EOF
 """
 
