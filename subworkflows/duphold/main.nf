@@ -22,8 +22,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {DUPHOLD as RUN_DUPHOLD  } from '../../modules/duphold'
-include {BCFTOOLS_MERGE          } from '../../modules/bcftools/merge'
+include { DUPHOLD as RUN_DUPHOLD                               } from '../../modules/duphold'
+include { BCFTOOLS_MERGE                                       } from '../../modules/bcftools/merge'
+include { BCFTOOLS_QUERY_SAMPLES as BCFTOOLS_QUERY_SAMPLES1    }from '../../modules/bcftools/mergquery.samples'
+
 /*
 include {SAMTOOLS_SAMPLES_01} from '../samtools/samtools.samples.01.nf'
 include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
@@ -55,8 +57,21 @@ workflow DUPHOLD {
 		ch1.others.view{"BOUM CHECK DUPHOLD: ${it}."}
 
 		ch2 = ch1.without_fasta.combine(fasta).combine(fai) // meta,bam,bai,meta,fasta,meta,fai,meta,dict
-			.map{[it[0],it[1],it[2],it[4],it[6]]}
-			.mix(ch1.with_fasta.map{[it[0],it[1],it[2],it[3],it[4]]})
+			.map{meta1,bam,bai,meta2,fasta,meta3,fai,meta4,dict->[meta2.plus(meta1),bam,bai,fai,dict]}
+		
+		BCFTOOLS_QUERY_SAMPLES1(vcf.map{meta,vcf,tbi->[meta,vcf]})
+		versions = versions.mix(BCFTOOLS_QUERY_SAMPLES1.out.versions)
+		
+		BCFTOOLS_QUERY_SAMPLES1.out.samples
+			.splitText()
+			.combine(vcf)
+			.filter{meta1,sample,meta2,vcf,tbi->meta1.id==meta2.id}
+			.map{meta1,sample,meta2,vcf,tbi->[meta2.plus(id:sample),vcf,tbi]}
+			.combine(ch2)
+			.filter{meta1,vcf,tbi,meta2,bam,bai,fai,dict->meta1.id==meta2.id}
+
+
+			.mix(ch1.with_fasta)
 			.combine(vcf.map{[it[1]]})
 			.combine(snps.map{[it[1],it[2]]})
 			.multiMap{

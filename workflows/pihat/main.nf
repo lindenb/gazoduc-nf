@@ -88,7 +88,7 @@ workflow {
 		}
 	
 	/* load 1000G */
-	if(params.onekg==null) {
+	if(params.onekg==null || !parseBoolean(params.with_1kg)) {
 		onekg_ch = Channel.empty()
 		log.warn("No --onekg defined")
 		}

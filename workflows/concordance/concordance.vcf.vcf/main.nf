@@ -23,6 +23,7 @@ SOFTWARE.
 
 */
 include { runOnComplete                 } from '../../../modules/utils/functions.nf'
+include { parseBoolean                  } from '../../../modules/utils/functions.nf'
 include { PREPARE_ONE_REFERENCE         } from '../../../subworkflows/samtools/prepare.one.ref'
 include { MULTIQC                       } from '../../../modules/multiqc'
 include { COMPILE_VERSIONS              } from '../../../modules/versions/main.nf'
@@ -196,10 +197,12 @@ input:
     tuple val(meta ),path(call_vcf),path(tbi)
 output:
     tuple val(meta),path("*.txt.gz"),emit:concordance
+    tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),optional:true,emit:vcf
     path("versions.yml"),emit:versions
 script:
   def prefix = task.ext.prefix?:"${meta.id}"
   def jvm = task.ext.jvm?:" -Djava.io.tmpdir=TMP"
+  def keep_vcf = parseBoolean(task.ext.keep_vcf?:false)
 """
 mkdir -p TMP/isec1  TMP/isec2
 set -x
@@ -238,6 +241,14 @@ bcftools gtcheck -u GT -g TMP/jeter2.vcf.gz  TMP/isec2/0001.bcf |\
 	awk '{printf("%s\t%f\\n",\$0,(int(\$5)==0?-1:(int(\$6)/(1.0*int(\$5)))));}'  |\
 	LC_ALL=C sort -T TMP -t '\t' -k7,7gr |\\
 	awk -F '\t' '{printf("%s\t%s\\n",\$0,(NR==1 && \$7*1.0 > 0.0?"best":"."));}' |gzip > ${prefix}.concordance.txt.gz
+
+if ${keep_vcf}
+then
+    bcftools merge --force-samples -O z -o TMP/merge.vcf.gz TMP/jeter2.vcf.gz  TMP/isec2/0001.bcf
+    bcftools index -t -f  TMP/merge.vcf.gz
+    mv TMP/merge.vcf.gz ${prefix}.merge.truth.call.vcf.gz
+    mv TMP/merge.vcf.gz.tbi ${prefix}.merge.truth.call.vcf.gz.tbi
+fi
 
 touch versions.yml
 """
