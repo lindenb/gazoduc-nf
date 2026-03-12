@@ -37,13 +37,14 @@ input:
 	tuple val(meta3 ), path(dict)
 	tuple val(meta4 ), path(gnomad),path(gnomad_tbi)
 	tuple val(meta5 ), path(snpEffDir),path(snpeff_dbname)
-	tuple val(meta51), path(cadd_tabix),path(cadd_tbi)
-	tuple val(meta52), path(mapability_bigwig)
-	tuple val(meta6 ), path(blacklisted) //bed
-	tuple val(meta7 ), path(apply_hard_filters_arguments)
-	tuple val(meta7b), path(exclude_samples)
-	tuple val(meta8 ), path(cases)
-	tuple val(meta9 ), path(controls)
+	tuple val(meta6 ), path(cadd_tabix),path(cadd_tbi)
+	tuple val(meta7 ), path(mapability_bigwig)
+	tuple val(meta8 ), path(blacklisted) //bed
+	tuple val(meta9 ), path(apply_hard_filters_arguments)
+	tuple val(meta10), path(filterjdk_code)
+	tuple val(meta11), path(exclude_samples)
+	tuple val(meta12), path(cases)
+	tuple val(meta13), path(controls)
 	tuple val(meta  ), path(vcf),path(vcfidx),path(bed)
 	
 output:
@@ -75,11 +76,12 @@ script:
 	def with_contrast  = parseBoolean(task.ext.with_contrast?:true)
 	def jvm = task.ext.jvm?:" -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
 	def prefix = task.ext.prefix?:"${meta.id}${bed?".${bed.name}":""}.wgselect"
-	def with_gnomad_filtered = (task.ext.with_gnomad_filtered?:true) as boolean
-	def rename_contigs = (task.ext.rename_contigs?:false) as boolean
+	def with_gnomad_filtered_out = parseBoolean(task.ext.with_gnomad_filtered_out?:true)
+	def rename_contigs = parseBoolean(task.ext.rename_contigs?:false)
 	def jvarkit = "java ${jvm} -jar \${HOME}/jvarkit.jar"
 	def id_format = task.ext.id_format?:"+'%VKX'"
-	def with_setid = (task.ext.with_setid?:!isBlank(id_format)) as boolean
+	def with_setid = parseBoolean(task.ext.with_setid?:!isBlank(id_format))
+	def filterjdk_args = task.ext.filterjdk_args?:""
 """
 hostname 1>&2
 set -x
@@ -334,6 +336,15 @@ touch TMP/variant_list.txt
 	countIt "lowDP" TMP/jeter1.vcf TMP/jeter2.vcf
 	mv TMP/jeter2.vcf TMP/jeter1.vcf
 
+	# custom vcffilterjdk
+	if ${filterjdk_code?true:false}
+	then
+		${jvarkit} vcffilterjdk --nocode  ${filterjdk_args} -f '${filterjdk_code}' TMP/jeter1.vcf > TMP/jeter2.vcf
+
+		countIt "filterjdk" TMP/jeter1.vcf TMP/jeter2.vcf
+		mv TMP/jeter2.vcf TMP/jeter1.vcf
+	fi
+
 
 	# all genotypes with ALT must have GQ >= 'x'
 
@@ -382,7 +393,7 @@ touch TMP/variant_list.txt
 			--max-af "${gnomadAF}" TMP/jeter1.vcf   > TMP/jeter2.vcf
 		mv TMP/jeter2.vcf TMP/jeter1.vcf
 
-		if ${with_gnomad_filtered} ; then
+		if ${with_gnomad_filtered_out} ; then
 
 			bcftools view --header-only TMP/jeter1.vcf |\\
 				grep "^##FILTER" |\\

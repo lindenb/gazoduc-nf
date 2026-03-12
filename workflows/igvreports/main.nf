@@ -29,18 +29,12 @@ include { paramsHelp                                } from 'plugin/nf-schema'
 include { paramsSummaryLog                          } from 'plugin/nf-schema'
 include { parseBoolean                              } from '../../modules/utils/functions.nf'
 include { assertKeyExistsAndNotEmpty                } from '../../modules/utils/functions.nf'
-include { READ_SAMPLESHEET                          } from '../../subworkflows/nf/read_samplesheet'
+include { READ_SAMPLESHEET  as READ_BAMS            } from '../../subworkflows/nf/read_samplesheet'
 include { READ_SAMPLESHEET  as READ_VARIANTS        } from '../../subworkflows/nf/read_samplesheet'
 include { PREPARE_ONE_REFERENCE                     } from '../../subworkflows/samtools/prepare.one.ref'
 include { META_TO_BAMS                              } from '../../subworkflows/samtools/meta2bams1'
+include { IGV_REPORT                                } from '../../modules/igv/igv_report1'
 
-
-if( params.help ) {
-    dumpParams(params);
-    exit 0
-}  else {
-    dumpParams(params);
-}
 
 
 
@@ -83,18 +77,18 @@ workflow {
 			)
 	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
 
-		/* no fastq samplesheet */
-    READ_SAMPLESHEET(
+   /*READ BAM samplesheet */
+    READ_BAMS(
         metadata.plus(arg_name:"samplesheet"),
         params.samplesheet
         )
-	versions = versions.mix(READ_SAMPLESHEET.out.versions)
+	versions = versions.mix(READ_BAMS.out.versions)
 
 	META_TO_BAMS(
 			metadata ,
 			PREPARE_ONE_REFERENCE.out.fasta,
 			PREPARE_ONE_REFERENCE.out.fai,
-			READ_SAMPLESHEET.out.samplesheet
+			READ_BAMS.out.samplesheet
 			)
 	versions = versions.mix(META_TO_BAMS.out.versions)
 
@@ -106,7 +100,7 @@ workflow {
 			)
 		versions = versions.mix(READ_VARIANTS.out.versions)
 
-		READ_VARIANTS.out.samplesheet
+		ch1 = READ_VARIANTS.out.samplesheet
 			.map{assertKeyExistsAndNotEmpty(it,"contig")}
 			.map{assertKeyExistsAndNotEmpty(it,"sample")}
 			.map{
@@ -115,13 +109,54 @@ workflow {
 				def pos = (it.position as int)
 				return it.plus([start:pos,end:pos]);
 				}
+			/** multiple sample name specified  with comma */
+			.flatMap{row->
+				def samples = row.sample.split(",");
+				def L = [];
+				def i;
+				for(i=0;i< samples.size();i++) {
+					def sn = samples[i].trim();
+					if(sn.isEmpty()) continue;
+					L.add(row.plus(sample:sn, sample_idx:i));
+					}
+				return L;
+				}
 			.combine(META_TO_BAMS.out.bams)
-			.filter{meta1,meta2,bam,bai->meta1.sample==meta2.id}
-			.map{meta1,meta2,bam,bai->[[contig:meta1.contig,start:(meta1.start as int),end:(meta1.end as int)], meta1,bam,bai]}
+			.filter{meta1,meta2,bam,bai->meta1.sample==meta2.id || meta1.sample=="*"}
+			.map{meta1,meta2,bam,bai->[[contig:meta1.contig,start:(meta1.start as int),end:(meta1.end as int)],[meta1,bam,bai]]}
 			.groupTuple()
-			.map{key_pos,metas,bams,bais->[metas[0],bams,bais]}
+			// keep bam order as defined by 'sample_idx'
+			.map{key_pos,arrays->[key_pos,arrays.sort{A1,A2->A1[0].sample_idx <=> A2[0].sample_idx } ]}
+			.map{key_pos,arrays->[
+				arrays[0][0].plus(id: key_pos.contig+"_"+key_pos.start+(key_pos.start==key_pos.end?"":"_"+key_pos.end)) /* first meta */]
+				arrays.collect{A->A[1]}, //bams
+				arrays.collect{A->A[2]} // bais
+				}
+		
+		DOWNLOAD_CYTOBAND(PREPARE_ONE_REFERENCE.out.dict)
+		versions = versions.mix(DOWNLOAD_CYTOBAND.out.versions)
 
+
+		DOWNLOAD_REFGENE(PREPARE_ONE_REFERENCE.out.dict)
+		versions = versions.mix(DOWNLOAD_REFGENE.out.versions)
+
+
+
+		IGV_REPORT(
+			PREPARE_ONE_REFERENCE.out.fasta,
+			PREPARE_ONE_REFERENCE.out.fai,
+			PREPARE_ONE_REFERENCE.out.dict,
+			DOWNLOAD_CYTOBAND.out.bed,
+			DOWNLOAD_REFGENE.out.tabix,
+			[id:"nosamplelist",[]],
+			[id:"noped",[]],
+			vcf_ch,
+			ch1
+			)
+		versions = versions.mix(IGV_REPORT.out.versions)
 		}
+
+
 
 
 	ch1 = IGVREPORTS(
@@ -154,10 +189,6 @@ workflow IGVREPORTS {
 
 		compile_ch = COMPILE()
 		version_ch = version_ch.mix(compile_ch.version)
-
-		cyto_ch = DOWNLOAD_CYTOBAND(fasta,fai,dict)
-
-		refgene_ch = DOWNLOAD_REFGENE(fasta,fai,dict)
 
 		prepare_ch = PREPARE_IGVREPORTS(
 			fasta,

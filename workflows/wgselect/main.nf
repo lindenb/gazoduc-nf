@@ -234,6 +234,7 @@ workflow {
 		mappability,
 		black_list_bed_ch,
 		apply_hard_filters_arguments,
+		[[id:"filterjdk"],(params.filterjdk_code==null?([]):file(params.filterjdk_code))],
 		exclude_samples,
 		cases_ch,
 		controls_ch,

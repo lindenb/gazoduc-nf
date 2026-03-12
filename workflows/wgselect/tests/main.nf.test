@@ -1,0 +1,28 @@
+nextflow_pipeline {
+
+    name "Test Workflow main.nf"
+    script "workflows/wgselect/main.nf"
+    tag "workflows"
+    tag "workflows/wgselect"
+    tag "gitlab_ci"
+    
+
+    test("STUB") {
+        options "-stub"
+        when {
+            params {
+                fasta       = "${projectDir}/tests/data/rotavirus_rf.fa"
+                vcf = "${projectDir}/tests/data/rotavirus_rf.vcf.gz"
+                gtf = "${projectDir}/tests/data/rotavirus_rf.gtf.gz"
+                gff3 = "${projectDir}/tests/data/rotavirus_rf.gff3.gz"
+                snpeff_database_directory =  "${projectDir}/tests/data/snpeff.db"
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+
+    }
+
+}
