@@ -24,12 +24,16 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
+include { validateParameters                        } from 'plugin/nf-schema'
+include { paramsHelp                                } from 'plugin/nf-schema'
+include { paramsSummaryLog                          } from 'plugin/nf-schema'
+include { parseBoolean                              } from '../../modules/utils/functions.nf'
+include { assertKeyExistsAndNotEmpty                } from '../../modules/utils/functions.nf'
+include { READ_SAMPLESHEET                          } from '../../subworkflows/nf/read_samplesheet'
+include { READ_SAMPLESHEET  as READ_VARIANTS        } from '../../subworkflows/nf/read_samplesheet'
+include { PREPARE_ONE_REFERENCE                     } from '../../subworkflows/samtools/prepare.one.ref'
+include { META_TO_BAMS                              } from '../../subworkflows/samtools/meta2bams1'
 
-include {VERSION_TO_HTML} from '../../modules/version/version2html.nf'
-include {dumpParams;runOnComplete;moduleLoad} from '../../modules/utils/functions.nf'
-//include {MERGE_VERSION} from '../../modules/version/version.merge.02.nf'
-include {DOWNLOAD_CYTOBAND} from '../../modules/ucsc/download.cytoband.nf'
-include {DOWNLOAD_REFGENE } from '../../modules/ucsc/download.refgene.nf'
 
 if( params.help ) {
     dumpParams(params);
@@ -42,14 +46,83 @@ if( params.help ) {
 
 workflow {
 	
+	if( params.help ) {
+		log.info(paramsHelp())
+		exit 0
+		}  else {
+		// Print summary of supplied parameters
+		log.info paramsSummaryLog(workflow)
+		}
+
+	
+		
+	versions = Channel.empty()
+	multiqc = Channel.empty()
+	
 	if(params.fasta==null) {
-      throw new IllegalArgumentException("undefined --fasta");
+      log.error("undefined --fasta");
+	  exit -1
       }
-	  
-	def genome_hash= [
-		id:file(params.fasta).simpleName,
-		name:file(params.fasta).simpleName
-		]
+	
+	if(params.samplesheet==null) {
+      log.error("undefined --samplesheet");
+	  exit -1
+      }
+
+	def metadata= [id:"igvreport"]
+
+
+  /***************************************************
+   *
+   *  PREPARE FASTA REFERENCE
+   *
+   */
+	PREPARE_ONE_REFERENCE(
+			metadata.plus(scatter_bed:false),
+			Channel.of(params.fasta).map{file(it)}.map{[[id:it.baseName],it]}
+			)
+	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
+
+		/* no fastq samplesheet */
+    READ_SAMPLESHEET(
+        metadata.plus(arg_name:"samplesheet"),
+        params.samplesheet
+        )
+	versions = versions.mix(READ_SAMPLESHEET.out.versions)
+
+	META_TO_BAMS(
+			metadata ,
+			PREPARE_ONE_REFERENCE.out.fasta,
+			PREPARE_ONE_REFERENCE.out.fai,
+			READ_SAMPLESHEET.out.samplesheet
+			)
+	versions = versions.mix(META_TO_BAMS.out.versions)
+
+
+	if(params.variants!=null) {
+		READ_VARIANTS(
+			metadata.plus(arg_name:"variants"),
+        	params.variants
+			)
+		versions = versions.mix(READ_VARIANTS.out.versions)
+
+		READ_VARIANTS.out.samplesheet
+			.map{assertKeyExistsAndNotEmpty(it,"contig")}
+			.map{assertKeyExistsAndNotEmpty(it,"sample")}
+			.map{
+				if(it.start!=null && it.end!=null) return it;
+				if(it.position==null) throw new IllegalArgumentException("missing 'position' in ${meta}");
+				def pos = (it.position as int)
+				return it.plus([start:pos,end:pos]);
+				}
+			.combine(META_TO_BAMS.out.bams)
+			.filter{meta1,meta2,bam,bai->meta1.sample==meta2.id}
+			.map{meta1,meta2,bam,bai->[[contig:meta1.contig,start:(meta1.start as int),end:(meta1.end as int)], meta1,bam,bai]}
+			.groupTuple()
+			.map{key_pos,metas,bams,bais->[metas[0],bams,bais]}
+
+		}
+
 
 	ch1 = IGVREPORTS(
 		[id:"igvreports"],

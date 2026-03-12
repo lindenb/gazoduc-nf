@@ -46,6 +46,11 @@ include { BCFTOOLS_CONCAT                          } from '../../modules/bcftool
 include { MULTIQC as MQC1                          } from '../../modules/multiqc'
 include { MULTIQC as MQC2                          } from '../../modules/multiqc'
 include { JVARKIT_MULTIQCPOSTPROC                  } from '../../modules/jvarkit/multiqcpostproc'
+include { JVARKIT_VCF_FLATTEN                      } from '../../modules/jvarkit/vcfflatten'
+include { BCFTOOLS_CONTRAST                        } from '../../modules/bcftools/contrast'
+include { BCFTOOLS_QUERY as EXTRACT_TO_QQMAN       } from '../../modules/bcftools/query'
+include { BCFTOOLS_QUERY as BCFTOOLS_GET_METHOD    } from '../../modules/bcftools/query'
+include { QQMAN                                    } from '../../modules/qqman'
 
 workflow {
 	
@@ -213,6 +218,12 @@ workflow {
 		mappability = [[id:"mappability"],file("${params.mappability_bigwig}")]
 		}
 
+	if(params.exclude_samples==null) {
+		exclude_samples =  [[id:"no_exclude_samples"],[]]
+	} else {
+		exclude_samples =  [[id:"exclude_samples"],file("${params.no_exclude_samples}")]
+	}
+
 	WGSELECT(
 		PREPARE_ONE_REFERENCE.out.fasta,
 		PREPARE_ONE_REFERENCE.out.fai,
@@ -223,6 +234,7 @@ workflow {
 		mappability,
 		black_list_bed_ch,
 		apply_hard_filters_arguments,
+		exclude_samples,
 		cases_ch,
 		controls_ch,
 		vcfs.map{meta,vcffile,tbi->[meta,vcffile,tbi,[]]}
@@ -237,6 +249,43 @@ workflow {
 			.map{files->[[id:"wgselect"],files.sort()]}
 		)
 	versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
+
+	/**
+	 * run BCFTOOLS_CONTRAST to get a quick burden
+	 */
+	if(params.cases!=null && params.controls!=null && parseBoolean(params.with_contrast)) {
+		JVARKIT_VCF_FLATTEN(BCFTOOLS_CONCAT.out.vcf.map{meta,vcf,_tbi->[meta,vcf]} )
+		versions = versions.mix(JVARKIT_VCF_FLATTEN.out.versions)
+
+		BCFTOOLS_CONTRAST(
+			cases_ch,
+			controls_ch,
+			JVARKIT_VCF_FLATTEN.out.vcf
+			)
+		versions = versions.mix(BCFTOOLS_CONTRAST.out.versions)
+
+		/** extract distinct methods from vcfflatten */
+		BCFTOOLS_GET_METHOD(BCFTOOLS_CONTRAST.out.vcf)
+		versions = versions.mix(BCFTOOLS_GET_METHOD.out.versions)
+
+		/** extract CHROM/POS/P_VALUE for each method */
+		EXTRACT_TO_QQMAN(
+			BCFTOOLS_GET_METHOD.out.output
+				.map{meta,file->file}
+				.splitText()
+				.map{it.trim()}
+				.filter{m->m!="FLATTEN_VARIANT"}
+				.combine(BCFTOOLS_CONTRAST.out.vcf)
+				.map{method_gene,meta,vcf->[meta.plus(title:method_gene, method:method_gene,id:meta.id+"."+method_gene.replaceAll("[^A-Za-z0-9_]+","_")),vcf]}
+			)
+		versions = versions.mix(EXTRACT_TO_QQMAN.out.versions)
+
+		QQMAN(EXTRACT_TO_QQMAN.out.output)
+		versions = versions.mix(QQMAN.out.versions)
+		multiqc = multiqc.mix(QQMAN.out.manhattan)
+		multiqc = multiqc.mix(QQMAN.out.qqplot)
+	}
+
 
 
 	def gtf    = [[id:"gtf"], file(params.gtf), file(params.gtf+".tbi") ]
@@ -273,6 +322,7 @@ workflow {
 	
 	JVARKIT_MULTIQCPOSTPROC(
 		MAKE_PEDIGREE.out.sample2pop,
+		[[id:"nocustom"],[]],
 		MQC1.out.datadir
 		)
 	

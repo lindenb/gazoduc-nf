@@ -22,6 +22,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include { isBlank       } from '../../modules/utils/functions.nf'
+include { verify        } from '../../modules/utils/functions.nf'
+include { parseBoolean  } from '../../modules/utils/functions.nf'
 
 process WGSELECT {
 label "process_single"
@@ -36,8 +39,9 @@ input:
 	tuple val(meta5 ), path(snpEffDir),path(snpeff_dbname)
 	tuple val(meta51), path(cadd_tabix),path(cadd_tbi)
 	tuple val(meta52), path(mapability_bigwig)
-	tuple val(meta6 ), path(blacklisted)
+	tuple val(meta6 ), path(blacklisted) //bed
 	tuple val(meta7 ), path(apply_hard_filters_arguments)
+	tuple val(meta7b), path(exclude_samples)
 	tuple val(meta8 ), path(cases)
 	tuple val(meta9 ), path(controls)
 	tuple val(meta  ), path(vcf),path(vcfidx),path(bed)
@@ -53,9 +57,9 @@ script:
 	def gnomadAF = ((task.ext.gnomadAF?:0.01) as double)
 	def soacn = (task.ext.soacn?: "SO:0001629,SO:0001818")
 	def exclude_soacn = task.ext.exclude_soacn?:""
-	def inverse_so = (task.ext.inverse_so?:false).toBoolean()
+	def inverse_so = parseBoolean(task.ext.inverse_so?:false)
 	def f_missing = (task.ext.f_missing?:0.01) as double
-	def with_setid = (task.ext.with_setid?:true) as boolean
+	
 	def with_homvar = (task.ext.with_homvar?:true) as boolean
 	def maxmaf = ((task.ext.max_maf?:0.1) as double)
 	def fisherh = ((task.ext.fisherh?:0.05) as double)
@@ -68,12 +72,14 @@ script:
 	def cadd_phred = ((task.ext.cadd_phred?:-1.0) as double)
 	def args1 = task.ext.args1?:""
 	def with_count = (task.ext.with_count?:false).toBoolean()
-	def with_contrast  = (task.ext.with_contrast?:true).toBoolean()
+	def with_contrast  = parseBoolean(task.ext.with_contrast?:true)
 	def jvm = task.ext.jvm?:" -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
 	def prefix = task.ext.prefix?:"${meta.id}${bed?".${bed.name}":""}.wgselect"
 	def with_gnomad_filtered = (task.ext.with_gnomad_filtered?:true) as boolean
 	def rename_contigs = (task.ext.rename_contigs?:false) as boolean
 	def jvarkit = "java ${jvm} -jar \${HOME}/jvarkit.jar"
+	def id_format = task.ext.id_format?:"+'%VKX'"
+	def with_setid = (task.ext.with_setid?:!isBlank(id_format)) as boolean
 """
 hostname 1>&2
 set -x
@@ -100,21 +106,35 @@ touch TMP/variant_list.txt
 		fi
 	}
 
+	bcftools query -l "${vcf}" | sort | uniq > TMP/samples.in.vcf.txt
+	cp TMP/samples.in.vcf.txt TMP/samples.filtered.txt
+
+	# sample to exclude ?
+	if ${exclude_samples?true:false} && test -s "${exclude_samples}"
+	then
+		comm -1 -2 \
+			<(sort  TMP/samples.in.vcf.txt ) \
+			<(sort  "${exclude_samples}" | grep -v '^#' | grep -v '^\$' ) > TMP/samples.filtered.txt
+	fi
+
+
 
 	## Extract case/controls from pedigree
 	if ${(cases?true:false) && (controls?true:false)}
 	then
-		bcftools query -l "${vcf}" | sort | uniq > TMP/samples.in.vcf.txt
+		
+
+
 		sort "${cases}" |uniq > TMP/cases.txt
 		sort "${controls}" |uniq > TMP/controls.txt
 
-		comm -12 TMP/cases.txt TMP/samples.in.vcf.txt > TMP/jeter.txt
+		comm -12 TMP/cases.txt TMP/samples.filtered.txt > TMP/jeter.txt
 		mv TMP/jeter.txt TMP/cases.txt
 
 		# the following test fails if there is no common sample in cases and VCF
 		test -s TMP/cases.txt
 
-		comm -12 TMP/controls.txt TMP/samples.in.vcf.txt > TMP/jeter.txt
+		comm -12 TMP/controls.txt TMP/samples.filtered.txt > TMP/jeter.txt
 		mv TMP/jeter.txt TMP/controls.txt
 
 		# the following test fails if there is no common sample in controls and VCF
@@ -175,7 +195,7 @@ touch TMP/variant_list.txt
 
 
 
-	# remove in blaclisted regions ############################################################################
+	# remove in blacklisted regions ############################################################################
 	bcftools view  --targets-overlap 2 \\
 		--targets-file ^TMP/jeter.blacklisted.bed \\
 		-O u -o TMP/jeter2.bcf TMP/jeter1.bcf
@@ -216,7 +236,7 @@ touch TMP/variant_list.txt
 
 	## update VCF ID. Useful for plink stuff #########################################################
 	if ${with_setid} ; then
-		bcftools annotate --set-id +'%VKX'  -O b -o TMP/jeter2.bcf TMP/jeter1.bcf
+		bcftools annotate --set-id ${id_format}  -O b -o TMP/jeter2.bcf TMP/jeter1.bcf
 		mv TMP/jeter2.bcf TMP/jeter1.bcf
 	fi
 

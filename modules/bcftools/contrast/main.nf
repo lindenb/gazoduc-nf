@@ -22,50 +22,36 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-
-process BCTOOLS_CONTRAST {
+/**
+ * apply bctools contrast 
+ */
+process BCFTOOLS_CONTRAST {
     label "process_single"
     tag "${meta.id}"
     conda "${moduleDir}/../../../conda/bioinfo.01.yml"
     afterScript "rm -rf TMP"
     input:
-        tuple val(meta2),path(pedigree)
-        tuple val(meta),val(vcf),path(vcfidx)
+        tuple val(meta1),path(cases)
+        tuple val(meta2),path(controls)
+        tuple val(meta),path(vcf)
     output:
-        tuple val(meta),path("*.bcf"),path("*.csi"),emit:vcf
+        tuple val(meta),path("*.vcf.gz"),emit:vcf
         path("versions.yml"),emit:versions
     script:
-        def prefix = task.ext.prefix?:vcf.baseName+".contrast"
+        def prefix = task.ext.prefix?:"${meta.id}.contrast"
+        def annotations = task.ext.annotations?:"PASSOC,FASSOC,NASSOC,NOVELAL,NOVELGT"
+        def args1 = task.ext.args1?:""
     """
     mkdir -p TMP
+    
+	bcftools +contrast \\
+		--case-samples ./${cases} \\
+		--control-samples ./${controls} \\
+        ${args1} \\
+        -a "${annotations}" \\
+		-O z -o TMP/jeter.vcf.gz '${vcf}'
 
-bcftools query -l '${vcf}' | sort | uniq > TMP/jeter1.txt
-
-awk '(\$6=="case" || \$6=="affected") {print \$2;}' '${pedigree}' | sort | uniq > TMP/jeter2.txt
-comm -12 TMP/jeter1.txt  TMP/jeter2.txt > TMP/jeter.cases.txt
-
-awk '(\$6=="control" || \$6=="unaffected") {print \$2;}' '${pedigree}' | sort | uniq > TMP/jeter2.txt
-comm -12 TMP/jeter1.txt  TMP/jeter2.txt > TMP/jeter.ctrls.txt
-
-
-
-if [  -s "TMP/jeter.cases.txt" ] && [  -s "TMP/jeter.ctrls.txt"	]
-then
-
-	bcftools +contrast \
-		-0 TMP/jeter.ctrls.txt \
-		-1 TMP/jeter.cases.txt \
-		-a PASSOC,FASSOC,NASSOC,NOVELAL,NOVELGT -O b -o TMP/jeter.bcf '${vcf}'
-
-    bcftools index --threads ${task.cpus} -f  TMP/jeter.bcf
-
-else
-     bcftools view --write-index --threads ${task.cpus} -o TMP/jeter.bcf '${vcf}'
-fi
-
-  
-mv  TMP/jeter.bcf ${prefix}.bcf
-mv  TMP/jeter.bcf.csi ${prefix}.bcf.csi
+mv  TMP/jeter.vcf.gz ${prefix}.vcf.gz
 
 
 cat << END_VERSIONS > versions.yml
@@ -74,8 +60,8 @@ cat << END_VERSIONS > versions.yml
 END_VERSIONS
 """
 stub:
-     def prefix = task.ext.prefix?:vcf.baseName+".contrast"
+        def prefix = task.ext.prefix?:"${meta.id}.contrast"
 """
-touch versions.yml ${prefix}.bcf ${prefix}.bcf.csi
+touch versions.yml ${prefix}.vcf.gz
 """
 }
