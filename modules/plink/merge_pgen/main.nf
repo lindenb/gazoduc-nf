@@ -1,0 +1,72 @@
+/*
+
+Copyright (c) 2026 Pierre Lindenbaum
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+The MIT License (MIT)
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
+/**
+ * Merge PGEN files 
+ * used for Regenie
+ */
+process PLINK2_MERGE_PGEN {
+label "process_single"
+afterScript "rm -rf TMP"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+input:
+	tuple val(meta ), path("INPUT/*")
+output:
+    tuple val(meta),path("*.pgen"),path("*.psam"),path("*.pvar"),emit:pgen
+    tuple val(meta),path("*.log"),emit:log
+    path("versions.yml"),emit:versions
+script:
+    def prefix = task.ext.prefix?:"${meta.id}"
+"""
+set -o pipefail
+mkdir -p TMP
+set -x
+find INPUT -type l -name "*.pgen" | sed 's/\\.pgen\$//' > TMP/jeter.list
+
+if test `wc -l < TMP/jeter.list` -eq 1
+then
+	touch ${prefix}.log
+	ln -s INPUT/*.pvar ${prefix}.pvar
+	ln -s INPUT/*.psam ${prefix}.psam
+	ln -s INPUT/*.pgen ${prefix}.pgen
+else
+
+plink2 \\
+    --pmerge-list TMP/jeter.list \\
+    --make-pgen \\
+	--threads ${task.cpus} \\
+    --out "${prefix}"
+fi
+
+cat << EOF > versions.yml
+${task.process}:
+    plink2: \$(plink2 --version)
+EOF
+"""
+stub:
+    def prefix = task.ext.prefix?:"${meta.id}"
+"""
+touch versions.yml ${prefix}.log ${prefix}.pvar ${prefix}.psam ${prefix}.pgen
+"""
+}

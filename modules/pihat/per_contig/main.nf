@@ -60,6 +60,7 @@ script:
     def f_missing = task.ext.f_missing?:0.01
     def min_DP  = task.ext.min_DP?:20
     def max_DP  = task.ext.max_DP?:300
+    def set_id = task.ext.set_id?:"'%CHROM:%POS:%REF:%FIRST_ALT'" // could be +'%VKX', for regenie, we need '%CHROM:%POS:%REF:%FIRST_ALT'
 """
 mkdir -p TMP
 set -x
@@ -252,10 +253,11 @@ then
     mv TMP/jeter2.bcf TMP/jeter1.bcf
 fi
 
+
 #
 # Assign variant ID
 #
-bcftools annotate --threads ${task.cpus} --set-id +'%VKX' -O z -o TMP/jeter1.vcf.gz TMP/jeter1.bcf
+bcftools annotate --threads ${task.cpus} --set-id ${set_id} -O z -o TMP/jeter1.vcf.gz TMP/jeter1.bcf
 bcftools index --threads ${task.cpus} -f -f   TMP/jeter1.vcf.gz
 dump_vcf TMP/jeter1.vcf.gz
 

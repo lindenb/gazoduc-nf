@@ -13,7 +13,8 @@ nextflow_pipeline {
             params {
                 fasta       = "${projectDir}/tests/data/rotavirus_rf.fa"
                 vcf = "${projectDir}/tests/data/rotavirus_rf.vcf.gz"
-                covariate = "${projectDir}/tests/data/rotavirus_rf.mds"
+                covariates = "${projectDir}/tests/data/rotavirus_rf.mds"
+                samplesheet = "${projectDir}/tests/data/rotavirus_rf.samples.tsv"
             }
         }
 

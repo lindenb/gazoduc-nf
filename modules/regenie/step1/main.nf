@@ -25,45 +25,54 @@ SOFTWARE.
 process REGENIE_STEP1 {
 label "process_single"
 label "process_high_memory"
-tag "${meta1.id}"
-conda "${moduleDir}/../../conda/regenie.yml"
+tag "${meta.id}"
+conda "${moduleDir}/../../../conda/regenie.yml"
 afterScript "rm -rf TMP"
 input:
-        tuple val(meta1),path(bgen_files)
         tuple val(meta2),path(covariates)
-        tuple val(meta3),path(pheno_files)
-        tuple val(meta4),path(plink_files)
+        tuple val(meta3),path(plink_ped)
+        tuple val(meta4),path(keep_rs)
+        tuple val(meta ),path(pgen),path(psam),path(pvar)
 output:
-        tuple val(meta1),path("*_pred.list"),emit:output
-        tuple val(meta1),path("*.log"),emit:log
+        tuple val(meta ),path("*_pred.list"),emit:output
+        tuple val(meta ),path("*.log"),emit:log
         path("versions.yml"),emit:versions
 script:
-        def prefix = task.ext.prefix?:"{meta1.id}step1"
-        def pgen = bgen_files.find{it.name.endsWith(".pgen")}
-        def keep_rs = plink_files.find{it.name.endsWith("keep.id.txt")}
+        def prefix = task.ext.prefix?:"{meta.id}.step1"
         def args = task.ext.args?:"--bsize 1000 --bt --phenoCol Y1"
-        def ped = pheno_files.find{it.name.endsWith(".plink.ped")}
+        def phenoColList = task.ext.phenoColList?:"status"
 """
+mkdir -p TMP
 
-mkdir -p TMP/OUT
-set -x
+#
+# it is not recommened to use more than 1000000 variants in step 1 of regenie
+#
+if ${keep_rs?true:false}
+then
+        if test `wc -l < ${keep_rs}` -gt 1000000
+        then
+                echo "Too many markers for ${keep_rs}"
+                exit -1
+        fi
+fi
+
+
 
 
 regenie \\
   --step 1 \\
-  --pgen \$(basename ${pgen} .pgen) \\
-  --phenoFile ${ped} \\
-  --phenoColList `head -n 1 ${ped} | cut -f4- |tr "\t" ","` \\
+  --pgen ${pgen.baseName} \\
+  --phenoFile ${plink_ped} \\
+  --phenoColList ${phenoColList} \\
   --covarFile "${covariates}" \\
-  --extract '${keep_rs}' \\
+  ${keep_rs?"--extract \"${keep_rs}\"":""} \\
   ${args} \\
   --lowmem \\
   --lowmem-prefix TMP/regenie_tmp_preds \\
   --threads ${task.cpus} \\
   --out "${prefix}"
 
-find ./
-{meta1.id}step1
+find ./ 1>&2
 
 cat << EOF > versions.yml
 ${task.process}:
@@ -71,9 +80,8 @@ ${task.process}:
 EOF
 """
 stub:
-    def prefix = task.ext.prefix?:"{meta1.id}step1"
+    def prefix = task.ext.prefix?:"{meta.id}step1"
 """
 touch versions.yml ${prefix}_pred.list ${prefix}.log
 """
 }
-
