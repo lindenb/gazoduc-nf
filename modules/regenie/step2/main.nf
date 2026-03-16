@@ -24,23 +24,22 @@ SOFTWARE.
 */
 
 process REGENIE_STEP2 {
-label "process_single_high"
+label "process_single"
 array 100
-tag "chr${contig} ${title} ${annot.name}"
+tag "${meta.id}"
 conda "${moduleDir}/../../conda/regenie.yml"
 afterScript "rm -rf TMP"
 input:
-        path(bgen_files)
-        path(covariates)
-        path(pheno_files)
-	path(pred_list)
-	tuple val(title),val(contig),path(annot),path(setfile),path(mask),path(aff)
+        tuple val(meta1 ),path(pgen),path(psam),path(pvar)
+        tuple val(meta2),path(covariates)
+        tuple val(meta3),path(plink_ped)
+	tuple val(meta4),path(loco)
+	tuple val(meta ),path(annot),path(setfile),path(mask),path(aff)
 output:
-        tuple val(title),path("*.regenie.gz"),emit:output
-	tuple val(title),path("*masks.snplist.gz"),emit:masks_snplist
+        tuple val(meta),path("*.regenie.gz"),emit:output
+	tuple val(meta),path("*masks.snplist.gz"),emit:masks_snplist
 script:
-	def pgen = bgen_files.find{it.name.endsWith(".pgen")}
-	def ped = pheno_files.find{it.name.endsWith(".plink.ped")}
+	 def prefix = task.ext.prefix?:"${meta.id}step2"
 """
 
 mkdir -p TMP/OUT
@@ -53,10 +52,10 @@ gunzip -c "${aff}" > TMP/aaf.txt
 
 regenie \\
   --step 2 \\
-  --pgen \$(basename ${pgen} .pgen) \\
-  --phenoFile ${ped} \\
+  --pgen ${pgen.baseName} \\
+  --phenoFile ${plink_ped} \\
   --covarFile "${covariates}" \\
-  --pred ${pred_list} \\
+  --pred ${loco} \\
   --mask-def TMP/mask.txt \\
   --set-list TMP/setfile.txt \\
   --anno-file TMP/annot.txt \\
@@ -80,6 +79,16 @@ regenie \\
 
 gzip --best *masks.snplist
 gzip --best *.regenie
+
+cat << EOF > versions.yml
+${task.process}:
+    regenie: TODO
+EOF
+"""
+stub:
+    def prefix = task.ext.prefix?:"${meta.id}step2"
+"""
+touch versions.yml 
 """
 }
 

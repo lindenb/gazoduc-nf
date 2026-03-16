@@ -23,42 +23,43 @@ SOFTWARE.
 
 */
  
-process PLINK2_VCF2PGEN {
+process PLINK_RECODE_VCF {
 label "process_single"
-label "memory_50G"
 afterScript "rm -rf TMP"
 tag "${meta.id}"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
-	tuple val(meta1),path(fasta) /* or any ...  for PAR region */
-	tuple val(meta2),path(plink_ped)
-	tuple val(meta ),path(vcf)
+	tuple val(meta ),path(bim),path(bed),path(fam)
 output:
-    tuple val(meta),path("*.pgen"),path("*.psam"),path("*.pvar"),emit:pgen
+    tuple val(meta),path("*.vcf.gz"),emit:vcf
     tuple val(meta),path("*.log"),emit:log
     path("versions.yml"),emit:versions
 script:
-    def args = task.ext.args?:""
+    def args1 = task.ext.arg1?:""
+    def args2 = task.ext.arg2?:" vcf-iid  "
     def prefix = task.ext.prefix?:"${meta.id}"
 """
 mkdir -p TMP
 
-plink2 ${vcf.name.endsWith(".bcf")?"--bcf":"--vcf"} "${vcf}"  \\
-	${args} \\
-	--make-pgen erase-phase \\
-    ${plink_ped?" --update-sex ${plink_ped} --split-par ${meta1.ucsc_name?:"undefined"}":""} \\
-	--threads ${task.cpus} \\
-	--out "${prefix}"
+plink  \\
+	${args1} \\
+    --real-ref-alleles \\
+    --bfile ${bim.baseName} \\
+	--recode ${args2} bgz \\
+    --out TMP/jeter \\
+	--threads ${task.cpus} > ${prefix}.log
+
+mv TMP/jeter.vcf.gz ${prefix}.vcf.gz
 
 cat << EOF > versions.yml
 ${task.process}:
-    plink2: \$(plink2 --version)
+    plink: \$(plink --version)
 EOF
 """
 
 stub:
     def prefix = task.ext.prefix?:"${meta.id}"
 """
-touch versions.yml ${prefix}.log ${prefix}.pgen ${prefix}.psam ${prefix}.pvar
+touch versions.yml ${prefix}.vcf.gz 
 """
 }

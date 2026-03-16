@@ -1,3 +1,30 @@
+/*
+
+Copyright (c) 2026 Pierre Lindenbaum
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+The MIT License (MIT)
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
+
+include { verify                                  } from '../../modules/utils/functions.nf'
+include { isBlank                                 } from '../../modules/utils/functions.nf'
 
 process DIGEST_SAMPLESHEET {
 label "process_single"
@@ -5,7 +32,7 @@ tag "${meta.id}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
-	tuple val(meta1 ),path(vcf)
+	tuple val(meta1),path(vcf)
 	tuple val(meta ),path(samplesheet)
 output:
 	tuple val(meta ),path("*.cases.txt"),emit:cases
@@ -16,6 +43,7 @@ output:
 	path("versions.yml"),emit:versions
 script:
     def prefix = task.ext.id?:"${meta.id}"
+	def status = task.ext.status?:"status"
 """
 hostname 1>&2
 mkdir -p TMP
@@ -32,7 +60,7 @@ cat << 'EOF' > TMP/jeter.R
 SN= read.table("TMP/in.vcf.samples.txt",header=TRUE,sep="\\t", stringsAsFactors=FALSE,col.names=c("sample"))
 
 
-T1 <- read.table("${samplesheet}",header=TRUE,sep="\\t", stringsAsFactors=FALSE)
+T1 <- read.table("${samplesheet}",header=TRUE,sep="${samplesheet.name.endsWith(".csv")?",":"\\t"}", stringsAsFactors=FALSE)
 
 required_columns <- c("sample", "sex", "status")
 missing_columns <- setdiff(required_columns, colnames(T1))
@@ -46,7 +74,7 @@ if(!"population" %in% colnames(T1)) {
   # Copy the content of 'status' column into the new 'population' column
   T1\$population <- T1\$status
 }
-meta1
+
 T1\$population[T1\$population == ""] <- "NA"
 T1\$population[T1\$population == "."] <- "NA"
 
@@ -54,7 +82,10 @@ T1\$population[T1\$population == "."] <- "NA"
 
 T1 <- T1[T1\$sample %in% SN\$sample,]
 
-if (any(duplicated(T1\$sample))) {
+# show duplicated samples
+duplicated(T1\$sample)
+
+if (any(duplicated(T1\$sample))) {  
   stop("DUPLICATE SAMPLES")
 }
 
@@ -76,7 +107,7 @@ T1\$IID <- T1\$sample
 T2<-T1[,c("sample","population")]
 write.table(T2,file="TMP/sample2pop.txt", quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
 
-T1 <- T1[, c("FID", "IID", "sex", "${params.status}")]
+T1 <- T1[, c("FID", "IID", "sex", "${status}")]
 write.table(T1,file="TMP/plink.ped", quote=FALSE, row.names=FALSE, col.names=TRUE, sep="\t")
 EOF
 
@@ -165,8 +196,11 @@ join -t '\t' -1 2 -2 1 -e 'NA' -a 1 -o '1.1,1.2,2.2,2.3' TMP/jeter.a TMP/jeter.b
 	cut -f 2- |\\
 	awk -F '\t' 'BEGIN{printf("#FID\tIID\tSEX\t${status}\\n");} {printf("%s\t%s\t%s\t%s\\n",\$1,\$1,\$2,\$3);}' > TMP/new.psam
 
-ln -s ${pgen} ${prefix}.pgen
-ln -s ${pvar} ${prefix}.pvar
+ln -s '${pgen}' '${prefix}.pgen'
+
+# update ID in pvar ?
+awk -F '\t' '/^#/ {print;next;} {OFS="\t"; if( !(\$1 ~ /^chr/) && (\$3 ~ /^chr/)) {gsub(/^chr/,"",\$3);} print;}' '${pvar}'  > '${prefix}.pvar'
+
 mv TMP/new.psam ${prefix}.psam
 
 
@@ -184,29 +218,34 @@ touch versions.yml ${prefix}.pgen ${prefix}.pvar ${prefix}.psam
 /****************************************************************************************************/
 
 process FUNCTIONAL_ANNOTATION_SCORES {
-executor "local"
+label "process_single"
+tag "${meta.id}"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
 input:
 	tuple val(meta),path(user_custom_scores)
 output:
-	tuple val(meta),path("scores.tsv"),emit:tsv
+	tuple val(meta),path("*.tsv"),emit:tsv
 	path("versions.yml"),emit:versions
 script:
-	def prefix = task.ext.prefix?:"scores"
+	def prefix = task.ext.prefix?:"${meta.id}.scores"
 """
-test -s ${user_custom_scores}
-tr -s " " < "${user_custom_scores}" | tr " " "\t" > jeter.tsv
+mkdir -p TMP
+set -x 
+test -s "${user_custom_scores}"
+tr -s " " < "${user_custom_scores}" | tr " " "\t" | grep -v "^#" > TMP/jeter.tsv
 
-awk -F '\t' '(NF!=3 || \$1=="" || \$2=="" || \$3=="")'  jeter.tsv > valid.txt
+awk -F '\t' '(NF!=3 || \$1=="" || \$2=="" || \$3=="")'  TMP/jeter.tsv > TMP/valid.txt
 # error if any column 1-3 is empty
-test ! -s valid.txt
-rm valid.txt
+test ! -s TMP/valid.txt
+rm TMP/valid.txt
 
-mv jeter.tsv ${prefix}.tsv
+mv TMP/jeter.tsv ${prefix}.tsv
 touch versions.yml
 """
 
 stub:
-def prefix = task.ext.prefix?:"scores"
+	def prefix = task.ext.prefix?:"${meta.id}.scores"
 """
 touch ${prefix}.tsv versions.yml
 """
@@ -216,23 +255,21 @@ touch ${prefix}.tsv versions.yml
 /****************************************************************************************************/
 
 process MAKE_FUNCTIONAL_ANNOT_PER_CTG {
-tag "chr${contig}"
+tag "${meta.contig}"
 label "process_single"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"   
 afterScript "rm -rf TMP"
 input:
 	tuple val(meta1),path(annotations)
-	tuple val(meta2),path(gencode),path(gencode_tbi)
-    tuple val(contig),path(vcf),path(vcf_tbi)
+	tuple val(meta2),path(gencode),path(gencode_tbi),path(gencode_sql)
+    tuple val(meta ),path(vcf),path(vcf_tbi)
 output:
-    tuple val("functional"),val(contig),path("OUT/manifest.tsv"),emit:output
+    tuple val(meta),path("OUT/manifest.tsxv"),emit:tsv
 	path("versions.yml"),emit:versions
-when:
-	!(params.skip_XY && contig.matches("(chr)?[XY]"))
 script:
-	def jvm =tak.ext.jvm?:"-Djava.io.tmpdir=TMP "
+	def jvm = task.ext.jvm?:"-Djava.io.tmpdir=TMP "
 	def jvarkit = task.ext.jvarkit?:"java -jar  ${jvm} \${HOME}/jvarkit.jar"
-	def contig = meta.contig
+	def contig = meta.contig?:""
 	def freq = task.ext.freq?:""
 	verify(!isBlank(contig),"${task.process} : contig is blank")
 """
@@ -240,14 +277,14 @@ set -o pipefail
 mkdir -p TMP
 mkdir -p OUT
 
-bcftools view -O v '${vcf}' |\\
+bcftools view -O v '${vcf}' "${contig}" |\\
 	${jvarkit} regeniefunctionalannot \\
 		--annotations "${annotations}" \\
 		--kg '${gencode}' \\
 		-f "${freq}" |\\
 	${jvarkit} regeniemakeannot \\
 		-m "${annotations}" \\
-		--prefix "chr${contig}chunk" \\
+		--prefix "${contig}chunk" \\
 		--reserve 20 \\
 		-o \${PWD}/OUT \\
 		--gzip \\
@@ -264,102 +301,6 @@ touch versions.yml
 /****************************************************************************************************/
 /****************************************************************************************************/
 /****************************************************************************************************/
-
-process MAKE_BED {
-tag "chr${contig} ${select_bed.name}"
-label "process_single"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"
-afterScript "rm -rf TMP"
-input:
-	tuple val(meta),path(select_bed)
-    tuple val(contig),path(vcf),path(tbi)
-output:
-        tuple val("user_bed"),val(contig),path("OUT/manifest.tsv"),emit:output
-		path("versions.yml"),emit:versions
-when:
-	def contig = "${meta.contig}"
-	!(params.skip_XY && contig.matches("(chr)?[XY]"))
-script:
-	def jvm =tak.ext.jvm?:"-Djava.io.tmpdir=TMP "
-	def jvarkit = task.ext.jvarkit?:"java -jar  ${jvm} \${HOME}/jvarkit.jar"
-	def min_length= task.ext.min_bed_length?:"0" //(params.min_bed_length?:0)
-"""
-set -o pipefail
-mkdir -p TMP
-mkdir -p OUT
-
-# extract DICT only
-bcftools view --header-only  -O z -o TMP/dict.vcf.gz '${vcf}'
-
-# rename contig in user bed
-${select_bed.name.endsWith(".gz")?"gunzip -c ":"cat"} "${select_bed}" |\\
-	${jvarkit} bedrenamechr -R TMP/dict.vcf.gz --column 1 > TMP/jeter.bed
-
-# prevent empty file
-if test ! -s TMP/jeter.bed
-then
-	echo -e "XXXXX\t0\t1" > TMP/jeter.bed
-fi
-
-bcftools view --regions-file TMP/jeter.bed -O v '${vcf}' |\\
-	${jvarkit} regeniebedannot \\
-		--bed "${select_bed}" \\
-		--min-length ${min_length} \\
-		${params.skip_XY?"--noXY":""} \\
-		-f ${params.freq} |\\
-	${jvarkit} regeniemakeannot \\
-		--prefix "chr${contig}_bed_chunk" \\
-		-o \${PWD}/OUT \\
-		--reserve 10 \\
-		--gzip \\
-		-N 5000
-
-touch versions.yml
-"""
-stub:
-
-"""
-touch versions.yml OUT/manifest.tsv
-"""
-}
-
-/****************************************************************************************************/
-/****************************************************************************************************/
-/****************************************************************************************************/
-
-process MAKE_SLIDING {
-tag "chr${contig} ${win_size}/${win_shift}"
-label "process_single"
-conda "${moduleDir}/../../conda/bioinfo.01.yml"   
-afterScript "rm -rf TMP"
-input:
-        tuple val(contig),path(vcf_files),val(win_size),val(win_shift)
-output:
-        tuple val("sliding_${win_size}_${win_shift}"),val(contig),path("OUT/manifest.tsv"),emit:output
-when:
-	!(params.skip_XY && contig.matches("(chr)?[XY]"))
-script:
-        def vcf = vcf_files.find{it.name.endsWith(".bcf") || it.name.endsWith(".vcf.gz")}
-
-"""
-set -o pipefail
-mkdir -p TMP
-mkdir -p OUT
-
-bcftools view -O v '${vcf}' |\\
-	java -Djava.io.tmpdir=TMP -jar "\${HOME}/packages/jvarkit/dist/jvarkit.jar" regenieslidingannot \\
-		--window-size "${win_size}" \\
-		--window-shift "${win_shift}" \\
-		-f ${params.freq} |\\
-	java -Djava.io.tmpdir=TMP -jar "\${HOME}/packages/jvarkit/dist/jvarkit.jar" regeniemakeannot \\
-		--prefix "chr${contig}_${win_size}_${win_shift}_chunk" \\
-		-o \${PWD}/OUT \\
-		--reserve 20 \\
-		--gzip \\
-		-N 5000
-	
-"""
-}
 
 
 

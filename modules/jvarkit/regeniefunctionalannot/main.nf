@@ -1,3 +1,4 @@
+
 /*
 
 Copyright (c) 2026 Pierre Lindenbaum
@@ -22,43 +23,51 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
- 
-process PLINK2_VCF2PGEN {
-label "process_single"
-label "memory_50G"
-afterScript "rm -rf TMP"
+include { verify   } from '../../../modules/utils/functions.nf'
+include { isBlank  } from '../../../modules/utils/functions.nf'
+
+
+process REGENIE_FUNCTIONAL_ANNOT {
 tag "${meta.id}"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+label "process_single"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"   
+afterScript "rm -rf TMP"
 input:
-	tuple val(meta1),path(fasta) /* or any ...  for PAR region */
-	tuple val(meta2),path(plink_ped)
-	tuple val(meta ),path(vcf)
+	tuple val(meta1),path(annotations)
+	tuple val(meta2),path(gtf)
+    tuple val(meta ),path(vcf),path(vcf_tbi)
 output:
-    tuple val(meta),path("*.pgen"),path("*.psam"),path("*.pvar"),emit:pgen
-    tuple val(meta),path("*.log"),emit:log
-    path("versions.yml"),emit:versions
+    tuple val(meta),path("*.tsv.gz"),emit:tsv
+	path("versions.yml"),emit:versions
 script:
-    def args = task.ext.args?:""
+    def args1 = task.ext.args1?:""
+	def jvm = task.ext.jvm?:"-Djava.io.tmpdir=TMP "
+	def jvarkit = task.ext.jvarkit?:"java -jar  ${jvm} \${HOME}/jvarkit.jar"
+	def freq = task.ext.freq?:""
+    verify(!isBlank("${freq}"),"${task.process} freq is blank ?")
     def prefix = task.ext.prefix?:"${meta.id}"
 """
+set -o pipefail
 mkdir -p TMP
 
-plink2 ${vcf.name.endsWith(".bcf")?"--bcf":"--vcf"} "${vcf}"  \\
-	${args} \\
-	--make-pgen erase-phase \\
-    ${plink_ped?" --update-sex ${plink_ped} --split-par ${meta1.ucsc_name?:"undefined"}":""} \\
-	--threads ${task.cpus} \\
-	--out "${prefix}"
 
+bcftools view ${args1} -O v '${vcf}' |\\
+	${jvarkit} regeniefunctionalannot \\
+		--annotations "${annotations}" \\
+		--gtf '${gtf}' \\
+		-f "${freq}" |\\
+        gzip --best > TMP/jeter.tsv.gz
+
+mv TMP/jeter.tsv.gz ${prefix}.tsv.gz
+    
 cat << EOF > versions.yml
 ${task.process}:
-    plink2: \$(plink2 --version)
+	jvarkit: "\$(${jvarkit} --version)"
 EOF
 """
-
 stub:
-    def prefix = task.ext.prefix?:"${meta.id}"
 """
-touch versions.yml ${prefix}.log ${prefix}.pgen ${prefix}.psam ${prefix}.pvar
+ def prefix = task.ext.prefix?:"${meta.id}"
+touch versions.yml ${prefix}.tsv.gz
 """
 }

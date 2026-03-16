@@ -32,11 +32,12 @@ afterScript "rm -rf TMP"
 input:
 	tuple val(meta),path(dict)
 output:
-	tuple val(meta),path("*.txt.gz"),path("*.txt.gz.tbi"),emit:gencode
+	tuple val(meta),path("*.txt.gz"),path("*.txt.gz.tbi"),path("*.sql"),emit:gencode
 	path("versions.yml"),emit:versions
 script:
 	def prefix=task.ext.prefix?:"${meta.id}.gencode"
-	def version= task.ext.version?:"V47"
+	def version= task.ext.version?:"V49"
+	def jvm = task.ext.jvm?:"-Djava.io.tmpdir=TMP "
 	def url= task.ext.url?:""
 	if(isBlank(url)) {
 		if(meta.ucsc_name=="hg19") {
@@ -47,25 +48,28 @@ script:
 			}
 		}
 	verify(!isBlank(url),"${task.process} url is empty")
+	verify(url.endsWith(".txt.gz") , "${task.process} url ${url} should end with .txt.gz")
 """
 hostname 1>&2
 mkdir -p TMP
 
 curl -L -o TMP/gencode.txt.gz  "${url}"
+curl -L -o TMP/gencode.sql  "${url.replaceAll("\\.txt\\.gz\$",".sql")}"
 
 gunzip -c TMP/gencode.txt.gz |\\
-		jvarkit bedrenamechr -f "${dict}" --column 3 --convert SKIP |\\
+		jvarkit ${jvm} bedrenamechr -f "${dict}" --column 3 --convert SKIP |\\
 		sort -S ${task.memory.kilo} -T TMP -t '\t' -k3,3 -k5,5n |\\
 		bgzip > "${prefix}.gencode.txt.gz"
 
 tabix -f -0 -b 5 -e 6 -s 3 "${prefix}.gencode.txt.gz"
 
-#mv TMP/gencode.sql  "${prefix}.gencode.sql"
+mv TMP/gencode.sql  "${prefix}.gencode.sql"
 
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
 	url: "${url}"
+	version : "${version}"
 END_VERSIONS
 """
 stub:

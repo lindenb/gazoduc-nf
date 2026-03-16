@@ -22,43 +22,50 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
- 
-process PLINK2_VCF2PGEN {
-label "process_single"
-label "memory_50G"
-afterScript "rm -rf TMP"
+
+process REGENIE_MAKE_ANNOT {
 tag "${meta.id}"
-conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+label "process_single"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"   
+afterScript "rm -rf TMP"
 input:
-	tuple val(meta1),path(fasta) /* or any ...  for PAR region */
-	tuple val(meta2),path(plink_ped)
-	tuple val(meta ),path(vcf)
+	tuple val(meta1),path(annotations)
+	tuple val(meta ),path(tsv)
 output:
-    tuple val(meta),path("*.pgen"),path("*.psam"),path("*.pvar"),emit:pgen
-    tuple val(meta),path("*.log"),emit:log
-    path("versions.yml"),emit:versions
+    tuple val(meta),path("OUT/*.aaf.txt.gz", arity: '1..*'),optional:true,emit:aaf
+    tuple val(meta),path("OUT/*.annot.txt.gz", arity: '1..*'),optional:true,emit:annot
+    tuple val(meta),path("OUT/*.mask.txt.gz", arity: '1..*'),optional:true,emit:mask
+    tuple val(meta),path("OUT/*.setfile.txt.gz", arity: '1..*'),optional:true,emit:setfile
+	path("versions.yml"),emit:versions
 script:
-    def args = task.ext.args?:""
+	def jvm = task.ext.jvm?:"-Djava.io.tmpdir=TMP "
+	def jvarkit = task.ext.jvarkit?:"java -jar  ${jvm} \${HOME}/jvarkit.jar"
     def prefix = task.ext.prefix?:"${meta.id}"
 """
+set -o pipefail
 mkdir -p TMP
+mkdir -p OUT/
 
-plink2 ${vcf.name.endsWith(".bcf")?"--bcf":"--vcf"} "${vcf}"  \\
-	${args} \\
-	--make-pgen erase-phase \\
-    ${plink_ped?" --update-sex ${plink_ped} --split-par ${meta1.ucsc_name?:"undefined"}":""} \\
-	--threads ${task.cpus} \\
-	--out "${prefix}"
+${tsv.name.endsWith(".gz")?"gunzip -c":"cat"} "${tsv}" |\\
+${jvarkit} regeniemakeannot \\
+		-m "${annotations}" \\
+		--prefix "${prefix}." \\
+		--reserve 20 \\
+		-o \${PWD}/OUT \\
+		--gzip \\
+		-N 5000
+
+find OUT -type f 1>&2
+
 
 cat << EOF > versions.yml
 ${task.process}:
-    plink2: \$(plink2 --version)
+	jvarkit: "\$(${jvarkit} --version)"
 EOF
 """
-
 stub:
-    def prefix = task.ext.prefix?:"${meta.id}"
 """
-touch versions.yml ${prefix}.log ${prefix}.pgen ${prefix}.psam ${prefix}.pvar
+ def prefix = task.ext.prefix?:"${meta.id}"
+touch versions.yml ${prefix}.tsv.gz
 """
 }

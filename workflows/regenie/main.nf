@@ -31,11 +31,12 @@ include { paramsSummaryLog                         } from 'plugin/nf-schema'
 include { samplesheetToList                        } from 'plugin/nf-schema'
 include {SNPEFF_DOWNLOAD                           } from '../../modules/snpeff/download'
 include { BCFTOOLS_CONCAT_CONTIGS                  } from '../../subworkflows/bcftools/concat.contigs'
-include { DOWNLOAD_GENCODE                         } from '../../modules/ucsc/download.gencode'
+include { GTF_INPUT                                } from '../../subworkflows/nf/gtf_input'
 include { runOnComplete                            } from '../../modules/utils/functions.nf'
 include { parseBoolean                             } from '../../modules/utils/functions.nf'
 include { makeKey                                  } from '../../modules/utils/functions.nf'
 include { isBlank                                  } from '../../modules/utils/functions.nf'
+include { flatMapByIndex                           } from '../../modules/utils/functions.nf'
 include { PLINK_BFILE2VCF                          } from '../../modules/plink/bfile2vcf'
 include { REGENIE_STEP1                            } from '../../modules/regenie/step1'
 include { REGENIE_STEP2                            } from '../../modules/regenie/step2'
@@ -48,10 +49,13 @@ include { MDS_TO_COVARIATES                        } from './sub.nf'
 include { UPDATE_PGEN                              } from './sub.nf'
 include { FUNCTIONAL_ANNOTATION_SCORES             } from './sub.nf'
 include { MAKE_FUNCTIONAL_ANNOT_PER_CTG            } from './sub.nf'
-include { MAKE_SLIDING                             } from './sub.nf'
-include { MAKE_BED                                 } from './sub.nf'
 include { PLINK2_VCF2PGEN                          } from '../../modules/plink/vcf2pgen'
 include { PLINK2_MERGE_PGEN                        } from '../../modules/plink/merge_pgen'
+include { REGENIE_FUNCTIONAL_ANNOT                 } from '../../modules/jvarkit/regeniefunctionalannot'
+include { REGENIE_SLIDING_ANNOT                    } from '../../modules/jvarkit/regenieslidingannot'
+include { REGENIE_BED_ANNOT                        } from '../../modules/jvarkit/regeniebedannot'
+include { REGENIE_MAKE_ANNOT                       } from '../../subworkflows/jvarkit/regeniemakeannot'
+
 
 workflow {
 	versions = Channel.empty()
@@ -133,7 +137,7 @@ workflow {
 	versions = versions.mix(DIGEST_SAMPLESHEET.out.versions)
 	
 	/** extract contig for each vcf */
-	VCF_TO_CONTIGS(VCF_INPUT.out.vcf)
+	VCF_TO_CONTIGS(metadata, VCF_INPUT.out.vcf)
 	versions = versions.mix(VCF_TO_CONTIGS.out.versions)
 
 	/* check the only one vcf, or one contig/vcf */
@@ -157,6 +161,8 @@ workflow {
 		PREPARE_ONE_REFERENCE.out.dict, //used for PAR regions
 		DIGEST_SAMPLESHEET.out.plink_ped,
 		VCF_TO_CONTIGS.out.vcf
+			.filter{meta,_vcf,_tbi->parseBoolean(params.skip_XY)==false || !meta.contig.matches("(chr)?[XY]")}
+			.map{meta,vcf,tbi->[meta, vcf]}
 		)
 	versions = versions.mix(PLINK2_VCF2PGEN.out.versions)
 
@@ -169,6 +175,8 @@ workflow {
 			.map{files->[metadata,files.sort()]}
 		)
 	versions = versions.mix(PLINK2_MERGE_PGEN.out.versions)
+
+	keep_markers_ch = [[id:"pvar"],(params.step1_markers==null?([]):file("${params.step1_markers}"))]
 
 	/** update pgen with data from pedigee */
 	UPDATE_PGEN(
@@ -205,22 +213,27 @@ workflow {
 		REGENIE_STEP1( 
 			covar_ch /* covariates */,
 			DIGEST_SAMPLESHEET.out.plink_ped, 
-			[[id:"pvar"],(params.step1_markers==null?([]):file("${params.step1_markers}"))],
+			keep_markers_ch,
 			UPDATE_PGEN.out.pgen /* bgen file */
 			)
-		loco_ch = REGENIE_STEP1.out.output
+		loco_ch = REGENIE_STEP1.out.loco
+			.map{meta,locos->[meta,(locos instanceof List ? locos:[locos])]}
+			.flatMap{row->flatMapByIndex(row,1)}
 		versions = versions.mix(REGENIE_STEP1.out.versions)
 		}
 	else {
 		loco_ch = [[id:"locostep1"],file(params.step1_loco)]
 		}
 	
+	if(parseBoolean(params.with_step2)) {
+
 	/**
 	 * ANNOTATIONS
 	 */
 	the_annot_ch = Channel.empty()
-	
-	if(!parseBoolean(params.with_functional_annotations)) {
+	make_annot_ch = Channel.empty()
+
+	if(parseBoolean(params.with_functional_annotations)) {
 		
 		if(params.custom_annotation2mask==null) {
 			log.info("using default masks: ${moduleDir}/default_scores.txt")
@@ -234,17 +247,36 @@ workflow {
 		FUNCTIONAL_ANNOTATION_SCORES(mask_ch)
 		versions = versions.mix(FUNCTIONAL_ANNOTATION_SCORES.out.versions)
 
-		gencode_ch = DOWNLOAD_GENCODE(PREPARE_ONE_REFERENCE.out.dict)
-		versions = versions.mix(DOWNLOAD_GENCODE.out.versions)
-
-		func_annot_ch = MAKE_FUNCTIONAL_ANNOT_PER_CTG(
-			FUNCTIONAL_ANNOTATION_SCORES.out.tsv,
-			gencode_ch.output,
-			VCF_INPUT.out.vcf
+		GTF_INPUT(
+			metadata.plus(
+				arg_name:"gtf",
+				require_index:false,
+				download:true,
+				path: params.gtf
+			),
+			PREPARE_ONE_REFERENCE.out.dict
 			)
-		the_annot_ch = the_annot_ch.mix(func_annot_ch.output)
+		versions = versions.mix(GTF_INPUT.out.versions)
+
+		REGENIE_FUNCTIONAL_ANNOT(
+			FUNCTIONAL_ANNOTATION_SCORES.out.tsv,
+			GTF_INPUT.out.gtf,
+			VCF_TO_CONTIGS.out.vcf
+				.filter{meta,_vcf,_tbi->parseBoolean(params.skip_XY)==false || !meta.contig.matches("(chr)?[XY]")}
+				.map{meta,vcf,tbi->[meta.plus(id:meta.id+".annot."+meta.contig),vcf,tbi]}
+			)
+		versions = versions.mix(REGENIE_FUNCTIONAL_ANNOT.out.versions)
+		make_annot_ch = make_annot_ch.mix(REGENIE_FUNCTIONAL_ANNOT.out.tsv)
+
+		//the_annot_ch = the_annot_ch.mix(REGENIE_MAKE_ANNOT.out.tsv)
 		}
 
+	/**
+	 *
+	 * Sliding windows for Regenie
+	 * A pair of integers window_size,window_shift
+	 *
+	 */ 
 	if(!isBlank(params.sliding_windows)) {
 		windows_ch = Channel.of("${params.sliding_windows}").
 			flatMap{T->{
@@ -257,11 +289,21 @@ workflow {
 			return L;
 			}}
 
-		slide_ch = MAKE_SLIDING( VCF_INPUT.out.vcf.combine(windows_ch) )
-		the_annot_ch = the_annot_ch.mix(slide_ch.output)
+		REGENIE_SLIDING_ANNOT(
+			VCF_TO_CONTIGS.out.vcf
+				.filter{meta,_vcf,_tbi->parseBoolean(params.skip_XY)==false || !meta.contig.matches("(chr)?[XY]")}
+				.combine(windows_ch)
+				.map{meta,vcf,tbi,w_size,w_shift->[meta.plus(win_size:w_size,win_shift:w_shift,id:meta.id+"_"+meta.contig),vcf,tbi]}
+			)
+		make_annot_ch = make_annot_ch.mix(MAKE_SLIDING.out.tsv)
+		versions = versions.mix(MAKE_SLIDING.out.versions)
 		}
 
-
+	/**
+	 *
+	 * Custom BED file of annotations
+	 *
+	 */ 
 	if(params.select_bed!=null) {
 		log.info("making bed from ${params.select_bed}");
 		if(params.select_bed.endsWith(".list")) {
@@ -276,26 +318,40 @@ workflow {
 				.map{fn->[[id:makeKey(fn)],file(fn)]}
 				;
 			}
-		make_bed_ch = MAKE_BED(ch1,VCF_INPUT.out.vcf)
-		versions = versions.mix(MAKE_BED.out.versions)
-
-		make_bed_ch.output.ifEmpty("[Warning] There is NO output after MAKE_BED.").view()
-		the_annot_ch = the_annot_ch.mix(MAKE_BED.out.output)
+		REGENIE_BED_ANNOT(
+			ch1,
+			VCF_TO_CONTIGS.out.vcf
+				.filter{meta,_vcf,_tbi->parseBoolean(params.skip_XY)==false || !meta.contig.matches("(chr)?[XY]")}
+				.map{meta,vcf,tbi->[meta.plus(id:meta.id+"."+meta.contig),vcf,tbi]}
+			)
+		make_annot_ch = make_annot_ch.mix(REGENIE_BED_ANNOT.out.tsv)
+		versions = versions.mix(REGENIE_BED_ANNOT.out.versions)
 		}
 	else
 		{
 		log.info("NO custom contig/start/end/annot/gene/file.");
 		}
 
+	/** 
+	 * CONVERT TSV data to regenie input
+	 *
+	 */
+	REGENIE_MAKE_ANNOT(
+			metadata,
+			FUNCTIONAL_ANNOTATION_SCORES.out.tsv,
+			make_annot_ch
+			)
+	versions = versions.mix(REGENIE_MAKE_ANNOT.out.versions)
+	multiqc = multiqc.mix(REGENIE_MAKE_ANNOT.out.multiqc)
 
+
+	/*
 	for_step2_ch = the_annot_ch
 			.splitCsv(header:false,sep:'\t',elem:2).
 			map{[it[0],it[1],it[2][0],it[2][1],it[2][2],it[2][3]]}
 
-
-
 	STEP2(
-		UPDATE_PGEN.out.pgen /* bgen file */,
+		UPDATE_PGEN.out.pgen ,
 		covar_ch,
 		DIGEST_SAMPLESHEET.out.plink_ped, 
 		loco_ch ,
@@ -308,7 +364,7 @@ workflow {
 		step2_ch.output.groupTuple()
 		)
 	
-	/* ANNOT_HITS(reference,ch5.output.collect())
+	ANNOT_HITS(reference,ch5.output.collect())
 
 
 	
@@ -321,6 +377,8 @@ workflow {
 
 	README()
 	*/
+
+	} /* end with_step2 */
 
 	}
 

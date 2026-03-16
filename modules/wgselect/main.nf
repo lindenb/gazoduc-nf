@@ -105,6 +105,8 @@ touch TMP/variant_list.txt
 			cat TMP/tmp.C.txt | wc -l | tr "\\n" "\t" >> TMP/variant_list.txt
 			cat TMP/tmp.C.txt | paste -d ';' -s >> TMP/variant_list.txt
 			rm TMP/tmp.A.txt TMP/tmp.B.txt TMP/tmp.C.txt
+		else
+			echo -n "COUNT : \$1 : " 1>&2 && bcftools query -f '\\n' "\$3" |wc -l  1>&2
 		fi
 	}
 

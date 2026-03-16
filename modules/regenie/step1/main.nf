@@ -24,38 +24,67 @@ SOFTWARE.
 */
 process REGENIE_STEP1 {
 label "process_single"
-label "process_high_memory"
+label "memory_50G"
 tag "${meta.id}"
 conda "${moduleDir}/../../../conda/regenie.yml"
 afterScript "rm -rf TMP"
 input:
         tuple val(meta2),path(covariates)
         tuple val(meta3),path(plink_ped)
-        tuple val(meta4),path(keep_rs)
+        tuple val(meta4),path(keep_rs) // txt file or .bim file
         tuple val(meta ),path(pgen),path(psam),path(pvar)
 output:
-        tuple val(meta ),path("*_pred.list"),emit:output
+        tuple val(meta ),path("*_pred.list"),emit:pred_list
+        tuple val(meta ),path("*.loco", arity: '1..*'),emit:loco
         tuple val(meta ),path("*.log"),emit:log
         path("versions.yml"),emit:versions
 script:
-        def prefix = task.ext.prefix?:"{meta.id}.step1"
+        def prefix = task.ext.prefix?:"${meta.id}.step1"
         def args = task.ext.args?:"--bsize 1000 --bt --phenoCol Y1"
         def phenoColList = task.ext.phenoColList?:"status"
+        def n_markers = 1000000
 """
 mkdir -p TMP
+set -x
 
-#
-# it is not recommened to use more than 1000000 variants in step 1 of regenie
-#
 if ${keep_rs?true:false}
 then
-        if test `wc -l < ${keep_rs}` -gt 1000000
+        cp ${keep_rs} TMP/keep.markers.txt
+
+        # from plink Bim file ?
+        if ${(keep_rs?true:false) && keep_rs.name.endsWith(".bim")}
         then
-                echo "Too many markers for ${keep_rs}"
-                exit -1
+                cut -f 2 TMP/keep.markers.txt  > TMP/jeter.txt
+                mv TMP/jeter.txt TMP/keep.markers.txt
+
+                head TMP/keep.markers.txt 1>&2
         fi
+
+
+
+        #
+        # it is not recommened to use more than ${n_markers} variants in step 1 of regenie
+        #
+      
+        # shuffle and extract 
+        awk '{printf("%d,%s\\n",int(rand()*1000000),\$0);}' TMP/keep.markers.txt |\\
+                sort  -S ${task.memory.kilo} -t, -T TMP -k1,1n   |\\
+                cut -d, -f2- |\\
+                head -n ${n_markers} > TMP/jeter.txt
+        mv TMP/jeter.txt TMP/keep.markers.txt
+
+else
+
+        awk -F '\t' '/^#/ {next;} {printf("%d,%s\\n",int(rand()*1000000),\$3);}' '${pvar}' |\\
+                sort  -S ${task.memory.kilo} -t, -T TMP -k1,1n  |\\
+                cut -d, -f2- > TMP/jeter.txt
+        
+        head -n ${n_markers} TMP/jeter.txt >  TMP/keep.markers.txt
+       
 fi
 
+head TMP/keep.markers.txt 1>&2
+wc -l TMP/keep.markers.txt 1>&2
 
 
 
@@ -65,7 +94,7 @@ regenie \\
   --phenoFile ${plink_ped} \\
   --phenoColList ${phenoColList} \\
   --covarFile "${covariates}" \\
-  ${keep_rs?"--extract \"${keep_rs}\"":""} \\
+  --extract TMP/keep.markers.txt \\
   ${args} \\
   --lowmem \\
   --lowmem-prefix TMP/regenie_tmp_preds \\
@@ -80,7 +109,7 @@ ${task.process}:
 EOF
 """
 stub:
-    def prefix = task.ext.prefix?:"{meta.id}step1"
+    def prefix = task.ext.prefix?:"${meta.id}step1"
 """
 touch versions.yml ${prefix}_pred.list ${prefix}.log
 """

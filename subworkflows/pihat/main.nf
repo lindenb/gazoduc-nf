@@ -37,10 +37,15 @@ include { DOWNLOAD_HIGH_LD              } from '../../modules/pihat/high_ld'
 include { PLINK_MERGE_BIM_BED_FAM       } from '../../modules/plink/merge'
 include { PLINK_GENOME                  } from '../../modules/plink/genome'
 include { PLINK_MAKEBED                 } from '../../modules/plink/makebed'
+include { PLINK_RECODE_VCF              } from '../../modules/plink/plink2vcf'
 include { PLINK_MDS                     } from '../../modules/plink/mds'
 include { flatMapByIndex                } from '../../modules/utils/functions.nf'
 include { META_TO_PED                   } from '../../subworkflows/pedigree/meta2ped'
-
+//include { BCFTOOLS_CONCAT               } from '../../modules/bcftools/concat3'
+//include { BCFTOOLS_NORM                 } from '../../modules/bcftools/norm'
+//include { BCFTOOLS_SORT                 } from '../../modules/bcftools/sort'
+include { BCFTOOLS_INDEX                } from '../../modules/bcftools/index'
+///include { JVARKIT_VCF_SET_DICTIONARY    } from '../../modules/jvarkit/vcfsetdict'
 
 String normContig(String s) {
     if(s==null) return "";
@@ -191,17 +196,30 @@ workflow PIHAT {
             dispatch_ch.user
             )
         versions = versions.mix(PER_CONTIG.out.versions)
-
         
+     
+
+        /*****************************************************************************/
+
         PLINK_MERGE_BIM_BED_FAM(
             PER_CONTIG.out.bfile
-                .map{meta,bim,bed,fam->[bim,bed,fam]}
+                .map{_meta,bim,bed,fam->[bim,bed,fam]}
                 .flatMap()
                 .collect()
                 .map{files->[[id:workflow_metadata.id],files.sort()]}
             )
         versions = versions.mix(PLINK_MERGE_BIM_BED_FAM.out.versions)
-        
+        /** save variants that will be used (for regenie) ****************************/
+        PLINK_RECODE_VCF(PLINK_MERGE_BIM_BED_FAM.out.bfile)
+        versions = versions.mix(PLINK_RECODE_VCF.out.versions)
+		
+        BCFTOOLS_INDEX(PLINK_RECODE_VCF.out.vcf)
+        versions = versions.mix(BCFTOOLS_INDEX.out.versions)
+       
+
+        /*****************************************************************************/
+	
+
         PLINK_GENOME(PLINK_MERGE_BIM_BED_FAM.out.bfile)
         versions = versions.mix(PLINK_GENOME.out.versions)
         multiqc = multiqc.mix(PLINK_GENOME.out.related)
@@ -290,12 +308,8 @@ workflow PIHAT {
         versions
         genome = PLINK_GENOME.out.genome
         mds = PLINK_MDS.out.mds
-	    multiqc
+        multiqc
+        vcf = BCFTOOLS_INDEX.out.vcf //sites for regenie
 }
-
-
-
-
-
 
 
