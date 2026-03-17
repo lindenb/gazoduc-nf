@@ -58,7 +58,7 @@ workflow REGENIE_MAKE_ANNOT {
 			.flatMap{row->flatMapByIndex(row,1)}
 			.map{meta,f->[meta.plus(id: "annot."+ f.name.replaceAll("\\.mask\\.txt\\.gz\$","")),f]}
 		
-		annotations = annot.join(setfile).join(aaf).join(mask).view()
+		annotations = annot.join(setfile).join(aaf).join(mask)
 
 
 

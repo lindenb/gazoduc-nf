@@ -32,7 +32,8 @@ input:
         tuple val(meta2),path(covariates)
         tuple val(meta3),path(plink_ped)
         tuple val(meta4),path(keep_rs) // txt file or .bim file
-        tuple val(meta ),path(pgen),path(psam),path(pvar)
+        tuple val(meta5),path(exclude_rs) // txt file
+        tuple val(meta ),path(pgen),path(pvar),path(psam) /* or bed,bim,fam */
 output:
         tuple val(meta ),path("*_pred.list"),emit:pred_list
         tuple val(meta ),path("*.loco", arity: '1..*'),emit:loco
@@ -40,9 +41,10 @@ output:
         path("versions.yml"),emit:versions
 script:
         def prefix = task.ext.prefix?:"${meta.id}.step1"
-        def args = task.ext.args?:"--bsize 1000 --bt --phenoCol Y1"
+        def args = task.ext.args?:"--bsize 1000 --bt"
         def phenoColList = task.ext.phenoColList?:"status"
         def n_markers = 1000000
+        def input_arg = (pgen.name.endsWith(".pgen")?"--pgen":(pgen.name.endsWith(".bgen")?"--bgen":"--bed"))
 """
 mkdir -p TMP
 set -x
@@ -73,11 +75,21 @@ then
                 head -n ${n_markers} > TMP/jeter.txt
         mv TMP/jeter.txt TMP/keep.markers.txt
 
+elif ${pvar.name.endsWith(".bim")}
+then
+        wc -l '${pvar}' 1>&2
+        
+        awk  '{printf("%d,%s\\n",int(rand()*1000000),\$2);}' '${pvar}' |\\
+                sort  -S ${task.memory.kilo} -t, -T TMP -k1,1n  |\\
+                cut -d, -f2 > TMP/jeter.txt
+        
+        
+        head -n ${n_markers} TMP/jeter.txt >  TMP/keep.markers.txt
 else
 
         awk -F '\t' '/^#/ {next;} {printf("%d,%s\\n",int(rand()*1000000),\$3);}' '${pvar}' |\\
                 sort  -S ${task.memory.kilo} -t, -T TMP -k1,1n  |\\
-                cut -d, -f2- > TMP/jeter.txt
+                cut -d, -f2 > TMP/jeter.txt
         
         head -n ${n_markers} TMP/jeter.txt >  TMP/keep.markers.txt
        
@@ -87,25 +99,24 @@ head TMP/keep.markers.txt 1>&2
 wc -l TMP/keep.markers.txt 1>&2
 
 
-
 regenie \\
   --step 1 \\
-  --pgen ${pgen.baseName} \\
+  ${input_arg} ${pgen.baseName} \\
   --phenoFile ${plink_ped} \\
   --phenoColList ${phenoColList} \\
   --covarFile "${covariates}" \\
   --extract TMP/keep.markers.txt \\
+  ${exclude_rs?"--exclude ${exclude_rs}":""} \\
   ${args} \\
   --lowmem \\
   --lowmem-prefix TMP/regenie_tmp_preds \\
   --threads ${task.cpus} \\
   --out "${prefix}"
 
-find ./ 1>&2
 
 cat << EOF > versions.yml
 ${task.process}:
-    regenie: TODO
+    regenie: \$(regenie --help |grep REGENIE -m1 | awk '{print \$3}')
 EOF
 """
 stub:

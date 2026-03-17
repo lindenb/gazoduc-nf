@@ -107,6 +107,7 @@ main:
 	else
 		{
 		gvcfs_ch = HAPCALLER.out.gvcf.map{meta,vcf,tbi,bed->[[id:meta.bed_id],vcf,tbi, bed]}
+
 		}
 		
 	vcf_out = Channel.empty()

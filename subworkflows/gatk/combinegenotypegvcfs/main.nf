@@ -40,7 +40,8 @@ workflow COMBINE_GENOTYPE_GVCFS {
         versions = versions.mix(COMBINE_GVCFS.out.versions)
         multiqc = multiqc.mix(COMBINE_GVCFS.out.multiqc)
 
-        GENOTYPEGVCFS(fasta,fai,dict,dbsnp, COMBINE_GVCFS.out.gvcf)
+
+        GENOTYPEGVCFS(fasta,fai,dict,dbsnp , COMBINE_GVCFS.out.gvcf)
         versions = versions.mix(GENOTYPEGVCFS.out.versions)
 
         vcf = GENOTYPEGVCFS.out.vcf

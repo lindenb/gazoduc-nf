@@ -22,41 +22,39 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-include {assertNotEmpty;parseBoolean} from './functions.nf'
+include { parseBoolean  } from '../functions.nf'
+include { verify        } from '../functions.nf'
+include { isBlank       } from '../functions.nf'
 
-process SIMPLE_COMMAND_01 {
-tag "${meta.command}"
+process SIMPLE_COMMAND {
+tag "${meta.id}"
+label "process_single"
 executor "local"
+afterScript "rm -rf TMP"
 input:
-        val(meta)
-        val(input)
+    tuple val(meta),path(input)
 output:
-        path("${meta.prefix?:""}concat${meta.suffix?:".txt"}"),emit:output
-	path("version.xml"),emit:version
+    tuple val(meta),path("${meta.prefix?:""}concat${meta.suffix?:".txt"}"),emit:output
+	path("versions.yml"),emit:versions
 script:
-	def command = assertNotEmpty(meta.command,"command must be defined")
-	def downstream = meta.downstream?:""
-	def lt = parseBoolean(meta.lt)?"<":""
+	def command = task.ext.command?:""
+	verify(!isBlank(command),"${task.process} task.ext.command is blank")
+	def downstream = meta.downstream?:"| cat "
+	def prefix = task.ext.prefix?:"${meta.id}"
 """
 hostname 1>&2
 
-${command} ${lt} ${input} ${downstream} > '${meta.prefix?:""}concat${meta.suffix?:".txt"}'
-
-
-#############################################################
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="Name">${task.process}</entry>
-	<entry key="description">apply simple linux command</entry>
-        <entry key="command">${command}</entry>
-        <entry key="downstream">${downstream}</entry>
-</properties>
-EOF
+${command} ${input} ${downstream} > '${meta.prefix?:""}concat${meta.suffix?:".txt"}'
 
 
 # avoid timestamp problem
-sleep 5
+sleep 2
 
+touch versions.yml
+"""
+stub:
+"""
+touch versions.yml
 """
 }
 

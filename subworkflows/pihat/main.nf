@@ -41,11 +41,6 @@ include { PLINK_RECODE_VCF              } from '../../modules/plink/plink2vcf'
 include { PLINK_MDS                     } from '../../modules/plink/mds'
 include { flatMapByIndex                } from '../../modules/utils/functions.nf'
 include { META_TO_PED                   } from '../../subworkflows/pedigree/meta2ped'
-//include { BCFTOOLS_CONCAT               } from '../../modules/bcftools/concat3'
-//include { BCFTOOLS_NORM                 } from '../../modules/bcftools/norm'
-//include { BCFTOOLS_SORT                 } from '../../modules/bcftools/sort'
-include { BCFTOOLS_INDEX                } from '../../modules/bcftools/index'
-///include { JVARKIT_VCF_SET_DICTIONARY    } from '../../modules/jvarkit/vcfsetdict'
 
 String normContig(String s) {
     if(s==null) return "";
@@ -209,13 +204,8 @@ workflow PIHAT {
                 .map{files->[[id:workflow_metadata.id],files.sort()]}
             )
         versions = versions.mix(PLINK_MERGE_BIM_BED_FAM.out.versions)
-        /** save variants that will be used (for regenie) ****************************/
-        PLINK_RECODE_VCF(PLINK_MERGE_BIM_BED_FAM.out.bfile)
-        versions = versions.mix(PLINK_RECODE_VCF.out.versions)
-		
-        BCFTOOLS_INDEX(PLINK_RECODE_VCF.out.vcf)
-        versions = versions.mix(BCFTOOLS_INDEX.out.versions)
-       
+      
+        
 
         /*****************************************************************************/
 	
@@ -249,7 +239,6 @@ workflow PIHAT {
         versions = versions.mix(PLINK_MDS.out.versions)
 
 
-     
 
         // header of MDS looks like ' FID IID SOL C1 C2 C3 ' . get number of components
         components0_ch = PLINK_MDS.out.mds.splitCsv(header:false,limit:1,sep:' ',strip:true)
@@ -309,7 +298,6 @@ workflow PIHAT {
         genome = PLINK_GENOME.out.genome
         mds = PLINK_MDS.out.mds
         multiqc
-        vcf = BCFTOOLS_INDEX.out.vcf //sites for regenie
 }
 
 

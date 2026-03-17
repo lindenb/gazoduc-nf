@@ -112,7 +112,7 @@ workflow {
 
     if(params.dbsnp==null)
         {
-        dbsnp =     Channel.of([workflow_metadata, [] ,[] ])
+        dbsnp =     [workflow_metadata, [] ,[] ]
         }
     else
         {
@@ -123,7 +123,7 @@ workflow {
             unique        : true
             ])
         versions = versions.mix(VCF_INPUT.out.versions)
-        dbsnp = VCF_INPUT.out.vcf
+        dbsnp = VCF_INPUT.out.vcf.first()
         }
 
     def gtf     =  Channel.of([workflow_metadata,[],[]]).first()

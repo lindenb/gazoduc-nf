@@ -22,24 +22,38 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include  { isBlank } from '../../../modules/utils/functions.nf'
+include  { verify  } from '../../../modules/utils/functions.nf'
+
 
 process REGENIE_STEP2 {
 label "process_single"
-array 100
+label "array100"
 tag "${meta.id}"
-conda "${moduleDir}/../../conda/regenie.yml"
+conda "${moduleDir}/../../../conda/regenie.yml"
 afterScript "rm -rf TMP"
 input:
-        tuple val(meta1 ),path(pgen),path(psam),path(pvar)
-        tuple val(meta2),path(covariates)
-        tuple val(meta3),path(plink_ped)
-	tuple val(meta4),path(loco)
-	tuple val(meta ),path(annot),path(setfile),path(mask),path(aff)
+    tuple val(meta1 ),path(pgen),path(pvar),path(psam)
+    tuple val(meta2),path(covariates)
+    tuple val(meta3),path(plink_ped)
+    tuple val(meta4),path(loco)
+    tuple val(meta ),path(annot),path(setfile),path(aff),path(mask)
 output:
-        tuple val(meta),path("*.regenie.gz"),emit:output
-	tuple val(meta),path("*masks.snplist.gz"),emit:masks_snplist
-script:
-	 def prefix = task.ext.prefix?:"${meta.id}step2"
+    tuple val(meta),path("*.regenie.gz"),emit:regenie
+    tuple val(meta),path("*masks.snplist.gz"),emit:masks_snplist
+    path("versions.yml"),emit:versions
+script:     
+   def prefix = task.ext.prefix?:"${meta.id}.step1"
+   def input_arg = (pgen.name.endsWith(".pgen")?"--pgen":(pgen.name.endsWith(".bgen")?"--bgen":"--bed"))
+   def use_aaf_file = task.ext.use_aaf_file?:true
+   def phenoCol = task.ext.phenoCol?:"status"
+   verify(!isBlank(task.ext.aaf_bins),"${task.process} needs task.ext.aaf_bins")
+   def aaf_bins = task.ext.aaf_bins?:"-1"
+   verify(!isBlank(task.ext.vc_maxAAF),"${task.vc_maxAAF} needs task.ext.vc_maxAAF")
+   def vc_maxAAF = task.ext.vc_maxAAF?:"-1"
+   verify(!isBlank(task.ext.vc_tests),"${task.vc_tests} needs task.ext.vc_tests")
+   def vc_tests = task.ext.vc_tests?:"-1"
+   def weight_column = task.ext.weight_column?:"4"
 """
 
 mkdir -p TMP/OUT
@@ -52,27 +66,27 @@ gunzip -c "${aff}" > TMP/aaf.txt
 
 regenie \\
   --step 2 \\
-  --pgen ${pgen.baseName} \\
+  ${input_arg} ${pgen.baseName} \\
   --phenoFile ${plink_ped} \\
   --covarFile "${covariates}" \\
   --pred ${loco} \\
   --mask-def TMP/mask.txt \\
   --set-list TMP/setfile.txt \\
   --anno-file TMP/annot.txt \\
-  ${params.use_aaf_file?"--aaf-file TMP/aaf.txt":""} \\
-  --phenoCol ${params.status} \\
+  ${use_aaf_file?"--aaf-file TMP/aaf.txt":""} \\
+  --phenoCol ${phenoCol} \\
   --bt \\
   --bsize 1000 \\
   --lowmem \\
   --lowmem-prefix TMP/regenie_tmp_preds \\
   --threads ${task.cpus} \\
-  --out "step2.${contig}" \\
-  --aaf-bins ${params.freq} \\
-  --vc-maxAAF ${params.vc_maxAAF} \\
+  --out "${prefix}" \\
+  --aaf-bins ${aaf_bins} \\
+  --vc-maxAAF ${vc_maxAAF} \\
   --bsize 200 \\
-  --vc-tests "${params.vc_tests}" \\
+  --vc-tests "${vc_tests}" \\
   --check-burden-files \\
-  --weights-col ${params.weight_column?:4} \\
+  --weights-col ${weight_column} \\
   --write-mask-snplist \\
   --firth --approx \\
   --pThresh 0.01
@@ -82,7 +96,7 @@ gzip --best *.regenie
 
 cat << EOF > versions.yml
 ${task.process}:
-    regenie: TODO
+    regenie: \$(regenie --help |grep REGENIE -m1 | awk '{print \$3}')
 EOF
 """
 stub:
