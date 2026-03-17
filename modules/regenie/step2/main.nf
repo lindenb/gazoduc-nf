@@ -59,6 +59,7 @@ script:
 mkdir -p TMP/OUT
 set -x
 
+echo '${phenoCol} ${loco}' > TMP/regenie_step1_pred.list
 gunzip -c "${annot}" > TMP/annot.txt
 gunzip -c "${setfile}" > TMP/setfile.txt
 gunzip -c "${mask}" > TMP/mask.txt
@@ -69,7 +70,7 @@ regenie \\
   ${input_arg} ${pgen.baseName} \\
   --phenoFile ${plink_ped} \\
   --covarFile "${covariates}" \\
-  --pred ${loco} \\
+  --pred TMP/regenie_step1_pred.list \\
   --mask-def TMP/mask.txt \\
   --set-list TMP/setfile.txt \\
   --anno-file TMP/annot.txt \\

@@ -1,0 +1,35 @@
+3_prime_UTR_variant     0.1     UTR,UTR3,ALL,mrna
+5_prime_UTR_premature_start_codon_gain_variant  0.2     UTR,UTR5,ALL,mrna
+5_prime_UTR_truncation  0.5     UTR,UTR5,ALL,mrna
+3_prime_UTR_truncation  0.5     UTR,UTR3,ALL,mrna
+5_prime_UTR_variant     0.2     UTR,UTR5,ALL,mrna
+bidirectional_gene_fusion       1.0	ALL,mrna
+conservative_inframe_deletion   0.1     protein_altering,ALL,mrna
+conservative_inframe_insertion  0.3     protein_altering,ALL,mrna
+disruptive_inframe_deletion     0.2     protein_altering,ALL,mrna
+disruptive_inframe_insertion    0.2     protein_altering,ALL,mrna
+downstream_gene_variant 0.1     downstream,updownstream,ALL,mrna
+exon_loss_variant       1.0     protein_altering,ALL,mrna
+frameshift_variant      0.4	protein_altering,ALL,mrna
+gene_fusion     0.9     protein_altering,ALL,mrna
+intergenic_region       0.001	ALL
+intragenic_variant      0.01	ALL
+initiator_codon_variant	0.5     protein_altering,ALL,mrna
+intron_variant  0.05    intronic,ALL
+missense_variant        0.9     protein_altering,ALL,mrna
+non_coding_transcript_exon_variant      0.1     non_coding,ALL,mrna
+non_coding_transcript_variant   0.1     non_coding,ALL,mrna
+splice_acceptor_variant 0.5     protein_altering,splice,ALL,mrna
+splice_donor_variant    0.5     protein_altering,splice,ALL,mrna
+splice_region_variant   0.5     protein_altering,splice,ALL,mrna
+start_retained_variant	0.1      synonymous,ALL,mrna
+start_lost      0.6     protein_altering,ALL,mrna
+stop_gained     0.9     protein_altering,ALL,mrna
+stop_lost       0.6     protein_altering,ALL,mrna
+stop_retained_variant   0.2     synonymous,ALL,mrna
+synonymous_variant      0.1     synonymous,ALL,mrna
+upstream_gene_variant   0.1     upstream,updownstream,ALL
+#
+# first_intron is used by jvarkit, do not mix with other masks
+#
+first_intron	0.1	first_intron

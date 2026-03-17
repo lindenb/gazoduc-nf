@@ -327,9 +327,9 @@ workflow {
 
 	
 	REGENIE_STEP2(
-		UPDATE_PGEN.out.pgen ,
+		UPDATE_PGEN.out.pgen.first(),
 		covar_ch,
-		DIGEST_SAMPLESHEET.out.plink_ped, 
+		DIGEST_SAMPLESHEET.out.plink_ped.first(), 
 		[[id:"locostep1"],file(params.step1_loco)] ,
 		REGENIE_MAKE_ANNOT.out.annotations
 		)
