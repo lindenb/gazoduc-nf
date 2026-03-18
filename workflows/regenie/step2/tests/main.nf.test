@@ -1,9 +1,10 @@
 nextflow_pipeline {
 
     name "Test Workflow main.nf"
-    script "workflows/regenie/main.nf"
+    script "workflows/regenie/step2/main.nf"
     tag "workflows"
     tag "workflows/regenie"
+    tag "workflows/regenie/step2/"
     tag "gitlab_ci"
     
 

@@ -1,15 +1,14 @@
 nextflow_process {
 
-    name "Test Process JVARKIT_VCFSTATS"
-    script "modules/jvarkit/vcfstats/main.nf"
-    process "JVARKIT_VCFSTATS"
+    name "Test Process ZIP"
+    script "modules/utils/zip/main.nf"
+    process "ZIP"
     tag "gitlab_ci"
     tag "modules"
-    tag "modules/jvarkit"
-    tag "modules/jvarkit/vcfstats"
-
+    tag "modules/utils"
+    tag "modules/utils/zip"
+    
     test("BASIC") {
-
         when {
             params {
                 // define parameters here. Example:
@@ -17,8 +16,7 @@ nextflow_process {
             }
             process {
                 """
-		input[0] = [[id:"x"],[]]
-                input[1] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.vcf.gz"), file("${projectDir}/tests/data/rotavirus_rf.vcf.gz.tbi")]
+                input[0] = [[id:"test01"], [file("${projectDir}/tests/data/rotavirus_rf.01.bed"),file("${projectDir}/tests/data/rotavirus_rf.02.bed")]]
                 """
             }
         }
@@ -27,9 +25,9 @@ nextflow_process {
             assert process.success
             //assert snapshot(process.out).match()
         }
-
     }
 
+   
 
     test("STUB") {
         tag "stub"
@@ -41,8 +39,7 @@ nextflow_process {
             }
             process {
                 """
-		input[0] = [[id:"x"],[]]
-                input[1] = [[id:"r"],file("${projectDir}/tests/data/rotavirus_rf.vcf.gz"), file("${projectDir}/tests/data/rotavirus_rf.vcf.gz.tbi")]
+                input[0] = [[id:"test01"], [file("${projectDir}/tests/data/rotavirus_rf.01.bed"),file("${projectDir}/tests/data/rotavirus_rf.02.bed")]]
                 """
             }
         }
@@ -51,6 +48,5 @@ nextflow_process {
             assert process.success
             //assert snapshot(process.out).match()
         }
-
     }
 }

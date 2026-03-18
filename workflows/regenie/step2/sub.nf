@@ -316,59 +316,38 @@ touch versions.yml
 
 
 
-process MERGE_AND_PLOT {
-tag "${title}"
+process MERGE_REGENIE {
+label "process_single"
+tag "${meta.id}"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 label "process_single"
 input:
-	tuple val(meta1),path(fai)
 	tuple val(meta1),path(dict)
-	tuple val(meta ),val(L) //path("INPUT/*")
+	tuple val(meta ),path("REGENIE/*") //path("INPUT/*")
 output:
 	tuple val(meta),path("*.results.tsv.gz"),emit:tsv
-	tuple val(meta),path("*.png"),emit:images
-	tuple val(meta),path("*.report.txt"),emit:ascii
+	tuple val(meta),path("manifest.tsv"),emit:manifest
+	tuple val(meta),path("*.regenie.gz", arity: '1..*'),emit:regenie
+	path("versions.yml"),emit:versions
 script:
-	def title = task.ext.title?:"${meta.id}"
 	def prefix = task.ext.prefix?:"${meta.id}"
-	def regex_contig= "0-9X"
-	def hline1 = 5
-	def hline2 = hline1 + 1
+	def jvm = task.ext.jvm?:"-Djava.io.tmpdir=TMP "
 """
 mkdir -p TMP
 set -x
 
-JD1=`which jvarkit`
-echo "JD1=\${JD1}" 1>&2
-# directory of jvarkit
-JD2=`dirname "\${JD1}"`
-# find the jar itself
-JVARKIT_JAR=`find "\${JD2}/../.." -type f -name "jvarkit.jar" -print -quit `
+cp -v "${moduleDir}/Minikit.java" TMP/Minikit.java
+javac -sourcepath TMP -cp "\${HOME}/jvarkit.jar" -d TMP TMP/Minikit.java
 
-cp -v "${moduleDir}/Minikit2.java" TMP/Minikit.java
-javac -sourcepath TMP -cp "\${JVARKIT_JAR}" -d TMP TMP/Minikit.java
+find REGENIE -name "*.regenie.gz" | sort > TMP/jeter.list
 
-# do not use chrY because regenie merge it with chrX (see doc)
-cut -f1,2 '${fai}' | awk -F '\t' '( \$1 ~ /^(chr)?[${regex_contig}]+\$/ )' > TMP/jeter.fai
-
-
-cat << EOF > TMP/jeter.list
-${L.join("\n")}
-EOF
-
-##cat INPUT/*.regenie.gz 
-
+set +o pipefail
 xargs -a TMP/jeter.list -L 1 gunzip -c |\\
 	grep  '^CHROM' -m1 > TMP/jeter.txt
-
-test -s TMP/jeter.txt
-
 set -o pipefail
 
-#cat INPUT/*.regenie.gz |\\
-#	gunzip -c
-
+test -s TMP/jeter.txt
 
 xargs -a TMP/jeter.list -L 1 gunzip -c |\\
 	grep -v "^#" |\\
@@ -376,11 +355,39 @@ xargs -a TMP/jeter.list -L 1 gunzip -c |\\
 	LC_ALL=C sort -T TMP  --buffer-size=${task.memory.mega}M  -t ' ' -k1,1V -k2,2n |\\
 	uniq >> TMP/jeter.txt
 
-cat TMP/jeter.txt | tr " " "\t" | gzip --best > TMP/${title}.results.tsv.gz
+head  TMP/jeter.txt 1>&2
+
+tr " " "\t" < TMP/jeter.txt |\\
+	gzip --best > TMP/${prefix}.results.tsv.gz
 
 
-java -cp "\${JVARKIT_JAR}:TMP" Minikit -R "${fasta}" -o TMP < TMP/jeter.txt
-rm TMP/jeter.txt
+java -cp "\${HOME}/jvarkit.jar:TMP" Minikit -R "${dict}" -o TMP < TMP/jeter.txt
+
+find TMP -type f  1>&2
+mv -v TMP/${prefix}.results.tsv.gz ./
+mv -v TMP/*regenie.gz ./
+mv -v TMP/manifest.tsv ./
+
+
+touch versions.yml
+"""
+}
+
+
+process TODO {
+script:
+	def regex_contig= "0-9X"
+	def hline1 = 5
+	def hline2 = hline1 + 1
+		def title = task.ext.title?:"${meta.id}"
+
+"""
+
+
+
+# do not use chrY because regenie merge it with chrX (see doc)
+cut -f1,2 '${fai}' | awk -F '\t' '( \$1 ~ /^(chr)?[${regex_contig}]+\$/ )' > TMP/jeter.fai
+
 
 find ./TMP -type f 1>&2
 

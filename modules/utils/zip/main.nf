@@ -24,39 +24,36 @@ SOFTWARE.
 */
 
 
-process SIMPLE_ZIP_01 {
-tag "N=${L.size()}"
+process ZIP {
+label "process_single"
+tag "${meta.id}"
 input:
-	val(meta)
-	val(L)
+	tuple val(meta),path(L)
 output:
-	path("${params.prefix?:""}archive.zip"),emit:zip
-	path("version.xml"),emit:version
+	tuple val(meta),path("*.zip"),emit:zip
+	path("versions.yml"),emit:versions
 script:
-	def prefix = params.prefix?:""
-	def compression_level = meta.compression_level?:"5"
+	def prefix = task.ext.prefix?:"${meta.id}"
+	def compression_level = task.ext.level?:"5"
 """
-hostname 1>&2
-set -o pipefail
 
-mkdir -p "${prefix}archive"
 
-cat << EOF | while read F ; do ln -s "\${F}" "./${prefix}archive/" ; done
+mkdir -p "${prefix}.archive"
+
+cat << EOF | while read F ; do ln -v -s "\${PWD}/\${F}" "./${prefix}.archive/" ; done
 ${L.join("\n")}
 EOF
 
-zip -r -${compression_level} "${prefix}archive.zip" "${prefix}archive"
+zip -r -${compression_level} "${prefix}.archive.zip" "${prefix}.archive/"
 
-cat << EOF > version.xml
-<properties id="${task.process}">
-	<entry key="id">${task.process}</entry>
-	<entry key="num-entries">${L.size()}</entry>
-	<entry key="output">${prefix}archive.zip</entry>
-</properties>
+cat << EOF > versions.yml
+"${task.process}"
+	zip: \$(zip --version | grep "This is")
+EOF
 """
 stub:
+	def prefix = task.ext.prefix?:"${meta.id}"
 """
-touch "${prefix}archive.zip"
-echo "<properties/>" > version.xml
+touch "${prefix}.archive.zip" versions.yml
 """
 }

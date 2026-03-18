@@ -42,13 +42,18 @@ script:
     def plot_size = task.ext.plot_size?:500
     def args1= task.ext.args1?:""
     def args2= task.ext.args2?:""
+    def cmd = task.ext.cmd?:"cat" //give a chance to transforme the table
 """
 mkdir -p TMP
 
+if ${!cmd.isEmpty()}
+then
+	${table.name.endsWith(".gz")?"gunzip -c":"cat"} ${table} | ${cmd} > TMP/jeter.tsv
+fi
 
 cat << '__EOF__' > TMP/jeter.R
 library("qqman")
-T1 <- read.table("${table}",header=TRUE,sep="\t",stringsAsFactors=FALSE)
+T1 <- read.table("${cmd.isEmpty()?"${table}":"TMP/jeter.tsv"}",header=TRUE,sep="\t",stringsAsFactors=FALSE)
 head(T1)
 T1 <- T1[grepl("(chr)?[0-9XY]*", T1\$CHR), ]
 head(T1)

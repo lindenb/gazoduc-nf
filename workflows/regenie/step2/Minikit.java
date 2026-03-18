@@ -11,7 +11,7 @@ import com.github.lindenb.jvarkit.io.IOUtils;
 import com.github.lindenb.jvarkit.lang.CharSplitter;
 import com.github.lindenb.jvarkit.lang.StringUtils;
 import com.github.lindenb.jvarkit.util.bio.fasta.ContigNameConverter;
-import com.github.lindenb.jvarkit.util.jcommander.Launcher;
+import com.github.lindenb.jvarkit.jcommander.Launcher;
 
 import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.variant.utils.SAMSequenceDictionaryExtractor;
@@ -81,7 +81,7 @@ public class Minikit extends Launcher {
 					Condition cond = conditions.stream().filter(C->C.annot.equals(annot) && C.test_name.equals(test_name) && C.freq_name.equals(freq_name)).findFirst().orElse(null);
 					if(cond==null) {
 						cond = new Condition();
-						cond.path =outputDir.resolve(String.join("_",freq_name,test_name,annot)+".regenie");
+						cond.path =outputDir.resolve(String.join("_",freq_name,test_name,annot)+".regenie.gz");
 						cond.test_name = test_name;
 						cond.freq_name = freq_name;
 						cond.annot = annot;
@@ -112,7 +112,7 @@ public class Minikit extends Launcher {
 					manifest.println("filename\tfreq\ttest_name\tannot");
 					for(Condition cond : conditions) {
 						if(cond.count>0) {
-							manifest.print(cond.path);
+							manifest.print(cond.path.getFileName());
 							manifest.print("\t");
 							manifest.print(cond.freq_name);
 							manifest.print("\t");

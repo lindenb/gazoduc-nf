@@ -47,13 +47,18 @@ include { MDS_TO_COVARIATES                        } from './sub.nf'
 include { UPDATE_PGEN                              } from './sub.nf'
 include { FUNCTIONAL_ANNOTATION_SCORES             } from './sub.nf'
 include { MAKE_FUNCTIONAL_ANNOT_PER_CTG            } from './sub.nf'
+include { MERGE_REGENIE                            } from './sub.nf'
 include { PLINK2_VCF2PGEN                          } from '../../../modules/plink/vcf2pgen'
 include { PLINK2_MERGE_PGEN                        } from '../../../modules/plink/merge_pgen'
 include { REGENIE_FUNCTIONAL_ANNOT                 } from '../../../modules/jvarkit/regeniefunctionalannot'
 include { REGENIE_SLIDING_ANNOT                    } from '../../../modules/jvarkit/regenieslidingannot'
 include { REGENIE_BED_ANNOT                        } from '../../../modules/jvarkit/regeniebedannot'
 include { REGENIE_MAKE_ANNOT                       } from '../../../subworkflows/jvarkit/regeniemakeannot'
-
+include { QQMAN                                    } from '../../../modules/qqman/main.nf'
+include { ZIP                                      } from '../../../modules/utils/zip'
+include { MULTIQC                                  } from '../../../modules/multiqc'
+include { COMPILE_VERSIONS                         } from '../../../modules/versions'
+include { JVARKIT_VCFSTATS                         } from '../../../modules/jvarkit/vcfstats'
 
 workflow {
 	versions = Channel.empty()
@@ -157,6 +162,16 @@ workflow {
 			.filter{array->array.size() > 1} /* two error flags */
 			.subscribe{array->throw new IllegalArgumentException("${array.join(" ")}")}
 	
+	/*run statistics over the vcf */
+	JVARKIT_VCFSTATS(
+		DIGEST_SAMPLESHEET.out.sample2population,
+		VCF_INPUT.out.vcf
+			.map{meta,vcf,tbi->[[id:"input_vcf"],vcf,tbi]}
+			.groupTuple()
+			.map{meta,vcf,tbi->[meta,vcf.sort(),tbi.sort()]}
+		)
+	versions = versions.mix(JVARKIT_VCFSTATS.out.versions)
+	multiqc = multiqc.mix(JVARKIT_VCFSTATS.out.json)
 
 	/** convert vcfs to PGEN */
 	PLINK2_VCF2PGEN(
@@ -334,6 +349,55 @@ workflow {
 		REGENIE_MAKE_ANNOT.out.annotations
 		)
 	versions = versions.mix(REGENIE_STEP2.out.versions)
+
+
+	MERGE_REGENIE(
+		PREPARE_ONE_REFERENCE.out.dict,
+		REGENIE_STEP2.out.regenie
+			.map{_meta,r->(r instanceof List?r:[r])}
+			.flatMap()
+			.collect()
+			.map{files->[[id:"regenie"],files.sort()]}
+		)
+	versions = versions.mix(MERGE_REGENIE.out.versions)
+
+	//join manifest data (containing test-name, freq) and the tsv for the same test
+	to_qqman = MERGE_REGENIE.out.manifest
+		.map{meta,mf->mf}
+		.splitCsv(header:true,sep:'\t')
+		.combine(
+			MERGE_REGENIE.out.regenie
+				.map{_meta,r->(r instanceof List?r:[r])}
+				.flatMap()
+			)
+		.filter{meta,f->meta.filename==f.name}
+		.map{meta,f->[meta.plus(id:meta.filename),f]}
+	
+	QQMAN(to_qqman)
+	versions = versions.mix(QQMAN.out.versions)
+	multiqc = multiqc.mix(QQMAN.out.manhattan)
+	multiqc = multiqc.mix(QQMAN.out.qqplot)
+
+
+	COMPILE_VERSIONS(versions.collect().map{it.sort()})
+
+	MULTIQC(
+		[[id:"noconfig"],[]],
+		multiqc.map{meta,f->f}
+			.mix(COMPILE_VERSIONS.out.multiqc)
+			.collect()
+			.map{files->[[id:"regenie_mqc"],files.sort()]}
+		)
+
+	ZIP(
+		QQMAN.out.manhattan
+			.mix(QQMAN.out.qqplot)
+			.mix(MERGE_REGENIE.out.tsv)
+			.map{_meta,f->f}
+			.collect()
+			.map{files->[[id:"regenie"],files.sort()]}
+		)
+	versions = versions.mix(ZIP.out.versions)
 	/*
 	MERGE_AND_PLOT(
 		reference,

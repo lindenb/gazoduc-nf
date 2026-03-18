@@ -29,10 +29,11 @@ process JVARKIT_VCFSTATS {
 	afterScript "rm -rf TMP"
 	tag "${meta.id?:vcf.name}"
 	input:
+		tuple val(meta1),path(sample2pop)
 		tuple val(meta ),path(vcf),path(tbi)
 	output:
-		tuple val(meta ),path("*.json"),optional:true,emit:json
-        tuple val(meta ),path("*.xml"),optional:true,emit:xml
+		tuple val(meta ),path("*.json", arity: '0..*'),optional:true,emit:json
+                tuple val(meta ),path("*.xml", arity: '0..*'),optional:true,emit:xml
 		path("versions.yml"),emit:versions
 	script:
         def args1 = task.ext.args1?:"-a"
@@ -47,7 +48,10 @@ process JVARKIT_VCFSTATS {
 
 	${vcf instanceof List?"bcftools concat ${args1} -O u ${vcf.join(" ")} ":"cat ${vcf}"} |\\
         bcftools view ${args2} -O v |\\
-		${jvarkit}  vcfstats ${args3} -o TMP/OUT
+		${jvarkit}  vcfstats \\
+			${sample2pop?"--categories ${sample2pop}":""} \\
+			${args3} \\
+			-o TMP/OUT
 
     mv -v TMP/OUT/*.json ./ || true
     mv -v TMP/OUT/*.xml  ./ || true

@@ -1,0 +1,28 @@
+nextflow_pipeline {
+
+    name "Test Workflow main.nf"
+    script "workflows/regenie/step1/main.nf"
+    tag "workflows"
+    tag "workflows/regenie"
+    tag "workflows/regenie/step1"
+    tag "gitlab_ci"
+    
+
+    test("STUB") {
+        options "-stub"
+        when {
+            params {
+                fasta       = "${projectDir}/tests/data/rotavirus_rf.fa"
+                vcf = "${projectDir}/tests/data/rotavirus_rf.vcf.gz"
+                covariates = "${projectDir}/tests/data/rotavirus_rf.mds"
+                samplesheet = "${projectDir}/tests/data/rotavirus_rf.samples.tsv"
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+
+    }
+
+}
