@@ -101,7 +101,7 @@ bp <- boxplot(p_value ~ group_name,
     col = cols,
     border = "gray30",
     main = "Average PIHAT",
-    ylab = "average(p_value)",
+    ylab = "average(pihat)",
     xlab = "Group",
     las = 2)
 

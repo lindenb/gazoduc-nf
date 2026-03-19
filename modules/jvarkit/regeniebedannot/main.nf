@@ -39,8 +39,8 @@ output:
     tuple val(meta),path("*.tsv.gz"),emit:tsv
 	path("versions.yml"),emit:versions
 script:
-
     def args1 = task.ext.args1?:""
+    def args3 = task.ext.args3?:""
     def awk_expr = task.ext.awk_expr?:"(1==1)"
 	def jvm = task.ext.jvm?:"-Djava.io.tmpdir=TMP "
 	def jvarkit = task.ext.jvarkit?:"java -jar  ${jvm} \${HOME}/jvarkit.jar"
@@ -49,8 +49,8 @@ script:
     def prefix = task.ext.prefix?:"${meta.id}.${meta1.id}"
 	def min_length= task.ext.min_bed_length?:"0" //(params.min_bed_length?:0)
 """
-set -o pipefail
 mkdir -p TMP
+set -x
 
 # extract DICT only
 bcftools view --header-only  -O z -o TMP/dict.vcf.gz '${vcf}'
@@ -72,14 +72,16 @@ bcftools view ${args1} -O u '${vcf}' |\\
 	${jvarkit} regeniebedannot \\
         --bed "${select_bed}" \\
 		--min-length '${min_length}' \\
+        ${args3} \\
 		-f "${freq}" |\\
         gzip --best > TMP/jeter.tsv.gz
 
-mv TMP/jeter.tsv.gz ${prefix}.tsv.gz
+mv -v TMP/jeter.tsv.gz ${prefix}.tsv.gz
     
 cat << EOF > versions.yml
 ${task.process}:
 	jvarkit: "\$(${jvarkit} --version)"
+	bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
 EOF
 """
 

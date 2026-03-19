@@ -38,14 +38,16 @@ output:
     tuple val(meta),path("*.tsv.gz"),emit:tsv
 	path("versions.yml"),emit:versions
 script:
-    verify(meta.win_size!=null,"win_size undefined")
-	verify(meta.win_shift!=null,"win_shift undefined")
+    def  win_size = task.ext.win_size?:(meta.win_size?:null)
+    def  win_shift = task.ext.win_shift?:(meta.win_shift?:null)
+    verify(win_size!=null,"win_size undefined")
+	verify(win_shift!=null,"win_shift undefined")
     def args1 = task.ext.args1?:""
 	def jvm = task.ext.jvm?:"-Djava.io.tmpdir=TMP "
 	def jvarkit = task.ext.jvarkit?:"java -jar  ${jvm} \${HOME}/jvarkit.jar"
 	def freq = task.ext.freq?:""
     verify(!isBlank("${freq}"),"${task.process} freq is blank ?")
-    def prefix = task.ext.prefix?:"${meta.id}.${meta.win_size}_${meta.win_shift}"
+    def prefix = task.ext.prefix?:"${meta.id}.${win_size}_${win_shift}"
 
 """
 set -o pipefail
@@ -54,6 +56,8 @@ mkdir -p TMP
 
 bcftools view ${args1} -O v '${vcf}' |\\
 	${jvarkit} regenieslidingannot \\
+        --window-size ${win_size} \\
+        --window-shift ${win_shift} \\
 		-f "${freq}" |\\
         gzip --best > TMP/jeter.tsv.gz
 
@@ -66,8 +70,10 @@ EOF
 """
 
 stub:
-    verify(meta.win_size!=null,"win_size undefined")
-	verify(meta.win_shift!=null,"win_shift undefined")
+    def  win_size = task.ext.win_size?:(meta.win_size?:null)
+    def  win_shift = task.ext.win_shift?:(meta.win_shift?:null)
+    verify(win_size!=null,"win_size undefined")
+	verify(win_shift!=null,"win_shift undefined")
 	def freq = task.ext.freq?:""
     verify(!isBlank("${freq}"),"${task.process} freq is blank ?")
     def prefix = task.ext.prefix?:"${meta.id}.${meta.win_size}_${meta.win_shift}"

@@ -24,7 +24,7 @@ SOFTWARE.
 */
 
 process REGENIE_MAKE_ANNOT {
-tag "${meta.id}"
+tag "${meta1.id} ${meta.id}"
 label "process_single"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"   
 afterScript "rm -rf TMP"
@@ -32,15 +32,16 @@ input:
 	tuple val(meta1),path(annotations)
 	tuple val(meta ),path(tsv)
 output:
-    tuple val(meta),path("OUT/*.aaf.txt.gz", arity: '1..*'),optional:true,emit:aaf
-    tuple val(meta),path("OUT/*.annot.txt.gz", arity: '1..*'),optional:true,emit:annot
-    tuple val(meta),path("OUT/*.mask.txt.gz", arity: '1..*'),optional:true,emit:mask
-    tuple val(meta),path("OUT/*.setfile.txt.gz", arity: '1..*'),optional:true,emit:setfile
+    tuple val(meta),path("OUT/*.aaf.txt.gz", arity: '0..*'),optional:true,emit:aaf
+    tuple val(meta),path("OUT/*.annot.txt.gz", arity: '0..*'),optional:true,emit:annot
+    tuple val(meta),path("OUT/*.mask.txt.gz", arity: '0..*'),optional:true,emit:mask
+    tuple val(meta),path("OUT/*.setfile.txt.gz", arity: '0..*'),optional:true,emit:setfile
 	path("versions.yml"),emit:versions
 script:
 	def jvm = task.ext.jvm?:"-Djava.io.tmpdir=TMP "
 	def jvarkit = task.ext.jvarkit?:"java -jar  ${jvm} \${HOME}/jvarkit.jar"
     def prefix = task.ext.prefix?:"${meta.id}"
+	def args1 = task.ext.args1?:""
 """
 set -o pipefail
 mkdir -p TMP
@@ -52,6 +53,7 @@ ${jvarkit} regeniemakeannot \\
 		--prefix "${prefix}." \\
 		--reserve 20 \\
 		-o \${PWD}/OUT \\
+		${args1} \\
 		--gzip \\
 		-N 5000
 

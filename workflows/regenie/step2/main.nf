@@ -255,7 +255,7 @@ workflow {
 
 		REGENIE_FUNCTIONAL_ANNOT(
 			FUNCTIONAL_ANNOTATION_SCORES.out.tsv,
-			GTF_INPUT.out.gtf,
+			GTF_INPUT.out.gtf.map{meta,gtf,_tbi->[meta,gtf]},
 			VCF_TO_CONTIGS.out.vcf
 				.filter{meta,_vcf,_tbi->parseBoolean(params.skip_XY)==false || !meta.contig.matches("(chr)?[XY]")}
 				.map{meta,vcf,tbi->[meta.plus(id:meta.id+".annot."+meta.contig),vcf,tbi]}
@@ -290,8 +290,8 @@ workflow {
 				.combine(windows_ch)
 				.map{meta,vcf,tbi,w_size,w_shift->[meta.plus(win_size:w_size,win_shift:w_shift,id:meta.id+"_"+meta.contig),vcf,tbi]}
 			)
-		make_annot_ch = make_annot_ch.mix(MAKE_SLIDING.out.tsv)
-		versions = versions.mix(MAKE_SLIDING.out.versions)
+		make_annot_ch = make_annot_ch.mix(REGENIE_SLIDING_ANNOT.out.tsv)
+		versions = versions.mix(REGENIE_SLIDING_ANNOT.out.versions)
 		}
 
 	/**
@@ -313,11 +313,20 @@ workflow {
 				.map{fn->[[id:makeKey(fn)],file(fn)]}
 				;
 			}
+
+		dispatch_ch = ch1.combine(
+				VCF_TO_CONTIGS.out.vcf
+					.filter{meta,_vcf,_tbi->parseBoolean(params.skip_XY)==false || !meta.contig.matches("(chr)?[XY]")}
+				)
+			.multiMap{meta1,bed,meta2,vcf,tbi->
+				bed: [meta1,bed]
+				vcf: [meta2.plus(id:makeKey(meta2.id+"."+meta2.contig+"."+meta1.id)),vcf,tbi]
+				}
+
+
 		REGENIE_BED_ANNOT(
-			ch1,
-			VCF_TO_CONTIGS.out.vcf
-				.filter{meta,_vcf,_tbi->parseBoolean(params.skip_XY)==false || !meta.contig.matches("(chr)?[XY]")}
-				.map{meta,vcf,tbi->[meta.plus(id:meta.id+"."+meta.contig),vcf,tbi]}
+			dispatch_ch.bed,
+			dispatch_ch.vcf
 			)
 		make_annot_ch = make_annot_ch.mix(REGENIE_BED_ANNOT.out.tsv)
 		versions = versions.mix(REGENIE_BED_ANNOT.out.versions)
