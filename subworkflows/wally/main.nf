@@ -72,10 +72,13 @@ workflow WALLY {
         png_ch =WALLY_REGION.out.png
                 .flatMap{row->flatMapByIndex(row,1)}
                 .map{meta,png->[[id:"${meta.contig}_${meta.start}_${meta.end}",contig:meta.contig,start:meta.start,end:meta.end],png]}
+        html_ch =WALLY_REGION.out.html
+                .flatMap{row->flatMapByIndex(row,1)}
+                .map{meta,html->[[id:"${meta.contig}_${meta.start}_${meta.end}",contig:meta.contig,start:meta.start,end:meta.end],html]}
                 
 
 
-        HTML_PAGE(png_ch.groupTuple())
+        HTML_PAGE(html_ch.groupTuple())
         versions = versions.mix(HTML_PAGE.out.versions)
 
         ZIP_BY_INTERVAL(
@@ -138,44 +141,33 @@ tag "${meta.id}"
 conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
-        tuple val(meta),path(pngs)
+        tuple val(meta),path(htmls)
 output:
         tuple val(meta),path("*.html"),emit:html
         path("versions.yml"),emit:versions
 script:
     def prefix = task.ext.prefix?:"${meta.id}"
-    def n_pngs = pngs.size()
-    def ncols = (Math.max(1,Math.floor(Math.sqrt(n_pngs))) as int)
-    //def nrows = (Math.max(1, Math.ceil(n_pngs/(double)ncols)) as int)
 """
 mkdir -p TMP
-cat << 'EOF' > TMP/jeter.awk
-BEGIN {
-    printf("<html><head><title>${meta.contig}:${meta.start}-${meta.end}</title></head><body>");
-    printf("<h1>${meta.contig}:${meta.start}-${meta.end}</h1><table>");
-    nr = 0;
-    nc = 0;
-    }
-    {
-    if(nc==0) printf("<tr>");
-    printf("<td><img src=\\"%s\\"/></td>\\n",\$0);
-    nc++;
-    if(nc==ncols) {
-            printf("</tr>\\n");
-            nc=0;
-            nr++;
-            }
-    }
-END {
-    if(nc!=0) printf("</tr>\\n");
-    printf("</table></body></html>\\n");
-    }
 
+cat << 'EOF' > TMP/jeter.html
+<html>
+  <head>
+     <title>${meta.contig}:${meta.start}-${meta.end}</title>
+   </head>
+<body>
+<div>
+<h1>${meta.contig}:${meta.start}-${meta.end}</h1>
+<div>
 EOF
 
-cat << EOF | sort -V -T TMP | awk -f TMP/jeter.awk > ${prefix}.html
-${pngs.join("\n")}
+cat ${htmls.join(" ")} >> TMP/jeter.html
+
+cat << EOF >> TMP/jeter.html
+</div></div></body></html>
 EOF
+
+mv TMP/jeter.html  ${prefix}.html
 
 touch versions.yml
 """

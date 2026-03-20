@@ -25,6 +25,7 @@ SOFTWARE.
 process WALLY_REGION {
 tag "${meta.id}"
 label "process_single"
+label "array100"
 conda "${moduleDir}/../../../conda/wally.yml"
 afterScript "rm -rf TMP"
 input:
@@ -34,12 +35,24 @@ input:
     tuple val(meta) ,path(bams),path(bai),path(opt_bed)
 output:
 	tuple val(meta),path("*.png",arity: '1..*'),emit:png
+	tuple val(meta),path("*.html",arity: '1..*'),emit:html
 	path("versions.yml"),emit:versions
 script:
 	def args1 = task.ext.args1?:""
 	def args2 = task.ext.args2?:""
-	def prefix = task.ext.prefix?:"${meta.id}"
+	def att1 = task.ext.att1?:"class='wally'"
+	def att2 = task.ext.att2?:"alt=\"${meta.id}\""
+	def figcaption = task.ext.figcaption?:"${meta.id}"
+	def prefix = task.ext.prefix?:"${meta.id?:"wally"}"
 """
+mkdir -p TMP
+
+cat << 'EOF' > TMP/jeter.m4
+<figure ${att1}>
+   <img ${att2} src="${prefix.isEmpty()?"":"${prefix}."}__PNG__"/>
+   <figcaption>${figcaption}</figcatpion>
+</figure>
+EOF
 
 wally region \\
 	${args1} \\
@@ -49,13 +62,13 @@ wally region \\
 	-g ${fasta} \\
 	${bams}
 
-if ${!prefix.trim().isEmpty()}
-then
-	find . -type f -name "*.png" -printf "%f\\n" | while read P
-	do
+find . -type f -name "*.png" -printf "%f\\n" | while read P
+do
 		mv -v "\${P}" "${prefix}.\${P}"
-	done
-fi
+		m4 -P -D__PNG__=\$P < TMP/jeter.m4 > "${prefix}.\${P}.html"
+
+done
+
 
 cat << EOF > versions.yml
 "${task.process}":

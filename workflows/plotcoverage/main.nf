@@ -130,7 +130,7 @@ workflow {
 					return [contig:row[0], start: (row[1]-len2>0?row[1]-len2:1), end: row[2]+len2];
 					}}
 				.combine(META_TO_BAMS.out.bams)
-				.map{row,meta,bam,bai->[meta.plus(row),bam,bai]}.take(5)	
+				.map{row,meta,bam,bai->[meta.plus(row),bam,bai]}
 			)
 		versions = versions.mix(WALLY.out.versions)
 		multiqc = multiqc.mix(WALLY.out.multiqc)
