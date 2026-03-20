@@ -2,4 +2,5 @@ channels:
   - conda-forge
   - bioconda
 dependencies:
+  - conda-forge::opencv=4.11.0
   - bioconda::wally=0.7.1

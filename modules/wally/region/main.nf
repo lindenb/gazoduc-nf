@@ -33,30 +33,40 @@ input:
 	tuple val(meta3),path(annot_bed),path(annot_tbi)
     tuple val(meta) ,path(bams),path(bai),path(opt_bed)
 output:
-	tuple val(meta),path("*.png"),emit:png
+	tuple val(meta),path("*.png",arity: '1..*'),emit:png
 	path("versions.yml"),emit:versions
 script:
 	def args1 = task.ext.args1?:""
 	def args2 = task.ext.args2?:""
+	def prefix = task.ext.prefix?:"${meta.id}"
 """
 
 wally region \\
 	${args1} \\
 	${args2} \\
-	${annot_bed?"-b \${annot_bed}":""} \\
+	${annot_bed?"-b ${annot_bed}":""} \\
 	${opt_bed?"-R \${opt_bed}":""} \\
 	-g ${fasta} \\
 	${bams}
 
+if ${!prefix.trim().isEmpty()}
+then
+	find . -type f -name "*.png" -printf "%f\\n" | while read P
+	do
+		mv -v "\${P}" "${prefix}.\${P}"
+	done
+fi
+
 cat << EOF > versions.yml
 "${task.process}":
-	wally: "todo"
+	wally: \$(wally --version | grep version -m1)
 EOF
 """
 
 stub:
+def prefix = task.ext.prefix?:"${meta.id}"
 """
-touch versions.yml "${meta.id}.png" 
+touch versions.yml "${prefix}.png" 
 """
 }
 

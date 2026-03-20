@@ -36,6 +36,7 @@ output:
 script:	
     def prefix = task.ext.prefix?:"${meta.id}.merge"
     def args = task.ext.args?:""
+    def cmd = task.ext.cmd?:"cat" /* downstream command */
 """
 hostname 1>&2
 mkdir -p TMP
@@ -43,20 +44,20 @@ mkdir -p TMP
 if ${(bed instanceof List)}
 then
 
-	cat ${bed.join(" ")} |\\
+	${bed[0].name.endsWith(".gz")?"gunzip -c":"cat"} ${bed.join(" ")} |\\
 	sort  -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n |\\
-        bedtools merge ${args} -i -  > TMP/jeter.bed
+        bedtools merge ${args} -i - | ${cmd}  > TMP/jeter.bed
 	
 
 elif  sort --check=quiet -T TMP -t '\t' -k1,1 -k2,2 "${bed}"
 then
 
-   bedtools merge ${args} -i "${bed}"   > TMP/jeter.bed
+   bedtools merge ${args} -i "${bed}" | ${cmd}  > TMP/jeter.bed
 
 else
     
     sort  -S ${task.memory.kilo} -T TMP -t '\t' -k1,1 -k2,2n "${bed}"|\\
-        bedtools merge ${args} -i -  > TMP/jeter.bed
+        bedtools merge ${args} -i - | ${cmd}  > TMP/jeter.bed
 fi
 
 
