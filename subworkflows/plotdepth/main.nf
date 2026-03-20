@@ -132,6 +132,7 @@ EOF
 process DRAW_COVERAGE {
 	tag "${row.chrom}:${row.delstart}-${row.delend} ${row.title} ${bam.name} len=${1+(row.end as int)-(row.start as int)}"
 	label "process_single"
+	label "array100"
 	conda "${moduleDir}/../../conda/bioinfo.01.yml"
     afterScript "rm -rf TMP"
 	input:

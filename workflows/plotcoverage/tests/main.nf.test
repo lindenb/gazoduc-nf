@@ -1,0 +1,29 @@
+nextflow_pipeline {
+
+    name "Test Workflow plotcoverage"
+    script "workflows/plotcoverage/main.nf"
+    tag "gitlab_ci"
+    tag "workflows"
+    tag "workflows/plotcoverage"
+    options "-resume"
+
+    test("BASIC") {
+
+        when {
+            params {
+                // define parameters here. Example: 
+                outdir = "tests-output/results"
+                fasta = "${projectDir}/tests/data/rotavirus_rf.fa"
+                bed =   "${projectDir}/tests/data/rotavirus_rf.01.bed"
+                gtf =   "${projectDir}/tests/data/rotavirus_rf.gtf.gz"
+                samplesheet = "${projectDir}/tests/data/samplesheet.bams.01.csv"
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+    }
+
+
+}

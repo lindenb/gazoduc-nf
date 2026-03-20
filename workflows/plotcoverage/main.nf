@@ -22,79 +22,87 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-nextflow.enable.dsl=2
 
-include {PLOT_COVERAGE_01} from '../../subworkflows/plotdepth'
-include {dumpParams; runOnComplete} from '../../modules/utils/functions.nf'
-
-
-if( params.help ) {
-    dumpParams(params);
-    exit 0
-}  else {
-    dumpParams(params);
-}
-
-
-
-Map assertKeyExists(final Map hash,final String key) {
-    if(!hash.containsKey(key)) throw new IllegalArgumentException("no key ${key}'in ${hash}");
-    return hash;
-}
-
-Map assertKeyExistsAndNotEmpty(final Map hash,final String key) {
-    assertKeyExists(hash,key);
-    def value = hash.get(key);
-    if(value.isEmpty()) throw new IllegalArgumentException("empty ${key}'in ${hash}");
-    return hash;
-}
-
-Map assertKeyMatchRegex(final Map hash,final String key,final String regex) {
-    assertKeyExists(hash,key);
-    def value = hash.get(key);
-    if(!value.matches(regex)) throw new IllegalArgumentException(" ${key}'in ${hash} doesn't match regex '${regex}'.");
-    return hash;
-}
+include { runOnComplete                            } from '../../modules/utils/functions.nf'
+include { validateParameters                       } from 'plugin/nf-schema'
+include { paramsHelp                               } from 'plugin/nf-schema'
+include { paramsSummaryLog                         } from 'plugin/nf-schema'
+include { samplesheetToList                        } from 'plugin/nf-schema'
+include { PREPARE_ONE_REFERENCE                    } from '../../subworkflows/samtools/prepare.one.ref'
+include { PLOT_COVERAGE_01                         } from '../../subworkflows/plotdepth'
+include { GTF_INPUT                                } from '../../subworkflows/nf/gtf_input'
+include { META_TO_BAMS                             } from '../../subworkflows/samtools/meta2bams1'
+include { READ_SAMPLESHEET                         } from '../../subworkflows/nf/read_samplesheet'
 
 
 workflow {
+ 	versions = Channel.empty()
+	multiqc = Channel.empty()
+	metadata = [id:"plotcoverage"]
 
-	def refhash=[
-		id: file(params.fasta).baseName,
-		name: file(params.fasta).baseName,
-		ucsc_name :( params.ucsc_name?:"undefined"),
-		ensembl_name : (params.ensembl_name?:"undefined")
-		]
+	
+	if(params.fasta==null) {
+		log.warn("--fasta missing")
+		exit -1
+		}
+	if(params.bed==null) {
+		log.warn("--bed missing")
+		exit -1
+	}
+	if(params.samplesheet==null) {
+		log.warn("--samplesheet missing")
+		exit -1
+	}
 
-	def fasta =    [ refhash, file(params.fasta) ]
-	def fai   =    [ refhash, file(params.fai)  ]
-	def dict  =    [ refhash, file(params.dict) ]
-	def gtf   =    [ refhash, file(params.gtf), file(params.gtf+".tbi")]
-	def bed =      [ refhash, file(params. bed)  ]
-
-
-	bams_ch = Channel.fromPath(params.samplesheet)
-        .splitCsv(header:true,sep:',')
-        .map{assertKeyMatchRegex(it,"sample","^[A-Za-z_0-9\\.\\-]+\$")}
-        .map{assertKeyMatchRegex(it,"bam","^\\S+\\.(bam|cram)\$")}
-        .map{
-            if(it.containsKey("bai")) return it;
-            if(it.bam.endsWith(".cram")) return it.plus(bai : it.bam+".crai");
-            return it.plus(bai:it.bam+".bai");
-        	}
-		.map{assertKeyMatchRegex(it,"bai","^\\S+\\.(bai|crai)\$")}
-		.map{[[id:it.sample],file(it.bam),file(it.bai)]}
-
+	/***************************************************
+   *
+   *  PREPARE FASTA REFERENCE
+   *
+   */
+	PREPARE_ONE_REFERENCE(
+			metadata.plus(skip_scatter:true),
+			Channel.of(params.fasta).map{f->file(f)}.map{f->[[id:f.baseName],f]}
+			)
+	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
 
 
-	ch1 = PLOT_COVERAGE_01(
-		[id:"plotcoverage"],
-		fasta,
-		fai,
-		dict,
-		gtf,
+	
+	GTF_INPUT(
+		metadata.plus(
+			arg_name:"gtf",
+			require_index:true,
+			download:true,
+			path: params.gtf
+		),
+		PREPARE_ONE_REFERENCE.out.dict
+		)
+	versions = versions.mix(GTF_INPUT.out.versions)
+
+	def bed =      [ [id:"userbed"], file(params. bed)  ]
+
+
+    READ_SAMPLESHEET(
+        [arg_name:"samplesheet"],
+        params.samplesheet
+        )
+        versions = versions.mix(READ_SAMPLESHEET.out.versions)
+
+    META_TO_BAMS(
+                metadata,
+                PREPARE_ONE_REFERENCE.out.fasta,
+                PREPARE_ONE_REFERENCE.out.fai,
+                READ_SAMPLESHEET.out.samplesheet
+                )
+    versions = versions.mix(META_TO_BAMS.out.versions)
+
+	PLOT_COVERAGE_01(
+		metadata,
+		PREPARE_ONE_REFERENCE.out.fasta,
+        PREPARE_ONE_REFERENCE.out.fai,
+        PREPARE_ONE_REFERENCE.out.dict,
+		GTF_INPUT.out.gtf,
 		bed,
-		bams_ch
+		META_TO_BAMS.out.bams
 		)
 }
 

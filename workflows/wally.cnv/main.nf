@@ -25,36 +25,77 @@ SOFTWARE.
 nextflow.enable.dsl=2
 
 // use conda include {WALLY_DOWNLOAD_01} from '../../modules/wally/wally.download.01.nf'
-include {runOnComplete} from '../../modules/utils/functions.nf'
-include {DOWNLOAD_GNOMAD_SV_01} from '../../subworkflows/gnomad/download_gnomad_sv.01.nf'
-include {DOWNLOAD_DGV_01} from '../../modules/dgv/download.dgv.01.nf'
-
-if( params.help ) {
-    exit 0
-}
-
-
+include { runOnComplete                            } from '../../modules/utils/functions.nf'
+include { validateParameters                       } from 'plugin/nf-schema'
+include { paramsHelp                               } from 'plugin/nf-schema'
+include { paramsSummaryLog                         } from 'plugin/nf-schema'
+include { samplesheetToList                        } from 'plugin/nf-schema'
+include { PREPARE_ONE_REFERENCE                    } from '../../subworkflows/samtools/prepare.one.ref'
+include { PLOT_COVERAGE_01                         } from '../../subworkflows/plotdepth'
+include { GTF_INPUT                                } from '../../subworkflows/nf/gtf_input'
+include { META_TO_BAMS                             } from '../../subworkflows/samtools/meta2bams1'
+include { READ_SAMPLESHEET                         } from '../../subworkflows/nf/read_samplesheet'
+include { DOWNLOAD_GNOMAD_SV_01                    } from '../../subworkflows/gnomad/download_gnomad_sv.01.nf'
+include { DOWNLOAD_DGV_0                            1} from '../../modules/dgv/download.dgv.01.nf'
 
 
 workflow {
-	genome = Channel.of(file(params.fasta),file(params.fai),file(params.dict)).collect()
-	ch = WALLY_REGION_01(genome, file(params.vcf), file(params.samplesheet) )
+
+ 	versions = Channel.empty()
+	multiqc = Channel.empty()
+	metadata = [id:"plotcoverage"]
+
+	
+	if(params.fasta==null) {
+		log.warn("--fasta missing")
+		exit -1
+		}
+	if(params.bed==null) {
+		log.warn("--bed missing")
+		exit -1
+	}
+	if(params.samplesheet==null) {
+		log.warn("--samplesheet missing")
+		exit -1
 	}
 
-runOnComplete(workflow);
+	/***************************************************
+   *
+   *  PREPARE FASTA REFERENCE
+   *
+   */
+	PREPARE_ONE_REFERENCE(
+			metadata.plus(skip_scatter:true),
+			Channel.of(params.fasta).map{f->file(f)}.map{f->[[id:f.baseName],f]}
+			)
+	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
 
-workflow WALLY_REGION_01 {
-    take:
-	    genome
-	    vcf
-	    samplesheet
-    main:
+
+
+
+    READ_SAMPLESHEET(
+        [arg_name:"samplesheet"],
+        params.samplesheet
+        )
+        versions = versions.mix(READ_SAMPLESHEET.out.versions)
+
+    META_TO_BAMS(
+                metadata,
+                PREPARE_ONE_REFERENCE.out.fasta,
+                PREPARE_ONE_REFERENCE.out.fai,
+                READ_SAMPLESHEET.out.samplesheet
+                )
+    versions = versions.mix(META_TO_BAMS.out.versions)
+
 
 		ch1_ch = Channel.fromPath(samplesheet).splitCsv(header:true,sep:'\t')
 
 		merge_ch = Channel.empty()
 
-		compile_ch = COMPILE_VCF_PARSER(genome)
+		compile_ch = COMPILE_VCF_PARSER(
+			PREPARE_ONE_REFERENCE.out.fasta,
+			PREPARE_ONE_REFERENCE.out.fai		
+			)
 		gnomad_ch = DOWNLOAD_GNOMAD_SV_01(genome)
 		merge_ch = merge_ch.mix(gnomad_ch.bed)
 
@@ -81,13 +122,16 @@ workflow WALLY_REGION_01 {
 
 
 process COMPILE_VCF_PARSER {
-executor "local"
+label "process_single"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 afterScript "rm -rf TMP"
 input:
-	val(genome)
+	tuple val(meta1),path(fasta)
+	tuple val(meta2),path(fai)
+	tuple val(meta3),path(dict)
 output:
-	path("minikit.jar"),emit:jar
-	path("version.xml"),emit:version
+	tuple val(meta),path("*.jar"),emit:jar
+	path("versions.yml"),emit:versions
 
 script:
 """
@@ -316,7 +360,7 @@ tag "${row.interval}"
 afterScript "rm -rf TMP"
 memory "10g"
 input:
-	val(genome)
+	tuple val(meta1),path(fasta)
         path(wally)
 	val(known)
 	val(row)
