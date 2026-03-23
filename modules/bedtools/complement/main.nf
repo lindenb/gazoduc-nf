@@ -53,7 +53,7 @@ mv -v TMP/jeter.bed "${prefix}.bed"
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
-    bcftools: \$(bedtools --version | awk '(NR==1)  {print \$NF}')
+    bedtools: \$(bedtools --version | awk '(NR==1)  {print \$NF}')
 END_VERSIONS
 """
 
