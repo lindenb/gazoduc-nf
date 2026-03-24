@@ -66,7 +66,7 @@ test -s TMP/in.vcf.samples.txt
 
 cat << 'EOF' > TMP/jeter.R
 
-SN= read.table("TMP/in.vcf.samples.txt",header=${vcf_or_fam.name.endsWith(".fam")?"TRUE":"FALSE"},sep="\\t", stringsAsFactors=FALSE,col.names=c("sample"))
+SN= read.table("TMP/in.vcf.samples.txt",header=FALSE,sep="\\t", stringsAsFactors=FALSE,col.names=c("sample"))
 
 
 T1 <- read.table("${samplesheet}",header=TRUE,sep="${samplesheet.name.endsWith(".csv")?",":"\\t"}", stringsAsFactors=FALSE)
