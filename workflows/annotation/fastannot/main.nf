@@ -39,10 +39,18 @@ include { VCF_TO_CONTIGS                           } from '../../../subworkflows
 include { SPLIT_N_VARIANTS                         } from '../../../modules/jvarkit/splitnvariants'
 include { SNPEFF_DOWNLOAD                          } from '../../../modules/snpeff/download'
 include { SNPEFF_APPLY                             } from '../../../modules/snpeff/apply'
+include { JVARKIT_VCF_FLATTEN                      } from '../../../modules/jvarkit/vcfflatten'
 include { JVARKIT_VCFGNOMAD                        } from '../../../modules/jvarkit/vcfgnomad'
+include { JVARKIT_VCFSTATS                         } from '../../../modules/jvarkit/vcfstats'
+include { GROUP_BY_GENE                            } from '../../../modules/jvarkit/groupbygene'
 include { BCFTOOLS_INDEX                           } from '../../../modules/bcftools/index'
+include { BCFTOOLS_CONTRAST as CONTRAST1           } from '../../../modules/bcftools/contrast'
+include { BCFTOOLS_CONTRAST as CONTRAST2           } from '../../../modules/bcftools/contrast'
 include { ALPHAMISSENSE_DOWNLOAD                   } from '../../../modules/alphamissense/download'
 include { ALPHAMISSENSE_ANNOTATE                   } from '../../../modules/alphamissense/annotate'
+include { COMPILE_VERSIONS                         } from '../../../modules/versions/main.nf'
+include { MULTIQC                                  } from '../../../modules/multiqc'
+
 
 workflow  {
 		versions = Channel.empty()
@@ -104,6 +112,17 @@ workflow  {
 		versions = versions.mix(JVARKIT_VCFGNOMAD.out.versions)
 		vcf = JVARKIT_VCFGNOMAD.out.vcf
 
+		if(params.cases!=null && params.controls!=null) {
+			CONTRAST1(
+				[[id:"cases"],file(params.cases)],
+				[[id:"controls"],file(params.controls)],
+				vcf
+				)
+			versions = versions.mix(CONTRAST1.out.versions)
+			vcf = CONTRAST1.out.vcf
+			}
+
+
 
 		BCFTOOLS_INDEX(vcf)
 		versions = versions.mix(BCFTOOLS_INDEX.out.versions)
@@ -121,14 +140,57 @@ workflow  {
 			vcf = ALPHAMISSENSE_ANNOTATE.out.vcf
 			}
 
+		
 
 		BCFTOOLS_CONCAT(
-			vcf.map{_meta,vcf,tbi->[vcf,tbi]}
+			vcf.map{_meta,vcffile,tbi->[vcffile,tbi]}
 				.flatMap()
 				.collect()
 				.map{files->[metadata,files.sort()]}
 			)
 		versions = versions.mix(BCFTOOLS_CONCAT.out.versions)
+
+
+
+
+		if(params.cases!=null && params.controls!=null) {
+			JVARKIT_VCF_FLATTEN(BCFTOOLS_CONCAT.out.vcf.map{m,f,t->[m,f]})
+			versions = versions.mix(JVARKIT_VCF_FLATTEN.out.versions)
+			
+			CONTRAST2(
+				[[id:"cases"],file(params.cases)],
+				[[id:"controls"],file(params.controls)],
+				JVARKIT_VCF_FLATTEN.out.vcf
+				)
+			versions = versions.mix(CONTRAST2.out.versions)
+			}
+
+
+		GROUP_BY_GENE(
+			[[id:"cases"],(params.cases==null?file(params.cases):([]))],
+			[[id:"controls"],(params.controls==null?file(params.controls):([]))],
+			BCFTOOLS_CONCAT.out.vcf.map{m,f,t->[m,f]}
+			)
+		versions = versions.mix(GROUP_BY_GENE.out.versions)
+
+		JVARKIT_VCFSTATS(
+			[[id:"sample2pop"],[]],
+			BCFTOOLS_CONCAT.out.vcf
+			)
+		versions = versions.mix(JVARKIT_VCFSTATS.out.versions)
+		multiqc = multiqc.mix(JVARKIT_VCFSTATS.out.json.flatMap{flatMapByIndex(it,1)})
+
+		COMPILE_VERSIONS(versions.collect())
+		
+		MULTIQC(
+			[[id:"noconfig"],[]] ,
+			multiqc
+				.map{meta,f->f}
+				.mix(COMPILE_VERSIONS.out.multiqc)
+				.collect()
+				.map{files->[metadata,files.sort()]}
+			)
+
 	}
 
 
