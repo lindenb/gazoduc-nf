@@ -85,7 +85,7 @@ mv TMP/jeter2.tsv TMP/jeter.tsv
 head TMP/jeter.tsv 1>&2
 
 cat << '__EOF__' > TMP/jeter.R
-T1<-read.table("TMP/jeter.tsv",sep="\\t",header=FALSE,stringsAsFactors=FALSE, col.names=c("sample_name","p_value","group_name"),colClasses=c("character","numeric","character"))
+T1<-read.table("TMP/jeter.tsv",sep="\\t",header=FALSE,stringsAsFactors=FALSE, col.names=c("sample_name","pihat","group_name"),colClasses=c("character","numeric","character"))
 head(T1)
 
 # create a vector or unique groups
@@ -96,7 +96,7 @@ ${format}("TMP/jeter.${format}",width = ${plot_size}, height = ${plot_size}, uni
 
 
 # Draw boxplot by group
-bp <- boxplot(p_value ~ group_name,
+bp <- boxplot(pihat ~ group_name,
     data = T1,
     col = cols,
     border = "gray30",
