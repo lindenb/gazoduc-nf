@@ -48,6 +48,7 @@ include { UPDATE_PGEN                              } from './sub.nf'
 include { FUNCTIONAL_ANNOTATION_SCORES             } from './sub.nf'
 include { MAKE_FUNCTIONAL_ANNOT_PER_CTG            } from './sub.nf'
 include { MERGE_REGENIE                            } from './sub.nf'
+include { BEST_HITS                                } from './sub.nf'
 include { PLINK2_VCF2PGEN                          } from '../../../modules/plink/vcf2pgen'
 include { PLINK2_MERGE_PGEN                        } from '../../../modules/plink/merge_pgen'
 include { REGENIE_FUNCTIONAL_ANNOT                 } from '../../../modules/jvarkit/regeniefunctionalannot'
@@ -59,6 +60,7 @@ include { ZIP                                      } from '../../../modules/util
 include { MULTIQC                                  } from '../../../modules/multiqc'
 include { COMPILE_VERSIONS                         } from '../../../modules/versions'
 include { JVARKIT_VCFSTATS                         } from '../../../modules/jvarkit/vcfstats'
+
 
 workflow {
 	versions = Channel.empty()
@@ -359,7 +361,7 @@ workflow {
 		)
 	versions = versions.mix(REGENIE_STEP2.out.versions)
 
-
+	/** merge all results and group all data by test/frequency */
 	MERGE_REGENIE(
 		PREPARE_ONE_REFERENCE.out.dict,
 		REGENIE_STEP2.out.regenie
@@ -369,6 +371,11 @@ workflow {
 			.map{files->[[id:"regenie"],files.sort()]}
 		)
 	versions = versions.mix(MERGE_REGENIE.out.versions)
+
+	/** for multuqc, generate a table with the best hits */
+	BEST_HITS(MERGE_REGENIE.out.tsv)
+	versions = versions.mix(BEST_HITS.out.versions)
+	multiqc = multiqc.mix(BEST_HITS.out.tsv)
 
 	//join manifest data (containing test-name, freq) and the tsv for the same test
 	to_qqman = MERGE_REGENIE.out.manifest

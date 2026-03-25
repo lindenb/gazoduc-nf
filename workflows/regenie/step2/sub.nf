@@ -371,6 +371,64 @@ mv -v TMP/manifest.tsv ./
 
 touch versions.yml
 """
+stub:
+def prefix = task.ext.prefix?:"${meta.id}"
+"""
+touch versions.yml ${prefix}.results.tsv.gz /manifest.tsv
+"""
+}
+
+process BEST_HITS {
+label "process_single"
+tag "${meta.id}"
+conda "${moduleDir}/../../../conda/bioinfo.01.yml"
+afterScript "rm -rf TMP"
+label "process_single"
+input:
+	tuple val(meta),path(tsv_gz)
+output:
+	tuple val(meta),path("*.tsv"),emit:tsv
+	path("versions.yml"),emit:versions
+script:
+	def limit = task.ext.limit?:100
+	def min_p_value = task.ext.min_p_value?:4 // do not use 1E-xxxx
+	def prefix = task.ext.prefix?:"${meta.id}.best${limit}"
+"""
+mkdir -p TMP
+
+cat << EOF > TMP/jeter.txt
+#id: "regenie_best${limit}"
+#plot_type : "table"
+#description: "best ${limit} hits with pvalue > 1E-${min_p_value} found with Regenie"
+EOF
+
+# get header
+set +o pipefail
+gunzip -c  "${tsv_gz}" | head -n 1 >> TMP/jeter.txt
+set -o pipefail
+
+gunzip -c  "${tsv_gz}" |
+		awk -F '\t' '(NR>1 && (\$12*1.0) >= ${min_p_value})' |\\
+		LC_ALL=C sort -T TMP  --buffer-size=${task.memory.mega}M  -t '\t' -k12,12gr |\\
+		uniq |\\
+		head -n ${limit} >> TMP/jeter.txt
+		
+		
+mv TMP/jeter.txt "${prefix}_mqc.tsv"
+
+cat << EOF > versions.yml
+"${task.process}":
+	sort : \$( sort --version |head -n1)
+EOF
+"""
+
+stub:
+	def limit = task.ext.limit?:100
+	def prefix = task.ext.prefix?:"${meta.id}.best${limit}"
+
+"""
+touch versions.yml "${prefix}_mqc.tsv"
+"""
 }
 
 
