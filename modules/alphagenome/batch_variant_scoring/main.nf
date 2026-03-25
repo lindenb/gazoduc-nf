@@ -24,6 +24,54 @@ SOFTWARE.
 */
 include {verify   } from '../../../modules/utils/functions'
 
+/*
+
+>>> 2
+$1             variant_id : chr13:37958620:C>A
+$2        scored_interval : chr13:37434332-38482908:.
+$3                gene_id : 
+$4              gene_name : 
+$5              gene_type : 
+$6            gene_strand : 
+$7         junction_Start : 
+$8           junction_End : 
+$9            output_type : ATAC
+$10        variant_scorer : CenterMaskScorer(requested_output=ATAC, width=501, aggregation_type=DIFF_LOG2_SUM)
+$11            track_name : CL:0000084 ATAC-seq
+$12          track_strand : .
+$13           Assay title : ATAC-seq
+$14        ontology_curie : CL:0000084
+$15        biosample_name : T-cell
+$16        biosample_type : primary_cell
+$17  biosample_life_stage : adult
+$18           data_source : encode
+$19             endedness : paired
+$20  genetically_modified : False
+$21  transcription_factor : 
+$22          histone_mark : 
+$23           gtex_tissue : 
+$24             raw_score : 0.04512739
+$25        quantile_score : 0.8712331
+<<< 2
+
+11 types of output (column 9)
+
+     1 ATAC
+     2 CAGE
+     3 CHIP_HISTONE
+     4 CHIP_TF
+     5 CONTACT_MAPS
+     6 DNASE
+     7 PROCAP
+     8 RNA_SEQ
+     9 SPLICE_JUNCTIONS
+    10 SPLICE_SITES
+    11 SPLICE_SITE_USAGE
+
+
+*/
+
+
 process ALPHAGENOME_BATCH_VARIANT_SCORING {
 tag "${meta.id?:""}"
 afterScript "rm -rf TMP"

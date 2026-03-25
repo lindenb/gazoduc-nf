@@ -5,4 +5,4 @@ dependencies:
   - python=3.12.10
   - pip
   - pip :
-    - alphagenome==0.5.1
+    - alphagenome==0.6.1
