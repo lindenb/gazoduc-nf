@@ -33,14 +33,22 @@ output:
     path("versions.yml"),emit:versions
 script:
     def awk_expr = task.ext.awk_expr?:""
-    def prefix = task.ext.prefix?:fai.baseName+".bed"
+    def prefix = task.ext.prefix?:"${fai.baseName}.fai2bed"
 """
 
-awk -F '\t' '${awk_expr}{printf("%s\t0\t%s\\n",\$1,\$2);}' "${fai}" > "${prefix}.bed"
+awk -F '\t' '${awk_expr} {printf("%s\t0\t%s\\n",\$1,\$2);}' "${fai}" > "${prefix}.bed"
 
 cat << END_VERSIONS > versions.yml
 "${task.process}":
 	awk: \$(awk --version | head -n1)
 END_VERSIONS
+"""
+
+stub:
+  def prefix = task.ext.prefix?:"${fai.baseName}.fai2bed"
+  def awk_expr = task.ext.awk_expr?:""
+"""
+awk -F '\t' '${awk_expr} {printf("%s\t0\t%s\\n",\$1,\$2);}' "${fai}" > "${prefix}.bed"
+touch versions.yml
 """
 }

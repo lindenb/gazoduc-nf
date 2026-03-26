@@ -1,0 +1,73 @@
+nextflow_workflow {
+
+    name "Test Workflow CIRCULAR_MANHATTAN"
+    script "subworkflows/circular/manhattan/main.nf"
+    workflow "CIRCULAR_MANHATTAN"
+    tag "gitlab_ci"
+    tag "subworkflows"
+    tag "subworkflows/circular"
+    tag "subworkflows/circular/manhattan"
+    config "./nextflow.config"
+
+    test("BASIC") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [id:"x"]
+                input[1] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")])
+                input[2] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")])
+                input[3] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")])
+                input[4] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.gtf")])
+                input[5] = Channel.of(
+                    [[id:"bed1"], file("${projectDir}/tests/data/rotavirus_rf.01.bed")],
+                    [[id:"bed2"], file("${projectDir}/tests/data/rotavirus_rf.02.bed")]
+                    )
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+
+
+    test("STUB") {
+        options "-stub" // rota genome is too small
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [id:"x"]
+                input[1] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")])
+                input[2] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa.fai")])
+                input[3] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.dict")])
+                input[4] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.gtf")])
+                input[5] = Channel.of(
+                    [[id:"bed1"], file("${projectDir}/tests/data/rotavirus_rf.01.bed")],
+                    [[id:"bed2"], file("${projectDir}/tests/data/rotavirus_rf.02.bed")]
+                    )
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

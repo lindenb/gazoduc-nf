@@ -37,7 +37,7 @@ output:
 script:	
 	def ucsc_name = (meta.ucsc_name?:"")
 	def url = task.ext.url?:""
-	if(task.ext.url==null) {
+	if(isBlank(task.ext.url) && !isBlank(ucsc_name)) {
 		url = "https://hgdownload.cse.ucsc.edu/goldenPath/${ucsc_name}/database/cytoBandIdeo.txt.gz"	
 		}
 	def prefix = task.ext.prefix?:"${meta.id}"

@@ -36,6 +36,7 @@ take:
 	svgs
 main:
 	versions = Channel.empty()
+	multiqc = Channel.empty()
     pdf = Channel.empty()
     png = Channel.empty()
     jpg = Channel.empty()
@@ -72,6 +73,7 @@ main:
         }
 emit:
     versions
+    multiqc
     pdf
     png
     jpg

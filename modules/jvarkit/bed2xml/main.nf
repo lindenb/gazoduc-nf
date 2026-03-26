@@ -22,6 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+include { isBlank   } from '../../../modules/utils/functions.nf'
+
 process BED_TO_XML {
 	label "process_single"
 	tag "${meta.id?:""} "
@@ -35,8 +37,9 @@ process BED_TO_XML {
 		tuple val(meta), path("*.out.dict"),optional:true,emit:dict
 		path("versions.yml"),emit:versions
 	script:
-		def args1 = task.ext.args1?:""
-        def prefix = task.ext.prefix?:"${meta.id?:bed.baseName}."
+	def args1 = task.ext.args1?:""
+	def cmd1  = task.ext.cmd1?:""
+        def prefix = task.ext.prefix?:"${meta.id?:bed.baseName}.bed2xml"
         def jvm =  task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  -XX:-UsePerfData"
         def with_validation = (task.ext.with_validation?:true).toBoolean()
 	def with_dict = (task.ext.with_dict?:true).toBoolean()
@@ -45,12 +48,13 @@ process BED_TO_XML {
  """
 	hostname 1>&2
     mkdir -p TMP
-	
+
+    ${bed.name.endsWith(".gz")?"gunzip -c":"cat"} ${bed} |\\
+    ${isBlank(cmd1)?"":"${cmd1} |"} \\
     ${jvarkit} bed2xml  \\
             ${opt_dict?"-R ${opt_dict}":""} \\
-	    ${(opt_dict?true:false) && with_dict?"--dict-out ${prefix}out.dict":""} \\
-            ${args1} \\
-            ${bed}  > TMP/jeter.xml
+	    ${(opt_dict?true:false) && with_dict?"--dict-out ${prefix}.out.dict":""} \\
+            ${args1} > TMP/jeter.xml
 
     
     if ${with_validation}
@@ -68,7 +72,7 @@ EOF
 	"""
 	
 stub: 
-        def prefix = task.ext.prefix?:"${meta.id?:bed.baseName}."
+        def prefix = task.ext.prefix?:"${meta.id?:bed.baseName}.bed2xml"
 """
 touch versions.yml ${prefix}.xml ${prefix}.out.dict
 """

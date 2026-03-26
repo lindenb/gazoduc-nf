@@ -60,7 +60,7 @@ include { ZIP                                      } from '../../../modules/util
 include { MULTIQC                                  } from '../../../modules/multiqc'
 include { COMPILE_VERSIONS                         } from '../../../modules/versions'
 include { JVARKIT_VCFSTATS                         } from '../../../modules/jvarkit/vcfstats'
-
+include { CIRCULAR_MANHATTAN                       } from '../../../subworkflows/circular/manhattan'
 
 workflow {
 	versions = Channel.empty()
@@ -394,7 +394,40 @@ workflow {
 	multiqc = multiqc.mix(QQMAN.out.manhattan)
 	multiqc = multiqc.mix(QQMAN.out.qqplot)
 
+	/**
+	 * Make circos plots
+	 */
+	if(parseBoolean(params.with_circos)) {
+		/** pdf can be big in size, just plot if LOG10P > 'x' */
+		to_manhattan = to_qqman
+			.map{meta,f->[meta,f,f]}/* duplicate regenie file */
+			.splitCsv(header:true,sep:' '/*space */)
+			.filter{_meta,row,_f->row.LOG10P!=null && row.LOG10P!="NA" && (row.LOG10P as double)>= 5.0} /* keep files having good p_value */
+			.map{meta,_row,f->[meta,f]}
+			.unique()
 
+
+		CIRCULAR_MANHATTAN(
+			metadata.plus(
+				with_pdf:true,
+				with_png:true,
+				with_jpg:false
+			),
+			PREPARE_ONE_REFERENCE.out.fasta,
+			PREPARE_ONE_REFERENCE.out.fai,
+			PREPARE_ONE_REFERENCE.out.dict,
+			GTF_INPUT.out.gtf.map{meta,gtf,_tbi->[meta,gtf]},
+			to_manhattan
+			)
+		versions = versions.mix(CIRCULAR_MANHATTAN.out.versions)
+		multiqc = multiqc.mix(CIRCULAR_MANHATTAN.out.multiqc)
+
+		}
+
+
+	/**
+	 * At the end, make QC, make versions, zip results
+	 */
 	COMPILE_VERSIONS(versions.collect().map{it.sort()})
 
 	MULTIQC(
