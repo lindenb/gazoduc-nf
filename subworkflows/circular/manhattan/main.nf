@@ -25,7 +25,6 @@ SOFTWARE.
 
 include { BED_TO_XML            } from '../../../modules/jvarkit/bed2xml'
 include { XSLTPROC              } from '../../../modules/xsltproc'
-include { BATIK                 } from '../../../subworkflows/batik'
 include { FAI_TO_SVG            } from '../../../subworkflows/circular/fai2svg'
 include { CYTOBAND_TO_SVG       } from '../../../subworkflows/circular/cytoband2svg'
 
@@ -38,6 +37,7 @@ take:
     fai
     dict
     gtf
+
     beds //meta,bed
 main:
     versions = Channel.empty()
@@ -73,19 +73,10 @@ main:
         )
     versions = versions.mix(BUILD_SVG.out.versions)
 
-
-    BATIK(
-        metadata,
-        BUILD_SVG.out.svg
-        )
-    versions = versions.mix(BATIK.out.versions)
-    multiqc = multiqc.mix(BATIK.out.multiqc)
 emit:
     versions
     multiqc
-    pdf = BATIK.out.pdf
-    png = BATIK.out.png
-    jpg = BATIK.out.jpg
+    svg = BUILD_SVG.out.svg
 }
 
 process BUILD_SVG {

@@ -61,6 +61,8 @@ include { MULTIQC                                  } from '../../../modules/mult
 include { COMPILE_VERSIONS                         } from '../../../modules/versions'
 include { JVARKIT_VCFSTATS                         } from '../../../modules/jvarkit/vcfstats'
 include { CIRCULAR_MANHATTAN                       } from '../../../subworkflows/circular/manhattan'
+include { BATIK                                    } from '../../../subworkflows/batik'
+
 
 workflow {
 	versions = Channel.empty()
@@ -402,26 +404,34 @@ workflow {
 		to_manhattan = to_qqman
 			.map{meta,f->[meta,f,f]}/* duplicate regenie file */
 			.splitCsv(header:true,sep:' '/*space */)
-			.filter{_meta,row,_f->row.LOG10P!=null && row.LOG10P!="NA" && (row.LOG10P as double)>= 5.0} /* keep files having good p_value */
+			.filter{_meta,row,_f->row.LOG10P!=null && row.LOG10P!="NA" && (row.LOG10P as double)>= (params.circos_treshold as double)} /* keep files having good p_value */
 			.map{meta,_row,f->[meta,f]}
 			.unique()
 
 
 		CIRCULAR_MANHATTAN(
-			metadata.plus(
-				with_pdf:true,
-				with_png:true,
-				with_jpg:false
-			),
+			metadata,
 			PREPARE_ONE_REFERENCE.out.fasta,
 			PREPARE_ONE_REFERENCE.out.fai,
 			PREPARE_ONE_REFERENCE.out.dict,
 			GTF_INPUT.out.gtf.map{meta,gtf,_tbi->[meta,gtf]},
 			to_manhattan
 			)
+			
 		versions = versions.mix(CIRCULAR_MANHATTAN.out.versions)
 		multiqc = multiqc.mix(CIRCULAR_MANHATTAN.out.multiqc)
 
+		/** convert SVG to pdf/png... */
+		BATIK(
+			metadata.plus(
+				with_pdf:true,
+				with_png:true,
+				with_jpg:false
+				),
+			CIRCULAR_MANHATTAN.out.svg
+			)
+		versions = versions.mix(BATIK.out.versions)
+		multiqc = multiqc.mix(BATIK.out.multiqc)
 		}
 
 

@@ -24,22 +24,23 @@ SOFTWARE.
 */
 nextflow.enable.dsl=2
 
-include { PREPARE_ONE_REFERENCE       } from '../../subworkflows/samtools/prepare.one.ref'
-include { READ_SAMPLESHEET            } from '../../subworkflows/nf/read_samplesheet'
-include { assertKeyExistsAndNotEmpty  } from '../../modules/utils/functions.nf'
-include { runOnComplete               } from '../../modules/utils/functions.nf'
-include { removeCommonSuffixes        } from '../../modules/utils/functions.nf'
-include { TRUVARI                     } from '../../subworkflows/truvari'
-include { DOWNLOAD_GNOMAD_SV          } from '../../modules/gnomad_sv/download.vcf'
-include { JVARKIT_VCFGNOMADSV         } from '../../modules/jvarkit/vcfgnomadsv'
-include { BCFTOOLS_INDEX              } from '../../modules/bcftools/index'
-include { BCFTOOLS_VIEW               } from '../../modules/bcftools/view'
-
+include { PREPARE_ONE_REFERENCE                } from '../../subworkflows/samtools/prepare.one.ref'
+include { VCF_INPUT                            } from '../../subworkflows/nf/vcf_input'
+include { runOnComplete                        } from '../../modules/utils/functions.nf'
+include { parseBoolean                         } from '../../modules/utils/functions.nf'
+include { TRUVARI                              } from '../../subworkflows/truvari'
+include { DOWNLOAD_GNOMAD_SV                   } from '../../modules/gnomad_sv/download.vcf'
+include { JVARKIT_VCFGNOMADSV                  } from '../../modules/jvarkit/vcfgnomadsv'
+include { BCFTOOLS_INDEX as  BCFTOOLS_INDEX1   } from '../../modules/bcftools/index'
+include { BCFTOOLS_INDEX as  BCFTOOLS_INDEX2   } from '../../modules/bcftools/index'
+include { JVARKIT_VCF_SET_DICTIONARY           } from '../../modules/jvarkit/vcfsetdict'
+include { MULTIQC                              } from '../../modules/multiqc'
+include { COMPILE_VERSIONS                     } from '../../modules/versions'
+include { JVARKIT_VCFSTATS                     } from '../../modules/jvarkit/vcfstats'
 
 workflow {
 	versions = Channel.empty()
 	multiqc = Channel.empty()
-
 
 
 	if(params.fasta==null) {
@@ -53,46 +54,36 @@ workflow {
 		
 
 	PREPARE_ONE_REFERENCE(
-		metadata,
+		metadata.plus(skip_scatter:true),
 		Channel.fromPath(params.fasta).map{f->[[id:f.baseName],f]}
 		)
 	versions = versions.mix(PREPARE_ONE_REFERENCE.out.versions)
 	
-	READ_SAMPLESHEET(
-		[arg_name:"samplesheet"],
-		params.samplesheet
-		)
-	versions = versions.mix(READ_SAMPLESHEET.out.versions)
-	vcf_ch = READ_SAMPLESHEET.out.samplesheet
-		.map{row->assertKeyExistsAndNotEmpty(row,"vcf")}
-		.map{row->file(row.vcf)}
-		.map{f->[[id:removeCommonSuffixes(f.name)], f]}
 	
-	if(params.bed!=null) {
-		BCFTOOLS_VIEW(
-			[[id:"bed"],file(params.bed)],
-			[[id:"nosample"],[]],
-			vcf_ch.map{m,f->[m,f,[]]}
+	VCF_INPUT(
+		metadata.plus(
+			path: "${params.samplesheet}",
+			arg_name : "samplesheet",
+			require_index : false,
+			required: true,
+			unique : false
 			)
-		versions = versions.mix(BCFTOOLS_VIEW.out.versions)
-		vcf_ch = BCFTOOLS_VIEW.out.vcf
-		}
-
-
-	DOWNLOAD_GNOMAD_SV( PREPARE_ONE_REFERENCE.out.dict )
-    versions = versions.mix(DOWNLOAD_GNOMAD_SV.out.versions)
-	
-	JVARKIT_VCFGNOMADSV(
-		DOWNLOAD_GNOMAD_SV.out.vcf,
-		vcf_ch
 		)
-	versions = versions.mix(JVARKIT_VCFGNOMADSV.out.versions)
-	vcf_ch = JVARKIT_VCFGNOMADSV.out.vcf
+	versions = versions.mix(VCF_INPUT.out.versions)
+	vcf_ch = VCF_INPUT.out.vcf
 
+	if(parseBoolean(params.with_vcf_set_dict)) {
+		JVARKIT_VCF_SET_DICTIONARY(
+			PREPARE_ONE_REFERENCE.out.dict,
+			vcf_ch.map{meta,f->[meta,f,[]]}
+			)
+		versions = versions.mix(JVARKIT_VCF_SET_DICTIONARY.out.versions)
+		vcf_ch = JVARKIT_VCF_SET_DICTIONARY.out.vcf.map{meta,f,tbi->[meta,f]}
+	}
 
-	BCFTOOLS_INDEX(JVARKIT_VCFGNOMADSV.out.vcf)
-	versions = versions.mix(BCFTOOLS_INDEX.out.versions)
-	vcf_ch = BCFTOOLS_INDEX.out.vcf
+	BCFTOOLS_INDEX1(vcf_ch)
+	versions = versions.mix(BCFTOOLS_INDEX1.out.versions)
+	vcf_ch = BCFTOOLS_INDEX1.out.vcf 
 
 	TRUVARI(
 		metadata,
@@ -102,6 +93,49 @@ workflow {
 		vcf_ch
 		)
 	versions = versions.mix(TRUVARI.out.versions)
+	multiqc = multiqc.mix(TRUVARI.out.multiqc)
+	vcf_ch = TRUVARI.out.vcf
+
+	if(parseBoolean(params.with_annotation)) {
+		DOWNLOAD_GNOMAD_SV( PREPARE_ONE_REFERENCE.out.dict )
+		versions = versions.mix(DOWNLOAD_GNOMAD_SV.out.versions)
+		
+		JVARKIT_VCFGNOMADSV(
+			DOWNLOAD_GNOMAD_SV.out.vcf,
+			vcf_ch.map{meta,vcf,tbi->[meta,vcf]}
+			)
+		versions = versions.mix(JVARKIT_VCFGNOMADSV.out.versions)
+		vcf_ch = JVARKIT_VCFGNOMADSV.out.vcf
+
+		BCFTOOLS_INDEX2(vcf_ch)
+		versions = versions.mix(BCFTOOLS_INDEX2.out.versions)
+		vcf_ch = BCFTOOLS_INDEX2.out.vcf 
+		}
+
+	
+
+
+	/*run statistics over the vcf */
+	JVARKIT_VCFSTATS(
+		[[id:"nosample2pop"],[]],
+		vcf_ch
+		)
+	versions = versions.mix(JVARKIT_VCFSTATS.out.versions)
+    multiqc = multiqc.mix(JVARKIT_VCFSTATS.out.json)
+
+	/**
+	 * At the end, make QC, make versions, zip results
+	 */
+	COMPILE_VERSIONS(versions.collect().map{it.sort()})
+
+	MULTIQC(
+		[[id:"noconfig"],[]],
+		multiqc.map{meta,f->f}
+			.mix(COMPILE_VERSIONS.out.multiqc)
+			.collect()
+			.map{files->[metadata,files.sort()]}
+		)
+
 	}
 
 runOnComplete(workflow)
