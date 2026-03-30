@@ -35,7 +35,7 @@ usage: collapse [-h] -i INPUT [-o OUTPUT] [-c REMOVED_OUTPUT] [-f REFERENCE] [-w
 */
 
 process TRUVARI_COLLAPSE {
-    label "process_short"
+    label "process_single"
 	tag "${meta.id}"
     afterScript "rm -rf TMP"
     conda "${moduleDir}/../../../conda/truvari.01.yml"
@@ -64,7 +64,16 @@ process TRUVARI_COLLAPSE {
 			--reference "${fasta}" \\
 			-i "${vcf}" \\
 			-c TMP/collapsed.vcf.gz |\\
-		bcftools view -O u -o TMP/jeter.bcf
+		bcftools annotate --set-id '%VKX'  -O u -o TMP/jeter.bcf
+
+	bcftools +setGT \\
+        	-O u \\
+	        -o "TMP/jeter2.bcf" \\
+        	"TMP/jeter.bcf" \\
+	        -- \\
+		-t '.' -n 0
+
+    mv TMP/jeter2.bcf TMP/jeter.bcf
 	
 	bcftools +fill-tags \\
 		--threads ${task.cpus} \\

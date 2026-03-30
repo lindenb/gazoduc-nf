@@ -24,6 +24,7 @@ SOFTWARE.
 */
 process BCFTOOLS_QUERY_SAMPLES {
 label "process_single"
+label "array100"
 tag "${meta.id?:""} ${vcf.name}"
 afterScript "rm -rf TMP"
 conda "${moduleDir}/../../../conda/bioinfo.01.yml"

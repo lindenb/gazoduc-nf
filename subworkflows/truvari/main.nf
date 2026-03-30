@@ -23,10 +23,13 @@ SOFTWARE.
 
 */
 include { TRUVARI_COLLAPSE       } from '../../modules/truvari/collapse'
+include { TRUVARI_ANNO_CHUNCKS   } from '../../modules/truvari/anno.chuncks'
 include { verify                 } from '../../modules/utils/functions'
 include { isBlank                } from '../../modules/utils/functions'
+include { parseBoolean           } from '../../modules/utils/functions'
+include { makeKey                } from '../../modules/utils/functions'
+include { flatMapByIndex         } from '../../modules/utils/functions'
 include { BCFTOOLS_CONCAT        } from '../../modules/bcftools/concat3'
-
 
 
 workflow TRUVARI {
@@ -39,7 +42,6 @@ workflow TRUVARI {
      main:
 	 	versions = Channel.empty()
 		multiqc = Channel.empty()
-		def regex_contig = metadata.regex_contig?:"(chr)?[0-9XY]+"
 
 
 
@@ -70,11 +72,32 @@ workflow TRUVARI {
 			)
 		versions = versions.mix(BCFTOOLS_MERGE_FOR_TRUVARI.out.versions)
 
+
+		/*
+		If you find spans in the counts.bed with a huge number of SVs, these are prime candidates for exclusion to speed up truvari collapse. To exclude them, you first subset to the regions of interest and then use bedtools to create a bed file that will skip them.
+		*/
+		if(metadata.with_anno_chunks==null || parseBoolean(metadata.with_anno_chunks)) {
+			TRUVARI_ANNO_CHUNCKS(
+				[[id:"nobed"],[]],
+				BCFTOOLS_MERGE_FOR_TRUVARI.out.vcf.map{meta,vcf,tbi->[meta,vcf]}
+				)
+			versions = versions.mix(TRUVARI_ANNO_CHUNCKS.out.versions)
+			}
+		
+		ch1  = BCFTOOLS_MERGE_FOR_TRUVARI.out.bed
+			.flatMap{row->flatMapByIndex(row,1)}
+			.combine(BCFTOOLS_MERGE_FOR_TRUVARI.out.vcf)
+			.filter{meta1,_bed,meta2,_vcf,_tbi->meta1.id==meta2.id}
+			.multiMap{meta1,bed,meta2,vcf,tbi->
+				bed: [meta1,bed]
+				vcf : [meta2.plus(id:makeKey([meta2,vcf,bed])),vcf,tbi]
+			}
+
 		TRUVARI_COLLAPSE(
 			fasta,
 			fai,
-			[[id:"nobed"],[]],
-			BCFTOOLS_MERGE_FOR_TRUVARI.out.vcf
+			ch1.bed,
+			ch1.vcf
 			)
 		versions = versions.mix(TRUVARI_COLLAPSE.out.versions)
 		
@@ -173,6 +196,7 @@ input:
         tuple val(meta ),path("VCFS/*")
 output:
         tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),emit:vcf
+		tuple val(meta),path("contigs*.bed", arity: '0..*'),emit:bed
         path("versions.yml"),emit:versions
 script:
 		def variant_type = meta.variant_type
@@ -238,8 +262,17 @@ fi
 bcftools annotate --threads ${task.cpus} --force -x 'FORMAT/SR' -O z -o TMP/jeter2.vcf.gz TMP/jeter.bcf
 bcftools index --threads ${task.cpus} -f -t TMP/jeter2.vcf.gz
 
+bcftools index -s TMP/jeter2.vcf.gz |\\
+	awk -F '\t' '{printf("%s\t0\t%s\\n",\$1,\$2);}' |\\
+	split -a 9 --lines=1 --additional-suffix=.bed - TMP/contigs.${meta.id}
+
+mv -v TMP/contigs.*bed ./ || true
+
 mv TMP/jeter2.vcf.gz ${prefix}.vcf.gz
 mv TMP/jeter2.vcf.gz.tbi ${prefix}.vcf.gz.tbi
+
+
+
 
 cat << __EOF__ > versions.yml
 ${task.process}:
@@ -251,5 +284,53 @@ stub:
 	def prefix = task.ext.prefix?:"${meta.id}.merge"
 """
 touch ${prefix}.bcf ${prefix}.bcf.csi  versions.yml
+"""
+}
+
+/**
+
+When considering what threshold you would like to use, just looking at the 4th column may not be sufficient as the 'sub-chunks' may be smaller and will therefore run faster. There also is no guarantee that a region with high SV density will be slow. For example, if all SVs in a chunk could collapse, it would only take O(N - 1) comparisons to complete the collapse. The problems arise when the SVs have few redundant SVs and therefore requires O(N**2) comparisons.
+
+*/
+process ANNO_CHUNCKS_COMPLEMENT {
+tag "${meta.id?:""}"
+label "process_single"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
+afterScript 'rm -rf  TMP'
+input:
+		tuple val(meta1),path(fai)
+        tuple val(meta ),path(bed)
+output:
+        tuple val(meta),path("*.bed"),emit:bed
+        path("versions.yml"),emit:versions
+script:
+	def max_sv = task.ext.max_sv?:30000
+	def prefix = task.ext.prefix?:"${meta.id}.select${max_sv}"
+"""
+mkdir -p TMP
+
+awk '\$4 >= ${max_sv}' "${bed}" |\\
+	sort -t '\t' -k1,1 -k2,2n > TMP/to_exclude.bed
+
+
+if test ! -s TMP/to_exclude.bed
+then
+	tail -1 '${fai}' | awk -F '\t' '{printf("%s\t0\t1\\n",\$1);}' > TMP/to_exclude.bed
+fi
+
+awk -F '\t' '{printf("%s\t0\t%s\\n",\$1,\$2);}' '${fai}' |\\
+	sort -t '\t' -k1,1 -k2,2n > TMP/genome.bed
+
+bedtools complement -g TMP/genome.bed -i TMP/to_exclude.bed > TMP/jeter.bed
+mv TMP/jeter.bed ${prefix}.bed
+
+touch versions.yml
+"""
+
+stub:
+	def max_sv = task.ext.max_sv?:30000
+	def prefix = task.ext.prefix?:"${meta.id}.select${max_sv}"
+"""
+touch versions.yml ${prefix}.bed
 """
 }

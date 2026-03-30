@@ -149,7 +149,7 @@ set -o pipefail
 
 
 jvarkit gtf2bed --columns "gtf.feature,gene_name,gene_id" "${gtf}" |\\
-	awk -F '\t' '(\$4=="gene" && \$5!="." ) {OFS="\t";if(\$5=="." || $\5=="") \$5=\$6; if(\$5=="." || $\5=="") next; print;}' |\\
+	awk -F '\t' '(\$4=="gene" && \$5!="." ) {OFS="\t";if(\$5=="." || \$5=="") \$5=\$6; if(\$5=="." || \$5=="") next; print;}' |\\
 	cut -f1,2,3,5 |\\
 	LC_ALL=C sort -T . -t '\t' -k1,1 -k2,2n |\\
 	uniq | bgzip > ${prefix}.bed.gz

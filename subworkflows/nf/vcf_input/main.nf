@@ -101,7 +101,7 @@ main:
 
 
 
-    if(metadata.require_index==null || parseBoolean(metadata.require_index?:true)) {
+    if(metadata.require_index==null || parseBoolean(metadata.require_index)) {
         ch1 = ch1
             .map{
                 if(it.vcf.endsWith(".vcf")) throw new IllegalArgumentException("vcf fmust have suffix .vcf.gz or .bcf: ${it}");
@@ -139,7 +139,7 @@ main:
                 }
         }
     
-    if(metadata.require_index==null || parseBoolean(metadata.require_index?:true)) {
+    if(metadata.require_index==null || parseBoolean(metadata.require_index)) {
         ch1 = ch1.map{[
             it.plus([id: removeCommonSuffixes(file(it.vcf).name)]).findAll{k,v->!k.matches("(vcf|index)")},
             file(it.vcf),

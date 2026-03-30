@@ -120,7 +120,7 @@ main:
        
   
 
-        if(parseBoolean(metadata.require_index?:true)) {
+        if(parseBoolean(metadata.require_index)) {
             ch1 = ch1
                 .map{
                     if(!it.gtf.endsWith(".gz")) throw new IllegalArgumentException("gtf fmust have suffix .gz: ${it}");
@@ -143,7 +143,7 @@ main:
                 }
       
 
-        if(parseBoolean(metadata.require_index?:true)) {
+        if(parseBoolean(metadata.require_index)) {
             gtf_out = ch1.map{[
                 it.plus([id: removeCommonSuffixes(file(it.gtf).name)]).findAll{k,v->!k.matches("(gtf|tbi)")},
                 file(it.gtf),
