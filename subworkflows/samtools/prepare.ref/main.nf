@@ -64,9 +64,9 @@ main:
 		.map{[it.id,it]}
 
 	fasta = fasta
-		.map{meta1,fasta->[meta1.id,meta1,fasta]}
+		.map{meta1,fa->[meta1.id,meta1,fa]}
 		.join(build_ch)
-		.map{id,meta1,fasta,meta2->[meta1.plus(meta2),fasta]}
+		.map{_id,meta1,fa,meta2->[meta1.plus(meta2),fa]}
 		
 	
 	fai =fai_ch
@@ -76,8 +76,7 @@ main:
 
 	
 	dict0_ch = fasta
-		.map{meta,fasta->[meta,fasta,file("${fasta.toString().replaceAll("\\.(fasta|fa|fna)\$",".dict")}")]}
-		.view{meta,fasta,dict->"########## ${fasta} ${dict} ${dict.exists()}"}
+		.map{meta,fasta->[meta,fasta,file("${fasta.toRealPath().toString().replaceAll("\\.(fasta|fa|fna)\$",".dict")}")]}
 		.branch{_meta,_fasta,dict->
 			exists : dict.exists()
 			must_build: true
@@ -96,11 +95,23 @@ main:
 	
 	complement_bed =  Channel.of([[id:"nocomplement"],[]])
 	if(workflow_meta.skip_scatter==null || workflow_meta.skip_scatter==false) {
+
+		ch1 = fasta
+			.combine(fai)
+			.combine(dict_ch)
+			.filter{meta1,_fa,meta2,_fai,meta3,_dict->meta1.id==meta2.id && meta1.id==meta3.id}
+			.multiMap{meta1,fa,meta2,faidx,meta3,dict->
+				ch_fa   : [meta1,fa]
+				ch_fai  : [meta2,faidx]
+				ch_dict : [meta3,dict]
+				}
+
+
 		SCATTER_TO_BED(
 			workflow_meta,
-			fasta,
-			fai_ch,
-			dict_ch
+			ch1.ch_fa,
+			ch1.ch_fai,
+			ch1.ch_dict
 			)
 		versions = versions.mix(SCATTER_TO_BED.out.versions)
 		scatter_bed = SCATTER_TO_BED.out.bed

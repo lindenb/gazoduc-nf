@@ -9,7 +9,7 @@ nextflow_workflow {
     tag "subworkflows/samtools/prepare.ref"
     config "./nextflow.config"
 
-    test("BASIC") {
+    test("EXIST") {
 
         when {
             params {
@@ -20,6 +20,51 @@ nextflow_workflow {
                 """
                 input[0] = [id:"rf"]
                 input[1] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")])
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+    test("DONT_EXIST") {
+
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [id:"rf"]
+                input[1] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/toy_no_index.fa")])
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+    test("STUB") {
+        tag "stub"
+        options "-stub"
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [id:"rf"]
+                input[1] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/toy_no_index.fa")])
                 """
             }
         }

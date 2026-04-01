@@ -3,8 +3,34 @@ nextflow_process {
     name "Test Process SAMTOOLS_SAMPLES"
     script "modules/samtools/samples/main.nf"
     process "SAMTOOLS_SAMPLES"
+    tag "modules"
+    tag "modules/samtools"
+    tag "modules/samtools/samples"
+    tag "gitlab_ci"
 
-    test("Should run without failures") {
+    test("BASIC") {
+
+        when {
+            params {
+		input = ""
+            }
+            process {
+                """
+                input[0] = [[id:"noref"],[]]
+                input[1] = [[id:"bams"],[file("${projectDir}/tests/data/S1.bam"),file("${projectDir}/tests/data/S2.bam")]]
+                """
+            }
+        }
+
+        then {
+            assert process.success
+            }
+
+    }
+
+    test("STUB") {
+	tag "stub"
+	options "-stub"
 
         when {
             params {

@@ -2,7 +2,13 @@ SHELL=/bin/bash
 NEXTFLOW?=nextflow
 BUILD=GRCh38
 PROFILE?= -profile gitlabci
-.PHONY=all hard_tests reference test_wgsim test_fastqc test_bwa test_hapcaller test_downsample stub nf-test
+.PHONY=all hard_tests reference test_wgsim test_fastqc test_bwa test_hapcaller test_downsample stub nf-test top
+
+#
+# nf-test only
+#
+top:
+	cd .. && nf-test test --profile micromamba  --tag=gitlab_ci  --verbose
 
 all: data/REF/$(BUILD)/BAMS/samplesheet.csv
 	cd .. && nf-test test --profile micromamba  --tag=gitlab_ci
