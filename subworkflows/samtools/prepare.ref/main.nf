@@ -77,7 +77,8 @@ main:
 	
 	dict0_ch = fasta
 		.map{meta,fasta->[meta,fasta,file("${fasta.toString().replaceAll("\\.(fasta|fa|fna)\$",".dict")}")]}
-		.branch{meta,fasta,dict->
+		.view{meta,fasta,dict->"########## ${fasta} ${dict} ${dict.exists()}"}
+		.branch{_meta,_fasta,dict->
 			exists : dict.exists()
 			must_build: true
 			}
