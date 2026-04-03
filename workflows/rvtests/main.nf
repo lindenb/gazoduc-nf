@@ -30,7 +30,6 @@ include { paramsHelp                               } from 'plugin/nf-schema'
 include { paramsSummaryLog                         } from 'plugin/nf-schema'
 include { samplesheetToList                        } from 'plugin/nf-schema'
 include { BCFTOOLS_CONCAT_CONTIGS                  } from '../../subworkflows/bcftools/concat.contigs'
-include { GTF_INPUT                                } from '../../subworkflows/nf/gtf_input'
 include { runOnComplete                            } from '../../modules/utils/functions.nf'
 include { parseBoolean                             } from '../../modules/utils/functions.nf'
 include { makeKey                                  } from '../../modules/utils/functions.nf'
@@ -42,7 +41,6 @@ include { PREPARE_USER_BED                         } from '../../subworkflows/be
 include { VCF_INPUT                                } from '../../subworkflows/nf/vcf_input'
 include { PREPARE_ONE_REFERENCE                    } from '../../subworkflows/samtools/prepare.one.ref'
 include { VCF_TO_CONTIGS                           } from '../../subworkflows/bcftools/vcf2contigs'
-
 include { QQMAN                                    } from '../../modules/qqman/main.nf'
 include { ZIP                                      } from '../../modules/utils/zip'
 include { MULTIQC                                  } from '../../modules/multiqc'
@@ -161,39 +159,33 @@ workflow {
 	versions = versions.mix(JVARKIT_VCFSTATS.out.versions)
 	multiqc = multiqc.mix(JVARKIT_VCFSTATS.out.json)
 
+	/**
+	 *
+	 * NORMALIZE_VCF
+	 *
+	 */
+	NORMALIZE_VCF(VCF_INPUT.out.vcf)
+	versions = versions.mix(NORMALIZE_VCF.out.versions)
+	vcf_ch = NORMALIZE_VCF.out.vcf
+		.map{meta,vcf,tbi->[meta.plus(id:makeKey(vcf,meta.contig)),vcf,tbi]} // git a unique id vcf/contig to vcf stream
 
-	
+
+	set_file_ch = Channel.empty()
 
 	/**
 	 * ANNOTATIONS
 	 */
-	the_annot_ch = Channel.empty()
-	make_annot_ch = Channel.empty()
 
 	if(parseBoolean(params.with_functional_annotations)) {
+		SETFILE_FOR_FUNCTIONAL_ANNOT(vcf_ch)
+		versions = versions.mix(SETFILE_FOR_FUNCTIONAL_ANNOT.out.versions)
 		
-		GTF_INPUT(
-			metadata.plus(
-				arg_name:"gtf",
-				require_index:false,
-				download:true,
-				path: params.gtf
-			),
-			PREPARE_ONE_REFERENCE.out.dict
+		set_file_ch = set_file_ch.mix(
+			SETFILE_FOR_FUNCTIONAL_ANNOT.out.setfile
+				.flatMap{row->flatMapByIndex(row,1)}
+				.join(vcf_ch)
+				.map{meta,setfile,vcf,tbi->[meta.plus(id:makeKey(setfile),type:"functional"),setfile,vcf,tbi]}
 			)
-		versions = versions.mix(GTF_INPUT.out.versions)
-
-		REGENIE_FUNCTIONAL_ANNOT(
-			FUNCTIONAL_ANNOTATION_SCORES.out.tsv,
-			GTF_INPUT.out.gtf.map{meta,gtf,_tbi->[meta,gtf]},
-			VCF_TO_CONTIGS.out.vcf
-				.filter{meta,_vcf,_tbi->parseBoolean(params.skip_XY)==false || !meta.contig.matches("(chr)?[XY]")}
-				.map{meta,vcf,tbi->[meta.plus(id:meta.id+".annot."+meta.contig),vcf,tbi]}
-			)
-		versions = versions.mix(REGENIE_FUNCTIONAL_ANNOT.out.versions)
-		make_annot_ch = make_annot_ch.mix(REGENIE_FUNCTIONAL_ANNOT.out.tsv)
-
-		//the_annot_ch = the_annot_ch.mix(REGENIE_MAKE_ANNOT.out.tsv)
 		}
 
 	/**
@@ -214,14 +206,14 @@ workflow {
 			return L;
 			}}
 
-		REGENIE_SLIDING_ANNOT(
-			VCF_TO_CONTIGS.out.vcf
-				.filter{meta,_vcf,_tbi->parseBoolean(params.skip_XY)==false || !meta.contig.matches("(chr)?[XY]")}
+		SETFILE_FOR_SLIDING_WINDOWS(
+			vcf_ch
 				.combine(windows_ch)
 				.map{meta,vcf,tbi,w_size,w_shift->[meta.plus(win_size:w_size,win_shift:w_shift,id:meta.id+"_"+meta.contig),vcf,tbi]}
 			)
-		make_annot_ch = make_annot_ch.mix(REGENIE_SLIDING_ANNOT.out.tsv)
-		versions = versions.mix(REGENIE_SLIDING_ANNOT.out.versions)
+		versions = versions.mix(SETFILE_FOR_SLIDING_WINDOWS.out.versions)
+
+		set_file_ch = set_file_ch.mix()
 		}
 
 	/**
@@ -244,22 +236,23 @@ workflow {
 				;
 			}
 
-		dispatch_ch = ch1.combine(
-				VCF_TO_CONTIGS.out.vcf
-					.filter{meta,_vcf,_tbi->parseBoolean(params.skip_XY)==false || !meta.contig.matches("(chr)?[XY]")}
-				)
+		dispatch_ch = 
 			.multiMap{meta1,bed,meta2,vcf,tbi->
 				bed: [meta1,bed]
 				vcf: [meta2.plus(id:makeKey(meta2.id+"."+meta2.contig+"."+meta1.id)),vcf,tbi]
 				}
 
 
-		REGENIE_BED_ANNOT(
-			dispatch_ch.bed,
-			dispatch_ch.vcf
+		SETFILE_FOR_BED(
+			ch1.combine(
+				vcf_ch
+					.flatMap{meta,vcf,idx->[vcf,idx]}.
+					.collect()
+					.map{f->f.sort()}
+				)
 			)
-		make_annot_ch = make_annot_ch.mix(REGENIE_BED_ANNOT.out.tsv)
-		versions = versions.mix(REGENIE_BED_ANNOT.out.versions)
+		set_file_ch = set_file_ch.mix(SETFILE_FOR_BED.out.tsv)
+		versions = versions.mix(SETFILE_FOR_BED.out.versions)
 		}
 	else
 		{
@@ -270,36 +263,18 @@ workflow {
 	 * CONVERT TSV data to regenie input
 	 *
 	 */
-	REGENIE_MAKE_ANNOT(
-			metadata,
-			FUNCTIONAL_ANNOTATION_SCORES.out.tsv,
-			make_annot_ch
-			)
-	versions = versions.mix(REGENIE_MAKE_ANNOT.out.versions)
-	multiqc = multiqc.mix(REGENIE_MAKE_ANNOT.out.multiqc)
-
+	LINUX_SPLIT(set_file_ch)
+	versions = versions.mix(LINUX_SPLIT.out.versions)
 
 	
-	REGENIE_STEP2(
-		UPDATE_PGEN.out.pgen.first(),
-		covar_ch,
-		DIGEST_SAMPLESHEET.out.plink_ped.first(), 
-		[[id:"locostep1"],file(params.step1_loco)] ,
-		REGENIE_MAKE_ANNOT.out.annotations
+	RVTESTS_APPLY(
+		pedigree,
+		vcf,
+		setFile
 		)
-	versions = versions.mix(REGENIE_STEP2.out.versions)
+	versions = versions.mix(RVTESTS_APPLY.out.versions)
 
-	/** merge all results and group all data by test/frequency */
-	MERGE_REGENIE(
-		PREPARE_ONE_REFERENCE.out.dict,
-		REGENIE_STEP2.out.regenie
-			.map{_meta,r->(r instanceof List?r:[r])}
-			.flatMap()
-			.collect()
-			.map{files->[[id:"regenie"],files.sort()]}
-		)
-	versions = versions.mix(MERGE_REGENIE.out.versions)
-
+	
 	/** for multuqc, generate a table with the best hits */
 	BEST_HITS(MERGE_REGENIE.out.tsv)
 	versions = versions.mix(BEST_HITS.out.versions)
@@ -383,26 +358,185 @@ workflow {
 			.map{files->[[id:"regenie"],files.sort()]}
 		)
 	versions = versions.mix(ZIP.out.versions)
-	/*
-	MERGE_AND_PLOT(
-		reference,
-		step2_ch.output.groupTuple()
-		)
-	
-	ANNOT_HITS(reference,ch5.output.collect())
 
-
-	
-	MAKE_PNG_ARCHIVE(ch5.images.mix(ch5.ascii).flatten().collect())
-
-	MAKE_SNPLIST(
-		step2_ch.output.map{it[1]}.collect(),
-		step2_ch.masks_snplist.map{it[1]}.collect()
-		)
-
-	README()
-	*/
 
 	}
 
 runOnComplete(workflow)
+
+
+/**
+ * normalize vcf for rvtests, changing chromosome notation 'chr1' to '1'
+ */
+process NORMALIZE_VCF {
+label "process_single"
+tag "${meta.id}"
+input:
+	tuple val(meta),path(vcf),path(tbi)
+output:
+	tuple val(meta),path(vcf),path(tbi),emit:vcf
+script:
+	def contig = meta.contig
+	def prefix  = task.ext.prefix?:"${meta.id}.${contig}"
+"""
+echo "${contig}\t${contig}" | sed 's/\tchr/\t' > TMP/contigs.txt
+
+bcftools annotate \\
+	--threads ${task.cpus} \\
+	--regions "${contig}"  \\
+	${contig.startsWith("chr")?"--rename-chrs TMP/contigs.txt":""} \\
+	-x 'FILTER,ID,QUAL,^FORMAT/GT' \\
+	-O z \\
+	-o TMP/jeter.vcf.gz
+
+bcftools index --threads ${task.cpus} -f -t  TMP/jeter.vcf.gz
+
+mv TMP/jeter.vcf.gz ${prefix}.vcf.gz
+mv TMP/jeter.vcf.gz.tbi ${prefix}.vcf.gz.tbi
+
+touch versions.yml
+"""
+stub:
+	def prefix  = task.ext.prefix?:"${meta.id}.${contig}"
+"""
+touch versions.yml ${prefix}.norm.vcf.gz ${prefix}.norm.vcf.gz.tbi
+"""
+}
+
+process SETFILE_FOR_FUNCTIONAL_ANNOT {
+label "process_single"
+tag "${meta.id}"
+afterScript "rm -rf TMP"
+input:
+	tuple val(meta),path(vcf),path(tbi)
+output:
+	tuple val(meta),path("*.setFile"),optional:true,emit:setFile
+	path("versions.yml"),emit:versions
+script:
+	def prefix = task.ext.prefix?:"${meta.id}.func"
+	def args1 = task.ext.args1?:""
+"""
+mkdir -p TMP/OUT1
+bcftools view -G  ${args1} ${vcf} |\\
+${jvarkit} vcffilterso --acn '' -r -R |\\
+${jvarkit} vcfgenesplitter --extractors '' -o TMP/OUT1
+
+find TMP/OUT1 -type f -name "*.vcf.gz" | sort -T TMP | uniq > TMP/jeter.list
+
+cat TMP/jeter.list | while read F
+do
+	basename "\${F}" .vcf.gz | tr "\n" , >> TMP/jeter.setFile
+	bcftools query -f '%CHROM:%POS-%END' |  paste -s -d',' >> TMP/jeter.setFile
+done
+
+mv TMP/jeter.setFile ${prefix}.setFile || true
+
+touch versions.yml
+"""
+stub:
+"""
+touch versions.yml
+"""
+}
+
+process SETFILE_FOR_SLIDING_WINDOWS {
+label "process_single"
+tag "${meta.id}"
+afterScript "rm -rf TMP"
+input:
+	tuple val(meta),path(vcf),path(tbi)
+output:
+	tuple val(meta),path("*.setFile"),optional:true,emit:setFile
+	path("versions.yml"),emit:versions
+script:
+	def contig = meta.contig
+	def args1 = task.ext.args1?:""
+	def win_size = meta.win_size
+	def win_shift = meta.win_shift
+	def prefix = task.ext.prefix?:"${meta.id}.sliding.w${win_size}_s${win_shift}"
+"""
+mkdir -p TMP/OUT1
+
+
+# create sliding bed
+bcftools index -s "${vcf}" |\\
+	awk -F '\t' '{printf("%s\t0\t%s\\n",\$1,\$2);}' |\\
+	bedtools makewindows -w ${win_size} ${win_shift} |\\
+	awk -F '\t' '{printf("%s:%d-%s\\n",\$1,int(\$2)+1,\$3);}' | while read RGN
+	do
+		bcftools query --regions "\${RGN}" ${args1} -f '%CHROM:%POS-%END'  ${vcf} |\\
+			uniq |\\
+			paste -s -d','|\\
+			awk -v RGN="\${RGN}" 'BEGIN {R2=RGN;gsub(/[^A-Za-z0-9]+/,"_",R2);} {printf("%s.sliding.w${win_size}_s${win_shift}\t%s\\n",R2,\$0);}' >> TMP/jeter.setFile
+	done
+
+mv TMP/jeter.setFile ${prefix}.setFile || true
+
+touch versions.yml
+"""
+stub:
+"""
+touch versions.yml 
+"""
+}
+
+
+process SETFILE_FOR_BED {
+label "process_single"
+tag "${meta.id}"
+afterScript "rm -rf TMP"
+input:
+	tuple val(meta1),path(bed)
+	tuple val(meta),path("VCF/*")
+output:
+	tuple val(meta),path("*.setFile"),optional:true,emit:setFile
+	path("versions.yml"),emit:versions
+script:
+	def contig = meta.contig
+	def args1 = task.ext.args1?:""
+	def win_size = meta.win_size
+	def win_shift = meta.win_shift
+	def prefix = task.ext.prefix?:"${meta.id}.bed${meta1.id}"
+"""
+mkdir -p TMP/OUT1
+
+find VCF -name "*.vcf.gz" > TMP/jeter.list
+
+
+
+${bed.name.endsWith(".gz")?"gunzip -c":"cat"} "${bed}" |\\
+	sed 's/^chr//' |\\
+	awk -F '\t' '{S=\$4;if(NF<4 || S=="") {S=sprintf("%s_%s_%s",\$1,\$2,\$3);} printf("%s\t%s\t%s\\n",\$1,\$2,\$3,S);}' |\\
+	sort -T TMP -t '\t' -k1,1 -k2,2n |\\
+	uniq > TMP/jeter1.bed
+
+cut -f1,2,3  TMP/jeter1.bed |\\
+	sort -T TMP -t '\t' -k1,1 -k2,2n |\\
+	bedtools merge > TMP/jeter2.bed
+
+bcftools concat --drop-genotypes ${args1} --file-list TMP/jeter.list --regions-file TMP/jeter2.bed  -O u |\\
+	bcftools query --regions-file TMP/jeter.bed -f '%CHROM\t%POS0\t%END' |\\
+	sort -T TMP -t '\t' -k1,1 -k2,2n |\\
+	uniq > TMP/jeter3.bed
+
+bedtools intersect -a TMP/jeter1.bed -b TMP/jeter2.bed -wa -wb |\\
+	awk -F '\t' '{printf("%s\t%s:%s-%s\\n",\$4,\$1,int(\$2),\$3);}' |
+	datamash groupby 1 unique 2 | while read RGNID RGN
+	do
+		echo "\${RGN}" | tr ":-" "\t" > TMP/jeter.bed
+		bcf
+		
+			uniq |\\
+			paste -s -d','|\\
+			awk -v RGN="\${RGNID}" 'BEGIN {R2=RGNID;gsub(/[^A-Za-z0-9]+/,"_",R2);} {printf("\t%s\\n",R2,\$0);}' >> TMP/jeter.setFile
+	done
+
+mv TMP/jeter.setFile ${prefix}.setFile || true
+
+touch versions.yml
+"""
+stub:
+"""
+touch versions.yml 
+"""
+}

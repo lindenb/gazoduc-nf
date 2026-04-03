@@ -54,7 +54,7 @@ nextflow_workflow {
 
     }
 
-    test("STUB") {
+    test("STUB_NO_INDEX") {
         tag "stub"
         options "-stub"
         
@@ -78,5 +78,33 @@ nextflow_workflow {
         }
 
     }
+
+
+
+    test("STUB_WITH_INDEX") {
+        tag "stub"
+        options "-stub"
+        
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] = [id:"rf"]
+                input[1] = Channel.of([[id:"ref"], file("${projectDir}/tests/data/rotavirus_rf.fa")])
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //workflow.out.vcf
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
 
 }
