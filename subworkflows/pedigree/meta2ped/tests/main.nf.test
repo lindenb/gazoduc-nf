@@ -1,0 +1,78 @@
+nextflow_workflow {
+
+    name "Test Workflow META_TO_PED"
+    script "subworkflows/pedigree/meta2ped/main.nf"
+    workflow "META_TO_PED"
+    tag "gitlab_ci"
+    tag "subworkflows"
+    tag "subworkflows/pedigree"
+    tag "subworkflows/pedigree/meta2ped"
+
+     test("BASIC") {
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] =  [id:"meta2ped"]
+                input[1] =  Channel.empty()
+                input[2] = Channel.fromPath("${projectDir}/tests/data/case.control.01.csv").splitCsv(header:true,sep:',')
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+    }
+
+
+    test("STUB") {
+        options "-stub"
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] =  [id:"meta2ped"]
+                input[1] =  Channel.empty()
+                input[2] = Channel.fromPath("${projectDir}/tests/data/case.control.01.csv").splitCsv(header:true,sep:',')
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+ test("STUB_VCF") {
+        options "-stub"
+        when {
+            params {
+                // define parameters here. Example:
+                // outdir = "tests/results"
+            }
+            workflow {
+                """
+                input[0] =  [id:"meta2ped"]
+                input[1] =  Channel.of([[id:"x1"],file("${projectDir}/tests/data/rotavius_rf.vcf.gz")])
+                input[2] = Channel.fromPath("${projectDir}/tests/data/case.control.01.csv").splitCsv(header:true,sep:',')
+                """
+            }
+        }
+
+        then {
+            assert workflow.success
+            //assert snapshot(workflow.out).match()
+        }
+
+    }
+
+}

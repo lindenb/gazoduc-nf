@@ -81,6 +81,7 @@ main:
 	males = MAKE_PED.out.males.ifEmpty([[id:"no.males"],[]])
 	females = MAKE_PED.out.females.ifEmpty([[id:"no.females"],[]])
 	plink_fam = MAKE_PED.out.plink_fam.ifEmpty([[id:"no.plink_fam"],[]])
+	all_samples  = MAKE_PED.out.all_samples.ifEmpty([[id:"no.all_samples"],[]])
 
 	MAKE_DEFAULT_SELECT_CODE(cases,controls)
 	versions = versions.mix(MAKE_DEFAULT_SELECT_CODE.out.versions)
@@ -92,6 +93,7 @@ emit:
 	pedigree
 	pedigree_gatk
 	plink_fam
+	all_samples
 	sample2collection
 	sample2group
 	sample2status
@@ -122,6 +124,7 @@ output:
 	tuple val(meta),path("*.sample2group.tsv"),optional:true,emit:sample2group
 	tuple val(meta),path("*.sample2status.tsv"),optional:true,emit:sample2status
 	tuple val(meta),path("*.plink.fam"),optional:true,emit:plink_fam
+	tuple val(meta),path("*.all_samples.txt"),optional:true,emit:all_samples
 	path("versions.yml"),emit:versions
 script:
 
@@ -140,7 +143,7 @@ fi
 
 python3 ${moduleDir}/ped.py raw.ped > /dev/null
 
-for F in males.txt females.txt cases.txt controls.txt sample2collection.tsv sample2group.tsv pedigree4gatk.ped sample2status.tsv jvarkit.ped plink.fam
+for F in males.txt females.txt cases.txt controls.txt sample2collection.tsv sample2group.tsv pedigree4gatk.ped sample2status.tsv jvarkit.ped plink.fam all_samples.txt
 do
 	if test ! -s "\${F}"
 	then

@@ -48,6 +48,9 @@ include { COMPILE_VERSIONS                         } from '../../modules/version
 include { JVARKIT_VCFSTATS                         } from '../../modules/jvarkit/vcfstats'
 include { CIRCULAR_MANHATTAN                       } from '../../subworkflows/circular/manhattan'
 include { BATIK                                    } from '../../subworkflows/batik'
+include { READ_SAMPLESHEET                         } from '../../subworkflows/nf/read_samplesheet'
+include { META_TO_PED                              } from '../../subworkflows/pedigree/meta2ped'
+include { LINUX_SPLIT                              } from '../../modules/utils/linuxsplit'
 
 
 workflow {
@@ -63,15 +66,11 @@ workflow {
 		log.warn("--fasta missing")
 		exit -1
 		}
-	if(params.covariates==null) {
-		log.warn("--covariates missing")
-		exit -1
-	}
 
 	if(params.samplesheet==null) {
 		log.warn("--samplesheet missing")
 		exit -1
-	}
+		}
 
   /***************************************************
    *
@@ -122,13 +121,26 @@ workflow {
 			]))
 	versions = versions.mix(VCF_INPUT.out.versions)
 	
-	/** extract pedigrees, cases from vcf input and samplesheet */
-	DIGEST_SAMPLESHEET (
-		VCF_INPUT.out.vcf.take(1).map{meta,vcf,_tbi->[meta,vcf]},
-		[[id:"samplesheet"],file(params.samplesheet)]
+   /***************************************************
+    *
+    * VCF_INPUT
+    *
+    */
+	READ_SAMPLESHEET(
+		metadata.plus([arg_name:"samplesheet"]),
+		params.samplesheet
 		)
-	versions = versions.mix(DIGEST_SAMPLESHEET.out.versions)
-	
+	versions = versions.mix(READ_SAMPLESHEET.out.versions)
+
+    META_TO_PED(
+		metadata,
+		VCF_INPUT.out.vcf.map{meta,vcf,_tbi->[meta,vcf]}.toSortedList().map{array->array[0]},
+		READ_SAMPLESHEET.out.samplesheet
+		)
+    versions = versions.mix(META_TO_PED.out.versions)
+
+
+
 	/** extract contig for each vcf */
 	VCF_TO_CONTIGS(metadata, VCF_INPUT.out.vcf)
 	versions = versions.mix(VCF_TO_CONTIGS.out.versions)
@@ -147,10 +159,11 @@ workflow {
 			.collect()
 			.filter{array->array.size() > 1} /* two error flags */
 			.subscribe{array->throw new IllegalArgumentException("${array.join(" ")}")}
+
 	
 	/*run statistics over the vcf */
 	JVARKIT_VCFSTATS(
-		DIGEST_SAMPLESHEET.out.sample2population,
+		META_TO_PED.out.sample2status,
 		VCF_INPUT.out.vcf
 			.map{meta,vcf,tbi->[[id:"input_vcf"],vcf,tbi]}
 			.groupTuple()
@@ -164,11 +177,15 @@ workflow {
 	 * NORMALIZE_VCF
 	 *
 	 */
-	NORMALIZE_VCF(VCF_INPUT.out.vcf)
+	NORMALIZE_VCF(
+		META_TO_PED.out.all_samples,
+		VCF_TO_CONTIGS.out.vcf
+		)
 	versions = versions.mix(NORMALIZE_VCF.out.versions)
 	vcf_ch = NORMALIZE_VCF.out.vcf
 		.map{meta,vcf,tbi->[meta.plus(id:makeKey(vcf,meta.contig)),vcf,tbi]} // git a unique id vcf/contig to vcf stream
-
+	
+	
 
 	set_file_ch = Channel.empty()
 
@@ -181,10 +198,10 @@ workflow {
 		versions = versions.mix(SETFILE_FOR_FUNCTIONAL_ANNOT.out.versions)
 		
 		set_file_ch = set_file_ch.mix(
-			SETFILE_FOR_FUNCTIONAL_ANNOT.out.setfile
+			SETFILE_FOR_FUNCTIONAL_ANNOT.out.setFile
 				.flatMap{row->flatMapByIndex(row,1)}
 				.join(vcf_ch)
-				.map{meta,setfile,vcf,tbi->[meta.plus(id:makeKey(setfile),type:"functional"),setfile,vcf,tbi]}
+				.map{meta,setfile,vcf,tbi->[meta.plus(id:makeKey(setfile),type:"functional"),setfile,[vcf],[tbi]]}
 			)
 		}
 
@@ -213,66 +230,31 @@ workflow {
 			)
 		versions = versions.mix(SETFILE_FOR_SLIDING_WINDOWS.out.versions)
 
-		set_file_ch = set_file_ch.mix()
 		}
 
-	/**
-	 *
-	 * Custom BED file of annotations
-	 *
-	 */ 
-	if(params.select_bed!=null) {
-		log.info("making bed from ${params.select_bed}");
-		if(params.select_bed.endsWith(".list")) {
-			ch1 = Channel.fromPath(params.select_bed)
-				.splitText()
-				.map{fn->[[id:makeKey(fn)],file(nf.trim())]}
-				;
-			}
-		else
-			{
-			ch1  = Channel.of(params.select_bed)
-				.map{fn->[[id:makeKey(fn)],file(fn)]}
-				;
-			}
 
-		dispatch_ch = 
-			.multiMap{meta1,bed,meta2,vcf,tbi->
-				bed: [meta1,bed]
-				vcf: [meta2.plus(id:makeKey(meta2.id+"."+meta2.contig+"."+meta1.id)),vcf,tbi]
-				}
-
-
-		SETFILE_FOR_BED(
-			ch1.combine(
-				vcf_ch
-					.flatMap{meta,vcf,idx->[vcf,idx]}.
-					.collect()
-					.map{f->f.sort()}
-				)
-			)
-		set_file_ch = set_file_ch.mix(SETFILE_FOR_BED.out.tsv)
-		versions = versions.mix(SETFILE_FOR_BED.out.versions)
-		}
-	else
-		{
-		log.info("NO custom contig/start/end/annot/gene/file.");
-		}
-
+	if(1==2) {
 	/** 
 	 * CONVERT TSV data to regenie input
 	 *
 	 */
+
+	
 	LINUX_SPLIT(set_file_ch)
 	versions = versions.mix(LINUX_SPLIT.out.versions)
+
 
 	
 	RVTESTS_APPLY(
 		pedigree,
 		vcf,
-		setFile
+		LINUX_SPLIT.out.pedigree
 		)
 	versions = versions.mix(RVTESTS_APPLY.out.versions)
+
+
+
+	
 
 	
 	/** for multuqc, generate a table with the best hits */
@@ -301,7 +283,6 @@ workflow {
 	 * Make circos plots
 	 */
 	if(parseBoolean(params.with_circos)) {
-		/** pdf can be big in size, just plot if LOG10P > 'x' */
 		to_manhattan = to_qqman
 			.map{meta,f->[meta,f,f]}/* duplicate regenie file */
 			.splitCsv(header:true,sep:' '/*space */)
@@ -322,7 +303,6 @@ workflow {
 		versions = versions.mix(CIRCULAR_MANHATTAN.out.versions)
 		multiqc = multiqc.mix(CIRCULAR_MANHATTAN.out.multiqc)
 
-		/** convert SVG to pdf/png... */
 		BATIK(
 			metadata.plus(
 				with_pdf:true,
@@ -336,9 +316,6 @@ workflow {
 		}
 
 
-	/**
-	 * At the end, make QC, make versions, zip results
-	 */
 	COMPILE_VERSIONS(versions.collect().map{it.sort()})
 
 	MULTIQC(
@@ -358,7 +335,7 @@ workflow {
 			.map{files->[[id:"regenie"],files.sort()]}
 		)
 	versions = versions.mix(ZIP.out.versions)
-
+	}
 
 	}
 
@@ -370,31 +347,42 @@ runOnComplete(workflow)
  */
 process NORMALIZE_VCF {
 label "process_single"
-tag "${meta.id}"
+tag "${meta.id} ${meta.contig}"
+conda "${moduleDir}/../../conda/bioinfo.01.yml"
 input:
-	tuple val(meta),path(vcf),path(tbi)
+	tuple val(meta1), path(all_samples)
+	tuple val(meta), path(vcf),path(tbi)
 output:
 	tuple val(meta),path(vcf),path(tbi),emit:vcf
+	path("versions.yml"),emit:versions
 script:
 	def contig = meta.contig
 	def prefix  = task.ext.prefix?:"${meta.id}.${contig}"
 """
 echo "${contig}\t${contig}" | sed 's/\tchr/\t' > TMP/contigs.txt
 
-bcftools annotate \\
-	--threads ${task.cpus} \\
+bcftools view \\
 	--regions "${contig}"  \\
-	${contig.startsWith("chr")?"--rename-chrs TMP/contigs.txt":""} \\
-	-x 'FILTER,ID,QUAL,^FORMAT/GT' \\
-	-O z \\
-	-o TMP/jeter.vcf.gz
+	--threads ${task.cpus} \\
+	--samples-file "${all_samples}" \\
+	-O u \\
+	"${vcf}" |\\
+	bcftools annotate \\
+		-i 'AC[*]>0' \\
+		${contig.startsWith("chr")?"--rename-chrs TMP/contigs.txt":""} \\
+		-x 'FILTER,ID,QUAL,^FORMAT/GT' \\
+		-O z \\
+		-o TMP/jeter.vcf.gz
 
 bcftools index --threads ${task.cpus} -f -t  TMP/jeter.vcf.gz
 
 mv TMP/jeter.vcf.gz ${prefix}.vcf.gz
 mv TMP/jeter.vcf.gz.tbi ${prefix}.vcf.gz.tbi
 
-touch versions.yml
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+        bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
+END_VERSIONS
 """
 stub:
 	def prefix  = task.ext.prefix?:"${meta.id}.${contig}"

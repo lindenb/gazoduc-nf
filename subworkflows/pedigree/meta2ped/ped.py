@@ -21,7 +21,7 @@ def update_status(status):
     elif status == "unaffected":
         return "control"
     else:
-        return status   
+        return status
 
 def update_sex(sex):
     sex2 = sex.upper()
@@ -178,6 +178,13 @@ def main():
             else:
                 f.write("0")
             f.write("\n")
+
+    # write  all samples
+    with open("all_samples.txt","w") as f:
+        for row in rows:
+            f.write(row[0])
+            f.write("\n")
+
     # write pedigree for plink
     with open("plink.fam","w") as f:
         for row in rows:
