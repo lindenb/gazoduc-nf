@@ -32,7 +32,7 @@ conda "${moduleDir}/../../../conda/bioinfo.01.yml"
 input:
     tuple val(meta),path(dict)
 output:
-    tuple val(meta),path("*.bcf"),path("*.bcf.csi"),optional:true,emit:vcf
+    tuple val(meta),path("*.vcf.gz"),path("*.vcf.gz.tbi"),optional:true,emit:vcf
     path("versions.yml"),emit:versions
 script:
     def prefix = task.ext.prefix?:"${meta.id}.clinvar"
@@ -49,7 +49,7 @@ script:
 	url = "${base}/vcf_GRCh37/clinvar.vcf.gz"
 	}
     def local_vcf = task.ext.local_vcf?:"NO_FILE" 
-
+    def jvm = task.ext.jvm?:"-Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP"
 """
 set -o pipefail
 set -x
@@ -60,7 +60,7 @@ if test -f "${local_vcf}" && test -f "${local_vcf}.tbi"
 then
  
 bcftools view -O v "${local_vcf}" |\\
-        jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  vcfsetdict -R "${dict}"  -n SKIP |\\
+        jvarkit  ${jvm} vcfsetdict -R "${dict}"  -n SKIP |\\
         bcftools view -O b -o TMP/jeter.bcf
 
 elif ${!url.isEmpty()}
@@ -68,7 +68,7 @@ then
 
 curl -L  "${url}" |\\
         bcftools view -O v  |\\
-        jvarkit -Xmx${task.memory.giga}g -Djava.io.tmpdir=TMP  vcfsetdict -R "${dict}"  -n SKIP |\\
+        jvarkit  ${jvm}  vcfsetdict -R "${dict}"  -n SKIP |\\
         bcftools view -O b -o TMP/jeter.bcf
 
 fi
@@ -77,35 +77,37 @@ fi
 if test -f TMP/jeter.bcf
 then
 
-bcftools view --header-only TMP/jeter.bcf | grep "^##INFO" | cut -d '=' -f 3 | cut -d, -f 1| grep -v "#"  |\\
+bcftools view --header-only TMP/jeter.bcf | grep "^##INFO" |\\
+        cut -d '=' -f 3 | \\
+        cut -d, -f 1| grep -v "#"  |\\
         awk '{printf("INFO/%s\tCLINVAR_%s\\n",\$1,\$1);}' > TMP/rename.tsv
 
 bcftools annotate \\
     --threads ${task.cpus} \\
     --rename-annots TMP/rename.tsv \\
-    -O b \\
-    -o TMP/${prefix}.bcf \\
+    -O z \\
+    -o TMP/${prefix}.vcf.gz \\
     TMP/jeter.bcf
 
 bcftools index  \\
+    -f -t \\
     --threads ${task.cpus} \\
-     TMP/${prefix}.bcf
+     TMP/${prefix}.vcf.gz
 
-mv TMP/${prefix}.bcf ./
-mv TMP/${prefix}.bcf.csi ./
+mv TMP/${prefix}.vcf.gz ./
+mv TMP/${prefix}.vcf.gz.tbi ./
 
 fi
 
-
-cat << EOF > versions.yml
-${task.process}:
-    bcftools: TODO
-EOF
+cat << END_VERSIONS > versions.yml
+"${task.process}":
+        bcftools: "\$(bcftools version | awk '(NR==1) {print \$NF;}')"
+END_VERSIONS
 """
 
 stub:
     def prefix = task.ext.prefix?:"${meta.id}.clinvar"
 """
-touch versions.yml ${prefix}.bcf ${prefix}.bcf.csi
+touch versions.yml ${prefix}.vcf.gz ${prefix}.vcf.gz.tbi
 """
 }
