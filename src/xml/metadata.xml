@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata  xmlns:xi="http://www.w3.org/2001/XInclude">
+	<param name="fasta" id="fasta" required="true">
+		<description>fasta sequence</description>
+		<format>file-path</format>
+	</param>                    
+	<param name="outdir" id="outdir">
+		<format>directory-path</format>
+                <description>The output directory where the results will be saved.</description>
+		<fa_icon>fas fa-folder-open</fa_icon>
+	</param>
+
+	<param name="prefix" id="prefix">
+		<description>File prefix</description>
+	</param>
+
+	<param name="help" id="help">
+		<description>help</description>
+		<fa_icon>fas fa-question-circle</fa_icon>
+	</param>
+</metadata>

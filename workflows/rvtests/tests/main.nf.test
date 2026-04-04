@@ -1,0 +1,26 @@
+nextflow_pipeline {
+
+    name "Test Workflow main.nf"
+    script "workflows/rvtests/main.nf"
+    tag "workflows"
+    tag "workflows/rvtests"
+    tag "gitlab_ci"
+    
+
+    test("STUB") {
+        options "-stub"
+        when {
+            params {
+                fasta       = "${projectDir}/tests/data/rotavirus_rf.fa"
+                vcf = "${projectDir}/tests/data/rotavirus_rf.vcf.gz"
+                samplesheet = "${projectDir}/tests/data/case.control.01.csv"
+            }
+        }
+
+        then {
+            assert workflow.success
+        }
+
+    }
+
+}

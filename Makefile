@@ -1,10 +1,14 @@
 BASH=/bin/bash
-.PHONY:test tests clean doc
+.PHONY:test tests clean doc schema
 
 
 tests: test
 test:
 	cd tests && $(MAKE)
+
+schema: src/xsl/metadata2json.xslt
+	find ./workflows -type f -name "nextflow_schema.xml" |\
+		while read F ; do xsltproc --xinclude src/xsl/metadata2json.xslt "$${F}"  | python3 -m json.tool > "$${F%.xml}.json" ; done
 
 doc:
 	source ${HOME}/.bash_profile && \
